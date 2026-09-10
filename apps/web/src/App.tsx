@@ -58,19 +58,15 @@ const SURFACE_STATS: readonly Stat[] = [
   { v: '4,000', k: 'Protocol fee cap, in pips', note: '0.4% — MAX_PROTOCOL_FEE' },
 ] as const
 
-type Suite = { name: string; passed: number; total: number }
-
-/**
- * Counted from a local run on the date below. A test count drifts with every
- * commit, so it is published as a dated snapshot, never as a standing claim.
+/*
+ * Deliberately absent: a "tests passing" strip.
+ * A local run on 9 Sep 2026 measured core 842/844 (2 Windows-only vm.ffi
+ * failures), periphery 506/509 (3 REAL assertion failures in
+ * PeripheryBackendSafetyTest — transient recorder state not swept),
+ * fees 14/14, SDK 61/61. Publishing a green badge over a red suite would be
+ * a false claim, and a hardcoded count drifts on the next commit. Add this
+ * back only once the suites are green AND something keeps the number honest.
  */
-const SUITES_MEASURED_ON = '9 Sep 2026'
-const SUITES: readonly Suite[] = [
-  { name: 'Core', passed: 842, total: 844 },
-  { name: 'Periphery', passed: 499, total: 499 },
-  { name: 'Fees', passed: 14, total: 14 },
-  { name: 'SDK', passed: 61, total: 61 },
-] as const
 
 function Nav() {
   return (
@@ -300,26 +296,6 @@ function Developers() {
               <div className="stat-note">{s.note}</div>
             </div>
           ))}
-        </div>
-
-        <div className="suites">
-          <p className="suites-label">Test suites, as measured on {SUITES_MEASURED_ON}</p>
-          <ul className="suite-row">
-            {SUITES.map((s) => (
-              <li key={s.name}>
-                <span className="suite-name">{s.name}</span>
-                <span className="suite-count">
-                  {s.passed}/{s.total}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className="suites-note">
-            The two core failures are environment-only: they shell out to <code>npx ts-node</code>{' '}
-            through <code>vm.ffi</code> to cross-check tick math against a reference implementation,
-            and that binary is not on PATH on the machine these were run on. Counts are a snapshot of
-            one local run, not a live badge.
-          </p>
         </div>
       </div>
     </section>

@@ -276,32 +276,6 @@ code { font-family: var(--mono); }
 .stat-k { font-size: 13px; color: var(--text); margin-top: 4px; }
 .stat-note { font-size: 11.5px; color: var(--text-dim); margin-top: 5px; line-height: 1.45; }
 
-/* ---------- test suites ---------- */
-.suites { margin-top: 22px; }
-.suites-label {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  color: var(--text-faint);
-  margin: 0 0 10px;
-}
-.suite-row { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0 0 12px; padding: 0; }
-.suite-row li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-elev);
-  font-size: 13px;
-}
-.suite-name { color: var(--text-dim); }
-.suite-count { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
-.suites-note { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--text-dim); max-width: 76ch; }
-.suites-note code { font-size: 11.5px; color: var(--text); }
-
 /* ---------- table ---------- */
 .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 480px; }
