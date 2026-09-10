@@ -407,6 +407,13 @@ contract MixedQuoter is IMixedQuoter, IPancakeV3SwapCallback, Multicall {
             gasEstimate += gasEstimateForCurAction;
         }
 
+        /// @dev LatchProtocol: sweep the recorder before returning. Compiles away entirely under
+        /// EIP-1153; under the storage backend it is what stops a recorded swap direction from
+        /// persisting and permanently bricking quotes for this pool in the opposite direction.
+        /// On a revert path the EVM rolls the writes back, so the success path is the only one
+        /// that needs an explicit sweep.
+        MixedQuoterRecorder.clearContext();
+
         return (amountIn, gasEstimate);
     }
 

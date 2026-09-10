@@ -3,6 +3,7 @@
 pragma solidity 0.8.26;
 
 import {PoolKey} from "infinity-core/src/types/PoolKey.sol";
+import {TransientSlot} from "hp-transient/TransientSlot.sol";
 
 /// @dev Record all token accumulation and swap direction of the transaction for non-infinity pools.
 /// @dev Record infinity swap history list for infinity pools.
@@ -36,6 +37,13 @@ library MixedQuoterRecorder {
     /// @dev uint256 internal constant SWAP_INFI_LIST = uint256(keccak256("MIXED_QUOTER_SWAP_INFI_LIST")) - 1;
     uint256 internal constant SWAP_INFI_LIST = 0x32f6ae18dd733261edd4a84eefa6e2b1fe927f73449d02df9df6ca8eaba3b6df;
 
+    /// @dev LatchProtocol: registry of every slot written during the current quote, so the
+    /// storage backend can sweep them. uint256(keccak256("HP_MIXED_QUOTER_TOUCHED_COUNT")) - 1
+    uint256 internal constant TOUCHED_COUNT = 0x6b061ba55090724efa350018a754f511c5355308c6478f0425c5cf5e78243419;
+
+    /// @dev uint256(keccak256("HP_MIXED_QUOTER_TOUCHED_BASE")) - 1
+    uint256 internal constant TOUCHED_BASE = 0xa86b85b74d41af8df7ca5b3a93365e5a56d81eba1cafd0cd67394c9c04330b5;
+
     enum SwapDirection {
         NONE,
         ZeroForOne,
@@ -43,6 +51,45 @@ library MixedQuoterRecorder {
     }
 
     error INVALID_SWAP_DIRECTION();
+
+    /// @notice LatchProtocol: clear every slot written during this quote.
+    ///
+    /// @dev Under EIP-1153 the EVM discards these at end of transaction and this compiles away
+    /// entirely — `IS_EIP1153` is a compile-time constant, so the whole body is dead-code
+    /// eliminated and the Cancun build is byte-identical to before, with no gas change.
+    ///
+    /// Under the storage backend the slots would otherwise PERSIST FOREVER, which is not merely
+    /// stale data but an exploitable griefing vector: `setAndCheckSwapDirection` reverts with
+    /// INVALID_SWAP_DIRECTION when a pool is quoted in the opposite direction to a recorded one.
+    /// A single cheap call recording a direction would permanently break quoting that pool the
+    /// other way, for everyone. Accumulations and swap lists would also grow without bound,
+    /// silently corrupting every later quote.
+    ///
+    /// DELIBERATE SEMANTIC DIVERGENCE: this sweeps per quote CALL, whereas EIP-1153 clears per
+    /// TRANSACTION. Two quoter calls in one transaction therefore share context on Cancun but
+    /// not on legacy. Legacy is the stricter/safer direction (more isolation) and the documented
+    /// contract — shared context across a single path — is preserved on both.
+    function clearContext() internal {
+        if (TransientSlot.IS_EIP1153) return;
+
+        uint256 count = TransientSlot.getUint(TOUCHED_COUNT);
+        for (uint256 i = 0; i < count; ++i) {
+            uint256 slot = TransientSlot.getUint(TOUCHED_BASE + i);
+            TransientSlot.setUint(slot, 0);
+            TransientSlot.setUint(TOUCHED_BASE + i, 0);
+        }
+        TransientSlot.setUint(TOUCHED_COUNT, 0);
+    }
+
+    /// @dev Register a written slot for the end-of-quote sweep. No-op (and fully elided) under
+    /// EIP-1153. A slot may be registered more than once; zeroing twice is idempotent.
+    function _markTouched(uint256 slot) private {
+        if (TransientSlot.IS_EIP1153) return;
+
+        uint256 count = TransientSlot.getUint(TOUCHED_COUNT);
+        TransientSlot.setUint(TOUCHED_BASE + count, slot);
+        TransientSlot.setUint(TOUCHED_COUNT, count + 1);
+    }
 
     /// @dev Record and check the swap direction of the transaction.
     /// @dev Only support one direction for same non-infinity pool in one transaction.
@@ -54,9 +101,8 @@ library MixedQuoterRecorder {
         uint256 currentDirection = getSwapDirection(poolHash);
         if (currentDirection == uint256(SwapDirection.NONE)) {
             uint256 directionSlot = uint256(keccak256(abi.encode(poolHash, SWAP_DIRECTION)));
-            assembly ("memory-safe") {
-                tstore(directionSlot, swapDirection)
-            }
+            TransientSlot.setUint(directionSlot, swapDirection);
+            _markTouched(directionSlot);
         } else if (currentDirection != swapDirection) {
             revert INVALID_SWAP_DIRECTION();
         }
@@ -67,9 +113,7 @@ library MixedQuoterRecorder {
     /// @return swapDirection The direction of the swap.
     function getSwapDirection(bytes32 poolHash) internal view returns (uint256 swapDirection) {
         uint256 directionSlot = uint256(keccak256(abi.encode(poolHash, SWAP_DIRECTION)));
-        assembly ("memory-safe") {
-            swapDirection := tload(directionSlot)
-        }
+        swapDirection = TransientSlot.getUint(directionSlot);
     }
 
     /// @dev Record the swap token accumulation of the pool.
@@ -91,10 +135,10 @@ library MixedQuoterRecorder {
             amount0 = amountOut;
             amount1 = amountIn;
         }
-        assembly ("memory-safe") {
-            tstore(token0Slot, amount0)
-            tstore(token1Slot, amount1)
-        }
+        TransientSlot.setUint(token0Slot, amount0);
+        TransientSlot.setUint(token1Slot, amount1);
+        _markTouched(token0Slot);
+        _markTouched(token1Slot);
     }
 
     // @dev Get the swap token accumulation of the pool.
@@ -109,12 +153,8 @@ library MixedQuoterRecorder {
     {
         uint256 token0Slot = uint256(keccak256(abi.encode(poolHash, SWAP_TOKEN0_ACCUMULATION)));
         uint256 token1Slot = uint256(keccak256(abi.encode(poolHash, SWAP_TOKEN1_ACCUMULATION)));
-        uint256 amount0;
-        uint256 amount1;
-        assembly ("memory-safe") {
-            amount0 := tload(token0Slot)
-            amount1 := tload(token1Slot)
-        }
+        uint256 amount0 = TransientSlot.getUint(token0Slot);
+        uint256 amount1 = TransientSlot.getUint(token1Slot);
         if (isZeroForOne) {
             return (amount0, amount1);
         } else {
@@ -127,15 +167,21 @@ library MixedQuoterRecorder {
     /// @param swapListBytes The swap history list bytes.
     function setInfiPoolSwapList(bytes32 poolHash, bytes memory swapListBytes) internal {
         uint256 swapListSlot = uint256(keccak256(abi.encode(poolHash, SWAP_INFI_LIST)));
-        assembly ("memory-safe") {
-            // save the length of the bytes
-            tstore(swapListSlot, mload(swapListBytes))
+        uint256 length = swapListBytes.length;
 
-            // save data in next slot
-            let dataSlot := add(swapListSlot, 1)
-            for { let i := 0 } lt(i, mload(swapListBytes)) { i := add(i, 32) } {
-                tstore(add(dataSlot, div(i, 32)), mload(add(swapListBytes, add(0x20, i))))
+        // save the length of the bytes
+        TransientSlot.setUint(swapListSlot, length);
+        _markTouched(swapListSlot);
+
+        // save data in next slot
+        uint256 dataSlot = swapListSlot + 1;
+        for (uint256 i = 0; i < length; i += 32) {
+            uint256 word;
+            assembly ("memory-safe") {
+                word := mload(add(swapListBytes, add(0x20, i)))
             }
+            TransientSlot.setUint(dataSlot + i / 32, word);
+            _markTouched(dataSlot + i / 32);
         }
     }
 
@@ -144,16 +190,17 @@ library MixedQuoterRecorder {
     /// @return swapListBytes The swap history list bytes.
     function getInfiPoolSwapList(bytes32 poolHash) internal view returns (bytes memory swapListBytes) {
         uint256 swapListSlot = uint256(keccak256(abi.encode(poolHash, SWAP_INFI_LIST)));
-        assembly ("memory-safe") {
-            // get the length of the bytes
-            let length := tload(swapListSlot)
-            swapListBytes := mload(0x40)
-            mstore(swapListBytes, length)
-            let dataSlot := add(swapListSlot, 1)
-            for { let i := 0 } lt(i, length) { i := add(i, 32) } {
-                mstore(add(swapListBytes, add(0x20, i)), tload(add(dataSlot, div(i, 32))))
+        uint256 length = TransientSlot.getUint(swapListSlot);
+
+        /// @dev allocates ceil(length/32)*32 bytes, so the full-word writes below stay in bounds
+        swapListBytes = new bytes(length);
+
+        uint256 dataSlot = swapListSlot + 1;
+        for (uint256 i = 0; i < length; i += 32) {
+            uint256 word = TransientSlot.getUint(dataSlot + i / 32);
+            assembly ("memory-safe") {
+                mstore(add(swapListBytes, add(0x20, i)), word)
             }
-            mstore(0x40, add(swapListBytes, add(0x20, length)))
         }
     }
 
