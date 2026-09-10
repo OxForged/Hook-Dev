@@ -1,0 +1,50 @@
+# ---- dependencies ----
+node_modules/
+.pnp
+.pnp.js
+
+# ---- secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- foundry build output ----
+foundry-out/
+foundry-out-legacy/
+cache/
+out/
+broadcast/
+.forge-snapshots/
+
+# ---- js/ts build output ----
+dist/
+build/
+*.tsbuildinfo
+.vite/
+coverage/
+
+# ---- pristine upstream reference clones ----
+# Re-creatable with:
+#   git clone https://github.com/pancakeswap/infinity-core           upstream/infinity-core
+#   git clone https://github.com/pancakeswap/infinity-periphery      upstream/infinity-periphery
+#   git clone https://github.com/pancakeswap/infinity-universal-router upstream/infinity-universal-router
+# ~158MB, never edited, kept only for diffing our forks against upstream.
+upstream/
+
+# ---- forked contract packages ----
+# packages/core, packages/periphery and packages/router are FORKS with their own
+# .git and an `upstream` remote pointing at PancakeSwap, so we can rebase their
+# security patches. Committing them from here would create gitlinks to commits
+# that exist on no remote, which breaks every fresh clone.
+# They are versioned in their own repositories; add them back as real submodules
+# once each fork has been pushed to a remote of its own.
+packages/core/
+packages/periphery/
+packages/router/
+
+# ---- editor / os ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# scratch output from `latch devnet` when run from this directory
+.latch/
+
+# local foundry output for the shipped devnet project
+assets/devnet/foundry-out/
+assets/devnet/cache/
+assets/devnet/broadcast/
+assets/devnet/deployments/

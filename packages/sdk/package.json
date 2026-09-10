@@ -1,0 +1,63 @@
+{
+  "name": "@latchprotocol/sdk",
+  "version": "0.1.0",
+  "description": "MIT-licensed TypeScript SDK for LatchProtocol: pool keys, hook permission bitmaps, typed events and an indexer data model.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./events": {
+      "types": "./dist/events/index.d.ts",
+      "import": "./dist/events/index.js",
+      "default": "./dist/events/index.js"
+    },
+    "./indexer": {
+      "types": "./dist/indexer/index.d.ts",
+      "import": "./dist/indexer/index.js",
+      "default": "./dist/indexer/index.js"
+    },
+    "./schema.graphql": "./schema.graphql",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "schema.graphql",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "generate": "node scripts/generate-events.mjs",
+    "build": "npm run generate && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "keywords": [
+    "latchprotocol",
+    "amm",
+    "hooks",
+    "defi",
+    "ethereum",
+    "sdk"
+  ],
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.7.0"
+  }
+}

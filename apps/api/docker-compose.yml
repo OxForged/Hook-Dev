@@ -1,0 +1,73 @@
+# Local dependencies for the Latch Protocol API.
+#
+#   docker compose up -d
+#   npm run db:push && npm run db:seed && npm run dev
+#
+# Host ports are overridable, because 5432 and 6379 are frequently already
+# claimed by another project on a developer machine:
+#
+#   POSTGRES_PORT=5442 REDIS_PORT=6389 docker compose up -d
+#
+# Set the same ports in DATABASE_URL / REDIS_URL in your .env.
+#
+# Only Postgres and Redis run here; the API itself runs on the host so it
+# reloads on edit. Both services expose healthchecks so `depends_on` in any
+# larger compose file can wait for them properly.
+
+name: latch-api
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: latch-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: latch
+      POSTGRES_PASSWORD: latch
+      POSTGRES_DB: latch
+      # Faster and deterministic collation for a dev database.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - latch-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U latch -d latch"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    command:
+      # A dev box does not need durability, and fsync dominates the runtime of
+      # an ingestion backfill. Do NOT copy these flags to a real deployment.
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - max_connections=200
+
+  redis:
+    image: redis:7-alpine
+    container_name: latch-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - latch-redis-data:/data
+    # appendonly keeps queued jobs across a restart, which matters because
+    # BullMQ's repeatable-job schedule lives in Redis.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  latch-postgres-data:
+  latch-redis-data:

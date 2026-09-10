@@ -1,0 +1,53 @@
+{
+  "name": "create-latch-hook",
+  "version": "0.1.0",
+  "description": "Scaffold a Latch Protocol hook project and run a one-command local devnet. Latch keeps hook permissions in the pool key, not the hook address - no CREATE2 salt mining.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "create-latch-hook": "./dist/bin/create-latch-hook.js",
+    "latch": "./dist/bin/latch.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "keywords": [
+    "latchprotocol",
+    "amm",
+    "hooks",
+    "foundry",
+    "scaffold",
+    "devnet",
+    "defi"
+  ],
+  "dependencies": {
+    "@latchprotocol/sdk": "file:../sdk"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
