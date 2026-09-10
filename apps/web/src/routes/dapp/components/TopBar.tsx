@@ -58,11 +58,11 @@ export function TopBar({
       <div className="dapp-header__right">
         <p
           className="dapp-sample-chip"
-          title="Mixed data. KPIs, vault holdings, recent swaps, governance, the hook registry and the protocol activity feed read live from Ethereum Sepolia; charts, portfolio and analytics are still placeholders."
+          title="Mixed data. The dashboard, hook explorer, analytics, portfolio, registration and the live pool price all read from the deployed Ethereum Sepolia contracts. Two things are still sample data: the Pool Detail header strip and the Settings screen."
         >
           <span aria-hidden="true">PARTLY LIVE</span>
           <span className="dapp-sr">
-            Partly live. KPIs, vault holdings, recent swaps, governance, the hook registry and the protocol activity feed are read from the deployed Sepolia contracts. Charts, portfolio and analytics are still placeholders.
+            Partly live. The dashboard, hook explorer, analytics, portfolio, hook registration and the live pool price are read from the deployed Sepolia contracts. Two things are still sample data: the Pool Detail header strip and the Settings screen.
           </span>
         </p>
 

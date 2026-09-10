@@ -533,39 +533,158 @@ contract SecurityReviewStockPairTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
-      FINDING 7 - a single publisher key is a full price-band bypass.
+      FINDING 7 (FIXED) - the publisher key is no longer a band bypass.
+
+      Every other fast key in this design can only make the market MORE
+      restricted: the guardian halts and cannot resume; the issuer can close
+      days but cannot touch the oracle or the widths. The publisher key was the
+      exception - it LOOSENS - and because the band is defined entirely as a
+      ratio to the reference, an unbounded publisher could move the band
+      anywhere and print any price.
+
+      `maxPublisherDeviationBps` now bounds it. These tests are the regression
+      guard: each one describes a way back into the bypass and asserts it is
+      closed. If any of them starts passing for the wrong reason, the bound has
+      been weakened.
     //////////////////////////////////////////////////////////////*/
 
-    /// Every other fast key in this design can only make the market MORE restricted: the guardian
-    /// halts and cannot resume; the issuer can close days but cannot touch the oracle or the band.
-    /// The `ManualPriceBandOracle` publisher key is the exception, and it is explicitly NOT
-    /// timelocked. It can move the reference price to any representable value in one transaction,
-    /// with no rate limit and no bound relative to the previous reference - and because the band is
-    /// defined entirely as a ratio to that reference, moving the reference MOVES THE BAND.
-    ///
-    /// The contract's own note frames the publisher as "a key that can stop the market". It is
-    /// also a key that can let the market print any price at all.
-    function test_FINDING7_compromisedPublisherKeyMovesTheBandAndPrintsAnyPrice() public {
+    /// The original exploit, now refused. The publisher tries to double the reference - 2x in
+    /// sqrt space is 4x in price, i.e. 30000 bps - and the bound rejects it. Critically, the
+    /// swap that the move was meant to unlock STILL reverts afterwards.
+    function test_FIX7_publisherCannotJumpTheReferenceOutOfBounds() public {
         address publisher = address(0xB0B);
         priceOracle.setPublisher(publisher, true);
 
-        // Baseline: a large price-increasing swap is refused - it would print outside the +5% band.
+        // Baseline: this swap prints outside the +5% band and is refused.
         vm.expectRevert();
         _swapAs(INVESTOR, false, -200 ether);
 
-        // One transaction from the publisher key. The reference (and therefore the band) moves 4x.
         vm.prank(publisher);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ManualPriceBandOracle.DeviationTooLarge.selector,
+                poolId,
+                SQRT_RATIO_1_1,
+                uint160(uint256(SQRT_RATIO_1_1) * 2),
+                uint256(30_000), // 2x sqrt == 4x price == +300%
+                uint256(1_000) // the default bound, 10% in price
+            )
+        );
         priceOracle.setReferencePrice(poolId, uint160(uint256(SQRT_RATIO_1_1) * 2));
 
-        // The identical swap is now inside the band and executes.
+        // The band did not move, so the swap is still refused.
+        vm.expectRevert();
         _swapAs(INVESTOR, false, -200 ether);
 
         (uint160 printed,,,) = poolManager.getSlot0(poolId);
-        assertGt(
-            uint256(printed),
-            uint256(SQRT_RATIO_1_1) * 1025 / 1000,
-            "pool printed a price far outside the band it was configured with"
+        assertEq(uint256(printed), uint256(SQRT_RATIO_1_1), "the pool price never moved");
+    }
+
+    /// The subtle way back in, and the reason `anchor` exists as a separate field.
+    ///
+    /// `clearReference` sets the published price to zero. If the bound were measured against the
+    /// PUBLISHED price, the pool would then look never-published and the next write would be an
+    /// unbounded "first" publication - so clear-then-republish would restore the whole bypass in
+    /// two transactions instead of one. The anchor survives the clearing, so it does not.
+    function test_FIX7_clearingThenRepublishingIsStillBounded() public {
+        address publisher = address(0xB0B);
+        priceOracle.setPublisher(publisher, true);
+
+        vm.prank(publisher);
+        priceOracle.clearReference(poolId);
+
+        (uint160 published,) = priceOracle.referencePrice(poolId);
+        assertEq(published, 0, "the price really was cleared");
+        (uint160 anchor,,) = priceOracle.publisherBoundsFor(poolId);
+        assertEq(anchor, SQRT_RATIO_1_1, "but the anchor survived it");
+
+        vm.prank(publisher);
+        vm.expectRevert();
+        priceOracle.setReferencePrice(poolId, uint160(uint256(SQRT_RATIO_1_1) * 2));
+    }
+
+    /// The bound restricts publishers, not the owner - which on a live chain is a timelock. A
+    /// genuine re-anchor (a corporate action, a redenomination) still has a route, it just has to
+    /// go through the seat that has a public notice period.
+    function test_FIX7_ownerCanStillReanchorFreely() public {
+        priceOracle.setReferencePrice(poolId, uint160(uint256(SQRT_RATIO_1_1) * 2));
+        (uint160 published,) = priceOracle.referencePrice(poolId);
+        assertEq(uint256(published), uint256(SQRT_RATIO_1_1) * 2, "owner is exempt from the bound");
+    }
+
+    /// The bound must not stop a publisher doing their actual job. A 4% move in sqrt space is
+    /// ~8.2% in price, inside the 10% default, and is accepted.
+    function test_FIX7_publisherCanStillTrackTheMarketWithinTheBound() public {
+        address publisher = address(0xB0B);
+        priceOracle.setPublisher(publisher, true);
+
+        uint160 nudged = uint160(uint256(SQRT_RATIO_1_1) * 104 / 100);
+        vm.prank(publisher);
+        priceOracle.setReferencePrice(poolId, nudged);
+
+        (uint160 published,) = priceOracle.referencePrice(poolId);
+        assertEq(published, nudged, "an in-bound move is allowed");
+
+        // And the anchor moved with it, so the next move is measured from here.
+        (uint160 anchor,,) = priceOracle.publisherBoundsFor(poolId);
+        assertEq(anchor, nudged, "the anchor tracks the last published price");
+    }
+
+    /// The honest limitation, asserted rather than hand-waved: the bound is per-update, so with
+    /// no interval configured a compromised key can still WALK the reference by repeating
+    /// in-bound moves. This is why `minPublisherInterval` exists and why a live deployment must
+    /// set it. Recorded as a test so nobody mistakes the bound for a hard ceiling.
+    function test_FIX7_boundIsPerUpdateSoAWalkIsStillPossibleWithoutAnInterval() public {
+        address publisher = address(0xB0B);
+        priceOracle.setPublisher(publisher, true);
+
+        uint256 price = uint256(SQRT_RATIO_1_1);
+        for (uint256 i = 0; i < 10; ++i) {
+            price = price * 104 / 100;
+            vm.prank(publisher);
+            priceOracle.setReferencePrice(poolId, uint160(price));
+        }
+
+        (uint160 walked,) = priceOracle.referencePrice(poolId);
+        assertGt(uint256(walked), uint256(SQRT_RATIO_1_1) * 14 / 10, "ten in-bound steps compound");
+    }
+
+    /// ...and with an interval configured, that walk is rate limited. Clearing is deliberately
+    /// NOT rate limited: stopping the market must never have to wait.
+    function test_FIX7_minIntervalRateLimitsTheWalkButNeverTheHalt() public {
+        address publisher = address(0xB0B);
+        priceOracle.setPublisher(publisher, true);
+        priceOracle.setPublisherBounds(1_000, 1 hours);
+
+        // `setUp` published the reference as the owner, which stamped `anchorAt`. The interval is
+        // measured from there, so step clear of it before the publisher's first move - otherwise
+        // this test would be asserting the rate limit against the fixture rather than the walk.
+        vm.warp(block.timestamp + 1 hours);
+
+        uint160 first = uint160(uint256(SQRT_RATIO_1_1) * 104 / 100);
+        vm.prank(publisher);
+        priceOracle.setReferencePrice(poolId, first);
+
+        // A second in-bound move immediately afterwards is refused on time, not on size. The
+        // deadline is read back from the contract rather than recomputed here, so the assertion
+        // cannot drift from the implementation.
+        (, uint64 earliest,) = priceOracle.publisherBoundsFor(poolId);
+        assertGt(earliest, block.timestamp, "the rate limit is actually in force");
+
+        vm.prank(publisher);
+        vm.expectRevert(
+            abi.encodeWithSelector(ManualPriceBandOracle.UpdateTooSoon.selector, poolId, earliest)
         );
+        priceOracle.setReferencePrice(poolId, uint160(uint256(first) * 104 / 100));
+
+        // Halting is never rate limited.
+        vm.prank(publisher);
+        priceOracle.clearReference(poolId);
+
+        // After the interval, publishing resumes.
+        vm.warp(uint256(earliest));
+        vm.prank(publisher);
+        priceOracle.setReferencePrice(poolId, uint160(uint256(first) * 104 / 100));
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -1,0 +1,556 @@
+/* ============================================================================
+   Latch Protocol — /verify/:hookAddress
+
+   Public chrome (SiteHeader / SiteFooter / .page / .eyebrow / .h1) is reused
+   from landing.module.css; only what this page genuinely adds lives here. It is
+   a document, not a dashboard, so it borrows the legal pages' measure and rhythm
+   rather than the dapp's card grid.
+
+   TONE IS A VARIABLE, NEVER A LITERAL. Every panel reads --tone / --tone-bg /
+   --tone-border, and exactly one place — the .tone-* classes — decides what
+   those are. A component cannot pick "red" on its own, so a warning cannot be
+   quietly downgraded to a neutral card by a later edit.
+
+   No literal colours. Every value is a token from src/styles/tokens.css.
+   ============================================================================ */
+
+.wrap {
+  box-sizing: content-box;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 72px var(--gutter-landing) 24px;
+}
+
+/* --------------------------------------------------------------------- tone */
+
+.tone-ok {
+  --tone: var(--success);
+  --tone-bg: var(--dapp-badge-ok-bg);
+  --tone-border: var(--dapp-badge-ok-border);
+}
+
+.tone-info {
+  --tone: var(--signal-blue);
+  --tone-bg: var(--dapp-badge-info-bg);
+  --tone-border: var(--dapp-badge-info-border);
+}
+
+.tone-mute {
+  --tone: var(--label-ink);
+  --tone-bg: var(--dapp-badge-mute-bg);
+  --tone-border: var(--dapp-badge-mute-border);
+}
+
+.tone-warn {
+  --tone: var(--warning);
+  --tone-bg: var(--dapp-badge-warn-bg);
+  --tone-border: var(--dapp-badge-warn-border);
+}
+
+.tone-danger {
+  --tone: var(--error);
+  --tone-bg: var(--dapp-badge-danger-bg);
+  --tone-border: var(--dapp-badge-danger-border);
+}
+
+/* ------------------------------------------------------------------ verdict
+   The one-line answer, and the first thing on the page in every state. The left
+   rule carries the tone so the verdict is readable before a word is read. */
+
+.verdict {
+  margin: 24px 0 0;
+  padding: 26px 26px 24px;
+  border: 1px solid var(--tone-border, var(--hairline));
+  border-left: 3px solid var(--tone, var(--label-ink));
+  border-radius: var(--r-sm);
+  background: var(--panel);
+}
+
+/* NOT REGISTERED is deliberately built from different parts, not a re-tinted
+   verified panel: dashed, unfilled, no badge grid anywhere near it. A reader
+   scrolling past at speed must never mistake it for a record. */
+.verdictNone {
+  border: 1px dashed var(--hairline);
+  border-left: 3px dashed var(--label-ink);
+  background: transparent;
+}
+
+.verdictKicker {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tone, var(--label-ink));
+}
+
+.verdictTitle {
+  margin: 12px 0 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(24px, 3.2vw, 34px);
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  color: var(--ink-bright);
+  text-wrap: balance;
+}
+
+.verdictBody {
+  margin: 16px 0 0;
+  font-size: 15px;
+  line-height: 1.68;
+  color: var(--muted-ink-2);
+  text-wrap: pretty;
+}
+
+.verdictBody strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.errDetail {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--r-micro);
+  background: var(--code-ground);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--mono-data-dim);
+  overflow-wrap: anywhere;
+}
+
+.pulse {
+  animation: verifyPulse 1.4s var(--ease) infinite;
+}
+
+@keyframes verifyPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}
+
+.retry {
+  margin: 0;
+  padding: 9px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-btn);
+  background: var(--panel-alt);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.retry:hover,
+.retry:focus-visible {
+  border-color: var(--latch-blue);
+  color: var(--sky-ink);
+}
+
+/* --------------------------------------------------------------- address row
+   The full 42 characters, never shortened. This is the identity the whole page
+   is about; a truncated one cannot be checked against anything. */
+
+.addrRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 20px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--code-ground);
+}
+
+.addrLabel {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint-ink);
+}
+
+.addrValue {
+  flex: 1 1 260px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--mono-data-ink);
+  overflow-wrap: anywhere;
+}
+
+.addrActions {
+  display: flex;
+  gap: 8px;
+}
+
+.addrBtn {
+  padding: 6px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-chip);
+  background: var(--panel-alt);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--mono-data-dim);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.addrBtn:hover,
+.addrBtn:focus-visible {
+  border-color: var(--latch-blue);
+  color: var(--sky-ink);
+}
+
+/* ------------------------------------------------------------------- alerts */
+
+.alert {
+  display: flex;
+  gap: 14px;
+  margin: 18px 0 0;
+  padding: 16px 18px;
+  border: 1px solid var(--tone-border, var(--hairline));
+  border-radius: var(--r-sm);
+  background: var(--tone-bg, var(--panel));
+}
+
+.alertDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: var(--tone, var(--label-ink));
+}
+
+.alertBody {
+  min-width: 0;
+}
+
+.alertTitle {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--tone, var(--label-ink));
+}
+
+.alertText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+.alertText strong {
+  color: var(--ink-bright);
+  font-weight: 500;
+}
+
+.alertText code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--sky-ink);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ badges */
+
+.badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 18px 0 0;
+}
+
+.badge {
+  padding: 12px 14px;
+  border: 1px solid var(--tone-border, var(--hairline));
+  border-radius: var(--r-sm);
+  background: var(--tone-bg, var(--panel));
+}
+
+.badgeLabel {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint-ink);
+}
+
+.badgeValue {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  color: var(--tone, var(--ink));
+}
+
+/* ------------------------------------------------------------------ panels */
+
+.panel {
+  margin: 22px 0 0;
+  padding: 22px 22px 20px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+}
+
+.panelDanger {
+  border-color: var(--dapp-badge-danger-border);
+}
+
+.panelKicker {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+}
+
+.panelKicker + .tags,
+.panelKicker:not(:first-child) {
+  margin-top: 20px;
+}
+
+.panelTitle {
+  margin: 10px 0 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.2;
+  color: var(--ink-bright);
+}
+
+.panelNote {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.66;
+  color: var(--muted-ink-2);
+  text-wrap: pretty;
+}
+
+.panelNote strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.panelNote code,
+.verdictBody code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--sky-ink);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------- claims
+   The plain-language capability sentences. Always visible, never behind a
+   disclosure — this is the line a reader needs before they route funds. */
+
+.claims {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.claims li {
+  position: relative;
+  padding: 9px 0 9px 22px;
+  border-bottom: 1px solid var(--hairline-soft);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.claims li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.claims li::before {
+  content: '';
+  position: absolute;
+  top: 17px;
+  left: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--latch-blue);
+}
+
+.panelDanger .claims li::before {
+  background: var(--error);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.tag {
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-chip);
+  background: var(--panel-alt);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--mono-data-dim);
+}
+
+/* -------------------------------------------------------- submitter strings */
+
+.meta {
+  margin: 18px 0 0;
+}
+
+.metaRow {
+  display: grid;
+  grid-template-columns: 118px 1fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+
+.metaRow:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.metaRow dt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint-ink);
+  padding-top: 3px;
+}
+
+.metaRow dd {
+  margin: 0;
+  min-width: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* Quoted, because it is someone's assertion and not the page's. */
+.quoted {
+  quotes: '“' '”';
+  color: var(--ink);
+}
+
+.absent {
+  color: var(--faint-ink);
+  font-style: italic;
+}
+
+.raw {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  font-style: normal;
+  color: var(--mono-data-dim);
+  overflow-wrap: anywhere;
+}
+
+/* -------------------------------------------------------------------- misc */
+
+.plainList {
+  margin: 14px 0 0;
+  padding-left: 20px;
+  font-size: 14.5px;
+  line-height: 1.68;
+  color: var(--muted-ink-2);
+}
+
+.plainList li {
+  margin-bottom: 8px;
+}
+
+.plainList li:last-child {
+  margin-bottom: 0;
+}
+
+.plainList li::marker {
+  color: var(--label-ink);
+}
+
+.inlineLink {
+  color: var(--signal-blue);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  overflow-wrap: anywhere;
+  transition: border-color 0.2s;
+}
+
+.inlineLink:hover,
+.inlineLink:focus-visible {
+  border-bottom-color: var(--signal-blue);
+}
+
+.provenance {
+  margin: 40px 0 0;
+  padding-top: 22px;
+  border-top: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--faint-ink);
+}
+
+.provenance a {
+  color: var(--mono-data-dim);
+  text-decoration: none;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.provenance a:hover,
+.provenance a:focus-visible {
+  color: var(--sky-ink);
+}
+
+/* -------------------------------------------------------------- responsive */
+
+@media (max-width: 720px) {
+  .wrap {
+    padding-top: 44px;
+  }
+
+  .verdict {
+    padding: 20px 18px 18px;
+  }
+
+  .panel {
+    padding: 18px 16px 16px;
+  }
+
+  .metaRow {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .addrActions {
+    width: 100%;
+  }
+}

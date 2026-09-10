@@ -563,40 +563,107 @@ export async function readRegisteredHooks(
     ),
   )) as Address[]
 
-  return Promise.all(
-    addrs.map(async (a) => {
-      const r = (await c.readContract({
-        address: d.registry, abi, functionName: 'getHook', args: [a],
-      })) as any
-      const p = Number(r.permissions)
-      const [risk, cut, block, trap, decoded] = (await Promise.all([
-        c.readContract({ address: d.registry, abi, functionName: 'classify', args: [p] }),
-        c.readContract({ address: d.registry, abi, functionName: 'takesSwapCut', args: [p] }),
-        c.readContract({ address: d.registry, abi, functionName: 'canBlockSwaps', args: [p] }),
-        c.readContract({ address: d.registry, abi, functionName: 'canTrapLiquidity', args: [p] }),
-        c.readContract({ address: d.registry, abi, functionName: 'decodePermissions', args: [p] }),
-      ])) as [number, boolean, boolean, boolean, Record<string, boolean>]
+  return Promise.all(addrs.map((a) => hydrateHook(c, d.registry, a)))
+}
 
-      return {
-        address: a,
-        name: r.metadata?.name ?? '',
-        description: r.metadata?.description ?? '',
-        sourceURI: r.metadata?.sourceURI ?? '',
-        auditURI: r.metadata?.auditURI ?? '',
-        submitter: r.submitter as Address,
-        permissions: p,
-        permissionsReadable: Boolean(r.permissionsReadable),
-        permissionsValid: Boolean(r.permissionsValid),
-        risk: Number(risk) as RiskClass,
-        takesSwapCut: cut,
-        canBlockSwaps: block,
-        canTrapLiquidity: trap,
-        verification: Number(r.verification) as VerificationLevel,
-        listing: Number(r.listing) as ListingState,
-        callbacks: CALLBACK_FIELDS.filter((f) => decoded?.[f]),
-      }
-    }),
-  )
+/**
+ * Turn one registry address into a RegisteredHook.
+ *
+ * Extracted so the list read and the single-address read below cannot drift: two
+ * code paths hydrating the same record is how one screen ends up calling a hook
+ * "Passive" while another calls it "Value-extracting".
+ *
+ * Throws if the hook is not registered — `getHook` reverts rather than returning a
+ * zeroed struct, deliberately. Call `readRegisteredHook` if you do not already know
+ * the address is listed.
+ */
+async function hydrateHook(
+  c: PublicClient,
+  registry: Address,
+  a: Address,
+): Promise<RegisteredHook> {
+  const abi = registryAbi
+  const r = (await c.readContract({
+    address: registry, abi, functionName: 'getHook', args: [a],
+  })) as any
+  const p = Number(r.permissions)
+  const [risk, cut, block, trap, decoded] = (await Promise.all([
+    c.readContract({ address: registry, abi, functionName: 'classify', args: [p] }),
+    c.readContract({ address: registry, abi, functionName: 'takesSwapCut', args: [p] }),
+    c.readContract({ address: registry, abi, functionName: 'canBlockSwaps', args: [p] }),
+    c.readContract({ address: registry, abi, functionName: 'canTrapLiquidity', args: [p] }),
+    c.readContract({ address: registry, abi, functionName: 'decodePermissions', args: [p] }),
+  ])) as [number, boolean, boolean, boolean, Record<string, boolean>]
+
+  return {
+    address: a,
+    name: r.metadata?.name ?? '',
+    description: r.metadata?.description ?? '',
+    sourceURI: r.metadata?.sourceURI ?? '',
+    auditURI: r.metadata?.auditURI ?? '',
+    submitter: r.submitter as Address,
+    permissions: p,
+    permissionsReadable: Boolean(r.permissionsReadable),
+    permissionsValid: Boolean(r.permissionsValid),
+    risk: Number(risk) as RiskClass,
+    takesSwapCut: cut,
+    canBlockSwaps: block,
+    canTrapLiquidity: trap,
+    verification: Number(r.verification) as VerificationLevel,
+    listing: Number(r.listing) as ListingState,
+    callbacks: CALLBACK_FIELDS.filter((f) => decoded?.[f]),
+  }
+}
+
+/**
+ * One hook, looked up by address.
+ *
+ * `found: false` is a RESULT, not an absence of one. The caller must render it as an
+ * explicit "not in the registry" answer — never as a hook record with empty fields.
+ * The registry itself takes this seriously enough that `getHook` reverts instead of
+ * returning a zeroed struct, because a zeroed struct reads as "Unverified, Active,
+ * no permissions", which is the most reassuring thing you could possibly say about a
+ * contract nobody has ever looked at.
+ *
+ * `hasCode` separates the two ways an address can be absent — a contract that exists
+ * but was never listed, versus an address with no code at all (a typo, an EOA, or a
+ * contract on some other chain). Neither is a hook; saying which one it is saves the
+ * reader from guessing.
+ *
+ * A chain that cannot be reached THROWS. It must never be reported as "not found":
+ * an unreachable RPC and an unregistered hook are opposite answers.
+ */
+export type HookLookup =
+  | { found: true; hook: RegisteredHook; checkedAtBlock: bigint }
+  | { found: false; address: Address; hasCode: boolean; checkedAtBlock: bigint }
+
+export async function readRegisteredHook(
+  address: Address,
+  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+): Promise<HookLookup> {
+  const d = DEPLOYMENTS[chainId]
+  const c = client(chainId)
+
+  // Asked first, and on its own. `isRegistered` is the registry's own answer to
+  // exactly this question, and it is the gate the rest of the read sits behind.
+  const [registered, checkedAtBlock] = await Promise.all([
+    c.readContract({
+      address: d.registry, abi: registryAbi, functionName: 'isRegistered', args: [address],
+    }) as Promise<boolean>,
+    c.getBlockNumber(),
+  ])
+
+  if (!registered) {
+    const code = await c.getCode({ address })
+    return {
+      found: false,
+      address,
+      hasCode: Boolean(code && code !== '0x'),
+      checkedAtBlock,
+    }
+  }
+
+  return { found: true, hook: await hydrateHook(c, d.registry, address), checkedAtBlock }
 }
 
 /* ---------------------------------------------------------------------------

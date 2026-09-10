@@ -11,10 +11,14 @@
 
 import type { ChainKey } from '../../../data/chains.ts'
 
-/** README § State management: `screen`. Mirrors the seven nested routes. */
+/** README § State management: `screen`. Mirrors the nested routes.
+    `marketplace` was `explorer`: the product name is the Latch Marketplace, and
+    the thing listed there is a Latch. "Hook" is kept for CONTRACT-level names
+    only (LatchHookRegistry, getHooksRegistrationBitmap, IHooks) - those are the
+    on-chain API and renaming them would be a lie about what the chain exposes. */
 export type Screen =
   | 'dashboard'
-  | 'explorer'
+  | 'marketplace'
   | 'deploy'
   | 'pool'
   | 'portfolio'

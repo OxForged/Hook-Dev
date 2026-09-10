@@ -59,10 +59,32 @@ import {IPriceBandOracle} from "../interfaces/IPriceBandOracle.sol";
 ///    that can stop the market. It cannot start one that the calendar or a halt has stopped, and
 ///    it can never block an LP exit.
 ///
+///  * A PUBLISHER KEY ALSO MOVES THE BAND, and that is the more dangerous power of the two.
+///    `MarketHoursModule` defines the band as a ratio to whatever this contract reports, so
+///    whoever moves the reference moves the band with it. Unbounded, that makes the publisher
+///    role a complete bypass of the price band rather than a feed into it: set the reference
+///    high enough and the swap the band refused a block ago is suddenly "in band".
+///
+///    Every other fast key in this design only ever RESTRICTS - a guardian may halt but not
+///    resume, an issuer may close a day but cannot touch the widths. The publisher is the one
+///    fast key that LOOSENS, so it is the one that needs a bound.
+///
+///    `maxPublisherDeviationBps` is that bound: a publisher may move a pool's reference by at
+///    most that much, in PRICE terms, measured against `anchor` - the last non-zero price, which
+///    survives `clearReference` precisely so that clearing is not a way around it. Beyond the
+///    bound the move belongs to the owner, which on a live chain is a timelock.
+///
+///    Be clear about what this does and does not buy. It does NOT make a compromised publisher
+///    harmless: a key that may move 10% per update, with no interval configured, can still walk
+///    the reference anywhere over enough transactions. What it buys is TIME and VISIBILITY - the
+///    walk is bounded per step, every step emits `ReferencePriceSet`, and the owner can revoke
+///    the key or re-anchor while it is happening. Set `minPublisherInterval` on a live deployment
+///    to make the walk slow enough to actually respond to; the default of 0 does not.
+///
 ///  * Ownership is `Ownable2Step`, and on a live chain the owner should be a timelock or multisig.
 ///    Publishers are deliberately NOT timelocked - a reference price that arrives six hours late
-///    is not a reference price - which is why the publisher role can only write prices and cannot
-///    appoint anyone.
+///    is not a reference price - which is why the publisher role can only write prices, cannot
+///    appoint anyone, and cannot move a price further than the owner has allowed.
 contract ManualPriceBandOracle is IPriceBandOracle, Ownable2Step {
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -82,6 +104,16 @@ contract ManualPriceBandOracle is IPriceBandOracle, Ownable2Step {
     /// ever trade at, which is the one sanity check this contract is in a position to make.
     error PriceOutOfRange(uint160 sqrtPriceX96);
 
+    /// @notice A publisher tried to move the reference further than `maxPublisherDeviationBps`.
+    /// @dev The owner is exempt. Deviation is measured in PRICE terms against `anchor`, not
+    /// against the currently published value - see `_priceDeviationBps`.
+    error DeviationTooLarge(
+        PoolId poolId, uint160 anchor, uint160 attempted, uint256 deviationBps, uint256 maxBps
+    );
+
+    /// @notice A publisher tried to move the reference again before `minPublisherInterval` elapsed.
+    error UpdateTooSoon(PoolId poolId, uint64 earliest);
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -92,26 +124,74 @@ contract ManualPriceBandOracle is IPriceBandOracle, Ownable2Step {
     /// @notice Emitted when a publisher is designated or removed
     event PublisherSet(address indexed publisher, bool allowed);
 
+    /// @notice Emitted when the owner changes the limits that apply to publishers.
+    /// @dev Emitted from the constructor with the defaults, so the bounds a deployment starts
+    /// life with are on-chain history rather than something a reader has to infer.
+    event PublisherBoundsSet(uint256 maxDeviationBps, uint64 minUpdateInterval);
+
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
     //////////////////////////////////////////////////////////////*/
 
     /// @param sqrtPriceX96 The reference, in the pool's units. 0 means "no price".
     /// @param updatedAt Stamped by this contract when the price was written.
+    /// @param anchor The last NON-ZERO price published for this pool. This is the value a
+    ///        publisher's next move is measured against, and it deliberately SURVIVES
+    ///        `clearReference`. If the bound were measured against `sqrtPriceX96`, a publisher
+    ///        could clear the pool to zero and then republish anything at all as a "first"
+    ///        price - which is the exact bypass this bound exists to close.
+    /// @param anchorAt When `anchor` was last written. `minPublisherInterval` is measured from
+    ///        here, so clearing a price does not reset a publisher's rate limit either.
     struct Reference {
         uint160 sqrtPriceX96;
         uint64 updatedAt;
+        uint160 anchor;
+        uint64 anchorAt;
     }
 
     /// @notice The register. A pool that has never been published reads back as `(0, 0)`, which
     /// the consumer treats as unavailable.
+    /// @dev Layout is load-bearing. `sqrtPriceX96 + updatedAt` is 224 bits and shares one slot;
+    /// `anchor + anchorAt` is another 224 and shares the next. `referencePrice` - the hot read,
+    /// made inside a Vault lock under a hard gas cap - touches only the first slot, so the bound
+    /// added here costs the consumer nothing.
     mapping(PoolId poolId => Reference) internal _references;
 
     /// @notice Accounts permitted to publish prices, and to do nothing else.
     mapping(address publisher => bool) public isPublisher;
 
+    /// @notice The largest single move, in PRICE bps, a publisher may make to a pool's reference.
+    /// @dev The owner is exempt: on a live chain the owner is a timelock, and a re-anchor that
+    /// has sat in a timelock is a deliberate act with a public notice period, which is precisely
+    /// what this bound is asking for.
+    uint256 public maxPublisherDeviationBps;
+
+    /// @notice Minimum seconds between two publisher moves on the same pool. 0 disables it.
+    /// @dev Clearing a price is NOT rate limited - see `clearReference`. Stopping must never
+    /// have to wait.
+    uint64 public minPublisherInterval;
+
+    /// @notice Default publisher move limit: 1000 bps = a 10% price move per update.
+    /// @dev A real default rather than a permissive one. A deployment that never calls
+    /// `setPublisherBounds` is still bounded.
+    uint256 internal constant DEFAULT_MAX_DEVIATION_BPS = 1000;
+
+    uint256 private constant BPS_DENOMINATOR = 10_000;
+
+    /// @dev Fixed-point scale for the sqrt-space ratio. 1e9 keeps the squaring well inside
+    /// uint256 while leaving nine digits of precision, far more than a bps comparison needs.
+    uint256 private constant RATIO_SCALE = 1e9;
+
+    /// @dev Reject before squaring above 4x in sqrt space, i.e. 16x in price. Any configured
+    /// bound this large has stopped being a bound, and the clamp is what keeps `sqrtRatio *
+    /// sqrtRatio` provably inside uint256.
+    uint256 private constant RATIO_CLAMP = 4 * RATIO_SCALE;
+
     /// @param initialOwner Ownership seat. On a live chain this should be a timelock or multisig.
-    constructor(address initialOwner) Ownable(initialOwner) {}
+    constructor(address initialOwner) Ownable(initialOwner) {
+        maxPublisherDeviationBps = DEFAULT_MAX_DEVIATION_BPS;
+        emit PublisherBoundsSet(DEFAULT_MAX_DEVIATION_BPS, 0);
+    }
 
     modifier onlyPublisher() {
         if (msg.sender != owner() && !isPublisher[msg.sender]) revert NotPublisher(msg.sender);
@@ -127,6 +207,19 @@ contract ManualPriceBandOracle is IPriceBandOracle, Ownable2Step {
         if (publisher == address(0)) revert ZeroAddress();
         isPublisher[publisher] = allowed;
         emit PublisherSet(publisher, allowed);
+    }
+
+    /// @notice Set the limits that apply to publishers. Owner only; the owner itself is exempt.
+    /// @param maxDeviationBps Largest single PRICE move a publisher may make, in bps against the
+    ///        pool's `anchor`. Setting this very large re-opens the bypass it exists to close -
+    ///        it is deliberately not capped, because the owner is a timelock and this is its
+    ///        decision to make, but it is the decision to make carefully.
+    /// @param minUpdateInterval Seconds a publisher must wait between moves on the same pool.
+    ///        0 disables the rate limit. Clearing a price is never rate limited.
+    function setPublisherBounds(uint256 maxDeviationBps, uint64 minUpdateInterval) external onlyOwner {
+        maxPublisherDeviationBps = maxDeviationBps;
+        minPublisherInterval = minUpdateInterval;
+        emit PublisherBoundsSet(maxDeviationBps, minUpdateInterval);
     }
 
     /// @notice Publish the reference price for one pool.
@@ -159,7 +252,15 @@ contract ManualPriceBandOracle is IPriceBandOracle, Ownable2Step {
         // `uint64` seconds runs to the year 584 billion. The cast cannot truncate.
         // forge-lint: disable-next-line(unsafe-typecast)
         uint64 clearedAt = uint64(block.timestamp);
-        _references[poolId] = Reference({sqrtPriceX96: 0, updatedAt: clearedAt});
+
+        // Field-by-field, NOT a whole-struct assignment. Overwriting the struct would also zero
+        // `anchor`/`anchorAt`, and a publisher could then clear a pool and republish any price at
+        // all as an unbounded "first" publication. The anchor is what the next move is measured
+        // against, so it has to outlive the clearing.
+        Reference storage ref = _references[poolId];
+        ref.sqrtPriceX96 = 0;
+        ref.updatedAt = clearedAt;
+
         emit ReferencePriceSet(poolId, msg.sender, 0, clearedAt);
     }
 
@@ -167,11 +268,67 @@ contract ManualPriceBandOracle is IPriceBandOracle, Ownable2Step {
         if (sqrtPriceX96 < TickMath.MIN_SQRT_RATIO || sqrtPriceX96 > TickMath.MAX_SQRT_RATIO) {
             revert PriceOutOfRange(sqrtPriceX96);
         }
+
+        Reference storage ref = _references[poolId];
+        uint160 anchor = ref.anchor;
+
+        // The owner is exempt; a publisher is not. `anchor == 0` means this pool has genuinely
+        // never had a price, so there is nothing to measure a deviation against and the first
+        // publication is necessarily unbounded. Note that `clearReference` does NOT reset the
+        // anchor, so "clear it and republish anything" is not a way back into this branch.
+        if (anchor != 0 && msg.sender != owner()) {
+            uint64 interval = minPublisherInterval;
+            if (interval != 0) {
+                uint256 earliest = uint256(ref.anchorAt) + uint256(interval);
+                // forge-lint: disable-next-line(unsafe-typecast)
+                if (block.timestamp < earliest) revert UpdateTooSoon(poolId, uint64(earliest));
+            }
+
+            uint256 deviationBps = _priceDeviationBps(sqrtPriceX96, anchor);
+            uint256 maxBps = maxPublisherDeviationBps;
+            if (deviationBps > maxBps) {
+                revert DeviationTooLarge(poolId, anchor, sqrtPriceX96, deviationBps, maxBps);
+            }
+        }
+
         // `uint64` seconds runs to the year 584 billion. The cast cannot truncate.
         // forge-lint: disable-next-line(unsafe-typecast)
         uint64 updatedAt = uint64(block.timestamp);
-        _references[poolId] = Reference({sqrtPriceX96: sqrtPriceX96, updatedAt: updatedAt});
+        ref.sqrtPriceX96 = sqrtPriceX96;
+        ref.updatedAt = updatedAt;
+        ref.anchor = sqrtPriceX96;
+        ref.anchorAt = updatedAt;
         emit ReferencePriceSet(poolId, msg.sender, sqrtPriceX96, updatedAt);
+    }
+
+    /// @dev Deviation between two sqrt-space prices, expressed in PRICE bps.
+    ///
+    /// Measured on the PRICE, not on the sqrt, because that is the number an operator thinks in:
+    /// a 5% move in `sqrtPriceX96` is a ~10.25% move in price, and a bound that quietly meant the
+    /// latter while reading as the former is exactly the kind of unit confusion this file's
+    /// header warns about.
+    ///
+    /// Symmetric by construction: the larger of the two is always the numerator, so a halving and
+    /// a doubling both report the same distance. That is the right semantic for a price - "10%
+    /// away" should not depend on which way you travelled.
+    function _priceDeviationBps(uint160 newSqrtPriceX96, uint160 anchorSqrtPriceX96)
+        private
+        pure
+        returns (uint256)
+    {
+        uint256 hi = newSqrtPriceX96 >= anchorSqrtPriceX96 ? newSqrtPriceX96 : anchorSqrtPriceX96;
+        uint256 lo = newSqrtPriceX96 >= anchorSqrtPriceX96 ? anchorSqrtPriceX96 : newSqrtPriceX96;
+
+        // `lo` cannot be zero: the caller has already rejected anything below MIN_SQRT_RATIO, and
+        // this is only reached when `anchor != 0`.
+        uint256 sqrtRatio = (hi * RATIO_SCALE) / lo;
+
+        // Bail out before squaring. Anything this far out is rejected by any sane bound anyway,
+        // and returning max keeps `sqrtRatio * sqrtRatio` provably inside uint256 below.
+        if (sqrtRatio >= RATIO_CLAMP) return type(uint256).max;
+
+        uint256 priceRatio = (sqrtRatio * sqrtRatio) / RATIO_SCALE;
+        return ((priceRatio - RATIO_SCALE) * BPS_DENOMINATOR) / RATIO_SCALE;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -181,6 +338,23 @@ contract ManualPriceBandOracle is IPriceBandOracle, Ownable2Step {
     /// @notice The raw record for a pool
     function referenceRecord(PoolId poolId) external view returns (Reference memory) {
         return _references[poolId];
+    }
+
+    /// @notice The value a publisher's next move on this pool is measured against, and the
+    /// earliest timestamp at which they may make it.
+    /// @dev `anchor == 0` means the pool has never been published and the next write is
+    /// unbounded. Exposed so an operator can see what the bound will allow BEFORE sending a
+    /// transaction that reverts.
+    function publisherBoundsFor(PoolId poolId)
+        external
+        view
+        returns (uint160 anchor, uint64 earliestUpdate, uint256 maxDeviationBps)
+    {
+        Reference storage ref = _references[poolId];
+        anchor = ref.anchor;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        earliestUpdate = anchor == 0 ? 0 : uint64(uint256(ref.anchorAt) + uint256(minPublisherInterval));
+        maxDeviationBps = maxPublisherDeviationBps;
     }
 
     /// @inheritdoc IPriceBandOracle

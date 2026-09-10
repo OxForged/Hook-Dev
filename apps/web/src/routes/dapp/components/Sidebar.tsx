@@ -2,8 +2,12 @@
    Sidebar — README § Dapp shell.
    238px, ground #060A12, right border #101A2C. Seven nav rows, each with a
    3x16px indicator bar (Latch Blue when active), 13.5px label, the sidebar
-   gradient behind the active row, 0.22s transitions. Bottom: gas sponsor
-   credits card (62%) and the real wallet connect control (@latchprotocol/connect).
+   gradient behind the active row, 0.22s transitions. Bottom: the real wallet
+   connect control (@latchprotocol/connect).
+
+   The gas-sponsor credits card that used to sit here is gone. There is no gas
+   sponsor, so a progress bar reading "0.62 ETH remaining" was a picture of a
+   feature that does not exist - the same class of thing as an invented chart.
 
    Under 1024px it becomes a drawer: fixed panel + scrim, focus trapped,
    Escape closes, and it is `inert` while closed so nothing inside is tabbable.
@@ -80,22 +84,8 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
 
         <div className="dapp-sidebar__foot">
           <p className="dapp-sample-note">
-            Live on Sepolia · some panels still sample
+            Live on Sepolia · testnet only
           </p>
-          <div className="dapp-credits">
-            <p className="dapp-microlabel">{shell.gasCredits.label}</p>
-            <div
-              className="dapp-credits__track"
-              role="progressbar"
-              aria-label={shell.gasCredits.label}
-              aria-valuenow={shell.gasCredits.pct}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <span className="dapp-credits__fill" style={{ width: `${shell.gasCredits.pct}%` }} />
-            </div>
-            <p className="dapp-credits__value">{shell.gasCredits.remaining}</p>
-          </div>
           <LatchConnectButton variant="sidebar" showChain />
         </div>
       </aside>

@@ -25,7 +25,6 @@ export interface ScreenMeta {
 export interface ShellData {
   nav: NavItem[]
   meta: Record<Screen, ScreenMeta>
-  gasCredits: { label: string; pct: number; remaining: string }
   wallet: { address: string }
   /** Starting block height; the shell ticks it +1 every 4000ms (README). */
 }
@@ -33,8 +32,8 @@ export interface ShellData {
 /** SCREENS.md § C: sidebar nav order. */
 const nav: NavItem[] = [
   { screen: 'dashboard', label: 'Dashboard', path: '', icon: 'dashboard' },
-  { screen: 'explorer', label: 'Hook Explorer', path: 'explorer', icon: 'explorer' },
-  { screen: 'deploy', label: 'Deploy a Hook', path: 'deploy', icon: 'deploy' },
+  { screen: 'marketplace', label: 'Latch Marketplace', path: 'marketplace', icon: 'explorer' },
+  { screen: 'deploy', label: 'Deploy a Latch', path: 'deploy', icon: 'deploy' },
   { screen: 'pool', label: 'Pool Detail', path: 'pool', icon: 'pool' },
   { screen: 'portfolio', label: 'Portfolio', path: 'portfolio', icon: 'portfolio' },
   { screen: 'analytics', label: 'Analytics', path: 'analytics', icon: 'analytics' },
@@ -44,12 +43,12 @@ const nav: NavItem[] = [
 /** SCREENS.md § C: header title + subtitle per screen. */
 const meta: Record<Screen, ScreenMeta> = {
   dashboard: { title: 'Dashboard', subtitle: 'Live from Ethereum Sepolia · testnet only' },
-  explorer: { title: 'Latch Explorer', subtitle: 'On-chain registry · Sepolia' },
-  deploy: { title: 'Deploy a Latch', subtitle: 'Register a hook against the protocol registry' },
+  marketplace: { title: 'Latch Marketplace', subtitle: 'On-chain registry · Sepolia' },
+  deploy: { title: 'Deploy a Latch', subtitle: 'List a Latch in the on-chain registry' },
   /* Sepolia, not Base: Base is a verified target with no Latch contracts on it. */
   pool: { title: 'Pool detail', subtitle: 'ETH / USDC · 0.05% · Ethereum Sepolia' },
-  portfolio: { title: 'Portfolio', subtitle: '5 positions with latches attached' },
-  analytics: { title: 'Analytics', subtitle: 'Protocol-wide hook activity' },
+  portfolio: { title: 'Portfolio', subtitle: 'Positions held by the connected address' },
+  analytics: { title: 'Analytics', subtitle: 'Protocol-wide Latch activity' },
   settings: { title: 'Settings', subtitle: 'Account, network and API access' },
 }
 
@@ -57,7 +56,6 @@ export function loadShell(): ShellData {
   return {
     nav,
     meta,
-    gasCredits: { label: 'GAS SPONSOR CREDITS', pct: 62, remaining: '0.62 ETH remaining' },
     wallet: { address: '0x8f2c…41ba' },
   }
 }

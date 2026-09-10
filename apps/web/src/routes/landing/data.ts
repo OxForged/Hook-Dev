@@ -27,6 +27,8 @@
  * the report accompanying this change.
  */
 
+import { GITHUB_URL } from './socials'
+
 /* ------------------------------------------------------------------ tones */
 
 /** Data-series tones. Components map these to token-backed CSS classes so a
@@ -39,28 +41,67 @@ export interface NavItem {
   /** Decorative glyph; the visible label carries the accessible name. */
   icon?: import('../../components/NavIcon').IconName
   readonly label: string
-  /** Router path when internal, `#anchor` when it targets this page. */
+  /**
+   * A router path (`/docs`) or a landing-page section (`#ecosystem`).
+   *
+   * There is deliberately no `active` flag. `SiteHeader` is rendered by the
+   * legal pages and the verify page as well as by `/`, so a flag baked into
+   * the data announced the same item as the current page on every route — the
+   * screen-reader bug this replaced. Active state is derived from the router's
+   * location at render time instead, and only a real route can be "current":
+   * a section anchor is a position on a page, not a page.
+   */
   readonly href: string
-  readonly active?: boolean
 }
 
+/**
+ * PRIMARY NAV — four destinations and one call to action, and nothing else.
+ *
+ * What was dropped and why:
+ *   Home       the lockup beside it is already a link to `/`. Two home links in
+ *              12cm of chrome is one too many, and this was the item carrying
+ *              the bogus `active: true`.
+ *   Revenue    a subsection of the pitch, not a destination. It sits in the
+ *              footer's Protocol column with the rest of the story.
+ *   Brand Kit  a resource for people who already know what Latch is. Footer,
+ *              plus the mobile menu (see MENU_NAV) where space is cheap.
+ *
+ * The order is the order a stranger needs them: what you can build with it,
+ * how it works, the reference, who is building it.
+ */
 export const NAV: readonly NavItem[] = [
-  { label: 'Home', href: '#home', active: true, icon: 'home' },
+  { label: 'Ecosystem', href: '#ecosystem', icon: 'ecosystem' },
   { label: 'Developers', href: '#developers', icon: 'developers' },
   { label: 'Docs', href: '/docs', icon: 'docs' },
-  { label: 'Ecosystem', href: '#ecosystem', icon: 'ecosystem' },
-  { label: 'Revenue', href: '#revenue', icon: 'revenue' },
   { label: 'About', href: '#about', icon: 'about' },
+]
+
+/**
+ * The mobile disclosure menu carries one more row than the desktop bar: a
+ * vertical list has room for Brand Kit, and small-screen visitors are the ones
+ * least able to go hunting in the footer for it.
+ */
+export const MENU_NAV: readonly NavItem[] = [
+  ...NAV,
   { label: 'Brand Kit', href: '/brand', icon: 'brand' },
 ]
 
-/** Route targets. Placeholders until the real repo / audit pages exist. */
+/**
+ * Route targets. `github` is the real org, imported from ./socials.ts so
+ * exactly one module in the app knows the URL.
+ *
+ * `audits` used to be `#audit` — an anchor that exists on no page, so the
+ * footer link silently did nothing. It now points at the activity section,
+ * which is where the audit status is actually stated (and stated as "None").
+ */
 export const LINKS = {
   docs: '/docs',
   brand: '/brand',
   app: '/app',
-  github: '#github',
-  audits: '#audit',
+  github: GITHUB_URL,
+  audits: '#activity',
+  privacy: '/privacy',
+  terms: '/terms',
 } as const
 
 /* -------------------------------------------------------------------- hero */
@@ -345,12 +386,56 @@ export interface FooterLink {
   readonly href: string
 }
 
-export const FOOTER_LINKS: readonly FooterLink[] = [
-  { label: 'Docs', href: LINKS.docs },
-  { label: 'GitHub', href: LINKS.github },
-  { label: 'Audits', href: LINKS.audits },
-  { label: 'Brand Kit', href: LINKS.brand },
-  { label: 'Launch App', href: LINKS.app },
+export interface FooterGroup {
+  /** Mono micro-label above the column. */
+  readonly title: string
+  readonly links: readonly FooterLink[]
+}
+
+/**
+ * FOOTER — the full map of the site, grouped.
+ *
+ * The old footer was a single undifferentiated row of seven: Docs sat beside
+ * Terms sat beside Launch App, which told a reader nothing about which of them
+ * they wanted. Four columns answer four different questions — what the protocol
+ * does, how to build on it, who made it, and what the legal position is — and
+ * everything the top nav no longer carries has a home here.
+ *
+ * Legal lives here and only here. A privacy policy is something a visitor looks
+ * for deliberately, once; it does not earn a slot in the primary nav.
+ */
+export const FOOTER_GROUPS: readonly FooterGroup[] = [
+  {
+    title: 'Protocol',
+    links: [
+      { label: 'Use cases', href: '#ecosystem' },
+      { label: 'Revenue share', href: '#revenue' },
+      { label: 'How it works', href: '#developers' },
+      { label: 'Activity & audits', href: LINKS.audits },
+    ],
+  },
+  {
+    title: 'Build',
+    links: [
+      { label: 'Docs', href: LINKS.docs },
+      { label: 'Launch App', href: LINKS.app },
+      { label: 'GitHub', href: LINKS.github },
+    ],
+  },
+  {
+    title: 'Project',
+    links: [
+      { label: 'About', href: '#about' },
+      { label: 'Brand Kit', href: LINKS.brand },
+    ],
+  },
+  {
+    title: 'Legal',
+    links: [
+      { label: 'Privacy', href: LINKS.privacy },
+      { label: 'Terms', href: LINKS.terms },
+    ],
+  },
 ]
 
 export const COPYRIGHT = '© 2026 LATCH PROTOCOL'

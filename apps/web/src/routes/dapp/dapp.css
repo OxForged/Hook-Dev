@@ -235,15 +235,36 @@
   background: var(--dapp-header-bg);
   backdrop-filter: blur(14px);
 }
-.dapp-header__meta { min-width: 0; }
+/* The header is a single row of fixed-size controls plus one flexible title.
+   `flex-shrink: 0` on the control group is what stops the browser solving the
+   overflow by squeezing the title column to ~130px, which is what made "Latch
+   Explorer" and "Ethereum Sepolia" each wrap onto two lines and grew the bar
+   from 76px to 119px. Below the breakpoint further down, the group drops to its
+   own row instead - wrapping once, deliberately, beats crushing everything. */
+.dapp-header__meta { min-width: 0; flex: 1 1 auto; }
 .dapp-header__title {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 20px;
   margin: 0;
+  /* One line, clipped with an ellipsis if a screen name is ever long enough.
+     A wrapped h1 pushes every control in the bar down with it. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.dapp-header__subtitle { margin: 3px 0 0; font-size: 12.5px; color: var(--dapp-ink-sub); }
-.dapp-header__right { display: flex; align-items: center; gap: 10px; }
+.dapp-header__subtitle {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--dapp-ink-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dapp-header__right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+/* The network chip carries three separate facts. Keeping it on one line is the
+   difference between a 39px control and a 63px one. */
+.dapp-net-chip { white-space: nowrap; }
 
 .dapp-burger {
   display: grid;
@@ -1219,10 +1240,18 @@ span.dapp-net-chip__mark {
   .dapp-row--deploy { grid-template-columns: minmax(0, 1fr); }
 }
 
-@media (max-width: 720px) {
+/* The controls stop fitting beside the title well before the mobile breakpoint:
+   with the sidebar taking 238px, the bar runs out of room around 1180px. Wrap
+   the control group to its own row from there rather than letting it compete
+   with the title for space. */
+@media (max-width: 1180px) {
   .dapp-header { flex-wrap: wrap; gap: 12px; }
-  .dapp-header__meta { flex: 1 1 auto; }
   .dapp-header__right { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-start; }
+}
+
+@media (max-width: 720px) {
+  .dapp-header { gap: 12px; }
+  .dapp-header__meta { flex: 1 1 auto; }
   .dapp-pool-stats { margin-left: 0; gap: 20px; }
   .dapp-latch__foot { gap: 16px; }
 
@@ -1483,3 +1512,92 @@ span.dapp-net-chip__mark {
   cursor: pointer;
   text-decoration: underline;
 }
+
+/* ---- 3b. Register a Hook — the write path ---------------------------------
+   Form chrome for the registry write flow. Everything here is layout for real
+   state: a failure block, a transaction block, a tri-state pre-flight dot.
+   Nothing paints a success colour that the chain has not confirmed.
+   -------------------------------------------------------------------------- */
+
+.dp-lede { margin: 10px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-ink); }
+.dp-lede a { color: var(--signal-blue); }
+.dp-lede code,
+.dp-gap code,
+.dp-ok code { font-family: var(--font-mono); font-size: 12px; color: var(--dapp-ink-sub); }
+
+.dp-gate {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-sm);
+  background: var(--panel-alt);
+}
+.dp-gate--warn {
+  border-color: var(--dapp-badge-warn-border);
+  background: var(--dapp-badge-warn-bg);
+}
+.dp-gate__title { margin: 0; font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.dp-gate--warn .dp-gate__title { color: var(--warning); }
+.dp-gate__body { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--muted-ink); }
+
+.dp-field { display: grid; gap: 6px; }
+.dp-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-chip);
+  background: var(--code-ground);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.dp-input--mono { font-family: var(--font-mono); font-size: 12.5px; }
+.dp-input--area { resize: vertical; min-height: 66px; }
+.dp-input::placeholder { color: var(--faint-ink); }
+.dp-input:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 1px; border-color: var(--latch-blue); }
+.dp-input:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.dp-hint { margin: 0; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.5; color: var(--faint-ink); }
+.dp-hint--err { color: var(--error); }
+
+.dp-ok {
+  margin: 14px 0 0;
+  padding: 9px 11px;
+  border-left: 3px solid var(--success);
+  border-radius: 0 var(--r-micro) var(--r-micro) 0;
+  background: var(--dapp-badge-ok-bg);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dapp-ink-data);
+}
+.dp-ok a { color: var(--signal-blue); }
+
+.dp-failure { display: grid; gap: 5px; margin-top: 14px; }
+.dp-failure__name { margin: 0; font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+.dp-failure__body { margin: 0; font-size: 12.5px; line-height: 1.55; }
+.dp-failure__raw {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--faint-ink);
+  overflow-wrap: anywhere;
+}
+
+.dp-caps-card { display: grid; gap: 10px; }
+.dp-gap { margin-top: 0; }
+
+.dp-tx { display: grid; gap: 8px; }
+.dp-tx__row { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 13px; color: var(--dapp-ink-data); }
+.dp-tx__hash { margin: 0; font-family: var(--font-mono); font-size: 11.5px; overflow-wrap: anywhere; }
+.dp-tx__hash a { color: var(--signal-blue); }
+.dp-tx__meta { margin: 0; font-family: var(--font-mono); font-size: 10.5px; color: var(--faint-ink); }
+
+/* "Not yet known" must not borrow the colour of "passed". */
+.dp-dot--idle { background: var(--dapp-track); }
+
+.dapp-console__line.is-err { color: var(--error); }
