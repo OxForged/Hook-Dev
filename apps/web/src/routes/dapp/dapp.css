@@ -92,11 +92,25 @@
   background: var(--dapp-sidebar-bg);
 }
 
+/* The lockup is a link home. It must not inherit generic link chrome — an
+   underlined wordmark reads as broken — but it does need to look interactive,
+   so the mark and type lift together on hover and it keeps a visible focus
+   ring for keyboard users. */
 .dapp-lockup {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.22s ease, opacity 0.22s ease;
+}
+.dapp-lockup:hover { background: rgba(255, 255, 255, 0.04); }
+.dapp-lockup:active { opacity: 0.75; }
+.dapp-lockup:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 .dapp-lockup__mark { height: 26px; width: auto; }
 .dapp-lockup__type { display: flex; flex-direction: column; gap: 2px; line-height: 1; }
@@ -957,6 +971,58 @@
 .dapp-table__num.is-fees { color: var(--success); }
 .dapp-table .dapp-badge { display: inline-block; font-size: 10px; padding: 5px 10px; }
 
+/* ---- 6. Analytics -------------------------------------------------------- */
+/* The screen reads live contract state, so it needs a LIVE badge, a stat strip
+   whose figures come off chain, and a visible container for the cases where the
+   chain genuinely has nothing — an empty state has to look deliberate, or it
+   reads as a panel that failed to load. */
+
+.an-badge { display: inline-flex; align-items: center; gap: 6px; }
+
+.an-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 14px;
+  margin: 16px 0 0;
+}
+.an-stats > div { min-width: 0; }
+.an-stats dt {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+  margin-bottom: 5px;
+}
+.an-stats dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--ink-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.an-note { margin-top: 12px; line-height: 1.55; }
+.dapp-card__donut-body .an-note { margin-top: 10px; }
+
+.an-empty {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border: 1px dashed var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--panel-alt);
+}
+.an-empty__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-ink-2);
+}
+.an-empty .live-note { margin: 0; line-height: 1.55; }
+
+.an-hooks { margin-top: 14px; }
+
 /* ---- 7. Settings --------------------------------------------------------- */
 
 .dapp-prefs { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; }
@@ -1287,45 +1353,133 @@ span.dapp-net-chip__mark {
 .dapp-nav__row.is-active svg,
 .dapp-nav__row:hover svg { opacity: 1; }
 
-/* ---- LiveRegistry: real hooks, read from chain ---- */
-.lr { display: grid; gap: 10px; margin-bottom: 14px; }
-.lr-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.lr-title { font-size: 15px; font-weight: 600; margin: 0; }
-.lr-badge {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .14em;
-  color: var(--success); background: var(--dapp-badge-ok-bg, rgba(95,211,154,.12));
-  border-radius: var(--r-micro); padding: 3px 8px;
+/* ---- Hook marketplace (screens/Explorer): real hooks, read from chain ------
+   The safety treatments here are load-bearing, not decoration. A flagged card
+   must be unmissable at a glance, a value-extracting warning must not be
+   possible to mistake for body copy, and a deprecated marker must stay calm —
+   it is a status, not an accusation.
+   -------------------------------------------------------------------------- */
+
+.hx-head { display: grid; gap: 10px; margin-bottom: 14px; }
+.hx-head a { color: var(--signal-blue); }
+
+.hx-filters { display: flex; flex-wrap: wrap; gap: 18px 28px; margin-top: 14px; }
+.hx-filterset { display: grid; gap: 2px; }
+.hx-count {
+  margin-left: 7px;
+  color: var(--faint-ink);
+  font-size: 10.5px;
 }
-.lr-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--success) 78%, transparent);
-  animation: live-pulse 2s ease-in-out infinite; }
-.lr-note { font-size: 12.5px; color: var(--muted-ink); margin: 0; }
-.lr-note--err { color: var(--warning); }
-.lr-note a { color: var(--signal-blue); }
-.lr-list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 10px; }
-.lr-item { border: 1px solid var(--hairline); border-radius: var(--r-sm); padding: 13px 15px; display: grid; gap: 7px; }
-/* A flagged hook must be unmissable, not a subtle tint. */
-.lr-item--flagged { border-color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); }
-.lr-item__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.lr-name { font-family: var(--font-display); font-weight: 600; font-size: 14.5px; color: var(--ink); text-decoration: none; }
-.lr-name:hover { text-decoration: underline; }
-.lr-chip { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
-  padding: 3px 7px; border-radius: var(--r-micro); border: 1px solid var(--hairline-blue); color: var(--muted-ink); }
-/* An unverified hook must never borrow the visual language of an audited one. */
-.lr-chip--v0 { color: var(--muted-ink); }
-.lr-chip--v1 { color: var(--sky-ink); border-color: var(--hairline-blue-2); }
-.lr-chip--v2 { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); }
-.lr-chip--r0 { color: var(--muted-ink); }
-.lr-chip--r1 { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 40%, transparent); }
-.lr-chip--r2 { color: var(--error); border-color: color-mix(in srgb, var(--error) 55%, transparent); }
-.lr-chip--flag { color: var(--error); border-color: var(--error); }
-.lr-desc { font-size: 13px; color: var(--muted-ink-2); margin: 0; }
-.lr-cap { margin: 0; padding-left: 1.05em; font-size: 12.5px; color: var(--muted-ink); }
-.lr-cap--danger { color: var(--warning); }
-.lr-meta { font-family: var(--font-mono); font-size: 11px; color: var(--label-ink); margin: 0; }
-.dapp-illustrative-note {
-  font-size: 12.5px; color: var(--muted-ink); margin: 0 0 12px;
-  padding: 9px 12px; border-left: 2px solid var(--hairline-blue-2); border-radius: 0 var(--r-micro) var(--r-micro) 0;
+.dapp-chip.is-active .hx-count { color: var(--dapp-ink-sub); }
+
+/* Cards are not links — this surface is read-only, so the pointer and the lift
+   that dapp-card--latch carries would both be promising an action that is not
+   there. */
+.hx-card { cursor: default; display: grid; gap: 10px; }
+.hx-card:hover,
+.hx-card:focus-within { transform: none; box-shadow: none; border-color: var(--hairline); }
+.hx-card--flagged {
+  border-color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, var(--panel));
+}
+.hx-card--flagged:hover { border-color: var(--error); }
+.hx-card--deprecated { opacity: 0.82; }
+
+.hx-card .dapp-latch__desc { margin-top: 0; }
+.hx-card .dapp-tags { margin-top: 0; }
+.hx-card .dapp-latch__foot { margin-top: 4px; }
+
+.hx-addr { text-decoration: none; color: var(--label-ink); }
+.hx-addr:hover { color: var(--signal-blue); text-decoration: underline; }
+.hx-muted { color: var(--faint-ink); }
+
+.hx-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.dapp-badge--danger {
+  border-color: var(--dapp-badge-danger-border);
+  background: var(--dapp-badge-danger-bg);
+  color: var(--error);
+}
+
+/* Always visible, never behind a disclosure. */
+.hx-alert {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--dapp-badge-warn-border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--r-micro);
+  background: var(--dapp-badge-warn-bg);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--warning);
+}
+.hx-alert--danger {
+  border-color: var(--dapp-badge-danger-border);
+  border-left-color: var(--error);
+  background: var(--dapp-badge-danger-bg);
+  color: var(--error);
+}
+/* Deprecated is marked, not alarmed. */
+.hx-note {
+  margin: 0;
+  padding: 9px 11px;
+  border-left: 2px solid var(--hairline-blue-2);
+  border-radius: 0 var(--r-micro) var(--r-micro) 0;
   background: var(--panel-alt);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+
+.hx-caps {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-micro);
+  background: var(--panel-alt);
+}
+.hx-caps--danger { border-color: color-mix(in srgb, var(--error) 45%, transparent); }
+.hx-caps__list {
+  margin: 0;
+  padding-left: 1.05em;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted-ink);
+}
+.hx-caps--danger .hx-caps__list { color: var(--warning); }
+
+.hx-links { flex: 1 1 auto; }
+.hx-links__row { display: flex; flex-wrap: wrap; gap: 12px; font-family: var(--font-mono); font-size: 12px; }
+.hx-links__row a { color: var(--signal-blue); text-decoration: none; }
+.hx-links__row a:hover { text-decoration: underline; }
+
+.hx-flagged {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--error);
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--error) 5%, transparent);
+}
+.hx-flagged__title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--error);
+}
+.hx-flagged__note { margin: 6px 0 0; font-size: 12.5px; color: var(--muted-ink); }
+.hx-flagged__grid { margin-top: 12px; }
+
+.hx-state { margin-top: 18px; }
+.hx-state a { color: var(--signal-blue); }
+.hx-state--err { color: var(--warning); }
+.hx-linkbtn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--signal-blue);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
 }

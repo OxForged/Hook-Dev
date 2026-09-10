@@ -18,15 +18,44 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/brand/favicon-180.png" />
     <link rel="manifest" href="/site.webmanifest" />
 
+    <!-- Social scrapers (X, Facebook, LinkedIn, Discord, Slack, WhatsApp) do NOT resolve
+         relative og:image paths — they fetch the URL verbatim off-host and drop the card
+         when it 404s. Every absolute URL below is therefore built from %SITE_URL%, which
+         vite.config.ts substitutes at build time (VITE_SITE_URL, defaulting to the
+         canonical origin). Keep them absolute. -->
+    <link rel="canonical" href="%SITE_URL%/" />
+
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Latch Protocol" />
+    <meta property="og:site_name" content="Latch Protocol" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="%SITE_URL%/" />
+    <meta property="og:title" content="Latch Protocol — Hooks for a bigger ecosystem" />
     <meta
       property="og:description"
       content="Attach programmable logic to AMM pools, lending markets and assets without forking the protocol underneath."
     />
-    <meta property="og:image" content="/brand/og-1200x630.png" />
+    <meta property="og:image" content="%SITE_URL%/brand/og-1200x630.png" />
+    <!-- Declaring the intrinsic size lets a scraper lay the card out before the image
+         finishes downloading. The file is a 2x asset: 2400x1260, a 1.91:1 OG ratio. -->
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="2400" />
+    <meta property="og:image:height" content="1260" />
+    <meta
+      property="og:image:alt"
+      content="Latch Protocol — hooks for a bigger ecosystem. Infrastructure for custom hooks, which we call Latches."
+    />
+
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="/brand/og-1200x630.png" />
+    <meta name="twitter:title" content="Latch Protocol — Hooks for a bigger ecosystem" />
+    <meta
+      name="twitter:description"
+      content="Attach programmable logic to AMM pools, lending markets and assets without forking the protocol underneath."
+    />
+    <meta name="twitter:image" content="%SITE_URL%/brand/og-1200x630.png" />
+    <meta
+      name="twitter:image:alt"
+      content="Latch Protocol — hooks for a bigger ecosystem. Infrastructure for custom hooks, which we call Latches."
+    />
 
     <!-- Chakra Petch 600/700 · IBM Plex Sans 400/500 · IBM Plex Mono 400/500 -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

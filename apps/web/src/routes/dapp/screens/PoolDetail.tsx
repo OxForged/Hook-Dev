@@ -1,8 +1,14 @@
-/* Pool Detail — SCREENS.md § C4. */
+/* Pool Detail — SCREENS.md § C4.
+
+   The header, fee chart and hook-call list are still the typed placeholder
+   from `data/pool.ts` (the shell's SAMPLE DATA chip covers them). The price row
+   directly beneath the header is not: it reads the live Sepolia pool off chain
+   and the reference markets off their providers, and labels each as such. */
 
 import { useMemo } from 'react'
 import { CountUp } from '../components/CountUp.tsx'
 import { FeeChart } from '../components/charts.tsx'
+import { PoolPriceCard } from '../components/PoolPriceCard.tsx'
 import { loadPool } from '../data/pool.ts'
 
 export default function PoolDetail() {
@@ -30,6 +36,8 @@ export default function PoolDetail() {
           ))}
         </dl>
       </section>
+
+      <PoolPriceCard />
 
       <div className="dapp-row dapp-row--pool">
         <section className="dapp-card">

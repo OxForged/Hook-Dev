@@ -489,6 +489,55 @@ export interface RegisteredHook {
   canTrapLiquidity: boolean
   verification: VerificationLevel
   listing: ListingState
+  /**
+   * The callbacks this hook holds, named. Expanded by the registry's own
+   * `decodePermissions`, not by shifting the bitmap here — see the note on
+   * readRegisteredHooks about why the UI must not re-derive capability.
+   */
+  callbacks: string[]
+}
+
+/**
+ * The field order of ILatchHookRegistry.DecodedPermissions. Used only to turn the
+ * struct the chain returns into a list; the truth values are the chain's.
+ */
+const CALLBACK_FIELDS = [
+  'beforeInitialize',
+  'afterInitialize',
+  'beforeAddLiquidity',
+  'afterAddLiquidity',
+  'beforeRemoveLiquidity',
+  'afterRemoveLiquidity',
+  'beforeSwap',
+  'afterSwap',
+  'beforeDonate',
+  'afterDonate',
+  'beforeSwapReturnsDelta',
+  'afterSwapReturnsDelta',
+  'afterAddLiquidityReturnsDelta',
+  'afterRemoveLiquidityReturnsDelta',
+] as const
+
+/* One vocabulary for the on-chain enums, shared by every surface that renders them.
+   Two screens holding two copies of these strings is how a hook ends up described as
+   "Restrictive" on one page and "Passive" on the next. */
+export const RISK_LABEL = ['Passive', 'Restrictive', 'Value-extracting'] as const
+export const VERIFICATION_LABEL = ['Unverified', 'Source verified', 'Audited'] as const
+export const LISTING_LABEL = ['Active', 'Deprecated', 'Flagged malicious'] as const
+
+/**
+ * Capability in plain language, straight off the registry's classifiers.
+ *
+ * Callers must render this whether or not it is comfortable — it is the sentence a
+ * user needs before they route funds through a pool.
+ */
+export function capabilityClaims(hook: RegisteredHook): string[] {
+  const claims: string[] = []
+  if (hook.takesSwapCut) claims.push('can take a share of every swap')
+  if (hook.canBlockSwaps) claims.push('can block or price swaps')
+  if (hook.canTrapLiquidity) claims.push('can refuse liquidity withdrawal')
+  if (claims.length === 0) claims.push('observes only — cannot move funds or block trading')
+  return claims
 }
 
 /**
@@ -520,12 +569,13 @@ export async function readRegisteredHooks(
         address: d.registry, abi, functionName: 'getHook', args: [a],
       })) as any
       const p = Number(r.permissions)
-      const [risk, cut, block, trap] = (await Promise.all([
+      const [risk, cut, block, trap, decoded] = (await Promise.all([
         c.readContract({ address: d.registry, abi, functionName: 'classify', args: [p] }),
         c.readContract({ address: d.registry, abi, functionName: 'takesSwapCut', args: [p] }),
         c.readContract({ address: d.registry, abi, functionName: 'canBlockSwaps', args: [p] }),
         c.readContract({ address: d.registry, abi, functionName: 'canTrapLiquidity', args: [p] }),
-      ])) as [number, boolean, boolean, boolean]
+        c.readContract({ address: d.registry, abi, functionName: 'decodePermissions', args: [p] }),
+      ])) as [number, boolean, boolean, boolean, Record<string, boolean>]
 
       return {
         address: a,
@@ -543,6 +593,7 @@ export async function readRegisteredHooks(
         canTrapLiquidity: trap,
         verification: Number(r.verification) as VerificationLevel,
         listing: Number(r.listing) as ListingState,
+        callbacks: CALLBACK_FIELDS.filter((f) => decoded?.[f]),
       }
     }),
   )
