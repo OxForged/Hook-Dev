@@ -97,10 +97,19 @@ const RPCS: Record<DeployedChainId, readonly string[]> = {
   ],
 }
 
-let cached: PublicClient | undefined
+/**
+ * One client per chain, cached by chain id.
+ *
+ * This used to be a single `let cached` with `if (cached) return cached`, which
+ * silently IGNORED the `chainId` argument after the first call: ask for Base
+ * having already asked for Sepolia and you got Sepolia's client, reading Sepolia
+ * addresses, and nothing anywhere said so. That was invisible while exactly one
+ * chain was deployed and becomes a wrong-chain read the moment a second is.
+ */
+const clients = new Map<number, PublicClient>()
 
 /**
- * The dapp's read client.
+ * The dapp's read client FOR ONE CHAIN.
  *
  * The retry shape is chosen for rate limits, not for flaky networks. `retryCount: 0`
  * per endpoint means a 429 falls straight through to the next provider instead of
@@ -110,14 +119,27 @@ let cached: PublicClient | undefined
  * per-minute budget we are trying to conserve.
  */
 export function client(chainId: DeployedChainId = SEPOLIA_CHAIN_ID): PublicClient {
-  if (cached) return cached
-  cached = createPublicClient({
+  const hit = clients.get(chainId)
+  if (hit) return hit
+
+  const urls = RPCS[chainId]
+  if (!urls || urls.length === 0) {
+    // Louder than returning some other chain's client, which is what the old
+    // single-cache version effectively did.
+    throw new Error(
+      `No RPC endpoints for chain ${chainId}. Add it to RPCS, sourced from ` +
+        `packages/sdk/src/chains/endpoints.ts where every URL was probed.`,
+    )
+  }
+
+  const made = createPublicClient({
     transport: fallback(
-      RPCS[chainId].map((u) => http(u, { timeout: 12_000, retryCount: 0 })),
+      urls.map((u) => http(u, { timeout: 12_000, retryCount: 0 })),
       { rank: false, retryCount: 2 },
     ),
   })
-  return cached
+  clients.set(chainId, made)
+  return made
 }
 
 /* ---------------------------------------------------------------------------
@@ -216,6 +238,14 @@ export async function readProtocolStatus(
 }
 
 export interface VaultHolding {
+  /**
+   * The chain this record was read from.
+   *
+   * Part of the RECORD, not of the call that produced it. Without it a record is
+   * only meaningful next to the client that fetched it, which is why nothing in
+   * the UI could label a row by chain.
+   */
+  chainId: DeployedChainId
   token: Address
   symbol: string
   decimals: number
@@ -239,18 +269,28 @@ export async function readVaultHoldings(
 
   return Promise.all(
     tokens.map(async (token) => {
+      // chainId is captured from the enclosing read, so a holding always knows
+      // which chain's vault it came from.
       const [balance, symbol, decimals, clReserve] = await Promise.all([
         c.readContract({ address: token, abi: ERC20, functionName: 'balanceOf', args: [d.vault] }),
         c.readContract({ address: token, abi: ERC20, functionName: 'symbol' }),
         c.readContract({ address: token, abi: ERC20, functionName: 'decimals' }),
         c.readContract({ address: d.vault, abi: VAULT, functionName: 'reservesOfApp', args: [d.clPoolManager, token] }),
       ])
-      return { token, symbol, decimals, balance, clReserve }
+      return { chainId, token, symbol, decimals, balance, clReserve }
     }),
   )
 }
 
 export interface SwapRecord {
+  /**
+   * The chain this record was read from.
+   *
+   * Part of the RECORD, not of the call that produced it. Without it a record is
+   * only meaningful next to the client that fetched it, which is why nothing in
+   * the UI could label a row by chain.
+   */
+  chainId: DeployedChainId
   txHash: Hex
   blockNumber: bigint
   poolId: Hex
@@ -287,6 +327,7 @@ export async function readRecentSwaps(
     .reverse()
     .map((l) => ({
       txHash: l.transactionHash,
+      chainId,
       blockNumber: l.blockNumber,
       poolId: l.args.id as Hex,
       sender: l.args.sender as Address,
@@ -329,6 +370,14 @@ export function formatUnits(v: bigint, decimals: number, places = 4): string {
 }
 
 export interface GovernanceStatus {
+  /**
+   * The chain this record was read from.
+   *
+   * Part of the RECORD, not of the call that produced it. Without it a record is
+   * only meaningful next to the client that fetched it, which is why nothing in
+   * the UI could label a row by chain.
+   */
+  chainId: DeployedChainId
   registry: Address
   hookCount: bigint
   custodyDelaySec: bigint
@@ -351,7 +400,7 @@ export async function readGovernanceStatus(
     c.readContract({ address: d.timelockCustody, abi: TIMELOCK, functionName: 'getMinDelay' }),
     c.readContract({ address: d.timelockPolicy, abi: TIMELOCK, functionName: 'getMinDelay' }),
   ])
-  return { registry: d.registry, hookCount, custodyDelaySec, policyDelaySec }
+  return { chainId, registry: d.registry, hookCount, custodyDelaySec, policyDelaySec }
 }
 
 /* ---------------------------------------------------------------------------
@@ -368,6 +417,14 @@ const CL_INITIALIZE_EVENT = parseAbi([
 ])
 
 export interface PoolRecord {
+  /**
+   * The chain this record was read from.
+   *
+   * Part of the RECORD, not of the call that produced it. Without it a record is
+   * only meaningful next to the client that fetched it, which is why nothing in
+   * the UI could label a row by chain.
+   */
+  chainId: DeployedChainId
   id: Hex
   currency0: Address
   currency1: Address
@@ -393,6 +450,7 @@ export async function readPools(
     const hooks = l.args.hooks as Address
     return {
       id: l.args.id as Hex,
+      chainId,
       currency0: l.args.currency0 as Address,
       currency1: l.args.currency1 as Address,
       hooks,
@@ -404,6 +462,14 @@ export async function readPools(
 }
 
 export interface ProtocolMetrics {
+  /**
+   * The chain this record was read from.
+   *
+   * Part of the RECORD, not of the call that produced it. Without it a record is
+   * only meaningful next to the client that fetched it, which is why nothing in
+   * the UI could label a row by chain.
+   */
+  chainId: DeployedChainId
   poolCount: number
   hookedPoolCount: number
   swapCount: number
@@ -469,6 +535,7 @@ export async function readProtocolMetrics(
   }
 
   return {
+    chainId,
     poolCount: pools.length,
     hookedPoolCount: pools.filter((p) => p.hasHook).length,
     swapCount: swaps.length,
@@ -497,6 +564,14 @@ export type VerificationLevel = 0 | 1 | 2
 export type ListingState = 0 | 1 | 2
 
 export interface RegisteredLatch {
+  /**
+   * The chain this record was read from.
+   *
+   * Part of the RECORD, not of the call that produced it. Without it a record is
+   * only meaningful next to the client that fetched it, which is why nothing in
+   * the UI could label a row by chain.
+   */
+  chainId: DeployedChainId
   address: Address
   name: string
   description: string
@@ -588,7 +663,7 @@ export async function readRegisteredLatches(
     ),
   )) as Address[]
 
-  return Promise.all(addrs.map((a) => hydrateHook(c, d.registry, a)))
+  return Promise.all(addrs.map((a) => hydrateHook(chainId, c, d.registry, a)))
 }
 
 /**
@@ -603,6 +678,7 @@ export async function readRegisteredLatches(
  * the address is listed.
  */
 async function hydrateHook(
+  chainId: DeployedChainId,
   c: PublicClient,
   registry: Address,
   a: Address,
@@ -621,6 +697,7 @@ async function hydrateHook(
   ])) as [number, boolean, boolean, boolean, Record<string, boolean>]
 
   return {
+    chainId,
     address: a,
     name: r.metadata?.name ?? '',
     description: r.metadata?.description ?? '',
@@ -688,7 +765,7 @@ export async function readRegisteredLatch(
     }
   }
 
-  return { found: true, latch: await hydrateHook(c, d.registry, address), checkedAtBlock }
+  return { found: true, latch: await hydrateHook(chainId, c, d.registry, address), checkedAtBlock }
 }
 
 /* ---------------------------------------------------------------------------
@@ -703,6 +780,14 @@ const CL_DONATE_EVENT = parseAbi([
 ])
 
 export interface ActivityEvent {
+  /**
+   * The chain this record was read from.
+   *
+   * Part of the RECORD, not of the call that produced it. Without it a record is
+   * only meaningful next to the client that fetched it, which is why nothing in
+   * the UI could label a row by chain.
+   */
+  chainId: DeployedChainId
   kind: 'Initialize' | 'Swap' | 'Add liquidity' | 'Remove liquidity' | 'Donate'
   blockNumber: bigint
   txHash: Hex
@@ -740,6 +825,7 @@ export async function readActivity(
     const hooks = l.args.hooks as Address
     const hooked = hooks !== '0x0000000000000000000000000000000000000000'
     out.push({
+      chainId,
       kind: 'Initialize',
       blockNumber: l.blockNumber,
       txHash: l.transactionHash,
@@ -748,6 +834,7 @@ export async function readActivity(
   }
   for (const l of swaps) {
     out.push({
+      chainId,
       kind: 'Swap',
       blockNumber: l.blockNumber,
       txHash: l.transactionHash,
@@ -757,6 +844,7 @@ export async function readActivity(
   for (const l of mods) {
     const delta = l.args.liquidityDelta as bigint
     out.push({
+      chainId,
       kind: delta >= 0n ? 'Add liquidity' : 'Remove liquidity',
       blockNumber: l.blockNumber,
       txHash: l.transactionHash,
@@ -765,6 +853,7 @@ export async function readActivity(
   }
   for (const l of donates) {
     out.push({
+      chainId,
       kind: 'Donate',
       blockNumber: l.blockNumber,
       txHash: l.transactionHash,
