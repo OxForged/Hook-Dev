@@ -41,8 +41,10 @@ export {
   hyperEvm,
   monad,
   plasma,
+  robinhood,
   stable,
-  /* testnets */
+  /* testnets — sepolia is the only one OFFERED; the other three are defined
+     and probed but absent from LATCH_CHAINS (see LATCH_UNLISTED_CHAINS) */
   sepolia,
   monadTestnet,
   stableTestnet,
@@ -51,6 +53,7 @@ export {
   LATCH_CHAINS,
   LATCH_MAINNET_CHAINS,
   LATCH_TESTNET_CHAINS,
+  LATCH_UNLISTED_CHAINS,
   LATCH_DEPLOYED_CHAIN_IDS,
   LATCH_DEFAULT_CHAIN,
   LATCH_PUBLIC_RPCS,

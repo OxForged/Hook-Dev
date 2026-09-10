@@ -1,7 +1,7 @@
 {
   "name": "@latchprotocol/connect",
   "version": "0.1.0",
-  "description": "MIT-licensed wallet layer for LatchProtocol: a thin, Latch-themed wrapper over RainbowKit + wagmi, plus defineChain entries for every Latch target chain wagmi does not ship.",
+  "description": "MIT-licensed wallet layer for LatchProtocol: a thin, Latch-themed wrapper over RainbowKit + wagmi, plus the Latch chain list with probed, redundant public RPC endpoints.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

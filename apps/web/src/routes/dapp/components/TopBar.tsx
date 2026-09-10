@@ -28,7 +28,7 @@ import { Link } from 'react-router-dom'
 import { LatchChainSwitcher, LatchConnectButton } from '@latchprotocol/connect'
 import { ChainMark } from '../../../components/ChainMark.tsx'
 import { TickerStrip } from '../../../components/TickerStrip.tsx'
-import type { ChainRow } from '../../../data/chains.ts'
+import { CHAIN_ROWS, type ChainRow } from '../../../data/chains.ts'
 import {
   coinGeckoCrypto,
   finnhubStocks,
@@ -111,7 +111,18 @@ export function TopBar({
               other dapp puts it and where a user looks for it. It was previously
               only at the foot of the sidebar — present, but past the seven nav
               rows and effectively undiscoverable. */}
-          <LatchChainSwitcher className="dapp-header__chain" />
+          {/* The switcher ships no logos on purpose: packages/connect is a standalone
+              MIT package and must not reach into this app's public/ directory. It
+              takes a render prop instead, and we hand it the same ChainMark the rest
+              of the dapp uses — so an unmapped chain falls back to the package's own
+              monogram rather than a broken image. */}
+          <LatchChainSwitcher
+            className="dapp-header__chain"
+            renderIcon={(chain) => {
+              const row = CHAIN_ROWS.find((r) => r.chainId === chain.id)
+              return row ? <ChainMark brand={row.brand} size={18} /> : null
+            }}
+          />
           <LatchConnectButton variant="inline" />
 
           <p className="dapp-block">

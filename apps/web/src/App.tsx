@@ -1,4 +1,4 @@
-import { Routes, Route, Link } from 'react-router-dom'
+import { Routes, Route, Link, Navigate } from 'react-router-dom'
 import Landing from './routes/landing'
 import Docs from './routes/docs'
 import Dapp from './routes/dapp'
@@ -65,8 +65,10 @@ export default function App() {
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/verify/:hookAddress" element={<Verify />} />
-      {/* Bare /verify has no address to verify. Handing it to the page would mean
-          inventing an empty state for "no input", so it 404s instead. */}
+      {/* Bare /verify has no address to verify. It used to 404, which is technically
+          true and practically useless — somebody who trimmed the address off a shared
+          link deserves the marketplace, not a dead end. */}
+      <Route path="/verify" element={<Navigate to="/app/marketplace" replace />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

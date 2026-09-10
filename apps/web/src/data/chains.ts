@@ -48,6 +48,7 @@ export interface ChainBrand {
  */
 type BrandKey =
   | 'ethereum'
+  | 'robinhood'
   | 'base'
   | 'bnb'
   | 'linea'
@@ -78,6 +79,14 @@ const BRANDS: Record<BrandKey, ChainBrand> = {
   plasma: { name: 'Plasma', logo: '/chains/plasma.svg', monogram: 'PL' },
   stable: { name: 'Stable', logo: '/chains/stable.svg', monogram: 'S' },
   arc: { name: 'Arc', logo: '/chains/arc.svg', monogram: 'ARC' },
+  /**
+   * No official mark sourced yet, so this is deliberately a monogram.
+   * `public/chains/SOURCES.md` only admits assets taken as-is from the network's own
+   * site, CDN or GitHub org — drawing an approximation of somebody's logo would
+   * misrepresent them, and an aggregator's copy is not a source. Add the file and
+   * swap `logo` when Robinhood publishes a brand kit.
+   */
+  robinhood: { name: 'Robinhood Chain', logo: null, monogram: 'RH' },
 }
 
 /** Exhaustive by construction: adding a chain to the SDK breaks this until mapped. */
@@ -92,6 +101,7 @@ const BRAND_OF: Record<ChainKey, BrandKey> = {
   monad: 'monad',
   monadTestnet: 'monad',
   plasma: 'plasma',
+  robinhood: 'robinhood',
   stable: 'stable',
   sepolia: 'ethereum',
   stableTestnet: 'stable',

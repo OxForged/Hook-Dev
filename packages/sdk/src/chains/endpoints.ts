@@ -127,6 +127,27 @@ export const CHAIN_RPCS = {
       { url: 'https://1rpc.io/linea', latencyMs: 132, eip1153: true },
     ],
   },
+  /**
+   * Robinhood Chain — Robinhood's own L2.
+   *
+   * ONE working public endpoint, and that is not for want of looking. `robinhood.drpc.org`
+   * answers `eth_chainId` with the correct 4663 from a config table while rejecting
+   * `eth_blockNumber` and `eth_call` outright ("the method does not exist/is not available") —
+   * alive to a chain-id check, dead to a real request. Shipping it would spend a fallback
+   * attempt on a provider that cannot answer, which is worse than not listing it. Same shape
+   * as the Arc mainnet problem; see the note on `arcTestnet`.
+   *
+   * EIP-1153 confirmed by TSTORE probe against the canonical endpoint, so this is a
+   * default-profile (cancun) deploy target.
+   */
+  robinhood: {
+    chainId: 4663,
+    name: 'Robinhood Chain',
+    supportsEip1153: true,
+    endpoints: [
+      { url: 'https://rpc.mainnet.chain.robinhood.com', latencyMs: 551, eip1153: true },
+    ],
+  },
   /** Ink — Kraken's OP-Stack L2. Two of the five are Ink's own gel/qnd nodes. */
   ink: {
     chainId: 57073,
@@ -284,7 +305,7 @@ export type ChainKey = keyof typeof CHAIN_RPCS
  * a deploy check should make, and it will stop being empty the moment a chain is
  * added ahead of its provider ecosystem.
  */
-export const SINGLE_ENDPOINT_CHAINS: readonly ChainKey[] = []
+export const SINGLE_ENDPOINT_CHAINS: readonly ChainKey[] = ['robinhood']
 
 /**
  * Chains carrying FEWER than the five-endpoint target.
@@ -294,7 +315,7 @@ export const SINGLE_ENDPOINT_CHAINS: readonly ChainKey[] = []
  * degrade first. On these chains treat a paid or self-hosted node supplied through
  * `LATCH_RPC_<chainId>` as a requirement rather than an optimisation.
  */
-export const THIN_ENDPOINT_CHAINS: readonly ChainKey[] = ['xlayer', 'plasma', 'stable', 'stableTestnet']
+export const THIN_ENDPOINT_CHAINS: readonly ChainKey[] = ['robinhood', 'xlayer', 'plasma', 'stable', 'stableTestnet']
 
 /** The number of public endpoints this file aims to carry per chain. */
 export const ENDPOINT_TARGET = 5

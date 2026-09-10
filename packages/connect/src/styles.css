@@ -223,6 +223,8 @@
   white-space: nowrap;
 }
 
+.latch-chain__trigger .latch-chain__icon { width: 16px; height: 16px; }
+
 .latch-chain__caret {
   width: 0;
   height: 0;
@@ -232,24 +234,59 @@
   opacity: 0.65;
 }
 
+/* chain mark. The box is ours; whatever `renderIcon` returns is sized into it,
+   and the monogram fallback fills it when nothing is supplied. */
+.latch-chain__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+}
+.latch-chain__icon > img,
+.latch-chain__icon > svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.latch-chain__icon-mono {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--lc-line);
+  border-radius: inherit;
+  background: var(--lc-panel);
+  color: var(--lc-ink-muted);
+  font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 9.5px;
+  line-height: 1;
+}
+
 .latch-chain__menu {
   position: absolute;
   z-index: 60;
   right: 0;
   top: calc(100% + 6px);
-  min-width: 232px;
-  max-height: 320px;
+  min-width: 244px;
+  max-height: 360px;
   overflow-y: auto;
   margin: 0;
   padding: 6px;
-  list-style: none;
   border: 1px solid var(--lc-line);
   border-radius: var(--r-sm, 14px);
   background: var(--panel, #070c17);
   box-shadow: var(--sh-card-hover, 0 18px 48px rgba(4, 10, 24, 0.8));
 }
 
+.latch-chain__section + .latch-chain__section { margin-top: 2px; }
+
 .latch-chain__group {
+  margin: 0;
   padding: 8px 10px 4px;
   font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
   font-size: 9.5px;
@@ -261,7 +298,7 @@
 .latch-chain__row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
   padding: 9px 10px;
   border: 0;
@@ -274,28 +311,49 @@
   cursor: pointer;
   transition: background-color 0.18s var(--lc-ease);
 }
-.latch-chain__row:hover:not(:disabled) { background: var(--lc-panel); }
+.latch-chain__row:hover { background: var(--lc-panel); }
 .latch-chain__row:focus-visible { outline: 2px solid var(--lc-blue); outline-offset: -2px; }
-.latch-chain__row:disabled { cursor: progress; opacity: 0.6; }
 .latch-chain__row.is-active { background: var(--active-nav, #173768); }
 
-.latch-chain__row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.latch-chain__row-id {
-  font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
-  font-size: 10.5px;
-  color: var(--lc-ink-faint);
+/* Coming soon. `aria-disabled`, not `disabled` — the row stays focusable so the
+   reason in its accessible name is reachable. It must therefore LOOK inert
+   without the browser's help. */
+.latch-chain__row.is-unavailable {
+  cursor: default;
+  color: var(--lc-ink-muted);
 }
+.latch-chain__row.is-unavailable .latch-chain__icon { opacity: 0.55; }
+.latch-chain__row.is-unavailable:hover { background: transparent; }
+
+.latch-chain__row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
 .latch-chain__row-tag {
+  flex: 0 0 auto;
   padding: 2px 6px;
   border-radius: var(--r-micro, 7px);
-  background: color-mix(in srgb, var(--lc-warning) 16%, transparent);
-  color: var(--lc-warning);
+  background: color-mix(in srgb, var(--lc-ink-faint) 18%, transparent);
+  color: var(--lc-ink-muted);
   font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
   font-size: 9px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
-.latch-chain__row-state { font-size: 11px; color: var(--lc-ink-muted); }
+.latch-chain__row-tag--soon {
+  background: color-mix(in srgb, var(--lc-warning) 16%, transparent);
+  color: var(--lc-warning);
+}
+
+/* Selected mark: a CSS tick, so no icon asset is needed for the one glyph the
+   switcher itself owns. */
+.latch-chain__check {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 10px;
+  margin: 0 3px 2px 1px;
+  border: solid var(--lc-blue);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
 
 .latch-chain__error {
   margin: 6px 0 0;

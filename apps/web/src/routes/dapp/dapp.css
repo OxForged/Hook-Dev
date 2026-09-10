@@ -1725,3 +1725,273 @@ span.dapp-net-chip__mark {
 .dp-dot--idle { background: var(--dapp-track); }
 
 .dapp-console__line.is-err { color: var(--error); }
+
+/* ---- Latch Marketplace, store layout --------------------------------------
+   An app store's grammar — listing grid, trust row, product page behind each
+   card — over registry content. The one thing deliberately NOT borrowed is the
+   store habit of leading with the vendor's own copy: the submitter's prose sits
+   below the decoded bytecode on every card.
+
+   `data-tone` is the card's own risk colour and is set from listing state and
+   capability class ONLY. Verification never styles the card, so an audited
+   value-extracting Latch cannot buy its way out of looking dangerous.
+   -------------------------------------------------------------------------- */
+
+.lx-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 306px;
+  align-items: start;
+  gap: 16px;
+}
+.lx-main { min-width: 0; }
+
+.lx-rail { display: grid; gap: 14px; position: sticky; top: 132px; }
+.lx-rail__card { padding: 18px; display: grid; gap: 10px; }
+.lx-rail__card .live-note { margin: 0; }
+.lx-rail__note { line-height: 1.55; }
+.lx-rail__note code { font-family: var(--font-mono); font-size: 11.5px; color: var(--dapp-ink-sub); }
+.lx-rail__chain { display: flex; align-items: center; gap: 7px; }
+.lx-rail__mark { width: 16px; height: 16px; object-fit: contain; flex: 0 0 auto; }
+.lx-rail__cta { justify-self: start; }
+.lx-rail .live-grid { margin: 0; }
+.lx-rail .live-grid a { color: var(--signal-blue); }
+
+.lx-legend { list-style: none; margin: 0 0 2px; padding: 0; display: grid; gap: 8px; }
+.lx-legend li {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+.lx-legend li > span:first-child { justify-self: start; }
+.lx-legend__head { margin-top: 4px; }
+
+/* ---- toolbar --------------------------------------------------------------- */
+
+.lx-toolbar { display: grid; gap: 14px; margin-top: 14px; }
+.lx-search { flex: 1 1 100%; }
+.lx-toolbar .hx-filters { margin-top: 0; }
+
+.lx-count {
+  margin: 18px 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+}
+
+/* auto-fill, not auto-fit: with one listing the track keeps its width instead
+   of stretching a lone card across the whole column, which reads as a layout
+   bug rather than as a marketplace with one thing in it. */
+.lx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+/* ---- card ------------------------------------------------------------------ */
+
+.lx-card {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  transition:
+    border-color 0.22s var(--dapp-ease),
+    background 0.22s var(--dapp-ease),
+    transform 0.22s var(--dapp-ease);
+}
+.lx-card:hover,
+.lx-card:focus-within { border-color: var(--border-hover); transform: translateY(-2px); }
+
+.lx-card[data-tone="caution"] { border-color: var(--dapp-badge-warn-border); }
+.lx-card[data-tone="caution"]:hover { border-color: var(--warning); }
+.lx-card[data-tone="danger"] {
+  border-color: var(--dapp-badge-danger-border);
+  background: linear-gradient(180deg, var(--dapp-badge-danger-bg), transparent 42%), var(--panel);
+}
+.lx-card[data-tone="danger"]:hover { border-color: var(--error); }
+.lx-card[data-tone="deprecated"] { opacity: 0.9; }
+
+.lx-card__top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.lx-icon { width: 44px; height: 44px; flex: 0 0 auto; }
+.lx-card[data-tone="danger"] .lx-icon {
+  border-color: var(--dapp-badge-danger-border);
+  background: var(--dapp-badge-danger-bg);
+}
+.lx-card[data-tone="danger"] .dapp-tile__diamond { border-color: var(--error); }
+
+.lx-card__id { min-width: 0; display: grid; gap: 2px; }
+.lx-card__name { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 17px; line-height: 1.25; }
+.lx-card__go { color: var(--ink); text-decoration: none; }
+.lx-card__go:hover { color: var(--sky-ink); }
+/* The stretched hit target. Every other anchor in the card is lifted above it. */
+.lx-card__go::after { position: absolute; inset: 0; z-index: 0; content: ""; border-radius: var(--r-card); }
+.lx-card__go:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 3px; border-radius: 4px; }
+.lx-card a:not(.lx-card__go),
+.lx-card button { position: relative; z-index: 1; }
+
+.lx-card__addr { font-family: var(--font-mono); font-size: 11px; color: var(--label-ink); text-decoration: none; }
+.lx-card__addr:hover { color: var(--signal-blue); text-decoration: underline; }
+
+/* ---- the trust row --------------------------------------------------------- */
+
+.lx-trust {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--r-sm);
+  background: var(--panel-alt);
+}
+.lx-trust__cell { display: grid; gap: 5px; min-width: 0; }
+.lx-trust__cell dd { margin: 0; }
+.lx-trust__cell .dapp-badge { display: inline-block; }
+.lx-trust--lg { padding: 14px 16px; gap: 14px; }
+.lx-card[data-tone="danger"] .lx-trust { border-color: var(--dapp-badge-danger-border); }
+
+/* ---- capability block ------------------------------------------------------ */
+
+.lx-caps__meter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin: 9px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.lx-caps__bitmap { color: var(--dapp-ink-data); }
+.lx-caps__count { color: var(--faint-ink); }
+
+/* ---- submitter prose ------------------------------------------------------- */
+
+.lx-card__desc {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted-ink);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.lx-card__byline { margin: -4px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--faint-ink); }
+
+.lx-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 11px;
+  border-top: 1px solid var(--hairline-soft);
+}
+.lx-links { display: flex; flex-wrap: wrap; gap: 12px; font-family: var(--font-mono); font-size: 11.5px; }
+.lx-links a { color: var(--signal-blue); text-decoration: none; }
+.lx-links a:hover { text-decoration: underline; }
+.lx-card__more { font-family: var(--font-mono); font-size: 11px; color: var(--label-ink); transition: color 0.22s var(--dapp-ease); }
+.lx-card:hover .lx-card__more { color: var(--signal-blue); }
+
+/* ---- Latch detail: the product page ---------------------------------------- */
+
+.lx-detail { display: grid; gap: 14px; }
+.lx-hero { display: grid; gap: 14px; }
+.lx-hero__top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.lx-hero__icon { width: 58px; height: 58px; flex: 0 0 auto; }
+.lx-hero__id { min-width: 0; display: grid; gap: 4px; flex: 1 1 240px; }
+.lx-hero__name { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 25px; line-height: 1.2; }
+.lx-hero__addr { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; font-family: var(--font-mono); font-size: 12px; color: var(--label-ink); }
+.lx-hero__addr a { color: var(--signal-blue); text-decoration: none; }
+.lx-hero__addr a:hover { text-decoration: underline; }
+.lx-hero__chain { display: inline-flex; align-items: center; gap: 6px; }
+.lx-hero__mark { width: 14px; height: 14px; object-fit: contain; }
+
+.lx-detail[data-tone="danger"] .lx-hero {
+  border-color: var(--dapp-badge-danger-border);
+  background: linear-gradient(180deg, var(--dapp-badge-danger-bg), transparent 38%), var(--panel);
+}
+.lx-detail[data-tone="caution"] .lx-hero { border-color: var(--dapp-badge-warn-border); }
+
+/* The permission matrix — all fourteen callbacks, held and not held. The rows a
+   Latch does NOT hold are the reassuring half of the page, so they are rendered
+   rather than omitted: an absent row reads as "unknown", not as "no". */
+.lx-perms {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 0 18px;
+}
+.lx-perms li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline-soft);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.lx-perm__mark {
+  width: 15px;
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 11px;
+  color: var(--faint-ink);
+}
+.lx-perms li[data-held="yes"] { color: var(--ink); }
+.lx-perms li[data-held="yes"] .lx-perm__mark { color: var(--success); }
+.lx-perms li[data-held="no"] { color: var(--faint-ink); }
+.lx-perms li[data-held="yes"][data-danger="yes"] { color: var(--warning); }
+.lx-perms li[data-held="yes"][data-danger="yes"] .lx-perm__mark { color: var(--error); }
+.lx-perm__bit { margin-left: auto; font-size: 10px; color: var(--faint-ink); }
+
+.lx-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 12px; margin: 0; }
+.lx-kv dt {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+  margin-bottom: 4px;
+}
+.lx-kv dd { margin: 0; font-size: 13px; color: var(--ink); overflow-wrap: anywhere; }
+.lx-kv dd a { color: var(--signal-blue); text-decoration: none; }
+.lx-kv dd a:hover { text-decoration: underline; }
+.lx-kv__mono { font-family: var(--font-mono); font-size: 12px; }
+
+.lx-quote {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 2px solid var(--hairline-blue);
+  border-radius: 0 var(--r-micro) var(--r-micro) 0;
+  background: var(--panel-alt);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--muted-ink);
+}
+.lx-quote__by { display: block; margin-top: 8px; font-size: 11.5px; color: var(--faint-ink); }
+
+.lx-back { margin: 4px 0 0; font-size: 12.5px; }
+.lx-back a { color: var(--signal-blue); }
+
+@media (max-width: 1180px) {
+  .lx-layout { grid-template-columns: minmax(0, 1fr); }
+  .lx-rail { position: static; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .lx-grid { grid-template-columns: minmax(0, 1fr); }
+  .lx-hero__name { font-size: 21px; }
+  .lx-hero__icon { width: 46px; height: 46px; }
+  .lx-card { padding: 16px; }
+}

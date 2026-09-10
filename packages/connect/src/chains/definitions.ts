@@ -61,6 +61,7 @@ import {
   monad as wagmiMonad,
   monadTestnet as wagmiMonadTestnet,
   plasma as wagmiPlasma,
+  robinhood as wagmiRobinhood,
   sepolia as wagmiSepolia,
   stable as wagmiStable,
   stableTestnet as wagmiStableTestnet,
@@ -84,6 +85,11 @@ import {
  * fallback transport spends a retry on every dead entry before reaching a live one.
  */
 export const LATCH_PUBLIC_RPCS: Readonly<Record<number, readonly string[]>> = {
+  // Robinhood Chain — 1. `robinhood.drpc.org` answers eth_chainId with the correct
+  // 4663 from a config table but rejects eth_blockNumber and eth_call, so it is alive
+  // to a chain-id check and dead to a real request. Listing it would spend a fallback
+  // attempt on a provider that cannot answer.
+  4663: ['https://rpc.mainnet.chain.robinhood.com'],
   // Ethereum — 5
   1: [
     'https://eth.drpc.org',
@@ -250,9 +256,28 @@ export const plasma = /*#__PURE__*/ withLatchRpcs(wagmiPlasma)
 /** Stable — stablecoin-gas L1. Gas token is USDT0, per wagmi and ethereum-lists. */
 export const stable = /*#__PURE__*/ withLatchRpcs(wagmiStable)
 
+/**
+ * Robinhood Chain — Robinhood's own L2. ETH for gas, Blockscout explorer.
+ *
+ * ONE probed endpoint; see the note in LATCH_PUBLIC_RPCS. EIP-1153 confirmed by TSTORE
+ * probe on 2026-09-10, so it is a default-profile (cancun) deploy target — which
+ * `packages/core/script/BackendGuard.sol` will assert again at deploy time.
+ */
+export const robinhood = /*#__PURE__*/ withLatchRpcs(wagmiRobinhood)
+
 /* ------------------------------------------------------------------ testnet */
 
 export const sepolia = /*#__PURE__*/ withLatchRpcs(wagmiSepolia)
+
+/* --------------------------------------------------------------------------
+   The three below are DEFINED and probed, but NOT offered: they are absent from
+   `LATCH_CHAINS` and collected in `LATCH_UNLISTED_CHAINS` instead. Latch has no
+   contracts on any of them and no plan to deploy to a testnet other than
+   Sepolia. Kept because the endpoint probing was real work and because removing
+   a published export would break integrators for no gain. See the header of
+   `./index.ts`.
+   -------------------------------------------------------------------------- */
+
 export const monadTestnet = /*#__PURE__*/ withLatchRpcs(wagmiMonadTestnet)
 export const stableTestnet = /*#__PURE__*/ withLatchRpcs(wagmiStableTestnet)
 
@@ -302,6 +327,12 @@ export const SINGLE_ENDPOINT_CHAIN_IDS: readonly number[] = []
  *
  * They still fail over, but with less headroom, and they will degrade first on a
  * rate-limited day. Not a probe failure — no fifth public endpoint was found.
+ *
+ * SCOPE: every chain this file DEFINES, which is a superset of `LATCH_CHAINS`.
+ * Stable Testnet (2201) is still listed here even though it is no longer offered
+ * (see the header of `./index.ts`), because this table mirrors the SDK's
+ * `THIN_ENDPOINT_CHAINS` one-for-one and the measurement is still true. A check
+ * that only cares about offered chains should intersect it with `LATCH_CHAINS`.
  */
 export const THIN_ENDPOINT_CHAIN_IDS: readonly number[] = [
   xLayer.id,
