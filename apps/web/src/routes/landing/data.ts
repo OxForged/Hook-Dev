@@ -81,110 +81,53 @@ export const HERO_NODES: readonly HeroNode[] = [
   { label: 'AMM', x: 0, y: 40 },
 ]
 
-/* ------------------------------------------------------------- stats strip */
+/* ------------------------------------------------- verified protocol facts */
 
-export interface Stat {
-  readonly value: string
-  readonly label: string
-}
+/**
+ * Everything below is a figure someone can check, and every one of them was
+ * produced by running something rather than by choosing a number that looked
+ * plausible. What they replaced — a TVL area chart, a gas histogram, a
+ * TVL-by-network donut, "1,840 latches deployed", and "Audit coverage: 94% of
+ * TVL" — was invented and merely labelled as illustrative.
+ */
 
-/** Placeholder figures — see the file header. */
-export const STATS: readonly Stat[] = [
-  { value: '$412M', label: 'VALUE ROUTED THROUGH LATCHES' },
-  { value: '1,840', label: 'LATCHES DEPLOYED' },
-  { value: '9', label: 'NETWORKS LIVE' },
-  { value: '27ms', label: 'MEDIAN HOOK OVERHEAD' },
-]
-
-/* ---------------------------------------------------------------- activity */
-
-export type RangeKey = '30D' | '90D' | '1Y'
-
-export const RANGES: readonly RangeKey[] = ['30D', '90D', '1Y']
-export const DEFAULT_RANGE: RangeKey = '1Y'
-
-export interface ActivitySeries {
-  readonly labels: readonly string[]
-  readonly pts: readonly number[]
-  readonly headline: string
-  readonly delta: string
-}
-
-export const ACTIVITY: Record<RangeKey, ActivitySeries> = {
-  '30D': {
-    labels: ['W1', 'W2', 'W3', 'W4'],
-    pts: [352, 368, 381, 412],
-    headline: '$412M',
-    delta: '+17.0% / 30d',
-  },
-  '90D': {
-    labels: ['Apr', 'May', 'Jun'],
-    pts: [268, 301, 344, 362, 381, 412],
-    headline: '$412M',
-    delta: '+53.7% / 90d',
-  },
-  '1Y': {
-    labels: ['Oct', 'Dec', 'Feb', 'Apr', 'Jun', 'Sep'],
-    pts: [64, 88, 102, 141, 168, 205, 248, 262, 301, 344, 381, 412],
-    headline: '$412M',
-    delta: '+544% / 1y',
-  },
-}
-
-export interface CategoryBar {
+export interface FactRow {
   readonly name: string
   readonly value: string
-  /** Bar width, 0–100. */
-  readonly pct: number
-  readonly tone: Tone
-}
-
-export const CALL_CATEGORIES: readonly CategoryBar[] = [
-  { name: 'AMM / swap hooks', value: '18.4M', pct: 100, tone: 'primary' },
-  { name: 'Lending markets', value: '7.1M', pct: 39, tone: 'signal' },
-  { name: 'NFT / assets', value: '3.6M', pct: 20, tone: 'violet' },
-  { name: 'Gaming', value: '2.2M', pct: 12, tone: 'success' },
-]
-
-/** Gas overhead histogram, 14 buckets, values as a percentage of the peak. */
-export const GAS_COLUMNS: readonly number[] = [8, 17, 34, 58, 92, 100, 84, 61, 44, 31, 22, 15, 10, 6]
-export const GAS_AXIS = ['2k', 'median 8.4k', '40k'] as const
-
-export interface NetworkShare {
-  readonly name: string
-  readonly pct: number
-  readonly tone: Tone
-}
-
-export const TVL_BY_NETWORK: readonly NetworkShare[] = [
-  { name: 'Ethereum', pct: 41, tone: 'primary' },
-  { name: 'Base', pct: 27, tone: 'signal' },
-  { name: 'Arbitrum', pct: 19, tone: 'violet' },
-  { name: 'Others', pct: 13, tone: 'success' },
-]
-
-/** Latches deployed per week, 20 buckets. Scaled against the last value. */
-export const DEPLOY_COLUMNS: readonly number[] = [
-  12, 18, 15, 24, 31, 27, 38, 44, 36, 52, 48, 61, 57, 70, 66, 74, 81, 77, 88, 96,
-]
-export const DEPLOY_CAPTION = '1,840 total · 96 added this week'
-
-export interface HealthRow {
-  readonly name: string
-  readonly value: string
-  readonly tone: Tone
+  /** Maps to a landing.module.css tone class. */
+  readonly toneClass: string
 }
 
 /**
- * SCREENS.md § A4 calls this card "REGISTRY HEALTH" with a "Verified latches"
- * row. There is no registry contract, so the card is PROTOCOL HEALTH and the
- * row is source verification — the thing that is actually verifiable on a block
- * explorer. The figures remain placeholders.
+ * Gas observed in executed transactions on an anvil fork of Sepolia
+ * (packages/widgets test/fork), not `eth_estimateGas` and not a guess.
  */
-export const PROTOCOL_HEALTH: readonly HealthRow[] = [
-  { name: 'Source-verified hooks', value: '1,612 / 1,840', tone: 'success' },
-  { name: 'Reverts (24h)', value: '0.021%', tone: 'primary' },
-  { name: 'Audit coverage', value: '94% of TVL', tone: 'amber' },
+export const MEASURED_GAS: readonly { name: string; gas: string }[] = [
+  { name: 'Single-hop swap', gas: '172,049' },
+  { name: 'Two-hop swap', gas: '225,618' },
+]
+
+/**
+ * Contracts exist on exactly one network. The other ten are targets, and the
+ * chain switcher, the dapp network chip and this row all say so identically —
+ * a visitor should never have to reconcile two different answers.
+ */
+export const NETWORK_REACH: readonly FactRow[] = [
+  { name: 'Deployed', value: 'Ethereum Sepolia', toneClass: 'toneSuccess' },
+  { name: 'Targeted, no contracts', value: '10 networks', toneClass: 'toneMuted' },
+  { name: 'Mainnet', value: 'None yet', toneClass: 'toneMuted' },
+]
+
+/**
+ * Test counts from suites that run in CI, each figure taken from that suite's
+ * own output. The audit row is the reason this card exists: it is the one place
+ * a placeholder could have done real harm.
+ */
+export const TEST_COVERAGE: readonly FactRow[] = [
+  { name: 'Solidity tests', value: '256 passing', toneClass: 'toneSuccess' },
+  { name: 'Widget tests', value: '77 unit + 22 fork', toneClass: 'toneSuccess' },
+  { name: 'Hook linter rules', value: '12 rules, 65 tests', toneClass: 'toneSuccess' },
+  { name: 'Third-party audit', value: 'None', toneClass: 'toneAmber' },
 ]
 
 /* --------------------------------------------------------------- use cases */

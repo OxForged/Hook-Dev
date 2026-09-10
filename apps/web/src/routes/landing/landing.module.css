@@ -618,7 +618,7 @@
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.16em;
-  color: var(--label-ink);
+  --tone: var(--label-ink);
 }
 
 .areaChart {
@@ -682,7 +682,7 @@
   font-weight: 400;
   font-size: 10.5px;
   letter-spacing: 0.16em;
-  color: var(--label-ink);
+  --tone: var(--label-ink);
 }
 
 .barList {
@@ -1170,7 +1170,7 @@
   font-weight: 500;
   font-size: 11px;
   letter-spacing: 0.22em;
-  color: var(--label-ink);
+  --tone: var(--label-ink);
 }
 
 .chainGroupCount {
@@ -1253,7 +1253,7 @@ span.chainMark {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
-  color: var(--label-ink);
+  --tone: var(--label-ink);
 }
 
 .chainBadge {
@@ -1768,7 +1768,7 @@ span.chainMark {
   border: 1px solid color-mix(in srgb, var(--success-ink, #4ade80) 28%, transparent);
 }
 .useCaseStatusSoon {
-  color: var(--label-ink);
+  --tone: var(--label-ink);
   background: transparent;
   border: 1px solid color-mix(in srgb, var(--label-ink) 32%, transparent);
 }
@@ -1777,8 +1777,15 @@ span.chainMark {
 .sectionLead {
   max-width: 62ch;
   margin: 14px auto 0;
-  color: var(--label-ink);
+  --tone: var(--label-ink);
   font-size: 14.5px;
   line-height: 1.65;
   text-align: center;
+}
+
+/* Neutral tone for a fact that is neither good news nor a warning — a network we
+   have not deployed to yet is simply a fact, and colouring it red would overstate
+   it as much as colouring it green would flatter it. */
+.toneMuted {
+  --tone: var(--label-ink);
 }
