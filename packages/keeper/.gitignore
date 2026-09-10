@@ -1,0 +1,6 @@
+node_modules/
+dist/
+keeper.config.json
+.env
+.env.*
+!.env.example

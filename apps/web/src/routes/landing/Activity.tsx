@@ -80,7 +80,7 @@ function LiveState() {
   )
 }
 
-/** Real protocol events by type. Not hook callbacks — none have ever fired. */
+/** Real protocol events by type. Not Latch callbacks — none have ever fired. */
 function EventMix() {
   const [state, setState] = useState<FeedState>({ k: 'loading' })
 
@@ -127,7 +127,7 @@ function EventMix() {
           <p className={styles['deployCaption']}>
             {swaps < MIN_POINTS_FOR_SERIES
               ? `Too few swaps (${swaps}) to plot a time series; the count is shown instead.`
-              : 'Protocol events, not hook callbacks.'}
+              : 'Protocol events, not Latch callbacks.'}
           </p>
         </>
       )}
@@ -149,7 +149,7 @@ function MeasuredGas() {
         ))}
       </div>
       <p className={styles['deployCaption']}>
-        Observed in executed transactions, not estimated. A hook adds its own cost on top.
+        Observed in executed transactions, not estimated. A Latch adds its own cost on top.
       </p>
     </div>
   )

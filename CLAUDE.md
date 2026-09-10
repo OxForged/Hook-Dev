@@ -314,6 +314,120 @@ behind the same multisig + timelock as `registerApp`.
 
 ---
 
+## Naming: "Latch" is the product, "hook" is the integration point
+
+The product noun users see is **Latch**. Users deploy a Latch, browse the **Latch Marketplace**,
+and read a Latch's capabilities. The word "hook" survives in exactly one place: the names of real
+on-chain things.
+
+**House style — product noun in prose, real contract name in code voice:**
+
+> "The registry reads this bitmap by calling `getHooksRegistrationBitmap()` on the Latch itself."
+
+**Never rename these.** They are the ABI:
+
+- `getHooksRegistrationBitmap()` — declared in the UPSTREAM `IHooks` interface and called by
+  `Hooks.validateHookConfig` during pool initialization. Renaming it forks the hook ABI and breaks
+  compatibility with every Uniswap-v4/Infinity-style hook and all third-party tooling.
+- `IHooks`, `ICLHooks`, `BaseCLHook`, `hookDelta`, `poolKey.hooks`, and every Solidity type,
+  function, event or error name.
+
+Anything inside a code block, an ABI reference, or a `<code>` element stays verbatim. Where it
+helps a newcomer, state the relationship once per surface: *"A Latch is a hook contract attached
+to a pool."*
+
+A naive `Hook` -> `Latch` find-and-replace WILL corrupt `getHooksRegistrationBitmap` and `IHooks`.
+Mask those tokens before any sweep.
+
+### Registry rename, 2026-09-10
+
+`LatchHookRegistry` was renamed to `LatchRegistry` and redeployed on Sepolia. The selector-bearing
+functions changed with it:
+
+| Old | New |
+|---|---|
+| `getHook` · `hookCount` · `hookAt` · `listHooks` | `getLatch` · `latchCount` · `latchAt` · `listLatches` |
+| `HookMetadata` · `HookRecord` | `LatchMetadata` · `LatchRecord` |
+
+- **Live:** `0xB504da43C6ED342a511f3e5849f53035F2C807d1`
+- **Retired:** `0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE` — still answers `hookCount()` and still
+  holds the original listing. Nothing reads it. It was NOT migrated.
+
+Gotcha that cost real time: **Foundry does not delete artifacts for source files that no longer
+exist.** After the rename, `apps/web/scripts/sync-abi.mjs` regenerated 72 ABI entries from the
+stale `LatchHookRegistry.sol` artifact and reported success. That script now fails hard when its
+source path is missing — keep it that way, and run `forge clean` after any contract rename.
+
+---
+
+## Automation: the keeper, and LatchAI
+
+### `packages/keeper` — MIT
+
+Four calls the protocol needs somebody to make, and nobody was making: `closeEpoch()`,
+`rollover(id)`, `settleBeneficiaries(key, currency)`, `applyPendingConfig(key)`. Without them an
+epoch never closes, unclaimed funds never roll over, and fees never reach a roster.
+
+**All four are permissionless, and that is the security model.** The keeper holds no privileged
+role. A stolen keeper key buys an attacker nothing they could not already do from any address —
+it can waste gas, not move funds. Never add an owner/curator/guardian-only call to that package;
+if a job needs a privileged role, it does not belong there.
+
+Two rules to preserve:
+1. **Dry run is the default.** Sending needs BOTH `--execute` and `KEEPER_PRIVATE_KEY`.
+2. **Nothing is sent that did not simulate.** Every contract guard (`EpochTooSoon`,
+   `NothingToDistribute`, `AlreadyRolledOver`) is a revert, so simulating turns each into a free
+   read. Note `settleBeneficiaries` does NOT revert when pointless — it returns early — so that
+   job must read `pendingBeneficiary` first or it will pay gas to do nothing forever.
+
+### `packages/latch-ai` (LatchAI) — MIT
+
+**We do not fork agent frameworks.** Forking ElizaOS/OpenClaw to rebrand would mean inheriting a
+large maintenance surface that is not our differentiator, falling behind upstream continuously, and
+cutting ourselves off from the plugin ecosystem that makes those frameworks worth anything. It also
+does not touch the moat — which, per the revenue analysis above, is own-authored hooks and router
+flow, not code we cannot defend.
+
+LatchAI is therefore a **framework-agnostic plugin**: typed, documented capabilities an agent can
+call, with thin optional adapters. It must not depend on any LLM SDK or agent framework.
+
+Boundaries:
+- Read-only tools are the valuable and safe ones.
+- Any write capability is limited to the same permissionless calls the keeper makes, defaults OFF,
+  and simulates before sending.
+- **Never expose an owner/curator/guardian-only function, and never anything that moves a user's
+  funds.**
+- A tool must never answer "this Latch is safe". It reports what the registry and the bitmap say,
+  and what they do not cover. A registry listing is not an audit.
+
+The interesting frontier, when we get there, is **agent-operated Latches** — a hook whose
+parameters an agent manages. That uses the actual moat. Note this became defensible only once
+`ManualPriceBandOracle`'s publisher role was bounded (see below); an unbounded publisher key is not
+something to hand an autonomous process.
+
+---
+
+## Known open security findings
+
+- **HIGH, fixed 2026-09-10 — `ManualPriceBandOracle` publisher key.** The band is a ratio to the
+  reference, so whoever moves the reference moves the band. Now bounded by
+  `maxPublisherDeviationBps` (default 1000 = 10% in PRICE terms) measured against a persistent
+  `anchor` that deliberately SURVIVES `clearReference` — otherwise "clear, then republish anything
+  as a first publication" reopens the bypass. The owner (a timelock) is exempt.
+  **The bound is per-update, not a ceiling:** with `minPublisherInterval` at its default of 0, a
+  compromised key can still walk the reference over many transactions. Set a non-zero interval on
+  any live deployment. Regression guards: `test_FIX7_*` in `packages/hooks-rwa/test/SecurityReview.t.sol`.
+- **Open, MEDIUM** — a rogue issuer's `setHolidays` day overrides survive issuer rotation via
+  `configureMarket`, and recovery is O(n) over an attacker-chosen n. Fix is a per-pool
+  `calendarEpoch` keyed into `_dayOverrides`.
+- **Open, LOW–MEDIUM** — `EmptyWeekdayMask` is defeated by unused bit 7: `0x80` passes validation
+  and produces a pool that can never trade while every view reports it healthy.
+- **Open, LOW** — `renounceOwnership` is not disabled on any RWA hook or on the oracle.
+- **Not yet run:** the RWA hooks have never been exercised under `FOUNDRY_PROFILE=legacy`, which
+  the build-profile rules above require.
+
+---
+
 ## Secrets — never commit, never print, never push
 
 Non-negotiable. This repo will hold deployer keys and RPC credentials for a protocol that

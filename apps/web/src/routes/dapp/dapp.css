@@ -222,18 +222,26 @@
 
 .dapp-main { display: flex; flex-direction: column; min-width: 0; }
 
-.dapp-header {
+/* The sticky box is the WRAPPER, not the bar. The bar and the reference-price
+   rails under it have to travel as one unit; sticking the bar alone would let
+   the prices slide up behind it and out of view on the first scroll. The ground
+   and the blur move up here too, because the rails are deliberately transparent
+   and would otherwise have page content scrolling through them. */
+.dapp-headwrap {
   position: sticky;
   top: 0;
   z-index: 30;
+  background: var(--dapp-header-bg);
+  backdrop-filter: blur(14px);
+}
+
+.dapp-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
   padding: 15px var(--gutter-dapp);
   border-bottom: 1px solid var(--dapp-sidebar-line);
-  background: var(--dapp-header-bg);
-  backdrop-filter: blur(14px);
 }
 /* The header is a single row of fixed-size controls plus one flexible title.
    `flex-shrink: 0` on the control group is what stops the browser solving the
@@ -565,21 +573,106 @@
   opacity: 0.7;
 }
 
-.dapp-cols { display: flex; align-items: flex-end; gap: 6px; height: 210px; margin-top: 22px; }
-.dapp-cols__bar {
+/* Columns. Each column is a real button: the whole full-height strip is the hit
+   area, so a bucket that recorded nothing is still reachable and still says
+   "0" — but draws no bar, because a stub would invent a reading. */
+.dapp-cols {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 210px;
+  margin-top: 22px;
+}
+.dapp-cols__col {
   flex: 1;
   min-width: 6px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+}
+.dapp-cols__bar {
+  display: block;
+  width: 100%;
   border-radius: 4px 4px 0 0;
   background: var(--grad-bar);
   transform-origin: bottom;
   animation: dapp-rise 0.75s var(--dapp-ease) both;
+  transition: opacity 0.18s var(--dapp-ease), filter 0.18s var(--dapp-ease);
 }
 .dapp-cols__bar.is-last { background: var(--dapp-grad-bar-green); }
+/* Reading one column means the rest step back, not disappear. */
+.dapp-cols[data-active='true'] .dapp-cols__col:not([data-on='true']) .dapp-cols__bar { opacity: 0.42; }
+.dapp-cols__col[data-on='true'] .dapp-cols__bar { filter: brightness(1.25); }
+.dapp-cols__cross {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px dashed var(--latch-blue);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.dapp-barlist { display: block; }
+/* Colour key that doubles as a filter: press one to isolate that series. */
+.dapp-serieskey {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 14px 0 0;
+  padding: 0;
+}
+.dapp-serieskey__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-badge);
+  background: none;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--dapp-ink-sub);
+  cursor: pointer;
+  transition: color 0.18s var(--dapp-ease), border-color 0.18s var(--dapp-ease),
+    background-color 0.18s var(--dapp-ease);
+}
+.dapp-serieskey__btn:hover { color: var(--dapp-ink-data); }
+.dapp-serieskey__btn[aria-pressed='true'] {
+  color: var(--ink);
+  border-color: var(--hairline-blue);
+  background: var(--dapp-chip-active-bg);
+}
 
 .dapp-bars { display: flex; flex-direction: column; gap: 13px; margin-top: 16px; }
+.dapp-bars__row {
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  margin-inline: -6px;
+  border: 0;
+  border-radius: var(--r-micro);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.18s var(--dapp-ease), opacity 0.18s var(--dapp-ease);
+}
+.dapp-bars__row:hover,
+.dapp-bars__row[data-on='true'] { background: color-mix(in srgb, var(--latch-blue) 9%, transparent); }
+.dapp-bars__row[data-dim='true'] { opacity: 0.38; }
 .dapp-bars__head { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--dapp-ink-data); }
 .dapp-bars__value { font-family: var(--font-mono); color: var(--dapp-ink-sub); }
 .dapp-bars__track {
+  display: block;
   margin-top: 6px;
   height: 5px;
   border-radius: var(--r-pill);
@@ -595,11 +688,42 @@
 }
 
 .dapp-card--donut { display: flex; align-items: center; gap: 20px; }
-.dapp-donut { width: 100px; height: 100px; flex: 0 0 auto; }
+.dapp-donut { width: 100px; height: 100px; flex: 0 0 auto; overflow: visible; }
 .dapp-donut__track { stroke: var(--dapp-track); }
+/* An arc is a control. The stroke thickens on hover/focus/selection so the
+   reader can tell WHICH arc is live — the focus outline sits on the SVG's box
+   and can only say that focus is somewhere in the donut. */
+.dapp-donut__arc {
+  cursor: pointer;
+  transition: opacity 0.18s var(--dapp-ease), stroke-width 0.18s var(--dapp-ease);
+}
+.dapp-donut__arc[data-on='true'] { stroke-width: 17; }
+.dapp-donut__arc[data-dim='true'] { opacity: 0.3; }
+.dapp-donut__arc:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 3px; stroke-width: 17; }
 .dapp-card__donut-body { min-width: 0; flex: 1 1 auto; }
 .dapp-legend { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
 .dapp-legend__row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--dapp-ink-data); }
+.dapp-legend__row--btn {
+  width: 100%;
+  padding: 3px 6px;
+  margin-inline: -6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-micro);
+  background: none;
+  font: inherit;
+  color: var(--dapp-ink-data);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.18s var(--dapp-ease), border-color 0.18s var(--dapp-ease),
+    opacity 0.18s var(--dapp-ease);
+}
+.dapp-legend__row--btn:hover { background: color-mix(in srgb, var(--latch-blue) 9%, transparent); }
+.dapp-legend__row--btn[aria-pressed='true'] {
+  border-color: var(--hairline-blue);
+  background: var(--dapp-chip-active-bg);
+  color: var(--ink);
+}
+.dapp-legend__row--btn[data-dim='true'] { opacity: 0.45; }
 .dapp-legend__swatch { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
 .dapp-legend__pct { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--dapp-ink-sub); }
 
@@ -635,7 +759,7 @@
 .dapp-feed__ago { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--label-ink); }
 .dapp-feed .dapp-dot--pulse { animation-duration: 1.8s; }
 
-/* ---- 2. Hook Explorer ---------------------------------------------------- */
+/* ---- 2. Latch Marketplace ---------------------------------------------------- */
 
 .dapp-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .dapp-search {
@@ -729,7 +853,7 @@
 .dapp-stat__value { font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
 .dapp-empty { margin: 0; font-size: 13.5px; color: var(--muted-ink); }
 
-/* ---- 3. Deploy a Hook ---------------------------------------------------- */
+/* ---- 3. Deploy a Latch ---------------------------------------------------- */
 
 .dapp-steps {
   list-style: none;
@@ -1382,7 +1506,7 @@ span.dapp-net-chip__mark {
 .dapp-nav__row.is-active svg,
 .dapp-nav__row:hover svg { opacity: 1; }
 
-/* ---- Hook marketplace (screens/Explorer): real hooks, read from chain ------
+/* ---- Latch Marketplace (screens/Explorer): real Latches, read from chain ------
    The safety treatments here are load-bearing, not decoration. A flagged card
    must be unmissable at a glance, a value-extracting warning must not be
    possible to mistake for body copy, and a deprecated marker must stay calm —
@@ -1513,7 +1637,7 @@ span.dapp-net-chip__mark {
   text-decoration: underline;
 }
 
-/* ---- 3b. Register a Hook — the write path ---------------------------------
+/* ---- 3b. Register a Latch — the write path ---------------------------------
    Form chrome for the registry write flow. Everything here is layout for real
    state: a failure block, a transaction block, a tri-state pre-flight dot.
    Nothing paints a success colour that the chain has not confirmed.

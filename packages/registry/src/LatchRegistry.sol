@@ -6,9 +6,9 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IHooks} from "infinity-core/src/interfaces/IHooks.sol";
 
 import {
-    ILatchHookRegistry,
-    HookMetadata,
-    HookRecord,
+    ILatchRegistry,
+    LatchMetadata,
+    LatchRecord,
     DecodedPermissions,
     Verification,
     Listing,
@@ -31,9 +31,9 @@ import {
     PERM_RETURNS_DELTA_MASK,
     PERM_SWAP_CUT_MASK,
     PERM_BEFORE_MASK
-} from "./ILatchHookRegistry.sol";
+} from "./ILatchRegistry.sol";
 
-/// @title LatchHookRegistry
+/// @title LatchRegistry
 /// @notice The discovery and safety surface for LatchProtocol hooks.
 ///
 /// @dev ################### WHAT THIS CONTRACT IS ACTUALLY FOR ###################
@@ -109,7 +109,7 @@ import {
 /// A hostile hook can therefore make its own registration fail. It cannot make anyone else's fail,
 /// and it cannot cost a caller more than the probe budget.
 /// ###############################################################################
-contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
+contract LatchRegistry is ILatchRegistry, AccessControl {
     /*//////////////////////////////////////////////////////////////
                                  ROLES
     //////////////////////////////////////////////////////////////*/
@@ -164,7 +164,7 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
 
-    mapping(address hook => HookRecord) private _records;
+    mapping(address hook => LatchRecord) private _records;
 
     /// @dev Append-only. Index positions are stable forever, which is what lets an indexer page
     /// through the registry without worrying about entries shifting underneath it.
@@ -201,11 +201,11 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
     /// that is unusable, and "permissions unknown" is the one thing this registry must never say.
     /// @param hook Address of the deployed hook contract.
     /// @param metadata Human-readable listing data. Purely descriptive.
-    function register(address hook, HookMetadata calldata metadata) external {
+    function register(address hook, LatchMetadata calldata metadata) external {
         if (hook == address(0)) revert ZeroAddress();
-        HookRecord storage record = _records[hook];
-        if (record.submitter != address(0)) revert HookAlreadyRegistered(hook);
-        if (hook.code.length == 0) revert HookHasNoCode(hook);
+        LatchRecord storage record = _records[hook];
+        if (record.submitter != address(0)) revert LatchAlreadyRegistered(hook);
+        if (hook.code.length == 0) revert LatchHasNoCode(hook);
 
         _validateMetadata(metadata);
 
@@ -231,7 +231,7 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
         _hookList.push(hook);
         _submitted[msg.sender].push(hook);
 
-        emit HookRegistered(
+        emit LatchRegistered(
             hook, msg.sender, permissions, classify(permissions), codehash, uint64(block.timestamp)
         );
         _emitMetadata(hook, metadata);
@@ -252,8 +252,8 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
     /// Reverts with `PermissionsUnchanged` when there is nothing to record, so keepers cannot spam
     /// the log. Probe it with `eth_call` first if you want a cheap no-op.
     function refreshPermissions(address hook) external {
-        HookRecord storage record = _records[hook];
-        if (record.submitter == address(0)) revert HookNotRegistered(hook);
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
 
         uint16 previousPermissions = record.permissions;
         bytes32 previousCodehash = record.codehash;
@@ -276,7 +276,7 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
         record.codehash = currentCodehash;
         record.updatedAt = uint64(block.timestamp);
 
-        emit HookPermissionsRefreshed(
+        emit LatchPermissionsRefreshed(
             hook,
             msg.sender,
             previousPermissions,
@@ -300,9 +300,9 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
     /// audit badge on an honest listing, then repoint `sourceURI` at a repo that no longer matches
     /// the bytecode, or `auditURI` at a report for a different contract, and the badge now vouches
     /// for something no curator ever saw.
-    function updateMetadata(address hook, HookMetadata calldata metadata) external {
-        HookRecord storage record = _records[hook];
-        if (record.submitter == address(0)) revert HookNotRegistered(hook);
+    function updateMetadata(address hook, LatchMetadata calldata metadata) external {
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
 
         bool asCurator = hasRole(CURATOR_ROLE, msg.sender);
         if (msg.sender != record.steward && !asCurator) revert NotSteward(hook, msg.sender);
@@ -323,8 +323,8 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
     /// because it repairs the listing instead of deleting it. `submitter` never changes — the
     /// historical record of who actually listed it stays intact and auditable.
     function transferSteward(address hook, address newSteward) external {
-        HookRecord storage record = _records[hook];
-        if (record.submitter == address(0)) revert HookNotRegistered(hook);
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
         if (newSteward == address(0)) revert ZeroAddress();
         if (msg.sender != record.steward && !hasRole(CURATOR_ROLE, msg.sender)) {
             revert NotSteward(hook, msg.sender);
@@ -333,7 +333,7 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
         address previous = record.steward;
         record.steward = newSteward;
         record.updatedAt = uint64(block.timestamp);
-        emit HookStewardTransferred(hook, previous, newSteward);
+        emit LatchStewardTransferred(hook, previous, newSteward);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -352,12 +352,12 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
         external
         onlyRole(CURATOR_ROLE)
     {
-        HookRecord storage record = _records[hook];
-        if (record.submitter == address(0)) revert HookNotRegistered(hook);
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
         _boundString(bytes(note).length, MAX_NOTE_BYTES);
 
         if (level != Verification.Unverified) {
-            if (record.listing == Listing.Malicious) revert HookFlaggedMalicious(hook);
+            if (record.listing == Listing.Malicious) revert LatchFlaggedMalicious(hook);
             if (!record.permissionsReadable || !record.permissionsValid) {
                 revert PermissionsNotAttestable(hook);
             }
@@ -370,7 +370,7 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
         Verification previous = record.verification;
         record.verification = level;
         record.updatedAt = uint64(block.timestamp);
-        emit HookVerificationChanged(hook, msg.sender, previous, level, note);
+        emit LatchVerificationChanged(hook, msg.sender, previous, level, note);
     }
 
     /// @notice Deprecate a hook, flag it malicious, or restore it to active.
@@ -384,8 +384,8 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
     /// @param reason Emitted verbatim. This is what a marketplace shows next to the warning, so it
     /// should be a sentence a user can act on, not a ticket number.
     function setListing(address hook, Listing status, string calldata reason) external {
-        HookRecord storage record = _records[hook];
-        if (record.submitter == address(0)) revert HookNotRegistered(hook);
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
         _boundString(bytes(reason).length, MAX_NOTE_BYTES);
 
         if (!hasRole(CURATOR_ROLE, msg.sender)) {
@@ -398,7 +398,7 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
         Listing previous = record.listing;
         record.listing = status;
         record.updatedAt = uint64(block.timestamp);
-        emit HookListingChanged(hook, msg.sender, previous, status, reason);
+        emit LatchListingChanged(hook, msg.sender, previous, status, reason);
 
         if (status == Listing.Malicious) _demote(hook, record, "flagged malicious");
     }
@@ -523,27 +523,27 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
     /// @notice The full record. Reverts for an unregistered hook rather than returning a zeroed
     /// struct, because a zeroed struct reads as "Unverified, Active, no permissions" — the safest
     /// possible answer about a hook nobody has ever looked at.
-    function getHook(address hook) external view returns (HookRecord memory) {
-        HookRecord storage record = _records[hook];
-        if (record.submitter == address(0)) revert HookNotRegistered(hook);
+    function getLatch(address hook) external view returns (LatchRecord memory) {
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
         return record;
     }
 
     function permissionsOf(address hook) external view returns (uint16 permissions, bool readable, bool valid) {
-        HookRecord storage record = _records[hook];
-        if (record.submitter == address(0)) revert HookNotRegistered(hook);
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
         return (record.permissions, record.permissionsReadable, record.permissionsValid);
     }
 
     function riskClassOf(address hook) external view returns (RiskClass) {
-        HookRecord storage record = _records[hook];
-        if (record.submitter == address(0)) revert HookNotRegistered(hook);
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
         return classify(record.permissions);
     }
 
     function statusOf(address hook) external view returns (Verification verification, Listing listing) {
-        HookRecord storage record = _records[hook];
-        if (record.submitter == address(0)) revert HookNotRegistered(hook);
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
         return (record.verification, record.listing);
     }
 
@@ -552,21 +552,21 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
     /// the audit was attested. Deliberately a view and not a modifier anywhere: this contract makes
     /// no authorization decisions on anyone's behalf.
     function isAudited(address hook) external view returns (bool) {
-        HookRecord storage record = _records[hook];
+        LatchRecord storage record = _records[hook];
         return record.submitter != address(0) && record.verification == Verification.Audited
             && record.listing == Listing.Active && record.permissionsReadable && record.permissionsValid;
     }
 
-    function hookCount() external view returns (uint256) {
+    function latchCount() external view returns (uint256) {
         return _hookList.length;
     }
 
-    function hookAt(uint256 index) external view returns (address) {
+    function latchAt(uint256 index) external view returns (address) {
         return _hookList[index];
     }
 
     /// @notice Page through every registered hook. Index positions never change.
-    function listHooks(uint256 offset, uint256 limit) external view returns (address[] memory) {
+    function listLatches(uint256 offset, uint256 limit) external view returns (address[] memory) {
         return _page(_hookList, offset, limit);
     }
 
@@ -604,14 +604,14 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
 
     /// @dev Reset verification and say why. No-op when already unverified, so nothing that merely
     /// re-confirms the status quo shows up in the log.
-    function _demote(address hook, HookRecord storage record, string memory note) private {
+    function _demote(address hook, LatchRecord storage record, string memory note) private {
         Verification previous = record.verification;
         if (previous == Verification.Unverified) return;
         record.verification = Verification.Unverified;
-        emit HookVerificationChanged(hook, msg.sender, previous, Verification.Unverified, note);
+        emit LatchVerificationChanged(hook, msg.sender, previous, Verification.Unverified, note);
     }
 
-    function _validateMetadata(HookMetadata calldata metadata) private pure {
+    function _validateMetadata(LatchMetadata calldata metadata) private pure {
         uint256 nameLength = bytes(metadata.name).length;
         if (nameLength == 0) revert EmptyName();
         _boundString(nameLength, MAX_NAME_BYTES);
@@ -625,7 +625,7 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
         if (length > maximum) revert StringTooLong(length, maximum);
     }
 
-    function _writeMetadata(HookRecord storage record, HookMetadata calldata metadata) private {
+    function _writeMetadata(LatchRecord storage record, LatchMetadata calldata metadata) private {
         record.metadata.name = metadata.name;
         record.metadata.description = metadata.description;
         record.metadata.sourceURI = metadata.sourceURI;
@@ -633,8 +633,8 @@ contract LatchHookRegistry is ILatchHookRegistry, AccessControl {
         record.metadata.chainIds = metadata.chainIds;
     }
 
-    function _emitMetadata(address hook, HookMetadata calldata metadata) private {
-        emit HookMetadataUpdated(
+    function _emitMetadata(address hook, LatchMetadata calldata metadata) private {
+        emit LatchMetadataUpdated(
             hook,
             msg.sender,
             metadata.name,

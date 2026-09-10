@@ -1,13 +1,16 @@
 /* ============================================================================
-   Register a Hook — the dapp's first write path.
+   Register a Latch — the dapp's first write path.
+
+   A Latch is a hook contract attached to a pool; "hook" below always means the
+   EVM-level integration point, never the product.
 
    This screen used to be a 2.2-second timer that turned a button green and said
    "Register on Base ✓". Nothing was signed, nothing was submitted, and Base is
    not a chain Latch is deployed on. All of it is gone.
 
-   What it does now: takes a deployed hook address plus the five `HookMetadata`
+   What it does now: takes a deployed Latch address plus the five `HookMetadata`
    fields and calls `LatchHookRegistry.register` on Ethereum Sepolia. Listing is
-   permissionless, free and has no allowlist — anyone can list any hook — and it
+   permissionless, free and has no allowlist — anyone can list any Latch — and it
    is also IRREVERSIBLE, because the registry has no `unregister` by design.
 
    Three rules this screen is built around:
@@ -24,10 +27,10 @@
         HookHasNoCode, PermissionsUnreadable, ReservedBitsSet,
         PermissionDependencyMissing, ZeroAddress, and the metadata bounds.
 
-     3. CAPABILITY IS READ OFF THE HOOK, NEVER TYPED IN. There is deliberately no
-        field for permissions. The bitmap is read from the hook's own
+     3. CAPABILITY IS READ OFF THE LATCH, NEVER TYPED IN. There is deliberately
+        no field for permissions. The bitmap is read from the Latch's own
         `getHooksRegistrationBitmap()` and expanded by the registry's own pure
-        classifiers, the same ones the marketplace uses, so a hook cannot be
+        classifiers, the same ones the marketplace uses, so a Latch cannot be
         described one way here and another way there.
    ============================================================================ */
 
@@ -95,7 +98,7 @@ export default function Deploy() {
   const [limits, setLimits] = useState<RegistryLimits | null>(null)
   const [limitsError, setLimitsError] = useState<string | null>(null)
   /* Keyed by the address it describes, so a result that arrives after the field
-     has moved on is never shown against the wrong hook. */
+     has moved on is never shown against the wrong Latch. */
   const [probeResult, setProbeResult] = useState<{ for: Address; outcome: ProbeOutcome } | null>(null)
 
   /* The registry's own byte bounds. Read, not hardcoded — a redeploy with
@@ -114,7 +117,7 @@ export default function Deploy() {
   const hookAddress: Address | null = isHookAddressValid(trimmedHook) ? getAddress(trimmedHook) : null
 
   /* Probe the address the moment it becomes a valid one. This is read-only and
-     costs the user nothing; it is what puts the hook's real capabilities on
+     costs the user nothing; it is what puts the Latch's real capabilities on
      screen before anybody is asked to sign for them. */
   useEffect(() => {
     if (!hookAddress) return
@@ -304,7 +307,7 @@ export default function Deploy() {
      the result of an RPC round trip, in the order it was made. */
   const lines: string[] = []
   if (!hookAddress) {
-    lines.push('· enter a deployed hook address to begin')
+    lines.push('· enter a deployed Latch address to begin')
   } else {
     lines.push(`→ eth_getCode(${short(hookAddress)}) on ${REGISTRY_CHAIN_NAME}`)
     if (probeState.k === 'reading') lines.push('→ reading…')
@@ -355,8 +358,8 @@ export default function Deploy() {
         : sim.isFetching
           ? 'Simulating…'
           : simulated
-            ? 'Register hook'
-            : 'Register hook'
+            ? 'Register Latch'
+            : 'Register Latch'
 
   const busy = awaitingSignature || (Boolean(txHash) && !mined) || sim.isFetching
   const submitDisabled = !simulated || busy || Boolean(txHash)
@@ -418,10 +421,10 @@ export default function Deploy() {
         </ol>
 
         <section className="dapp-card dapp-card--config">
-          <h2 className="dapp-card__title dapp-card__title--lg">Register a hook</h2>
+          <h2 className="dapp-card__title dapp-card__title--lg">Register a Latch</h2>
           <p className="dp-lede">
             Listing is permissionless, free and has no allowlist. It is also permanent — the
-            registry has no <code>unregister</code>, deliberately, so that a warning about a hook
+            registry has no <code>unregister</code>, deliberately, so that a warning about a Latch
             can never be deleted by whoever it warns about. Registering writes to{' '}
             <a
               href={explorerAddress(REGISTRY_CHAIN_ID, REGISTRY_ADDRESS)}
@@ -439,7 +442,7 @@ export default function Deploy() {
               <p className="dp-gate__title">Connect a wallet to register</p>
               <p className="dp-gate__body">
                 Registration is a transaction you sign. Nothing on this screen is submitted for you,
-                and reading the hook below costs nothing and needs no wallet.
+                and reading the Latch below costs nothing and needs no wallet.
               </p>
               <LatchConnectButton variant="inline" label="Connect wallet" />
             </div>
@@ -466,7 +469,7 @@ export default function Deploy() {
           )}
 
           <div className="dapp-fields">
-            {field('dp-hook', 'HOOK CONTRACT ADDRESS', hookInput, setHookInput, {
+            {field('dp-hook', 'LATCH CONTRACT ADDRESS', hookInput, setHookInput, {
               placeholder: '0x…',
               mono: true,
               error: issueFor('hook'),
@@ -484,7 +487,7 @@ export default function Deploy() {
               (v) => setDraft((d) => ({ ...d, description: v })),
               {
                 area: true,
-                placeholder: 'What this hook does, in the author’s own words.',
+                placeholder: 'What this Latch does, in the author’s own words.',
                 error: issueFor('description'),
                 hint: limits
                   ? `Prose, never a capability claim · up to ${num(limits.maxDescriptionBytes)} bytes`
@@ -590,20 +593,20 @@ export default function Deploy() {
 
           {confirmed && (
             <button type="button" className="dapp-btn dapp-btn--block dapp-btn--ghost" onClick={startOver}>
-              Register another hook
+              Register another Latch
             </button>
           )}
         </section>
       </div>
 
       <div className="dapp-stack">
-        {/* What the user is actually listing, read off the hook itself. */}
+        {/* What the user is actually listing, read off the Latch itself. */}
         <section className="dapp-card dp-caps-card" aria-live="polite">
-          <h2 className="dapp-microlabel">PERMISSIONS READ FROM THE HOOK</h2>
+          <h2 className="dapp-microlabel">PERMISSIONS READ FROM THE LATCH</h2>
 
           {!hookAddress && (
             <p className="dapp-empty dp-gap">
-              Enter a hook address above. Its permission bitmap is read from its own
+              Enter a Latch address above. Its permission bitmap is read from its own
               <code> getHooksRegistrationBitmap()</code> — a submitter cannot declare permissions
               their code does not have.
             </p>
@@ -631,14 +634,14 @@ export default function Deploy() {
             <p className="hx-alert hx-alert--danger dp-gap">
               This contract did not answer <code>getHooksRegistrationBitmap()</code> with one clean
               uint16 inside the registry&rsquo;s probe budget. Core makes the same call when a pool
-              is initialised, so a hook it cannot read can never back a pool.
+              is initialised, so a Latch it cannot read can never back a pool.
             </p>
           )}
 
           {probe && probe.alreadyRegistered && (
             <p className="hx-alert dp-gap">
-              This hook is already listed.{' '}
-              <Link to={dappPath('explorer')}>See it in the marketplace</Link> — registration
+              This Latch is already listed.{' '}
+              <Link to={dappPath('marketplace')}>See it in the marketplace</Link> — registration
               happens once and there is no unregister.
             </p>
           )}
@@ -660,7 +663,7 @@ export default function Deploy() {
               )}
 
               <div className={`hx-caps ${probe.takesSwapCut || probe.canTrapLiquidity ? 'hx-caps--danger' : ''}`}>
-                <p className="dapp-microlabel dapp-microlabel--tight">WHAT THIS HOOK CAN DO</p>
+                <p className="dapp-microlabel dapp-microlabel--tight">WHAT THIS LATCH CAN DO</p>
                 <ul className="hx-caps__list">
                   {probe.claims.map((c) => (
                     <li key={c}>{c}</li>
@@ -769,9 +772,9 @@ export default function Deploy() {
                 )}
                 {confirmed && (
                   <p className="dp-ok">
-                    Listed as <strong>Unverified</strong> — every hook enters there, and only a
+                    Listed as <strong>Unverified</strong> — every Latch enters there, and only a
                     curator moves it up.{' '}
-                    <Link to={dappPath('explorer')}>Find it in the marketplace</Link>.
+                    <Link to={dappPath('marketplace')}>Find it in the marketplace</Link>.
                   </p>
                 )}
                 {revertedOnChain && (

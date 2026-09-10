@@ -3,8 +3,8 @@
 pragma solidity 0.8.26;
 
 import "forge-std/Script.sol";
-import {LatchHookRegistry} from "../src/LatchHookRegistry.sol";
-import {HookMetadata, Verification, RiskClass} from "../src/ILatchHookRegistry.sol";
+import {LatchRegistry} from "../src/LatchRegistry.sol";
+import {LatchMetadata, Verification, RiskClass} from "../src/ILatchRegistry.sol";
 import {LaunchGuardHook} from "latch-hooks/src/launch/LaunchGuardHook.sol";
 import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";
 
@@ -21,23 +21,37 @@ import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManage
  * whose entire job is telling people which hooks to trust.
  */
 contract RegisterLaunchGuardScript is Script {
-    address constant REGISTRY = 0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE;
+    /// @dev The LatchRegistry deployed 2026-09-10, after the LatchHookRegistry -> LatchRegistry
+    /// rename. The previous registry at 0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE is retired: it
+    /// still answers `hookCount()` and still holds the original listing, but nothing reads it.
+    address constant REGISTRY = 0xB504da43C6ED342a511f3e5849f53035F2C807d1;
     address constant CL_POOL_MANAGER = 0xb7C8a11E0B359616eD06256783aF57114841F738;
+
+    /// @dev The LaunchGuardHook already deployed and listed on the OLD registry. Re-listing the
+    /// SAME address rather than deploying a fresh hook: the contract is unchanged, its bitmap is
+    /// unchanged, and every link that already points at it keeps working. Deploying a duplicate
+    /// would leave two identical hooks on chain and make the older one look abandoned.
+    /// Set REDEPLOY_HOOK=true in the environment to deploy a new one instead.
+    address constant EXISTING_HOOK = 0xd02A738A7A498d7131dF1079b4B3A0517757326d;
 
     function run() public {
         uint256 pk = vm.envUint("PRIVATE_KEY");
-        LatchHookRegistry reg = LatchHookRegistry(REGISTRY);
+        LatchRegistry reg = LatchRegistry(REGISTRY);
+
+        bool redeploy = vm.envOr("REDEPLOY_HOOK", false);
 
         vm.startBroadcast(pk);
 
-        LaunchGuardHook hook = new LaunchGuardHook(ICLPoolManager(CL_POOL_MANAGER));
+        LaunchGuardHook hook = redeploy
+            ? new LaunchGuardHook(ICLPoolManager(CL_POOL_MANAGER))
+            : LaunchGuardHook(EXISTING_HOOK);
 
         uint256[] memory chains = new uint256[](1);
         chains[0] = 11155111;
 
         reg.register(
             address(hook),
-            HookMetadata({
+            LatchMetadata({
                 name: "LaunchGuard",
                 description: "Decaying sniper tax priced on time, not identity. Requires a dynamic-fee pool.",
                 sourceURI: "https://github.com/OxForged/Hook-Dev/blob/main/packages/hooks/src/launch/LaunchGuardHook.sol",
@@ -51,7 +65,7 @@ contract RegisterLaunchGuardScript is Script {
         vm.stopBroadcast();
 
         uint16 declared = hook.getHooksRegistrationBitmap();
-        uint16 stored = reg.getHook(address(hook)).permissions;
+        uint16 stored = reg.getLatch(address(hook)).permissions;
         require(stored == declared, "registry did not read permissions from the hook");
 
         console.log("LaunchGuardHook      ", address(hook));
@@ -60,6 +74,6 @@ contract RegisterLaunchGuardScript is Script {
         console.log("  risk class         ", uint8(reg.classify(stored)));
         console.log("  takesSwapCut       ", reg.takesSwapCut(stored));
         console.log("  canBlockSwaps      ", reg.canBlockSwaps(stored));
-        console.log("  hookCount          ", reg.hookCount());
+        console.log("  latchCount          ", reg.latchCount());
     }
 }

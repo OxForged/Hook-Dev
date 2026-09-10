@@ -6,13 +6,17 @@
 
    Mounted by src/App.tsx at /app/*; this module owns everything beneath that:
 
-     /app             Dashboard
-     /app/explorer    Hook Explorer
-     /app/deploy      Deploy a Hook
-     /app/pool        Pool Detail
-     /app/portfolio   Portfolio
-     /app/analytics   Analytics
-     /app/settings    Settings
+     /app                        Dashboard
+     /app/marketplace            Latch Marketplace
+     /app/marketplace/:address   Latch Detail — one Latch, in full
+     /app/deploy                 Deploy a Latch
+     /app/pool                   Pool Detail
+     /app/portfolio              Portfolio
+     /app/analytics              Analytics
+     /app/settings               Settings
+
+   /app/explorer is not a screen. It is the marketplace's old path, kept purely
+   as a redirect to /app/marketplace so shipped links do not break.
 
    Every figure rendered here is placeholder data from `./data/*`. Latch
    Protocol's only deployment is on Ethereum Sepolia (chain 11155111); the other

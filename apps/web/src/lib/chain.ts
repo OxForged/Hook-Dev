@@ -32,8 +32,11 @@ export const DEPLOYMENTS = {
     binPoolManager: '0xdBA93F91BA5B8535AE2b38be6a3A6CdcfDE6f6f3',
     feeController: '0xc1b7A4e61A4B6ceBA3e308425dc2390c2CE57ea9',
     create3Factory: '0x76473D174Aa17C23FBE49CAb50aAc4ED4d8c678F',
-    /** Hook marketplace backing contract. Permissions are read off each hook on chain. */
-    registry: '0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE',
+    /** Latch Marketplace backing contract. Permissions are read off each Latch on chain.
+     *  Redeployed 2026-09-10 as LatchRegistry (was LatchHookRegistry). The old registry at
+     *  0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE still answers `hookCount()` and still holds
+     *  the original listing, but nothing reads it — it is retired, not migrated. */
+    registry: '0xB504da43C6ED342a511f3e5849f53035F2C807d1',
     /** 48h tier. Owns Vault + pool managers on mainnet, because registerApp is irreversible. */
     timelockCustody: '0x35D72DbEeD5F2CE95a4DFb3917D2CD3c43e544CA',
     /** 6h tier. Owns fee policy, which is reversible. */
@@ -129,7 +132,7 @@ const CL_SWAP_EVENT = parseAbi([
 ])
 
 const REGISTRY = parseAbi([
-  'function hookCount() view returns (uint256)',
+  'function latchCount() view returns (uint256)',
   'function classify(uint16) pure returns (uint8)',
   'function takesSwapCut(uint16) pure returns (bool)',
   'function canBlockSwaps(uint16) pure returns (bool)',
@@ -322,7 +325,7 @@ export async function readGovernanceStatus(
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
   const [hookCount, custodyDelaySec, policyDelaySec] = await Promise.all([
-    c.readContract({ address: d.registry, abi: REGISTRY, functionName: 'hookCount' }),
+    c.readContract({ address: d.registry, abi: REGISTRY, functionName: 'latchCount' }),
     c.readContract({ address: d.timelockCustody, abi: TIMELOCK, functionName: 'getMinDelay' }),
     c.readContract({ address: d.timelockPolicy, abi: TIMELOCK, functionName: 'getMinDelay' }),
   ])
@@ -471,7 +474,7 @@ export type VerificationLevel = 0 | 1 | 2
 /** 0 Active · 1 Deprecated · 2 Malicious */
 export type ListingState = 0 | 1 | 2
 
-export interface RegisteredHook {
+export interface RegisteredLatch {
   address: Address
   name: string
   description: string
@@ -492,7 +495,7 @@ export interface RegisteredHook {
   /**
    * The callbacks this hook holds, named. Expanded by the registry's own
    * `decodePermissions`, not by shifting the bitmap here — see the note on
-   * readRegisteredHooks about why the UI must not re-derive capability.
+   * readRegisteredLatches about why the UI must not re-derive capability.
    */
   callbacks: string[]
 }
@@ -531,7 +534,7 @@ export const LISTING_LABEL = ['Active', 'Deprecated', 'Flagged malicious'] as co
  * Callers must render this whether or not it is comfortable — it is the sentence a
  * user needs before they route funds through a pool.
  */
-export function capabilityClaims(hook: RegisteredHook): string[] {
+export function capabilityClaims(hook: RegisteredLatch): string[] {
   const claims: string[] = []
   if (hook.takesSwapCut) claims.push('can take a share of every swap')
   if (hook.canBlockSwaps) claims.push('can block or price swaps')
@@ -547,19 +550,19 @@ export function capabilityClaims(hook: RegisteredHook): string[] {
  * re-derived here. Three components describing one bitmap three different ways is
  * how a user ends up trusting a hook the chain would have warned them about.
  */
-export async function readRegisteredHooks(
+export async function readRegisteredLatches(
   chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
-): Promise<RegisteredHook[]> {
+): Promise<RegisteredLatch[]> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
   const abi = registryAbi
 
-  const count = await c.readContract({ address: d.registry, abi, functionName: 'hookCount' }) as bigint
+  const count = await c.readContract({ address: d.registry, abi, functionName: 'latchCount' }) as bigint
   if (count === 0n) return []
 
   const addrs = (await Promise.all(
     Array.from({ length: Number(count) }, (_, i) =>
-      c.readContract({ address: d.registry, abi, functionName: 'hookAt', args: [BigInt(i)] }),
+      c.readContract({ address: d.registry, abi, functionName: 'latchAt', args: [BigInt(i)] }),
     ),
   )) as Address[]
 
@@ -567,24 +570,24 @@ export async function readRegisteredHooks(
 }
 
 /**
- * Turn one registry address into a RegisteredHook.
+ * Turn one registry address into a RegisteredLatch.
  *
  * Extracted so the list read and the single-address read below cannot drift: two
  * code paths hydrating the same record is how one screen ends up calling a hook
  * "Passive" while another calls it "Value-extracting".
  *
  * Throws if the hook is not registered — `getHook` reverts rather than returning a
- * zeroed struct, deliberately. Call `readRegisteredHook` if you do not already know
+ * zeroed struct, deliberately. Call `readRegisteredLatch` if you do not already know
  * the address is listed.
  */
 async function hydrateHook(
   c: PublicClient,
   registry: Address,
   a: Address,
-): Promise<RegisteredHook> {
+): Promise<RegisteredLatch> {
   const abi = registryAbi
   const r = (await c.readContract({
-    address: registry, abi, functionName: 'getHook', args: [a],
+    address: registry, abi, functionName: 'getLatch', args: [a],
   })) as any
   const p = Number(r.permissions)
   const [risk, cut, block, trap, decoded] = (await Promise.all([
@@ -633,14 +636,14 @@ async function hydrateHook(
  * A chain that cannot be reached THROWS. It must never be reported as "not found":
  * an unreachable RPC and an unregistered hook are opposite answers.
  */
-export type HookLookup =
-  | { found: true; hook: RegisteredHook; checkedAtBlock: bigint }
+export type LatchLookup =
+  | { found: true; latch: RegisteredLatch; checkedAtBlock: bigint }
   | { found: false; address: Address; hasCode: boolean; checkedAtBlock: bigint }
 
-export async function readRegisteredHook(
+export async function readRegisteredLatch(
   address: Address,
   chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
-): Promise<HookLookup> {
+): Promise<LatchLookup> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
 
@@ -663,7 +666,7 @@ export async function readRegisteredHook(
     }
   }
 
-  return { found: true, hook: await hydrateHook(c, d.registry, address), checkedAtBlock }
+  return { found: true, latch: await hydrateHook(c, d.registry, address), checkedAtBlock }
 }
 
 /* ---------------------------------------------------------------------------

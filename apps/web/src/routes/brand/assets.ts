@@ -49,7 +49,7 @@ export const logos: readonly LogoAsset[] = [
     name: 'Primary lockup',
     meta: 'transparent · mark + wordmark',
     src: `${BRAND}/latch-lockup-transparent.png`,
-    alt: 'Latch Protocol primary lockup: the hook mark beside the LATCH PROTOCOL wordmark, in white and blue on the dark brand ground.',
+    alt: 'Latch Protocol primary lockup: the Latch mark beside the LATCH PROTOCOL wordmark, in white and blue on the dark brand ground.',
     ground: 'void',
     preview: 'wide',
     downloads: [
@@ -86,7 +86,7 @@ export const logos: readonly LogoAsset[] = [
     name: 'Mark',
     meta: 'white + blue · transparent',
     src: `${BRAND}/latch-mark-transparent.png`,
-    alt: 'The Latch hook mark on its own, drawn in white with a blue inner eye.',
+    alt: 'The Latch mark on its own, drawn in white with a blue inner eye.',
     ground: 'glow',
     preview: 'tall',
     downloads: [
@@ -103,7 +103,7 @@ export const logos: readonly LogoAsset[] = [
     name: 'Mark · single blue',
     meta: 'one-color applications · PNG only',
     src: `${BRAND}/latch-mark-blue.png`,
-    alt: 'The Latch hook mark drawn in a single flat blue, for one-colour applications.',
+    alt: 'The Latch mark drawn in a single flat blue, for one-colour applications.',
     ground: 'void',
     preview: 'tall',
     downloads: [
@@ -119,7 +119,7 @@ export const logos: readonly LogoAsset[] = [
     name: 'Wordmark',
     meta: 'no mark · wide placements',
     src: `${BRAND}/latch-wordmark-transparent.png`,
-    alt: 'The LATCH PROTOCOL wordmark set on its own, without the hook mark.',
+    alt: 'The LATCH PROTOCOL wordmark set on its own, without the Latch mark.',
     ground: 'void',
     preview: 'wide-narrow',
     downloads: [
@@ -140,7 +140,7 @@ export const logos: readonly LogoAsset[] = [
     name: 'App icon',
     meta: '1024 · rounded square · PNG only',
     src: `${BRAND}/app-icon-1024.png`,
-    alt: 'The Latch app icon: the hook mark centred on a dark rounded square with a glowing blue rim.',
+    alt: 'The Latch app icon: the Latch mark centred on a dark rounded square with a glowing blue rim.',
     ground: 'void',
     preview: 'icon',
     downloads: [

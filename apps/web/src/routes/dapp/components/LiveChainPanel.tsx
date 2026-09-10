@@ -119,7 +119,7 @@ export function LiveChainPanel() {
           <h3 className="live-sub-h">Registry &amp; governance</h3>
           <dl className="live-grid">
             <div>
-              <dt>Hooks listed</dt>
+              <dt>Latches listed</dt>
               <dd className="tabular">{state.gov.hookCount.toString()}</dd>
             </div>
             <div>
@@ -146,7 +146,7 @@ export function LiveChainPanel() {
           </dl>
           <p className="live-note">
             {state.gov.hookCount === 0n
-              ? 'The registry is deployed but nothing is listed yet, so this reads zero rather than showing example hooks. '
+              ? 'The registry is deployed but nothing is listed yet, so this reads zero rather than showing example Latches. '
               : `Every one of these ${state.gov.hookCount} listings was read from the registry contract; none is an example. `}
             Timelocks are deployed and enforce their floors; on Sepolia the Vault is still owned by
             an EOA so it stays iterable.

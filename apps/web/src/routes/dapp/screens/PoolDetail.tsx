@@ -1,6 +1,6 @@
 /* Pool Detail — SCREENS.md § C4.
 
-   The header, fee chart and hook-call list are still the typed placeholder
+   The header, fee chart and Latch-call list are still the typed placeholder
    from `data/pool.ts` (the shell's SAMPLE DATA chip covers them). The price row
    directly beneath the header is not: it reads the live Sepolia pool off chain
    and the reference markets off their providers, and labels each as such. */
@@ -60,7 +60,7 @@ export default function PoolDetail() {
         </section>
 
         <section className="dapp-card">
-          <h2 className="dapp-microlabel">RECENT HOOK CALLS</h2>
+          <h2 className="dapp-microlabel">RECENT LATCH CALLS</h2>
           <ul className="dapp-calls">
             {data.calls.map((c, i) => (
               <li

@@ -1,7 +1,7 @@
 /* ============================================================================
-   /verify/:hookAddress — the public, wallet-free hook verification permalink.
+   /verify/:hookAddress — the public, wallet-free Latch verification permalink.
 
-   This page exists to be linked FROM SOMEWHERE ELSE. A hook developer puts the
+   This page exists to be linked FROM SOMEWHERE ELSE. A Latch developer puts the
    URL on their own site; a stranger with no wallet, no connection and no prior
    context opens it and gets the on-chain trust signals for that one address.
    There is no wallet, no signing, no write path, and nothing here is gated.
@@ -17,13 +17,13 @@
    one of those words is the *most reassuring* thing that could be said about a
    contract nobody has ever looked at, and the page says them about a contract
    that does not exist. A reader cannot tell that apart from a genuinely empty,
-   genuinely listed hook.
+   genuinely listed Latch.
 
    So the order here is not negotiable:
 
      1. Is the string even an address? Malformed input gets its own answer and
         never reaches the chain.
-     2. Is it REGISTERED? `readRegisteredHook` asks `isRegistered` first and
+     2. Is it REGISTERED? `readRegisteredLatch` asks `isRegistered` first and
         returns `found: false` as a positive result. Nothing below step 2 renders
         until that is `true`.
      3. Only then, the trust panel.
@@ -35,14 +35,14 @@
    Loading, unreachable-chain, not-registered and registered are four distinct
    states. In particular an unreachable RPC is NEVER reported as "not found" —
    those are opposite answers, and collapsing them would let a network blip
-   accuse an honest hook of not existing.
+   accuse an honest Latch of not existing.
 
    ---------------------------------------------------------------------------
    WHAT IS A FACT AND WHAT IS A CLAIM
    ---------------------------------------------------------------------------
 
    Permissions, risk class, verification level and listing state are read from
-   chain. The bitmap in particular is read by the registry off the hook's OWN
+   chain. The bitmap in particular is read by the registry off the Latch's OWN
    contract at registration — there is no parameter through which a submitter can
    declare it — so it is the one thing on this page a submitter cannot lie about.
 
@@ -64,10 +64,10 @@ import {
   VERIFICATION_LABEL,
   capabilityClaims,
   explorerAddress,
-  readRegisteredHook,
-  type HookLookup,
+  readRegisteredLatch,
+  type LatchLookup,
   type ListingState,
-  type RegisteredHook,
+  type RegisteredLatch,
   type RiskClass,
   type VerificationLevel,
 } from '../../lib/chain'
@@ -91,7 +91,7 @@ const cx = (...parts: (string | false | undefined)[]) => parts.filter(Boolean).j
 
 const toneClass = (tone: Tone) => styles[`tone-${tone}`]
 
-/** An unverified hook must never borrow the visual language of an audited one. */
+/** An unverified Latch must never borrow the visual language of an audited one. */
 const VERIFICATION_TONE: Record<VerificationLevel, Tone> = { 0: 'mute', 1: 'info', 2: 'ok' }
 const RISK_TONE: Record<RiskClass, Tone> = { 0: 'mute', 1: 'warn', 2: 'danger' }
 const LISTING_TONE: Record<ListingState, Tone> = { 0: 'ok', 1: 'warn', 2: 'danger' }
@@ -103,7 +103,7 @@ const LISTING_TONE: Record<ListingState, Tone> = { 0: 'ok', 1: 'warn', 2: 'dange
  * rule, and rejecting a lowercase-with-one-capital address pasted out of a chat
  * client would be an unhelpful answer to a well-formed question. A genuinely
  * mistyped address survives this and then correctly renders as NOT REGISTERED,
- * which is the honest outcome — there is no hook at it.
+ * which is the honest outcome — there is no Latch at it.
  */
 function parseAddress(raw: string | undefined): Address | null {
   if (!raw) return null
@@ -231,22 +231,22 @@ function InvalidAddress({ raw }: { raw: string }) {
         That is not a valid address
       </h1>
       <p className={styles['verdictBody']}>
-        A hook is identified by a 20-byte EVM address: <code>0x</code> followed by exactly 40
+        A Latch is identified by a 20-byte EVM address: <code>0x</code> followed by exactly 40
         hexadecimal characters. The URL carried{' '}
         {raw ? <code className={styles['raw']}>{raw}</code> : <em>nothing</em>}, which is not
         one, so nothing was looked up. This is a problem with the link, not a verdict about any
-        hook.
+        Latch.
       </p>
       <p className={styles['verdictBody']}>
-        <Link className={styles['inlineLink']} to="/app/explorer">
-          Browse the hook marketplace &rarr;
+        <Link className={styles['inlineLink']} to="/app/marketplace">
+          Browse the Latch Marketplace &rarr;
         </Link>
       </p>
     </section>
   )
 }
 
-/** (d) The RPC could not be reached. Explicitly not a statement about the hook. */
+/** (d) The RPC could not be reached. Explicitly not a statement about the Latch. */
 function Unreachable({
   address,
   message,
@@ -265,7 +265,7 @@ function Unreachable({
       <p className={styles['verdictBody']}>
         The registry could not be read, so this page has <strong>no verdict at all</strong> about{' '}
         <code className={styles['raw']}>{short(address)}</code>. That is a failure of the network
-        between you and the chain — it is not evidence that the hook is unregistered, and it is
+        between you and the chain — it is not evidence that the Latch is unregistered, and it is
         not evidence that it is safe. Nothing is shown rather than something invented.
       </p>
       <p className={styles['errDetail']}>{message}</p>
@@ -285,7 +285,7 @@ function Unreachable({
  * different components from the verified panel — no badge grid, no capability
  * list, no metadata block, no zeroes. There is no record, so there are no fields,
  * so no field is rendered empty. Nothing on this screen can be mistaken for a
- * hook that was checked and came back clean.
+ * Latch that was checked and came back clean.
  */
 function NotRegistered({
   address,
@@ -315,7 +315,7 @@ function NotRegistered({
             <>
               There is <strong>no contract code at all</strong> at this address on {CHAIN.name}.
               It is an empty account, an address on some other chain, or a typo. Either way it
-              is not a hook, and the registry has no record of it.
+              is not a Latch, and the registry has no record of it.
             </>
           )}
         </p>
@@ -323,7 +323,7 @@ function NotRegistered({
       </section>
 
       <Alert tone="mute" title="Absence is not a verdict, in either direction">
-        Listing is free and open to anyone, so plenty of perfectly good hooks are not listed —
+        Listing is free and open to anyone, so plenty of perfectly good Latches are not listed —
         and no scam is prevented by failing to register. Read this page as{' '}
         <strong>&ldquo;this address has no on-chain trust signals here&rdquo;</strong>, which is
         exactly as far as it goes. It is not a clean bill of health and it is not an accusation.
@@ -349,7 +349,7 @@ function NotRegistered({
             address on another network is a different contract.
           </li>
           <li>
-            If it is your hook, anyone can list it — registration is permissionless, free, and
+            If it is your Latch, anyone can list it — registration is permissionless, free, and
             reads the permission bitmap off the contract itself.
           </li>
         </ul>
@@ -363,12 +363,12 @@ function NotRegistered({
 /* --------------------------------------------------------- the trust panel */
 
 /** The single sentence at the top. Worst signal wins; nothing softens a warning. */
-function verdictFor(hook: RegisteredHook): { tone: Tone; kicker: string; title: string } {
+function verdictFor(hook: RegisteredLatch): { tone: Tone; kicker: string; title: string } {
   if (hook.listing === LISTING_MALICIOUS) {
     return {
       tone: 'danger',
       kicker: 'FLAGGED MALICIOUS',
-      title: 'A guardian has flagged this hook as known to harm users',
+      title: 'A guardian has flagged this Latch as known to harm users',
     }
   }
   if (!hook.permissionsReadable) {
@@ -379,7 +379,7 @@ function verdictFor(hook: RegisteredHook): { tone: Tone; kicker: string; title: 
     }
   }
   if (hook.listing === LISTING_DEPRECATED) {
-    return { tone: 'warn', kicker: 'DEPRECATED', title: 'Registered, and retired by its steward' }
+    return { tone: 'warn', kicker: 'DEPRECATED', title: 'Registered, and marked retired by a curator' }
   }
   if (!hook.permissionsValid) {
     return {
@@ -392,7 +392,7 @@ function verdictFor(hook: RegisteredHook): { tone: Tone; kicker: string; title: 
     return {
       tone: 'danger',
       kicker: 'REGISTERED · VALUE-EXTRACTING',
-      title: 'This hook can take value out of your trades',
+      title: 'This Latch can take value out of your trades',
     }
   }
   if (hook.verification === VERIFICATION_AUDITED) {
@@ -412,7 +412,7 @@ function verdictFor(hook: RegisteredHook): { tone: Tone; kicker: string; title: 
   return { tone: 'mute', kicker: 'REGISTERED', title: 'Listed in the registry, not yet verified' }
 }
 
-function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredHook; checkedAtBlock: bigint }) {
+function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredLatch; checkedAtBlock: bigint }) {
   const verdict = verdictFor(hook)
   const claims = capabilityClaims(hook)
   const source = safeHttpUrl(hook.sourceURI)
@@ -426,12 +426,12 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredHook; checkedA
         <h1 className={styles['verdictTitle']} id="v-h">
           {verdict.title}
         </h1>
-        <AddressRow label="Hook" address={hook.address} />
+        <AddressRow label="Latch" address={hook.address} />
       </section>
 
       {/* Warnings sit above everything the submitter wrote about themselves. */}
       {hook.listing === LISTING_MALICIOUS && (
-        <Alert tone="danger" title="Do not route funds through a pool that uses this hook">
+        <Alert tone="danger" title="Do not route funds through a pool that uses this Latch">
           A guardian flagged this listing, and flagging force-resets its verification in the same
           transaction — whatever badge it held before does not apply. The registry keeps the
           record rather than deleting it, precisely so this warning stays reachable by the people
@@ -440,8 +440,8 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredHook; checkedA
       )}
 
       {hook.listing === LISTING_DEPRECATED && (
-        <Alert tone="warn" title="Superseded or abandoned by its steward">
-          Deprecation is a status, not an accusation, and any verification this hook earned still
+        <Alert tone="warn" title="Superseded or abandoned, per a curator">
+          Deprecation is a status, not an accusation, and any verification this Latch earned still
           stands. It usually means a newer version exists — check the source link before you build
           against this one.
         </Alert>
@@ -459,14 +459,14 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredHook; checkedA
       {hook.permissionsReadable && !hook.permissionsValid && (
         <Alert tone="warn" title="Malformed permission bitmap">
           It carries reserved bits, or a returns-delta bit without the callback that bit depends
-          on. Core rejects the same bitmap at pool initialization, so this hook cannot currently
+          on. Core rejects the same bitmap at pool initialization, so this Latch cannot currently
           back a pool — and no curator can attest to it in this state.
         </Alert>
       )}
 
       {hook.risk === RISK_VALUE_EXTRACTING && hook.listing !== LISTING_MALICIOUS && (
         <Alert tone="danger" title="Value-extracting capability">
-          This hook holds a permission that lets it take a cut of swaps or refuse liquidity
+          This Latch holds a permission that lets it take a cut of swaps or refuse liquidity
           withdrawals. Value routed through its pools moves at its discretion. That is a fact
           about its code, not a judgement about its author — but you should know it before you
           trade.
@@ -494,11 +494,11 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredHook; checkedA
 
       {/* ------------------------------------------------- read from the code */}
       <section className={cx(styles['panel'], dangerous && styles['panelDanger'])}>
-        <p className={styles['panelKicker']}>READ FROM THE HOOK&rsquo;S OWN CONTRACT</p>
-        <h2 className={styles['panelTitle']}>What this hook can do</h2>
+        <p className={styles['panelKicker']}>READ FROM THE LATCH&rsquo;S OWN CONTRACT</p>
+        <h2 className={styles['panelTitle']}>What this Latch can do</h2>
         <p className={styles['panelNote']}>
           The registry reads this bitmap by calling{' '}
-          <code>getHooksRegistrationBitmap()</code> on the hook itself. There is no parameter
+          <code>getHooksRegistrationBitmap()</code> on the Latch itself. There is no parameter
           through which a submitter can declare, suggest or influence it, and the capability class
           is derived from it by a <code>pure</code> function on chain. This is the part of the
           page nobody can fake.
@@ -531,7 +531,7 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredHook; checkedA
         <p className={styles['panelKicker']}>SUBMITTER-SUPPLIED — NOT VERIFIED</p>
         <h2 className={styles['panelTitle']}>What the submitter says about it</h2>
         <p className={styles['panelNote']}>
-          Everything in this block is free text written by whoever listed the hook, stored
+          Everything in this block is free text written by whoever listed the Latch, stored
           verbatim on chain. It is <strong>never</strong> a capability claim, and no part of it
           has been checked against the code above. A steward edit resets verification to
           unverified precisely because these strings can be repointed after a badge is granted.
@@ -611,15 +611,15 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredHook; checkedA
         <h2 className={styles['panelTitle']}>Who listed it</h2>
         <p className={styles['panelNote']}>
           The address that sent the <code>register</code> transaction. It is a fact about the
-          listing and not an endorsement of the hook — registration is permissionless, so this
+          listing and not an endorsement of the Latch — registration is permissionless, so this
           need not be the author, and stewardship can since have moved to someone else.
         </p>
         <AddressRow label="Submitter" address={hook.submitter} />
       </section>
 
       <p className={styles['verdictBody']}>
-        <Link className={styles['inlineLink']} to="/app/explorer">
-          Compare it against every other listed hook &rarr;
+        <Link className={styles['inlineLink']} to="/app/marketplace">
+          Compare it against every other listed Latch &rarr;
         </Link>
       </p>
 
@@ -636,13 +636,13 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredHook; checkedA
  * It is carried in the state rather than cleared by an effect so that an answer
  * for one address can never be painted under another. Navigating to a second
  * /verify URL makes the stored key stale, and a stale key renders as LOADING —
- * derived during render, so there is no frame in which the previous hook's
- * verdict sits above the new hook's address.
+ * derived during render, so there is no frame in which the previous Latch's
+ * verdict sits above the new Latch's address.
  */
 type State =
   | { k: 'loading'; key: string }
   | { k: 'error'; key: string; message: string }
-  | { k: 'result'; key: string; lookup: HookLookup }
+  | { k: 'result'; key: string; lookup: LatchLookup }
 
 export default function VerifyPage() {
   const { hookAddress } = useParams()
@@ -659,7 +659,7 @@ export default function VerifyPage() {
   useEffect(() => {
     if (!address) return
     let off = false
-    readRegisteredHook(address)
+    readRegisteredLatch(address)
       .then((lookup) => !off && setStored({ k: 'result', key, lookup }))
       .catch(
         (e) =>
@@ -680,7 +680,7 @@ export default function VerifyPage() {
     const previous = document.title
     document.title = address
       ? `Verify ${short(address)} — Latch Protocol`
-      : 'Verify a hook — Latch Protocol'
+      : 'Verify a Latch — Latch Protocol'
     return () => {
       document.title = previous
     }
@@ -691,7 +691,7 @@ export default function VerifyPage() {
       <SiteHeader />
       <main>
         <div className={styles['wrap']}>
-          <p className={landing['eyebrow']}>PUBLIC HOOK VERIFICATION</p>
+          <p className={landing['eyebrow']}>PUBLIC LATCH VERIFICATION</p>
 
           {!address ? (
             <InvalidAddress raw={raw} />
@@ -709,7 +709,7 @@ export default function VerifyPage() {
           ) : state.k === 'error' ? (
             <Unreachable address={address} message={state.message} onRetry={retry} />
           ) : state.lookup.found ? (
-            <VerifiedHook hook={state.lookup.hook} checkedAtBlock={state.lookup.checkedAtBlock} />
+            <VerifiedHook hook={state.lookup.latch} checkedAtBlock={state.lookup.checkedAtBlock} />
           ) : (
             <NotRegistered
               address={state.lookup.address}

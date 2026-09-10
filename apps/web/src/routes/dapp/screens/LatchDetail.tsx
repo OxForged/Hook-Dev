@@ -3,7 +3,7 @@
 
    The marketplace listing shows cards; this is the page behind a card. It is
    the in-app counterpart of the public `/verify/:hookAddress` permalink and
-   reads through the same `readRegisteredHook`, so the two can never disagree
+   reads through the same `readRegisteredLatch`, so the two can never disagree
    about whether a Latch is registered.
 
    The same rule the verify page is built around applies here and is the reason
@@ -30,8 +30,8 @@ import {
   VERIFICATION_LABEL,
   capabilityClaims,
   explorerAddress,
-  readRegisteredHook,
-  type HookLookup,
+  readRegisteredLatch,
+  type LatchLookup,
 } from '../../../lib/chain'
 import { dappPath } from '../paths.ts'
 
@@ -39,7 +39,7 @@ type State =
   | { k: 'idle' }
   | { k: 'loading' }
   | { k: 'error'; message: string }
-  | { k: 'ready'; lookup: HookLookup }
+  | { k: 'ready'; lookup: LatchLookup }
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
@@ -75,7 +75,7 @@ export default function LatchDetail() {
     if (malformed || !address) return
     let off = false
     setState({ k: 'loading' })
-    readRegisteredHook(address as `0x${string}`)
+    readRegisteredLatch(address as `0x${string}`)
       .then((lookup) => !off && setState({ k: 'ready', lookup }))
       .catch(
         (e) =>
@@ -116,9 +116,13 @@ export default function LatchDetail() {
 
   if (state.k === 'loading' || state.k === 'idle') {
     return (
-      <section className="dapp-card">
-        <h2 className="dapp-card__title">Reading the registry…</h2>
-        <p className="live-note" role="status">
+      /* The heading names what is being read, so the live region is the whole
+         card rather than the sentence under it — announcing "Looking up 0x…"
+         without "Reading the registry" leaves out the only word that says what
+         kind of answer is coming. */
+      <section className="dapp-card" role="status">
+        <h2 className="dapp-card__title">Reading the Latch registry…</h2>
+        <p className="live-note">
           Looking up {short(address!)} on Ethereum Sepolia.
         </p>
       </section>
@@ -177,7 +181,7 @@ export default function LatchDetail() {
     )
   }
 
-  const h = state.lookup.hook
+  const h = state.lookup.latch
   const claims = capabilityClaims(h)
   const source = safeHttpUrl(h.sourceURI)
   const audit = safeHttpUrl(h.auditURI)

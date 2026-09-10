@@ -49,8 +49,17 @@ function LiveBadge() {
 
 const n = (v: number | bigint) => v.toLocaleString('en-US')
 
+/** The two sides of the fee split, kept as data so the legend can toggle them. */
+const FEE_SERIES = [
+  { key: 'primary', label: 'Protocol' },
+  { key: 'violet', label: 'Liquidity providers' },
+] as const
+
 export default function Analytics() {
   const state = useAnalytics()
+  /* Which side of the fee split the reader has isolated. Shared by the donut
+     and its legend so a click on either presses both. */
+  const [feeSlice, setFeeSlice] = useState<string | null>(null)
   const chain = DEPLOYMENTS[SEPOLIA_CHAIN_ID]
 
   if (state.k !== 'ready') {
@@ -62,7 +71,7 @@ export default function Analytics() {
         </div>
         <p className={`live-note${state.k === 'error' ? ' live-note--err' : ''}`} role="status">
           {state.k === 'loading'
-            ? `Reading ${chain.name} contracts…`
+            ? `Reading protocol events, pools and swap fees from the ${chain.name} contracts…`
             : `Could not reach ${chain.name}: ${state.message}. Nothing shown rather than placeholder figures.`}
         </p>
       </section>
@@ -102,7 +111,22 @@ export default function Analytics() {
         {hasEvents ? (
           <>
             <ColumnChart
-              values={d.buckets.map((b) => b.pct)}
+              points={d.buckets.map((b) => {
+                // The last bucket's arithmetic end can run past the last block
+                // that actually carried an event; report the observed end.
+                const to = d.lastEventBlock !== null && b.toBlock > d.lastEventBlock
+                  ? d.lastEventBlock
+                  : b.toBlock
+                return {
+                  pct: b.pct,
+                  value: n(b.count),
+                  label:
+                    b.fromBlock === to
+                      ? `Block #${n(b.fromBlock)}`
+                      : `Blocks #${n(b.fromBlock)}–#${n(to)}`,
+                }
+              })}
+              unit="protocol events"
               label={`${d.eventCount} protocol events across blocks ${d.firstEventBlock} to ${d.lastEventBlock}, ${d.buckets.length} columns of ${d.blocksPerBucket} block${d.blocksPerBucket === 1 ? '' : 's'}`}
             />
             <div className="dapp-axis">
@@ -141,10 +165,21 @@ export default function Analytics() {
       <div className="dapp-stack">
         {d.feeSplit.length > 0 ? (
           <section className="dapp-card dapp-card--donut">
-            <Donut segments={d.feeSplit} label="Swap fee split between protocol and liquidity providers" />
+            <Donut
+              segments={d.feeSplit}
+              label="Swap fee split between protocol and liquidity providers"
+              unit="of the swap fee charged"
+              selected={feeSlice}
+              onSelect={setFeeSlice}
+            />
             <div className="dapp-card__donut-body">
               <h2 className="dapp-microlabel">SWAP FEE SPLIT</h2>
-              <DonutLegend segments={d.feeSplit} />
+              <DonutLegend
+                segments={d.feeSplit}
+                unit="of the swap fee charged"
+                selected={feeSlice}
+                onSelect={setFeeSlice}
+              />
               <p className="live-note an-note">
                 {d.feeConfigs.length === 1 && d.feeConfigs[0] ? (
                   <>
@@ -184,7 +219,12 @@ export default function Analytics() {
           </div>
           {d.feeBars.length > 0 ? (
             <>
-              <BarList items={d.feeBars} />
+              <BarList
+                items={d.feeBars}
+                valueLabel="earned, in token units"
+                shareLabel="of this token’s fees"
+                series={FEE_SERIES.filter((s) => d.feeBars.some((b) => b.color === s.key))}
+              />
               <p className="live-note an-note">
                 Token units, not dollars — ltUSD and ltETH are unpriced testnet tokens. Each bar is
                 a share of that token&rsquo;s own fees, so both ends of the comparison are in the
@@ -204,18 +244,18 @@ export default function Analytics() {
 
         <section className="dapp-card">
           <div className="dapp-card__bar">
-            <h2 className="dapp-microlabel">HOOK EARNINGS</h2>
+            <h2 className="dapp-microlabel">LATCH EARNINGS</h2>
             <LiveBadge />
           </div>
           <div className="an-empty">
             <p className="an-empty__title">Nothing to rank</p>
             <p className="live-note">
-              The registry lists {n(d.hooks.length)} hook{d.hooks.length === 1 ? '' : 's'}, and{' '}
+              The registry lists {n(d.hooks.length)} Latch{d.hooks.length === 1 ? '' : 'es'}, and{' '}
               {n(d.hookedPoolCount)} of {n(d.poolCount)} live pool
-              {d.poolCount === 1 ? '' : 's'} {d.poolCount === 1 ? 'has' : 'have'} a hook attached.
+              {d.poolCount === 1 ? '' : 's'} {d.poolCount === 1 ? 'has' : 'have'} a Latch attached.
               {d.hookedPoolCount === 0
-                ? ' With no hook attached to a pool, no hook callback can have fired and no hook has earned a fee, so there is no ranking to draw.'
-                : ' Per-hook earnings are not recorded on chain by the pool manager, so there is nothing here to rank from logs alone.'}
+                ? ' With no Latch attached to a pool, no callback can have fired and no Latch has earned a fee, so there is no ranking to draw.'
+                : ' Per-Latch earnings are not recorded on chain by the pool manager, so there is nothing here to rank from logs alone.'}
             </p>
           </div>
           {d.hooks.length > 0 && (

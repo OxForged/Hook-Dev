@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import "forge-std/Script.sol";
-import {LatchHookRegistry} from "../src/LatchHookRegistry.sol";
+import {LatchRegistry} from "../src/LatchRegistry.sol";
 
 /**
  * Deploys the hook registry — the contract backing the marketplace.
@@ -33,14 +33,14 @@ contract DeployRegistryScript is Script {
         guardians[0] = deployer;
 
         vm.startBroadcast(pk);
-        LatchHookRegistry registry = new LatchHookRegistry(deployer, curators, guardians);
+        LatchRegistry registry = new LatchRegistry(deployer, curators, guardians);
         vm.stopBroadcast();
 
         require(registry.hasRole(registry.CURATOR_ROLE(), deployer), "curator not set");
         require(registry.hasRole(registry.GUARDIAN_ROLE(), deployer), "guardian not set");
 
-        console.log("LatchHookRegistry  ", address(registry));
+        console.log("LatchRegistry  ", address(registry));
         console.log("  admin            ", deployer);
-        console.log("  hookCount        ", registry.hookCount());
+        console.log("  latchCount        ", registry.latchCount());
     }
 }

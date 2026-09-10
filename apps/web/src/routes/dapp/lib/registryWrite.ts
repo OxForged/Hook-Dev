@@ -1,5 +1,5 @@
 /* ============================================================================
-   The dapp's first WRITE path: registering a hook with LatchHookRegistry.
+   The dapp's first WRITE path: registering a Latch with LatchHookRegistry.
 
    Everything a reader needs to trust about this module:
 
@@ -22,7 +22,7 @@
         (`MAX_NAME_BYTES` and friends), not hardcoded, so they cannot drift.
 
    Registration is permissionless, free and has no allowlist — see the NatSpec
-   above `register` in packages/registry/src/LatchHookRegistry.sol. It is also
+   above `register` in packages/registry/src/LatchRegistry.sol. It is also
    IRREVERSIBLE: there is no `unregister`, by design. That is the reason this
    module works so hard to fail before the signature rather than after it.
    ============================================================================ */
@@ -44,7 +44,7 @@ import {
   SEPOLIA_CHAIN_ID,
   capabilityClaims,
   client,
-  type RegisteredHook,
+  type RegisteredLatch,
   type RiskClass,
 } from '../../../lib/chain'
 
@@ -297,7 +297,7 @@ export async function probeHook(raw: Address): Promise<HookProbe> {
       takesSwapCut: cut,
       canBlockSwaps: block,
       canTrapLiquidity: trap,
-    } as RegisteredHook),
+    } as RegisteredLatch),
   }
 }
 
@@ -360,7 +360,7 @@ export function validateDraft(
   const trimmed = hookAddress.trim()
 
   if (trimmed === '') {
-    issues.push({ field: 'hook', message: 'Enter the address of the deployed hook contract.' })
+    issues.push({ field: 'hook', message: 'Enter the address of the deployed Latch contract.' })
   } else if (!isAddress(trimmed, { strict: false })) {
     issues.push({ field: 'hook', message: 'Not a 20-byte hex address.' })
   } else if (/^0x0{40}$/i.test(trimmed)) {
@@ -421,7 +421,7 @@ export interface DecodedFailure {
   kind: FailureKind
   /** The Solidity custom error name, when the revert carried one. */
   name: string | null
-  /** One sentence a hook author can act on. */
+  /** One sentence a Latch author can act on. */
   message: string
   /** The raw error, kept so nothing the chain said is hidden from the reader. */
   detail: string
@@ -438,7 +438,7 @@ function hex4(value: unknown): string {
  */
 const ERROR_COPY: Record<string, (args: readonly unknown[]) => string> = {
   ZeroAddress: () =>
-    'The registry rejects address(0). Enter the address of a deployed hook contract.',
+    'The registry rejects address(0). Enter the address of a deployed Latch contract.',
   HookAlreadyRegistered: ([hook]) =>
     `${String(hook)} is already listed. Registration happens once and there is deliberately no unregister; ` +
     'if you are its author, a curator can reassign the steward instead.',
@@ -448,7 +448,7 @@ const ERROR_COPY: Record<string, (args: readonly unknown[]) => string> = {
   PermissionsUnreadable: ([hook]) =>
     `The registry could not read getHooksRegistrationBitmap() off ${String(hook)}: the call reverted, returned ` +
     'something other than one clean uint16, or ran past the probe gas budget. Core makes the same call when a ' +
-    'pool is initialised, so a hook it cannot read is a hook it can never back a pool with.',
+    'pool is initialised, so a Latch it cannot read is a Latch it can never back a pool with.',
   ReservedBitsSet: ([permissions]) =>
     `The bitmap ${hex4(permissions)} sets reserved bits 14-15, which ICLHooks does not assign. Core rejects ` +
     'that bitmap at pool initialisation, so the registry will not list it either.',
@@ -466,7 +466,7 @@ const ERROR_COPY: Record<string, (args: readonly unknown[]) => string> = {
 }
 
 /**
- * Turn a viem/wagmi error into something a hook author can act on.
+ * Turn a viem/wagmi error into something a Latch author can act on.
  *
  * A revert we can name is reported by name. A revert we cannot is reported as
  * unknown — never as a generic "something went wrong" that hides a real reason,
@@ -518,7 +518,7 @@ export function decodeRegistryFailure(error: unknown): DecodedFailure | null {
     name: null,
     message:
       'The simulation could not be completed — the RPC did not answer, or the call failed before it reached ' +
-      'the registry. This is not a verdict on the hook.',
+      'the registry. This is not a verdict on the Latch.',
     detail,
   }
 }

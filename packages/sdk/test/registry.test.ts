@@ -22,9 +22,9 @@ import {
   canBlockSwaps,
   canTrapLiquidity,
   classifyRiskClass,
-  decodeHookRecord,
+  decodeLatchRecord,
   describeCapabilities,
-  formatHookTrust,
+  formatLatchTrust,
   hookPermissionState,
   isValidHookBitmap,
   listingCaution,
@@ -36,14 +36,14 @@ import {
   riskClassOf,
   riskClassSeverity,
   riskClassToUint8,
-  summarizeHook,
+  summarizeLatch,
   takesSwapCut,
   verificationFromUint8,
   verificationRank,
   verificationToUint8,
-  type HookRecord,
+  type LatchRecord,
   type Listing,
-  type RawHookRecord,
+  type RawLatchRecord,
   type RiskClass,
   type Verification,
 } from "../src/registry/index.js";
@@ -53,7 +53,7 @@ const SUBMITTER = "0x00000000000000000000000000000000000000b1" as const;
 const CODEHASH = `0x${"11".repeat(32)}` as const;
 
 /** A registered, unverified, active, harmless hook. Override to taste. */
-function makeRecord(overrides: Partial<HookRecord> = {}): HookRecord {
+function makeRecord(overrides: Partial<LatchRecord> = {}): LatchRecord {
   return {
     hook: HOOK,
     submitter: SUBMITTER,
@@ -242,7 +242,7 @@ describe("classifyRiskClass", () => {
       const expected = classifyRiskClass(bitmap);
       expect(describeCapabilities(bitmap).riskClass).toBe(expected);
       expect(riskClassOf(makeRecord({ permissions: bitmap }))).toBe(expected);
-      expect(summarizeHook(makeRecord({ permissions: bitmap })).riskClass).toBe(expected);
+      expect(summarizeLatch(makeRecord({ permissions: bitmap })).riskClass).toBe(expected);
     }
   });
 
@@ -290,8 +290,8 @@ describe("capability predicates", () => {
 // Records
 // ---------------------------------------------------------------------------
 
-describe("decodeHookRecord", () => {
-  const raw: RawHookRecord = {
+describe("decodeLatchRecord", () => {
+  const raw: RawLatchRecord = {
     submitter: SUBMITTER,
     submittedAt: 1_700_000_000n,
     permissions: encodeCLHookPermissions({ beforeSwap: true, beforeSwapReturnsDelta: true }),
@@ -312,7 +312,7 @@ describe("decodeHookRecord", () => {
   };
 
   it("turns the uint8 enums into their labels", () => {
-    const record = decodeHookRecord(HOOK, raw);
+    const record = decodeLatchRecord(HOOK, raw);
     expect(record.hook).toBe(HOOK);
     expect(record.verification).toBe("Audited");
     expect(record.listing).toBe("Deprecated");
@@ -321,18 +321,18 @@ describe("decodeHookRecord", () => {
 
   it("copies chainIds rather than aliasing the decoded array", () => {
     const mutable = [1n, 56n];
-    const record = decodeHookRecord(HOOK, { ...raw, metadata: { ...raw.metadata, chainIds: mutable } });
+    const record = decodeLatchRecord(HOOK, { ...raw, metadata: { ...raw.metadata, chainIds: mutable } });
     mutable.push(137n);
     expect(record.metadata.chainIds).toEqual([1n, 56n]);
   });
 
   it("throws rather than guessing at an unknown enum value", () => {
-    expect(() => decodeHookRecord(HOOK, { ...raw, verification: 7 })).toThrow(/invalid Verification/);
-    expect(() => decodeHookRecord(HOOK, { ...raw, listing: 9 })).toThrow(/invalid Listing/);
+    expect(() => decodeLatchRecord(HOOK, { ...raw, verification: 7 })).toThrow(/invalid Verification/);
+    expect(() => decodeLatchRecord(HOOK, { ...raw, listing: 9 })).toThrow(/invalid Listing/);
   });
 
   it("throws on a bitmap that cannot be a uint16", () => {
-    expect(() => decodeHookRecord(HOOK, { ...raw, permissions: 0x1_0000 })).toThrow(
+    expect(() => decodeLatchRecord(HOOK, { ...raw, permissions: 0x1_0000 })).toThrow(
       /must be an integer in/,
     );
   });
@@ -348,7 +348,7 @@ describe("decodeHookRecord", () => {
     expect(components).toBeDefined();
 
     const onChainFields = components!.map((c) => c.name);
-    const record = decodeHookRecord(HOOK, raw);
+    const record = decodeLatchRecord(HOOK, raw);
     // `hook` is the mapping key, so the struct does not repeat it.
     const { hook: _hook, ...stored } = record;
     expect(Object.keys(stored).sort()).toEqual([...onChainFields].sort());
@@ -395,27 +395,27 @@ describe("hookPermissionState", () => {
 // Trust summary
 // ---------------------------------------------------------------------------
 
-describe("summarizeHook", () => {
+describe("summarizeLatch", () => {
   it("earns the badge only when every axis lines up", () => {
     const audited = makeRecord({ verification: "Audited", listing: "Active" });
-    expect(summarizeHook(audited).badgeEarned).toBe(true);
-    expect(summarizeHook(audited).warnings).toEqual([]);
+    expect(summarizeLatch(audited).badgeEarned).toBe(true);
+    expect(summarizeLatch(audited).warnings).toEqual([]);
 
-    expect(summarizeHook(makeRecord({ verification: "Audited", listing: "Deprecated" })).badgeEarned)
+    expect(summarizeLatch(makeRecord({ verification: "Audited", listing: "Deprecated" })).badgeEarned)
       .toBe(false);
     expect(
-      summarizeHook(makeRecord({ verification: "Audited", permissionsReadable: false })).badgeEarned,
+      summarizeLatch(makeRecord({ verification: "Audited", permissionsReadable: false })).badgeEarned,
     ).toBe(false);
     expect(
-      summarizeHook(makeRecord({ verification: "Audited", permissionsValid: false })).badgeEarned,
+      summarizeLatch(makeRecord({ verification: "Audited", permissionsValid: false })).badgeEarned,
     ).toBe(false);
-    expect(summarizeHook(makeRecord({ verification: "SourceVerified" })).badgeEarned).toBe(false);
+    expect(summarizeLatch(makeRecord({ verification: "SourceVerified" })).badgeEarned).toBe(false);
   });
 
   it("keeps the audited badge and the value-extraction warning side by side", () => {
     // The case a single trust score gets wrong: a genuinely audited hook that
     // takes a cut of every swap is still a hook that takes a cut of every swap.
-    const summary = summarizeHook(
+    const summary = summarizeLatch(
       makeRecord({
         verification: "Audited",
         permissions: encodeCLHookPermissions({ beforeSwap: true, beforeSwapReturnsDelta: true }),
@@ -428,20 +428,20 @@ describe("summarizeHook", () => {
   });
 
   it("puts the malicious flag first", () => {
-    const summary = summarizeHook(makeRecord({ listing: "Malicious" }));
+    const summary = summarizeLatch(makeRecord({ listing: "Malicious" }));
     expect(summary.warnings[0]).toBe("FlaggedMalicious");
     expect(summary.badgeEarned).toBe(false);
   });
 
   it("warns about a stale bitmap", () => {
-    const summary = summarizeHook(makeRecord({ permissionsReadable: false, permissionsValid: false }));
+    const summary = summarizeLatch(makeRecord({ permissionsReadable: false, permissionsValid: false }));
     expect(summary.permissionState).toBe("Stale");
     expect(summary.warnings).toContain("PermissionsStale");
     expect(summary.warnings).not.toContain("PermissionsInvalid");
   });
 
   it("warns about an invalid bitmap", () => {
-    const summary = summarizeHook(
+    const summary = summarizeLatch(
       makeRecord({
         permissions: encodeCLHookPermissions({ afterAddLiquidityReturnsDelta: true }),
         permissionsValid: false,
@@ -453,7 +453,7 @@ describe("summarizeHook", () => {
   });
 
   it("warns that a hook can trap liquidity", () => {
-    const summary = summarizeHook(
+    const summary = summarizeLatch(
       makeRecord({ permissions: encodeCLHookPermissions({ beforeRemoveLiquidity: true }) }),
     );
     expect(summary.warnings).toContain("CanTrapLiquidity");
@@ -461,17 +461,17 @@ describe("summarizeHook", () => {
   });
 
   it("treats unverified as a note, not an accusation", () => {
-    expect(summarizeHook(makeRecord()).warnings).toEqual(["Unverified"]);
+    expect(summarizeLatch(makeRecord()).warnings).toEqual(["Unverified"]);
   });
 
   it("formats all three axes on one line", () => {
-    const line = formatHookTrust(summarizeHook(makeRecord({ verification: "Audited" })));
+    const line = formatLatchTrust(summarizeLatch(makeRecord({ verification: "Audited" })));
     expect(line).toContain("verification=Audited");
     expect(line).toContain("listing=Active");
     expect(line).toContain("risk=Passive");
     expect(line).not.toContain("permissions=");
 
-    const stale = formatHookTrust(summarizeHook(makeRecord({ permissionsReadable: false })));
+    const stale = formatLatchTrust(summarizeLatch(makeRecord({ permissionsReadable: false })));
     expect(stale).toContain("permissions=Stale");
   });
 });

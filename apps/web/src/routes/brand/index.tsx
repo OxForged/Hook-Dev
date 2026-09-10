@@ -123,7 +123,7 @@ export default function BrandKit() {
               <img
                 className="bk-app-icon"
                 src="/brand/app-icon-1024.png"
-                alt="The Latch app icon: the hook mark centred on a dark rounded square with a glowing blue rim."
+                alt="The Latch app icon: the Latch mark centred on a dark rounded square with a glowing blue rim."
               />
               <p className="bk-tile-name">App icon</p>
               <p className="bk-tile-meta">1024×1024 PNG · rounded square, blue rim</p>
@@ -239,7 +239,7 @@ export default function BrandKit() {
               <img
                 className="bk-pfp"
                 src="/brand/pfp-800-dark.png"
-                alt="Latch Protocol profile picture: the hook mark centred on the dark brand ground, safe to crop to a circle."
+                alt="Latch Protocol profile picture: the Latch mark centred on the dark brand ground, safe to crop to a circle."
               />
               <div className="bk-pfp-body">
                 <p className="bk-tile-name">Profile picture</p>
@@ -404,7 +404,7 @@ export default function BrandKit() {
                 />
               </div>
               <p className="bk-usage-caption">
-                Clear space equals the height of the hook&rsquo;s eye on all four sides.
+                Clear space equals the height of the mark&rsquo;s eye on all four sides.
               </p>
             </div>
 

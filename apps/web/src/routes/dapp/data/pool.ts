@@ -34,7 +34,7 @@ export function loadPool(): PoolData {
       { label: 'TVL', value: '$14.2M' },
       { label: 'VOLUME 24H', value: '$8.1M' },
       { label: 'FEE (LIVE)', value: '0.11%' },
-      { label: 'HOOK CALLS', value: '182K' },
+      { label: 'LATCH CALLS', value: '182K' },
     ],
     feeSeries: [26, 31, 28, 42, 55, 48, 38, 44, 61, 52, 47, 39],
     volatilitySeries: [18, 24, 21, 29, 34, 31, 38, 44, 41, 52, 48, 61],

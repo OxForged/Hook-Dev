@@ -8,7 +8,7 @@
      loading         reading, named address, named chain
      error           chain unreachable — say so, offer retry, show no figures
      ready           positions table, or an honest empty state that names what
-                     would appear here; wallet balances and listed hooks below
+                     would appear here; wallet balances and listed Latches below
 
    Every number on this screen is a token amount in that token's own units,
    read from chain a moment ago. There is no USD column because nothing prices
@@ -110,7 +110,7 @@ function Header({ chainName }: { chainName: string }) {
       </div>
       <p className="live-note">
         Read from the deployed contracts on {chainName}: liquidity position NFTs from the
-        CL position manager, wallet balances of the protocol&rsquo;s tokens, and hooks listed
+        CL position manager, wallet balances of the protocol&rsquo;s tokens, and Latches listed
         under your address in the registry. Amounts are shown in token units — these are
         unpriced testnet tokens, so there is no dollar figure. Read only; connecting signs
         nothing.
@@ -141,7 +141,7 @@ function NotConnected() {
           <span className="live-fee">the protocol&rsquo;s test tokens on {d.name}</span>
         </li>
         <li>
-          <span>Hooks you have listed in the registry</span>
+          <span>Latches you have listed in the registry</span>
           <span className="live-fee">matched on submitter address</span>
         </li>
       </ul>
@@ -252,10 +252,10 @@ function Kpis({ p }: { p: PortfolioData }) {
       ))}
 
       <article className="dapp-card dapp-card--kpi">
-        <h3 className="dapp-microlabel">HOOKS LISTED BY YOU</h3>
+        <h3 className="dapp-microlabel">LATCHES LISTED BY YOU</h3>
         <p className="dapp-kpi__value dapp-kpi__value--portfolio">{p.submittedHooks.length}</p>
         <p className="live-note">
-          {p.submittedHooks.length === 0 ? 'none in the registry' : 'in the hook registry'}
+          {p.submittedHooks.length === 0 ? 'none in the registry' : 'in the registry'}
         </p>
       </article>
     </div>
@@ -264,7 +264,7 @@ function Kpis({ p }: { p: PortfolioData }) {
 
 function PositionsTable({ p }: { p: PortfolioData }) {
   const d = DEPLOYMENTS[p.chainId]
-  const cols = ['POSITION', 'HOOK', 'RANGE', 'HOLDINGS', 'UNCOLLECTED FEES'] as const
+  const cols = ['POSITION', 'LATCH', 'RANGE', 'HOLDINGS', 'UNCOLLECTED FEES'] as const
   return (
     <div className="dapp-table-wrap">
       <table className="dapp-table">
@@ -323,7 +323,7 @@ function PositionsTable({ p }: { p: PortfolioData }) {
                       {pos.hookName || short(pos.hooks)}
                     </a>
                   ) : (
-                    <span className="hx-muted">No hook</span>
+                    <span className="hx-muted">No Latch</span>
                   )}
                 </td>
                 <td data-label={cols[2]}>
@@ -386,15 +386,15 @@ function HooksCard({ p }: { p: PortfolioData }) {
     <section className="dapp-card" aria-labelledby="pf-hooks">
       <div className="dapp-card__head">
         <h3 id="pf-hooks" className="dapp-card__title">
-          Hooks listed by this address
+          Latches listed by this address
         </h3>
-        <a className="dapp-btn dapp-btn--ghost" href={dappPath('explorer')}>
+        <a className="dapp-btn dapp-btn--ghost" href={dappPath('marketplace')}>
           Marketplace
         </a>
       </div>
       {p.submittedHooks.length === 0 ? (
         <p className="dapp-note">
-          None. A hook you list in the LatchHookRegistry — with your address as submitter — will
+          None. A Latch you list in the LatchHookRegistry — with your address as submitter — will
           appear here with its verification level and on-chain capability class.
         </p>
       ) : (
@@ -407,7 +407,7 @@ function HooksCard({ p }: { p: PortfolioData }) {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {h.name || 'Unnamed hook'}
+                  {h.name || 'Unnamed Latch'}
                 </a>{' '}
                 <span className="live-fee">{short(h.address)}</span>
               </span>
@@ -495,6 +495,7 @@ export default function Portfolio() {
           <button
             type="button"
             className="dapp-btn dapp-btn--ghost"
+            data-busy={state.k === 'loading' ? 'true' : undefined}
             onClick={reload}
             disabled={state.k === 'loading'}
           >

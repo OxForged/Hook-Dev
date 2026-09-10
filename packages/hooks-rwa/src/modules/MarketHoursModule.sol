@@ -237,7 +237,7 @@ abstract contract MarketHoursModule {
     /// @notice Gas that must remain before the oracle is queried.
     /// @dev EIP-150 forwards at most 63/64 of what is left, so holding `LIMIT * 64 / 63` is what
     /// guarantees the callee actually receives its full budget. The 30k reserve covers the band
-    /// arithmetic and the revert that may follow. See `LatchHookRegistry.PROBE_GAS_FLOOR`.
+    /// arithmetic and the revert that may follow. See `LatchRegistry.PROBE_GAS_FLOOR`.
     uint256 public constant PRICE_ORACLE_GAS_FLOOR =
         PRICE_ORACLE_GAS_LIMIT + PRICE_ORACLE_GAS_LIMIT / 63 + 30_000;
 

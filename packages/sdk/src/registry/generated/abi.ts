@@ -8,7 +8,7 @@
 import type { Abi } from "viem";
 
 /**
- * `LatchHookRegistry` - the on-chain hook marketplace, full deployed surface.
+ * `LatchRegistry` - the on-chain hook marketplace, full deployed surface.
  *
  * 22 errors, 9 events, 40 functions - curated from the compiled artifact, not the full ABI.
  */
@@ -62,50 +62,6 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "error",
-    "name": "HookAlreadyRegistered",
-    "inputs": [
-      {
-        "name": "hook",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "HookFlaggedMalicious",
-    "inputs": [
-      {
-        "name": "hook",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "HookHasNoCode",
-    "inputs": [
-      {
-        "name": "hook",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "HookNotRegistered",
-    "inputs": [
-      {
-        "name": "hook",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "InsufficientGasForProbe",
     "inputs": [
       {
@@ -124,6 +80,50 @@ export const LATCH_HOOK_REGISTRY_ABI = [
     "type": "error",
     "name": "InvalidRange",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LatchAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "LatchFlaggedMalicious",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "LatchHasNoCode",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "LatchNotRegistered",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -251,7 +251,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "event",
-    "name": "HookListingChanged",
+    "name": "LatchListingChanged",
     "inputs": [
       {
         "name": "hook",
@@ -288,7 +288,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "event",
-    "name": "HookMetadataUpdated",
+    "name": "LatchMetadataUpdated",
     "inputs": [
       {
         "name": "hook",
@@ -337,7 +337,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "event",
-    "name": "HookPermissionsRefreshed",
+    "name": "LatchPermissionsRefreshed",
     "inputs": [
       {
         "name": "hook",
@@ -392,7 +392,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "event",
-    "name": "HookRegistered",
+    "name": "LatchRegistered",
     "inputs": [
       {
         "name": "hook",
@@ -435,7 +435,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "event",
-    "name": "HookStewardTransferred",
+    "name": "LatchStewardTransferred",
     "inputs": [
       {
         "name": "hook",
@@ -460,7 +460,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "event",
-    "name": "HookVerificationChanged",
+    "name": "LatchVerificationChanged",
     "inputs": [
       {
         "name": "hook",
@@ -850,7 +850,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "function",
-    "name": "getHook",
+    "name": "getLatch",
     "inputs": [
       {
         "name": "hook",
@@ -862,7 +862,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
       {
         "name": "",
         "type": "tuple",
-        "internalType": "struct HookRecord",
+        "internalType": "struct LatchRecord",
         "components": [
           {
             "name": "submitter",
@@ -917,7 +917,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
           {
             "name": "metadata",
             "type": "tuple",
-            "internalType": "struct HookMetadata",
+            "internalType": "struct LatchMetadata",
             "components": [
               {
                 "name": "name",
@@ -1014,38 +1014,6 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "function",
-    "name": "hookAt",
-    "inputs": [
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "hookCount",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "isAudited",
     "inputs": [
       {
@@ -1103,6 +1071,38 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "function",
+    "name": "latchAt",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "latchCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "listBySubmitter",
     "inputs": [
       {
@@ -1132,7 +1132,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
   },
   {
     "type": "function",
-    "name": "listHooks",
+    "name": "listLatches",
     "inputs": [
       {
         "name": "offset",
@@ -1208,7 +1208,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
       {
         "name": "metadata",
         "type": "tuple",
-        "internalType": "struct HookMetadata",
+        "internalType": "struct LatchMetadata",
         "components": [
           {
             "name": "name",
@@ -1472,7 +1472,7 @@ export const LATCH_HOOK_REGISTRY_ABI = [
       {
         "name": "metadata",
         "type": "tuple",
-        "internalType": "struct HookMetadata",
+        "internalType": "struct LatchMetadata",
         "components": [
           {
             "name": "name",
@@ -1508,14 +1508,14 @@ export const LATCH_HOOK_REGISTRY_ABI = [
 ] as const satisfies Abi;
 
 /**
- * Events declared by `ILatchHookRegistry`. Between them the entire registry state is reconstructible from logs alone.
+ * Events declared by `ILatchRegistry`. Between them the entire registry state is reconstructible from logs alone.
  *
  * 6 events - curated from the compiled artifact, not the full ABI.
  */
 export const LATCH_HOOK_REGISTRY_EVENTS_ABI = [
   {
     "type": "event",
-    "name": "HookListingChanged",
+    "name": "LatchListingChanged",
     "inputs": [
       {
         "name": "hook",
@@ -1552,7 +1552,7 @@ export const LATCH_HOOK_REGISTRY_EVENTS_ABI = [
   },
   {
     "type": "event",
-    "name": "HookMetadataUpdated",
+    "name": "LatchMetadataUpdated",
     "inputs": [
       {
         "name": "hook",
@@ -1601,7 +1601,7 @@ export const LATCH_HOOK_REGISTRY_EVENTS_ABI = [
   },
   {
     "type": "event",
-    "name": "HookPermissionsRefreshed",
+    "name": "LatchPermissionsRefreshed",
     "inputs": [
       {
         "name": "hook",
@@ -1656,7 +1656,7 @@ export const LATCH_HOOK_REGISTRY_EVENTS_ABI = [
   },
   {
     "type": "event",
-    "name": "HookRegistered",
+    "name": "LatchRegistered",
     "inputs": [
       {
         "name": "hook",
@@ -1699,7 +1699,7 @@ export const LATCH_HOOK_REGISTRY_EVENTS_ABI = [
   },
   {
     "type": "event",
-    "name": "HookStewardTransferred",
+    "name": "LatchStewardTransferred",
     "inputs": [
       {
         "name": "hook",
@@ -1724,7 +1724,7 @@ export const LATCH_HOOK_REGISTRY_EVENTS_ABI = [
   },
   {
     "type": "event",
-    "name": "HookVerificationChanged",
+    "name": "LatchVerificationChanged",
     "inputs": [
       {
         "name": "hook",

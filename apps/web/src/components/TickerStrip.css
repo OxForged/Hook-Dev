@@ -1,0 +1,317 @@
+/* ============================================================================
+   TickerStrip — full-bleed reference-price rail.
+
+   Namespaced `ltk-` because this file is a plain global stylesheet imported by
+   the component, so the same rail can mount inside the landing surface's CSS
+   modules and inside the dapp's global sheet without either owning it.
+
+   Every colour is a token from styles/tokens.css. No literal hexes: the design
+   system is the source of truth for green-up / red-down (--success / --error).
+   ========================================================================== */
+
+.ltk {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+  padding-block: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--mono-data-ink);
+  /* Transparent on purpose: the rail sits inside a header that already paints
+     a blurred ground, and a second opaque layer would kill that blur. */
+  background: transparent;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+/* ---- the fixed left label ------------------------------------------------ */
+
+.ltk-label {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
+
+.ltk-label__text {
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+  white-space: nowrap;
+}
+
+/* Said once, here, instead of on every row of a closed market. */
+.ltk-badge {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  padding: 2px 6px;
+  border-radius: var(--r-micro);
+  white-space: nowrap;
+  color: var(--signal-blue);
+  background: var(--dapp-badge-info-bg);
+  border: 1px solid var(--dapp-badge-info-border);
+}
+
+/* ---- loading / unconfigured / error --------------------------------------
+   These replace the marquee entirely. There is never a state where a message
+   and a price are on screen at the same time.
+   -------------------------------------------------------------------------- */
+
+.ltk-msg {
+  margin: 0;
+  min-width: 0;
+  color: var(--muted-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ltk-msg--err {
+  color: var(--warning);
+}
+
+/* ---- the marquee --------------------------------------------------------- */
+
+.ltk-viewport {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  /* Quotes dissolve at the edges instead of being guillotined by the clip. */
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 22px,
+    #000 calc(100% - 22px),
+    transparent
+  );
+  mask-image: linear-gradient(90deg, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+}
+
+/* The focus ring belongs on the viewport, since focusing it is the documented
+   way to pause the scroll (and, under reduced motion, to scroll it). */
+.ltk-viewport:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: -2px;
+}
+
+.ltk-track {
+  display: flex;
+  width: max-content;
+  /* `animation-duration` is set inline from the row count so the travel SPEED
+     is constant no matter how many quotes came back. */
+  animation-name: ltk-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+/* Both runs are identical, so -50% puts the copy exactly where the original
+   started and the loop has no visible seam. */
+@keyframes ltk-scroll {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+/* WCAG 2.2.2: the reader needs a way to stop moving content and read a row. */
+.ltk-viewport:hover .ltk-track,
+.ltk-viewport:focus-within .ltk-track {
+  animation-play-state: paused;
+}
+
+.ltk-run {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ltk-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding-inline: 15px;
+  white-space: nowrap;
+}
+
+/* ---- one quote ----------------------------------------------------------- */
+
+.ltk-logo {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: contain;
+  background: var(--panel-alt);
+}
+
+/* The fallback. Deliberate, not a broken image: same disc, same size, the
+   ticker's own initials in the design system's display face. */
+.ltk-logo--mono {
+  display: inline-grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 8.5px;
+  letter-spacing: 0.02em;
+  color: var(--sky-ink);
+  background: var(--tile-bg);
+  border: 1px solid var(--tile-border);
+}
+
+.ltk-sym {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ltk-price {
+  color: var(--ink-bright);
+}
+
+.ltk-chg {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+}
+
+.ltk-chg--up {
+  color: var(--success);
+}
+
+.ltk-chg--down {
+  color: var(--error);
+}
+
+/* "change n/a" — the provider gave no change, and that is stated, not zeroed. */
+.ltk-flat {
+  font-size: 10.5px;
+  color: var(--faint-ink);
+}
+
+.ltk-note {
+  font-size: 10px;
+  color: var(--faint-ink);
+}
+
+/* ---- freshness, pinned to the right so it never scrolls out of view ------- */
+
+.ltk-meta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  color: var(--faint-ink);
+  white-space: nowrap;
+}
+
+.ltk-src {
+  color: var(--label-ink);
+  text-decoration: none;
+}
+
+.ltk-src:hover {
+  color: var(--signal-blue);
+  text-decoration: underline;
+}
+
+.ltk-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- surface skins ------------------------------------------------------- */
+
+.ltk--landing {
+  padding-inline: 28px;
+  border-top-color: var(--header-border);
+}
+
+/* `.dapp-header` already draws the rule above the first rail, so the dapp rails
+   carry a bottom rule only — two stacked rails then read as three even lines
+   rather than four with a doubled one in the middle. */
+.ltk--dapp {
+  padding-inline: var(--gutter-dapp);
+  border-top: none;
+  border-bottom: 1px solid var(--dapp-sidebar-line);
+}
+
+/* ---- responsive ---------------------------------------------------------- */
+
+@media (max-width: 860px) {
+  .ltk--landing {
+    padding-inline: 20px;
+  }
+}
+
+@media (max-width: 720px) {
+  /* The attribution link is the first thing to go; the timestamp is an honesty
+     requirement and stays at every width. */
+  .ltk-src {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .ltk--landing,
+  .ltk--dapp {
+    padding-inline: 16px;
+  }
+
+  .ltk {
+    gap: 8px;
+    font-size: 11px;
+  }
+
+  /* The rail keeps its accessible name from the section's aria-label, so the
+     visible caption can go before the prices or the timestamp do. */
+  .ltk-label {
+    display: none;
+  }
+}
+
+/* ---- reduced motion ------------------------------------------------------
+   tokens.css collapses animation durations globally, but for a marquee that is
+   WORSE than doing nothing: a 0.01ms duration with iteration-count 1 lands the
+   track on its final keyframe — translated fully left, i.e. an empty rail. So
+   the animation is cancelled outright here and the viewport becomes an ordinary
+   horizontally scrollable row, with the duplicate run removed so no quote is
+   announced or read twice.
+
+   These selectors are class-level, so they outrank the global `*` rule on
+   specificity regardless of stylesheet injection order.
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .ltk-track {
+    animation: none !important;
+    transform: none !important;
+    will-change: auto;
+  }
+
+  .ltk-run--dup {
+    display: none !important;
+  }
+
+  .ltk-viewport {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+}

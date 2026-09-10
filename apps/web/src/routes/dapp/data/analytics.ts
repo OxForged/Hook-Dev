@@ -35,11 +35,11 @@ import {
   readActivity,
   readProtocolMetrics,
   readRecentSwaps,
-  readRegisteredHooks,
+  readRegisteredLatches,
   type ActivityEvent,
   type DeployedChainId,
   type ProtocolMetrics,
-  type RegisteredHook,
+  type RegisteredLatch,
   type SwapRecord,
 } from '../../../lib/chain'
 import type { DonutSegment, LabelledBar } from './types.ts'
@@ -84,7 +84,7 @@ export interface AnalyticsData {
   feeBars: LabelledBar[]
 
   /** Hooks listed in the registry, and how many live pools actually use one. */
-  hooks: RegisteredHook[]
+  hooks: RegisteredLatch[]
 }
 
 /* -------------------------------------------------------------------------
@@ -249,7 +249,7 @@ export async function loadAnalytics(
     readProtocolMetrics(chainId),
     readActivity(chainId, 5000),
     readRecentSwaps(chainId, 5000),
-    readRegisteredHooks(chainId),
+    readRegisteredLatches(chainId),
   ])
 
   const { buckets, blocksPerBucket, first, last } = bucketByBlock(events)

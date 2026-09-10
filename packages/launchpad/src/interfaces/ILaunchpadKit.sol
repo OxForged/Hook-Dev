@@ -4,7 +4,7 @@ pragma solidity 0.8.26;
 
 import {PoolKey} from "infinity-core/src/types/PoolKey.sol";
 import {PoolId} from "infinity-core/src/types/PoolId.sol";
-import {HookMetadata} from "latch-registry/src/ILatchHookRegistry.sol";
+import {LatchMetadata} from "latch-registry/src/ILatchRegistry.sol";
 
 import {Preset} from "../libraries/LaunchPresets.sol";
 
@@ -41,7 +41,7 @@ struct HookListingParams {
     /// The kit registers and then immediately hands the stewardship over, so the kit itself is
     /// never left holding an editing right over somebody else's listing.
     address steward;
-    HookMetadata metadata;
+    LatchMetadata metadata;
 }
 
 /// @notice Everything a launchpad has to decide, in one struct.

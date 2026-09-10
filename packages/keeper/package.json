@@ -1,0 +1,22 @@
+{
+  "name": "@latchprotocol/keeper",
+  "version": "0.1.0",
+  "description": "Permissionless maintenance keeper for LatchProtocol: closes epochs, rolls over unclaimed funds, settles beneficiaries and applies elapsed config changes.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "latch-keeper": "./dist/index.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "README.md", "keeper.config.example.json"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js",
+    "dry-run": "node dist/index.js --once",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "keywords": ["latchprotocol", "keeper", "defi", "ethereum", "automation"],
+  "dependencies": { "viem": "^2.21.0" },
+  "devDependencies": { "typescript": "^5.6.0", "@types/node": "^22.7.0" }
+}

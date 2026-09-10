@@ -35,8 +35,8 @@ import {DeployPermit2} from "permit2/test/utils/DeployPermit2.sol";
 
 import {LaunchGuardHook} from "latch-hooks/src/launch/LaunchGuardHook.sol";
 import {BaseCLHook} from "latch-hooks/src/base/BaseCLHook.sol";
-import {LatchHookRegistry} from "latch-registry/src/LatchHookRegistry.sol";
-import {HookMetadata, Verification, Listing} from "latch-registry/src/ILatchHookRegistry.sol";
+import {LatchRegistry} from "latch-registry/src/LatchRegistry.sol";
+import {LatchMetadata, Verification, Listing} from "latch-registry/src/ILatchRegistry.sol";
 
 import {LaunchpadKit} from "../src/LaunchpadKit.sol";
 import {IHookRegistryListing} from "../src/interfaces/IHookRegistryListing.sol";
@@ -94,7 +94,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
     CLPositionManager posm;
     IAllowanceTransfer permit2;
     LaunchGuardHook hook;
-    LatchHookRegistry registry;
+    LatchRegistry registry;
     LaunchpadKit kit;
     CLPoolManagerRouter router;
     WETH weth;
@@ -128,7 +128,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         hook = new LaunchGuardHook(poolManager);
 
         address[] memory none = new address[](0);
-        registry = new LatchHookRegistry(REGISTRY_ADMIN, none, none);
+        registry = new LatchRegistry(REGISTRY_ADMIN, none, none);
 
         kit = new LaunchpadKit(
             poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), BLOCK_TIME_CENTIS
@@ -201,7 +201,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         return kit.createLaunch{value: value}(p);
     }
 
-    function _metadata() internal pure returns (HookMetadata memory m) {
+    function _metadata() internal pure returns (LatchMetadata memory m) {
         m.name = "LaunchGuardHook";
         m.description = "Decaying sniper tax for token launches.";
         m.sourceURI = "https://example.invalid/latch/hooks";
@@ -729,13 +729,13 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         _create(p);
 
         assertTrue(registry.isRegistered(address(hook)));
-        assertEq(registry.getHook(address(hook)).steward, OPERATOR, "kit must not keep the steward right");
-        assertEq(registry.getHook(address(hook)).submitter, address(kit));
+        assertEq(registry.getLatch(address(hook)).steward, OPERATOR, "kit must not keep the steward right");
+        assertEq(registry.getLatch(address(hook)).submitter, address(kit));
         // Permissions are read off the hook, never supplied.
-        assertEq(registry.getHook(address(hook)).permissions, hook.getHooksRegistrationBitmap());
+        assertEq(registry.getLatch(address(hook)).permissions, hook.getHooksRegistrationBitmap());
         // And nothing is vouched for by being listed.
-        assertTrue(registry.getHook(address(hook)).verification == Verification.Unverified);
-        assertTrue(registry.getHook(address(hook)).listing == Listing.Active);
+        assertTrue(registry.getLatch(address(hook)).verification == Verification.Unverified);
+        assertTrue(registry.getLatch(address(hook)).listing == Listing.Active);
     }
 
     function test_listing_isANoOpForASecondLaunchOnTheSameHook() public {
@@ -750,13 +750,13 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         p2.listing = HookListingParams({register: true, steward: OPERATOR, metadata: _metadata()});
         _create(p2);
 
-        assertEq(registry.getHook(address(hook)).steward, OPERATOR);
+        assertEq(registry.getLatch(address(hook)).steward, OPERATOR);
     }
 
     function test_listHook_standalone() public {
         vm.prank(LAUNCHER);
         assertTrue(kit.listHook(_metadata(), OPERATOR));
-        assertEq(registry.getHook(address(hook)).steward, OPERATOR);
+        assertEq(registry.getLatch(address(hook)).steward, OPERATOR);
 
         vm.prank(LAUNCHER);
         assertFalse(kit.listHook(_metadata(), OPERATOR), "second call is a no-op");

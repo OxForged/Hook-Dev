@@ -167,7 +167,7 @@ export const NETWORK_REACH: readonly FactRow[] = [
 export const TEST_COVERAGE: readonly FactRow[] = [
   { name: 'Solidity tests', value: '256 passing', toneClass: 'toneSuccess' },
   { name: 'Widget tests', value: '77 unit + 22 fork', toneClass: 'toneSuccess' },
-  { name: 'Hook linter rules', value: '12 rules, 65 tests', toneClass: 'toneSuccess' },
+  { name: 'Latch linter rules', value: '12 rules, 65 tests', toneClass: 'toneSuccess' },
   { name: 'Third-party audit', value: 'None', toneClass: 'toneAmber' },
 ]
 
@@ -198,13 +198,13 @@ export const USE_CASES: readonly UseCase[] = [
   {
     name: 'DEX & AMM',
     tag: 'DYNAMIC FEES · CUSTOM CURVES',
-    body: 'Attach fee logic, JIT liquidity and routing to pool lifecycle events. Concentrated-liquidity and bin pools share one Vault, so a hook written once serves both.',
+    body: 'Attach fee logic, JIT liquidity and routing to pool lifecycle events. Concentrated-liquidity and bin pools share one Vault, so a Latch written once serves both.',
     status: 'Live on testnet',
   },
   {
     name: 'Launchpads',
     tag: 'SNIPER PROTECTION',
-    body: 'A decaying launch tax priced on time rather than identity — the only thing a hook can actually see. One call attaches it to a new pool; no address mining, no redeploy.',
+    body: 'A decaying launch tax priced on time rather than identity — the only thing a Latch can actually see. One call attaches it to a new pool; no address mining, no redeploy.',
     status: 'Live on testnet',
   },
   {
@@ -242,7 +242,7 @@ export const SHARE_ROUTES: readonly ShareRoute[] = [
   {
     name: 'Liquidity providers',
     mechanism: 'Native donate()',
-    body: 'The pool distributes directly to in-range liquidity. Cheapest route, and the only one that needs no extra accounting — it is a protocol primitive, not a hook invention.',
+    body: 'The pool distributes directly to in-range liquidity. Cheapest route, and the only one that needs no extra accounting — it is a protocol primitive, not a Latch invention.',
   },
   {
     name: 'Named beneficiaries',
@@ -283,7 +283,7 @@ export const LAYER_STEPS: readonly LayerStep[] = [
   {
     num: '03',
     name: 'Initialize the pool',
-    desc: 'The pool manager checks the two agree, then calls your hook on every swap that follows.',
+    desc: 'The pool manager checks the two agree, then calls your Latch on every swap that follows.',
   },
 ]
 
@@ -295,7 +295,7 @@ export const LAYER_STEPS: readonly LayerStep[] = [
 export const INTERFACE_FACTS: readonly string[] = [
   '— beforeSwap 0x0040 · afterSwap 0x0080',
   '— 14 permission bits, held in the pool key',
-  '— any hook address · no salt mining',
+  '— any Latch address · no salt mining',
   '— bitmap checked at initialize',
 ]
 
@@ -359,7 +359,7 @@ export const ROADMAP: readonly RoadmapItem[] = [
   {
     when: 'Q2 2027',
     name: 'Permissionless publishing',
-    desc: 'Open publishing with staking-backed review and revenue share for hook authors.',
+    desc: 'Open publishing with staking-backed review and revenue share for Latch authors.',
   },
 ]
 

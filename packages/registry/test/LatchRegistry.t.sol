@@ -5,11 +5,11 @@ pragma solidity 0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-import {LatchHookRegistry} from "../src/LatchHookRegistry.sol";
+import {LatchRegistry} from "../src/LatchRegistry.sol";
 import {
-    ILatchHookRegistry,
-    HookMetadata,
-    HookRecord,
+    ILatchRegistry,
+    LatchMetadata,
+    LatchRecord,
     DecodedPermissions,
     Verification,
     Listing,
@@ -32,7 +32,7 @@ import {
     PERM_RETURNS_DELTA_MASK,
     PERM_SWAP_CUT_MASK,
     PERM_BEFORE_MASK
-} from "../src/ILatchHookRegistry.sol";
+} from "../src/ILatchRegistry.sol";
 
 import {
     HonestHook,
@@ -50,8 +50,8 @@ import {
     ReentrantHook
 } from "./mocks/MockHooks.sol";
 
-contract LatchHookRegistryTest is Test {
-    LatchHookRegistry internal registry;
+contract LatchRegistryTest is Test {
+    LatchRegistry internal registry;
 
     address internal timelock = address(0x71E10);
     address internal curator = address(0xC0A70);
@@ -71,26 +71,26 @@ contract LatchHookRegistryTest is Test {
         curators[0] = curator;
         address[] memory guardians = new address[](1);
         guardians[0] = guardian;
-        registry = new LatchHookRegistry(timelock, curators, guardians);
+        registry = new LatchRegistry(timelock, curators, guardians);
     }
 
     /*//////////////////////////////////////////////////////////////
                                HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    function _meta() internal pure returns (HookMetadata memory) {
+    function _meta() internal pure returns (LatchMetadata memory) {
         return _meta("Dynamic Fee Hook", "ipfs://source", "");
     }
 
     function _meta(string memory name, string memory sourceURI, string memory auditURI)
         internal
         pure
-        returns (HookMetadata memory m)
+        returns (LatchMetadata memory m)
     {
         uint256[] memory chains = new uint256[](2);
         chains[0] = 1;
         chains[1] = 56;
-        m = HookMetadata({
+        m = LatchMetadata({
             name: name,
             description: "Adjusts the LP fee with realised volatility.",
             sourceURI: sourceURI,
@@ -114,7 +114,7 @@ contract LatchHookRegistryTest is Test {
         _registerFull(alice, hook, "ipfs://src", "ipfs://audit");
         vm.prank(curator);
         registry.setVerification(hook, Verification.Audited, "reviewed by X");
-        assertEq(uint8(registry.getHook(hook).verification), uint8(Verification.Audited));
+        assertEq(uint8(registry.getLatch(hook).verification), uint8(Verification.Audited));
     }
 
     /// @dev Turn an arbitrary fuzz word into a bitmap core would accept.
@@ -128,7 +128,7 @@ contract LatchHookRegistryTest is Test {
 
     function _callRegister(address hook, uint256 gasCap) internal returns (bool ok, bytes memory ret) {
         (ok, ret) = address(registry).call{gas: gasCap}(
-            abi.encodeCall(LatchHookRegistry.register, (hook, _meta()))
+            abi.encodeCall(LatchRegistry.register, (hook, _meta()))
         );
     }
 
@@ -147,7 +147,7 @@ contract LatchHookRegistryTest is Test {
         vm.prank(alice);
         registry.register(hook, _meta("Fee Skimmer", "ipfs://src", "ipfs://audit"));
 
-        HookRecord memory r = registry.getHook(hook);
+        LatchRecord memory r = registry.getLatch(hook);
         assertEq(r.submitter, alice, "submitter");
         assertEq(r.steward, alice, "steward defaults to submitter");
         assertEq(r.submittedAt, uint64(block.timestamp), "submittedAt");
@@ -165,22 +165,22 @@ contract LatchHookRegistryTest is Test {
         assertEq(r.metadata.chainIds[1], 56);
 
         assertTrue(registry.isRegistered(hook));
-        assertEq(registry.hookCount(), 1);
-        assertEq(registry.hookAt(0), hook);
+        assertEq(registry.latchCount(), 1);
+        assertEq(registry.latchAt(0), hook);
         assertEq(registry.submittedCount(alice), 1);
     }
 
     /// @notice Everything an indexer needs must be in the logs, including the initial metadata.
     function test_register_emitsRebuildableEvents() public {
         address hook = address(new HonestHook(TAME));
-        HookMetadata memory m = _meta("Vol Oracle", "ipfs://src", "");
+        LatchMetadata memory m = _meta("Vol Oracle", "ipfs://src", "");
 
         vm.expectEmit(true, true, true, true, address(registry));
-        emit ILatchHookRegistry.HookRegistered(
+        emit ILatchRegistry.LatchRegistered(
             hook, alice, TAME, RiskClass.Passive, hook.codehash, uint64(block.timestamp)
         );
         vm.expectEmit(true, true, true, true, address(registry));
-        emit ILatchHookRegistry.HookMetadataUpdated(
+        emit ILatchRegistry.LatchMetadataUpdated(
             hook, alice, m.name, m.description, m.sourceURI, m.auditURI, m.chainIds
         );
 
@@ -200,26 +200,26 @@ contract LatchHookRegistryTest is Test {
     function test_register_duplicateRejected() public {
         address hook = address(new HonestHook(TAME));
         _register(alice, hook);
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.HookAlreadyRegistered.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.LatchAlreadyRegistered.selector, hook));
         vm.prank(bob);
         registry.register(hook, _meta());
     }
 
     function test_register_zeroAddressRejected() public {
-        vm.expectRevert(ILatchHookRegistry.ZeroAddress.selector);
+        vm.expectRevert(ILatchRegistry.ZeroAddress.selector);
         vm.prank(alice);
         registry.register(address(0), _meta());
     }
 
     function test_register_eoaRejected() public {
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.HookHasNoCode.selector, bob));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.LatchHasNoCode.selector, bob));
         vm.prank(alice);
         registry.register(bob, _meta());
     }
 
     function test_register_emptyNameRejected() public {
         address hook = address(new HonestHook(TAME));
-        vm.expectRevert(ILatchHookRegistry.EmptyName.selector);
+        vm.expectRevert(ILatchRegistry.EmptyName.selector);
         vm.prank(alice);
         registry.register(hook, _meta("", "ipfs://src", ""));
     }
@@ -227,16 +227,16 @@ contract LatchHookRegistryTest is Test {
     function test_register_oversizeMetadataRejected() public {
         address hook = address(new HonestHook(TAME));
         string memory tooLong = new string(65);
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.StringTooLong.selector, 65, 64));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.StringTooLong.selector, 65, 64));
         vm.prank(alice);
         registry.register(hook, _meta(tooLong, "ipfs://src", ""));
     }
 
     function test_register_tooManyChainsRejected() public {
         address hook = address(new HonestHook(TAME));
-        HookMetadata memory m = _meta();
+        LatchMetadata memory m = _meta();
         m.chainIds = new uint256[](33);
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.TooManyChains.selector, 33, 32));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.TooManyChains.selector, 33, 32));
         vm.prank(alice);
         registry.register(hook, m);
     }
@@ -250,7 +250,7 @@ contract LatchHookRegistryTest is Test {
     /// description. This is the whole attack the registry exists to prevent.
     function test_permissions_cannotBeInfluencedBySubmitter() public {
         address hook = address(new HonestHook(SWAP_TAX));
-        HookMetadata memory lie = _meta();
+        LatchMetadata memory lie = _meta();
         lie.description = "Completely passive, holds no permissions, cannot touch your funds.";
 
         vm.prank(alice);
@@ -265,7 +265,7 @@ contract LatchHookRegistryTest is Test {
     function test_permissions_reservedBitsRejected() public {
         uint16 bad = TAME | uint16(1 << 14);
         address hook = address(new HonestHook(bad));
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.ReservedBitsSet.selector, bad));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.ReservedBitsSet.selector, bad));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
@@ -273,7 +273,7 @@ contract LatchHookRegistryTest is Test {
     function test_permissions_reservedBit15Rejected() public {
         uint16 bad = TAME | uint16(1 << 15);
         address hook = address(new HonestHook(bad));
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.ReservedBitsSet.selector, bad));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.ReservedBitsSet.selector, bad));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
@@ -281,7 +281,7 @@ contract LatchHookRegistryTest is Test {
     function test_permissions_returnsDeltaWithoutBaseRejected() public {
         uint16 bad = PERM_BEFORE_SWAP_RETURNS_DELTA; // no beforeSwap
         address hook = address(new HonestHook(bad));
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionDependencyMissing.selector, bad));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionDependencyMissing.selector, bad));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
@@ -338,35 +338,35 @@ contract LatchHookRegistryTest is Test {
 
     function test_hostile_revertingHook() public {
         address hook = address(new RevertingHook());
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsUnreadable.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsUnreadable.selector, hook));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
 
     function test_hostile_silentRevert() public {
         address hook = address(new SilentRevertHook());
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsUnreadable.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsUnreadable.selector, hook));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
 
     function test_hostile_noSuchFunction() public {
         address hook = address(new NoBitmapHook());
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsUnreadable.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsUnreadable.selector, hook));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
 
     function test_hostile_emptyReturn() public {
         address hook = address(new EmptyReturnHook());
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsUnreadable.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsUnreadable.selector, hook));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
 
     function test_hostile_shortReturn() public {
         address hook = address(new ShortReturnHook());
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsUnreadable.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsUnreadable.selector, hook));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
@@ -376,14 +376,14 @@ contract LatchHookRegistryTest is Test {
     /// differently at the pool manager.
     function test_hostile_dirtyHighBits() public {
         address hook = address(new DirtyWordHook((uint256(1) << 200) | uint256(PERM_AFTER_SWAP)));
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsUnreadable.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsUnreadable.selector, hook));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
 
     function test_hostile_maxUintReturn() public {
         address hook = address(new DirtyWordHook(type(uint256).max));
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsUnreadable.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsUnreadable.selector, hook));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
@@ -405,7 +405,7 @@ contract LatchHookRegistryTest is Test {
         uint256 used = before - gasleft();
 
         assertFalse(ok, "32KB of return data is not a uint16");
-        assertEq(_selectorOf(ret), ILatchHookRegistry.PermissionsUnreadable.selector);
+        assertEq(_selectorOf(ret), ILatchRegistry.PermissionsUnreadable.selector);
         assertLt(used, 300_000, "outsize is pinned at 32 bytes, so we never pay to copy the bomb");
     }
 
@@ -419,7 +419,7 @@ contract LatchHookRegistryTest is Test {
         uint256 used = before - gasleft();
 
         assertFalse(ok);
-        assertEq(_selectorOf(ret), ILatchHookRegistry.PermissionsUnreadable.selector);
+        assertEq(_selectorOf(ret), ILatchRegistry.PermissionsUnreadable.selector);
         assertLt(used, 300_000, "a non-terminating hook must not be able to drain the caller");
         assertGt(used, registry.PROBE_GAS() / 2, "sanity: the probe really did run");
     }
@@ -448,18 +448,18 @@ contract LatchHookRegistryTest is Test {
         _callRegister(reverter, gasleft() - 20_000);
         _callRegister(bomb, gasleft() - 20_000);
 
-        assertEq(registry.hookCount(), 0, "no failed probe may leave a trace");
+        assertEq(registry.latchCount(), 0, "no failed probe may leave a trace");
         assertFalse(registry.isRegistered(burner));
 
         _register(bob, good);
-        assertEq(registry.hookCount(), 1, "honest registration is unaffected");
-        assertEq(registry.hookAt(0), good);
+        assertEq(registry.latchCount(), 1, "honest registration is unaffected");
+        assertEq(registry.latchAt(0), good);
 
         // And still unaffected after another round of hostility.
         _callRegister(burner, gasleft() - 20_000);
         address good2 = address(new HonestHook(PERM_BEFORE_SWAP));
         _register(alice, good2);
-        assertEq(registry.hookCount(), 2);
+        assertEq(registry.latchCount(), 2);
     }
 
     /// @notice An honest registration and a hostile one must cost the same order of magnitude.
@@ -481,11 +481,11 @@ contract LatchHookRegistryTest is Test {
     function test_hostile_probeCannotReenter() public {
         ReentrantHook hook = new ReentrantHook();
         address victim = address(new HonestHook(TAME));
-        hook.arm(address(registry), abi.encodeCall(LatchHookRegistry.register, (victim, _meta())));
+        hook.arm(address(registry), abi.encodeCall(LatchRegistry.register, (victim, _meta())));
 
         _register(alice, address(hook));
 
-        assertEq(registry.hookCount(), 1, "the reentrant register must not have landed");
+        assertEq(registry.latchCount(), 1, "the reentrant register must not have landed");
         assertFalse(registry.isRegistered(victim));
     }
 
@@ -496,7 +496,7 @@ contract LatchHookRegistryTest is Test {
 
         (bool ok, bytes memory ret) = _callRegister(hook, 120_000);
         assertFalse(ok, "below the probe floor");
-        assertEq(_selectorOf(ret), ILatchHookRegistry.InsufficientGasForProbe.selector);
+        assertEq(_selectorOf(ret), ILatchRegistry.InsufficientGasForProbe.selector);
         assertFalse(registry.isRegistered(hook), "nothing recorded");
 
         // Same hook, adequate gas: registers fine.
@@ -509,12 +509,12 @@ contract LatchHookRegistryTest is Test {
         _makeAudited(address(hook));
 
         (bool ok, bytes memory ret) = address(registry).call{gas: 120_000}(
-            abi.encodeCall(LatchHookRegistry.refreshPermissions, (address(hook)))
+            abi.encodeCall(LatchRegistry.refreshPermissions, (address(hook)))
         );
         assertFalse(ok);
-        assertEq(_selectorOf(ret), ILatchHookRegistry.InsufficientGasForProbe.selector);
+        assertEq(_selectorOf(ret), ILatchRegistry.InsufficientGasForProbe.selector);
         assertEq(
-            uint8(registry.getHook(address(hook)).verification),
+            uint8(registry.getLatch(address(hook)).verification),
             uint8(Verification.Audited),
             "a starved caller must not be able to strip an audit"
         );
@@ -551,7 +551,7 @@ contract LatchHookRegistryTest is Test {
         registry.setVerification(hook, Verification.SourceVerified, "trust me");
 
         assertFalse(registry.isAudited(hook));
-        assertEq(uint8(registry.getHook(hook).verification), uint8(Verification.Unverified));
+        assertEq(uint8(registry.getLatch(hook).verification), uint8(Verification.Unverified));
     }
 
     function test_promotion_guardianCannotPromote() public {
@@ -573,11 +573,11 @@ contract LatchHookRegistryTest is Test {
 
         vm.prank(curator);
         registry.setVerification(hook, Verification.SourceVerified, "source matches bytecode");
-        assertEq(uint8(registry.getHook(hook).verification), uint8(Verification.SourceVerified));
+        assertEq(uint8(registry.getLatch(hook).verification), uint8(Verification.SourceVerified));
         assertFalse(registry.isAudited(hook));
 
         vm.expectEmit(true, true, true, true, address(registry));
-        emit ILatchHookRegistry.HookVerificationChanged(
+        emit ILatchRegistry.LatchVerificationChanged(
             hook, curator, Verification.SourceVerified, Verification.Audited, "report checked"
         );
         vm.prank(curator);
@@ -588,7 +588,7 @@ contract LatchHookRegistryTest is Test {
     function test_promotion_sourceVerifiedRequiresSourceURI() public {
         address hook = address(new HonestHook(TAME));
         _registerFull(alice, hook, "", "");
-        vm.expectRevert(ILatchHookRegistry.SourceURIRequired.selector);
+        vm.expectRevert(ILatchRegistry.SourceURIRequired.selector);
         vm.prank(curator);
         registry.setVerification(hook, Verification.SourceVerified, "");
     }
@@ -596,7 +596,7 @@ contract LatchHookRegistryTest is Test {
     function test_promotion_auditedRequiresAuditURI() public {
         address hook = address(new HonestHook(TAME));
         _registerFull(alice, hook, "ipfs://src", "");
-        vm.expectRevert(ILatchHookRegistry.AuditURIRequired.selector);
+        vm.expectRevert(ILatchRegistry.AuditURIRequired.selector);
         vm.prank(curator);
         registry.setVerification(hook, Verification.Audited, "");
     }
@@ -608,7 +608,7 @@ contract LatchHookRegistryTest is Test {
         vm.prank(guardian);
         registry.setListing(hook, Listing.Malicious, "drains on afterSwap");
 
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.HookFlaggedMalicious.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.LatchFlaggedMalicious.selector, hook));
         vm.prank(curator);
         registry.setVerification(hook, Verification.Audited, "");
 
@@ -627,9 +627,9 @@ contract LatchHookRegistryTest is Test {
         // Hook stops answering.
         vm.etch(address(hook), address(new RevertingHook()).code);
         registry.refreshPermissions(address(hook));
-        assertFalse(registry.getHook(address(hook)).permissionsReadable);
+        assertFalse(registry.getLatch(address(hook)).permissionsReadable);
 
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsNotAttestable.selector, address(hook)));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsNotAttestable.selector, address(hook)));
         vm.prank(curator);
         registry.setVerification(address(hook), Verification.SourceVerified, "");
     }
@@ -652,14 +652,14 @@ contract LatchHookRegistryTest is Test {
         _makeAudited(hook);
 
         vm.expectEmit(true, true, true, true, address(registry));
-        emit ILatchHookRegistry.HookVerificationChanged(
+        emit ILatchRegistry.LatchVerificationChanged(
             hook, alice, Verification.Audited, Verification.Unverified, "metadata edited by steward"
         );
         vm.prank(alice);
         registry.updateMetadata(hook, _meta("Hook", "ipfs://a-completely-different-repo", "ipfs://audit"));
 
         assertFalse(registry.isAudited(hook), "an edited listing is not the listing that was audited");
-        assertEq(registry.getHook(hook).metadata.sourceURI, "ipfs://a-completely-different-repo");
+        assertEq(registry.getLatch(hook).metadata.sourceURI, "ipfs://a-completely-different-repo");
     }
 
     function test_metadata_curatorEditKeepsVerification() public {
@@ -673,7 +673,7 @@ contract LatchHookRegistryTest is Test {
     function test_metadata_onlyStewardOrCurator() public {
         address hook = address(new HonestHook(TAME));
         _register(alice, hook);
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.NotSteward.selector, hook, stranger));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.NotSteward.selector, hook, stranger));
         vm.prank(stranger);
         registry.updateMetadata(hook, _meta());
     }
@@ -683,19 +683,19 @@ contract LatchHookRegistryTest is Test {
         _register(alice, hook);
 
         vm.expectEmit(true, true, true, true, address(registry));
-        emit ILatchHookRegistry.HookStewardTransferred(hook, alice, bob);
+        emit ILatchRegistry.LatchStewardTransferred(hook, alice, bob);
         vm.prank(alice);
         registry.transferSteward(hook, bob);
 
         vm.prank(bob);
         registry.updateMetadata(hook, _meta("Renamed", "ipfs://src", ""));
-        assertEq(registry.getHook(hook).metadata.name, "Renamed");
+        assertEq(registry.getLatch(hook).metadata.name, "Renamed");
 
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.NotSteward.selector, hook, alice));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.NotSteward.selector, hook, alice));
         vm.prank(alice);
         registry.updateMetadata(hook, _meta());
 
-        assertEq(registry.getHook(hook).submitter, alice, "submitter is history and never moves");
+        assertEq(registry.getLatch(hook).submitter, alice, "submitter is history and never moves");
     }
 
     /// @notice Ungated submission means someone can list a hook they did not write. Reassignment
@@ -707,14 +707,14 @@ contract LatchHookRegistryTest is Test {
         registry.transferSteward(hook, alice); // real author shows up
         vm.prank(alice);
         registry.updateMetadata(hook, _meta("Real Name", "ipfs://real", ""));
-        assertEq(registry.getHook(hook).metadata.name, "Real Name");
-        assertEq(registry.getHook(hook).submitter, stranger, "who squatted stays on the record");
+        assertEq(registry.getLatch(hook).metadata.name, "Real Name");
+        assertEq(registry.getLatch(hook).submitter, stranger, "who squatted stays on the record");
     }
 
     function test_steward_zeroAddressRejected() public {
         address hook = address(new HonestHook(TAME));
         _register(alice, hook);
-        vm.expectRevert(ILatchHookRegistry.ZeroAddress.selector);
+        vm.expectRevert(ILatchRegistry.ZeroAddress.selector);
         vm.prank(alice);
         registry.transferSteward(hook, address(0));
     }
@@ -730,7 +730,7 @@ contract LatchHookRegistryTest is Test {
         vm.prank(curator);
         registry.setListing(hook, Listing.Malicious, "takes 90% of every swap");
 
-        HookRecord memory r = registry.getHook(hook);
+        LatchRecord memory r = registry.getLatch(hook);
         assertEq(uint8(r.listing), uint8(Listing.Malicious));
         assertEq(uint8(r.verification), uint8(Verification.Unverified), "must not stay audited for one block");
         assertFalse(registry.isAudited(hook));
@@ -743,7 +743,7 @@ contract LatchHookRegistryTest is Test {
         vm.prank(curator);
         registry.setListing(hook, Listing.Deprecated, "superseded by v2");
 
-        HookRecord memory r = registry.getHook(hook);
+        LatchRecord memory r = registry.getLatch(hook);
         assertEq(uint8(r.listing), uint8(Listing.Deprecated));
         assertEq(uint8(r.verification), uint8(Verification.Audited), "a retired audit is still a real audit");
         assertFalse(registry.isAudited(hook), "but the trust badge is off");
@@ -761,7 +761,7 @@ contract LatchHookRegistryTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                ILatchHookRegistry.GuardianCannotRelist.selector, Listing.Malicious, Listing.Active
+                ILatchRegistry.GuardianCannotRelist.selector, Listing.Malicious, Listing.Active
             )
         );
         vm.prank(guardian);
@@ -769,7 +769,7 @@ contract LatchHookRegistryTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                ILatchHookRegistry.GuardianCannotRelist.selector, Listing.Malicious, Listing.Malicious
+                ILatchRegistry.GuardianCannotRelist.selector, Listing.Malicious, Listing.Malicious
             )
         );
         vm.prank(guardian);
@@ -778,13 +778,13 @@ contract LatchHookRegistryTest is Test {
         // Only a curator can clear a warning.
         vm.prank(curator);
         registry.setListing(hook, Listing.Active, "cleared after review");
-        assertEq(uint8(registry.getHook(hook).listing), uint8(Listing.Active));
+        assertEq(uint8(registry.getLatch(hook).listing), uint8(Listing.Active));
     }
 
     function test_flag_strangerCannotFlag() public {
         address hook = address(new HonestHook(TAME));
         _register(alice, hook);
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.NotCuratorOrGuardian.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.NotCuratorOrGuardian.selector, stranger));
         vm.prank(stranger);
         registry.setListing(hook, Listing.Malicious, "i just do not like it");
     }
@@ -792,7 +792,7 @@ contract LatchHookRegistryTest is Test {
     function test_flag_stewardCannotFlagTheirOwnHook() public {
         address hook = address(new HonestHook(TAME));
         _register(alice, hook);
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.NotCuratorOrGuardian.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.NotCuratorOrGuardian.selector, alice));
         vm.prank(alice);
         registry.setListing(hook, Listing.Deprecated, "");
     }
@@ -801,7 +801,7 @@ contract LatchHookRegistryTest is Test {
         address hook = address(new HonestHook(TAME));
         _register(alice, hook);
         vm.expectEmit(true, true, true, true, address(registry));
-        emit ILatchHookRegistry.HookListingChanged(
+        emit ILatchRegistry.LatchListingChanged(
             hook, guardian, Listing.Active, Listing.Malicious, "steals LP fees via afterSwap delta"
         );
         vm.prank(guardian);
@@ -816,15 +816,15 @@ contract LatchHookRegistryTest is Test {
         vm.prank(curator);
         registry.setListing(hook, Listing.Malicious, "rug");
 
-        assertEq(registry.hookCount(), 1, "still enumerable");
-        assertEq(registry.hookAt(0), hook);
+        assertEq(registry.latchCount(), 1, "still enumerable");
+        assertEq(registry.latchAt(0), hook);
         assertTrue(registry.isRegistered(hook));
-        HookRecord memory r = registry.getHook(hook);
+        LatchRecord memory r = registry.getLatch(hook);
         assertEq(r.permissions, SWAP_TAX, "the evidence is still readable");
         assertEq(r.submitter, alice, "and so is who listed it");
 
         // The slot can never be recycled by whoever wants to relist it clean.
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.HookAlreadyRegistered.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.LatchAlreadyRegistered.selector, hook));
         vm.prank(bob);
         registry.register(hook, _meta());
     }
@@ -836,13 +836,13 @@ contract LatchHookRegistryTest is Test {
     function test_refresh_noChangeReverts() public {
         address hook = address(new HonestHook(TAME));
         _register(alice, hook);
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsUnchanged.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsUnchanged.selector, hook));
         registry.refreshPermissions(hook);
     }
 
     function test_refresh_unregisteredReverts() public {
         address hook = address(new HonestHook(TAME));
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.HookNotRegistered.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.LatchNotRegistered.selector, hook));
         registry.refreshPermissions(hook);
     }
 
@@ -858,7 +858,7 @@ contract LatchHookRegistryTest is Test {
         vm.prank(stranger); // permissionless: anyone may correct the record
         registry.refreshPermissions(address(hook));
 
-        HookRecord memory r = registry.getHook(address(hook));
+        LatchRecord memory r = registry.getLatch(address(hook));
         assertEq(r.permissions, SWAP_TAX, "new bitmap recorded");
         assertEq(uint8(r.verification), uint8(Verification.Unverified), "audit no longer applies");
         assertEq(uint8(registry.riskClassOf(address(hook))), uint8(RiskClass.ValueExtracting));
@@ -872,7 +872,7 @@ contract LatchHookRegistryTest is Test {
         hook.set(PERM_BEFORE_SWAP);
 
         vm.expectEmit(true, true, true, true, address(registry));
-        emit ILatchHookRegistry.HookPermissionsRefreshed(
+        emit ILatchRegistry.LatchPermissionsRefreshed(
             address(hook), address(this), TAME, PERM_BEFORE_SWAP, codehash, codehash, true, true
         );
         registry.refreshPermissions(address(hook));
@@ -887,7 +887,7 @@ contract LatchHookRegistryTest is Test {
         hook.set(PERM_BEFORE_SWAP_RETURNS_DELTA); // drops the base callback
         registry.refreshPermissions(address(hook));
 
-        HookRecord memory r = registry.getHook(address(hook));
+        LatchRecord memory r = registry.getLatch(address(hook));
         assertFalse(r.permissionsValid, "dependency no longer satisfied");
         assertTrue(r.permissionsReadable);
         assertEq(uint8(r.verification), uint8(Verification.Unverified));
@@ -902,7 +902,7 @@ contract LatchHookRegistryTest is Test {
         vm.etch(address(hook), address(new GasBurnerHook()).code);
         registry.refreshPermissions(address(hook));
 
-        HookRecord memory r = registry.getHook(address(hook));
+        LatchRecord memory r = registry.getLatch(address(hook));
         assertFalse(r.permissionsReadable, "flagged stale");
         assertFalse(r.permissionsValid);
         assertEq(r.permissions, SWAP_TAX, "last known value retained, not zeroed");
@@ -923,7 +923,7 @@ contract LatchHookRegistryTest is Test {
 
         registry.refreshPermissions(address(hook));
 
-        HookRecord memory r = registry.getHook(address(hook));
+        LatchRecord memory r = registry.getLatch(address(hook));
         assertEq(r.permissions, TAME, "bitmap unchanged");
         assertEq(r.codehash, address(hook).codehash, "new codehash recorded");
         assertEq(uint8(r.verification), uint8(Verification.Unverified), "audited code is gone");
@@ -940,22 +940,22 @@ contract LatchHookRegistryTest is Test {
             _register(i % 2 == 0 ? alice : bob, hooks[i]);
         }
 
-        assertEq(registry.hookCount(), 5);
+        assertEq(registry.latchCount(), 5);
 
-        address[] memory page = registry.listHooks(0, 2);
+        address[] memory page = registry.listLatches(0, 2);
         assertEq(page.length, 2);
         assertEq(page[0], hooks[0]);
         assertEq(page[1], hooks[1]);
 
-        page = registry.listHooks(3, 10);
+        page = registry.listLatches(3, 10);
         assertEq(page.length, 2, "limit clamps to the end");
         assertEq(page[0], hooks[3]);
         assertEq(page[1], hooks[4]);
 
-        page = registry.listHooks(5, 10);
+        page = registry.listLatches(5, 10);
         assertEq(page.length, 0, "offset at the end is an empty page, not a revert");
 
-        page = registry.listHooks(0, type(uint256).max);
+        page = registry.listLatches(0, type(uint256).max);
         assertEq(page.length, 5, "'give me everything' must not overflow");
 
         assertEq(registry.submittedCount(alice), 3);
@@ -967,8 +967,8 @@ contract LatchHookRegistryTest is Test {
     }
 
     function test_enumeration_offsetPastEndReverts() public {
-        vm.expectRevert(ILatchHookRegistry.InvalidRange.selector);
-        registry.listHooks(1, 1);
+        vm.expectRevert(ILatchRegistry.InvalidRange.selector);
+        registry.listLatches(1, 1);
     }
 
     function test_enumeration_indicesAreStableAcrossStatusChanges() public {
@@ -980,20 +980,20 @@ contract LatchHookRegistryTest is Test {
         vm.prank(curator);
         registry.setListing(a, Listing.Malicious, "rug");
 
-        assertEq(registry.hookAt(0), a, "index 0 never moves");
-        assertEq(registry.hookAt(1), b);
-        assertEq(registry.hookCount(), 2);
+        assertEq(registry.latchAt(0), a, "index 0 never moves");
+        assertEq(registry.latchAt(1), b);
+        assertEq(registry.latchCount(), 2);
     }
 
     function test_views_revertForUnregistered() public {
         address hook = address(new HonestHook(TAME));
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.HookNotRegistered.selector, hook));
-        registry.getHook(hook);
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.HookNotRegistered.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.LatchNotRegistered.selector, hook));
+        registry.getLatch(hook);
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.LatchNotRegistered.selector, hook));
         registry.permissionsOf(hook);
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.HookNotRegistered.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.LatchNotRegistered.selector, hook));
         registry.riskClassOf(hook);
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.HookNotRegistered.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.LatchNotRegistered.selector, hook));
         registry.statusOf(hook);
         assertFalse(registry.isAudited(hook), "isAudited must be false, never revert");
         assertFalse(registry.isRegistered(hook));
@@ -1031,8 +1031,8 @@ contract LatchHookRegistryTest is Test {
 
     function test_roles_zeroAdminRejected() public {
         address[] memory empty = new address[](0);
-        vm.expectRevert(ILatchHookRegistry.ZeroAddress.selector);
-        new LatchHookRegistry(address(0), empty, empty);
+        vm.expectRevert(ILatchRegistry.ZeroAddress.selector);
+        new LatchRegistry(address(0), empty, empty);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1052,14 +1052,14 @@ contract LatchHookRegistryTest is Test {
         assertTrue(readable);
         assertTrue(valid);
         assertTrue(registry.isValidBitmap(stored));
-        assertEq(uint8(registry.getHook(hook).verification), uint8(Verification.Unverified), "never auto-verified");
+        assertEq(uint8(registry.getLatch(hook).verification), uint8(Verification.Unverified), "never auto-verified");
     }
 
     /// @notice Reserved bits are always refused, no matter what else is set.
     function testFuzz_register_reservedBitsAlwaysRejected(uint16 raw, bool useBit15) public {
         uint16 permissions = _sanitize(raw) | (useBit15 ? uint16(1 << 15) : uint16(1 << 14));
         address hook = address(new HonestHook(permissions));
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.ReservedBitsSet.selector, permissions));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.ReservedBitsSet.selector, permissions));
         vm.prank(alice);
         registry.register(hook, _meta());
         assertFalse(registry.isRegistered(hook));
@@ -1069,7 +1069,7 @@ contract LatchHookRegistryTest is Test {
     function testFuzz_probe_dirtyWordNeverAccepted(uint256 word) public {
         word = bound(word, uint256(type(uint16).max) + 1, type(uint256).max);
         address hook = address(new DirtyWordHook(word));
-        vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsUnreadable.selector, hook));
+        vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsUnreadable.selector, hook));
         vm.prank(alice);
         registry.register(hook, _meta());
     }
@@ -1143,12 +1143,12 @@ contract LatchHookRegistryTest is Test {
 
         hook.set(b);
         if (a == b) {
-            vm.expectRevert(abi.encodeWithSelector(ILatchHookRegistry.PermissionsUnchanged.selector, address(hook)));
+            vm.expectRevert(abi.encodeWithSelector(ILatchRegistry.PermissionsUnchanged.selector, address(hook)));
             registry.refreshPermissions(address(hook));
             assertTrue(registry.isAudited(address(hook)), "a no-op refresh changes nothing");
         } else {
             registry.refreshPermissions(address(hook));
-            HookRecord memory r = registry.getHook(address(hook));
+            LatchRecord memory r = registry.getLatch(address(hook));
             assertEq(r.permissions, b);
             assertEq(uint8(r.verification), uint8(Verification.Unverified));
         }

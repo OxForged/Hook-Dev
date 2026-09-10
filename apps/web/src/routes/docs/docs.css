@@ -471,6 +471,24 @@
 .dk-body--after {
   margin-top: 18px;
 }
+/* In-prose links to app routes (/app/marketplace, /app/deploy). Same ink as
+   inline code so a route reads as a thing you can open, underlined so it is
+   still a link without the colour. */
+.dk-body a {
+  color: var(--sky-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--hairline-blue-2);
+  transition: text-decoration-color 0.22s var(--ease);
+}
+.dk-body a:hover {
+  text-decoration-color: currentColor;
+}
+/* A full 42-character address in running prose must be allowed to break, or
+   it forces the column into horizontal scroll on a phone. */
+.dk-icode--addr {
+  overflow-wrap: anywhere;
+}
 
 /* ------------------------------------------------------------ code blocks */
 

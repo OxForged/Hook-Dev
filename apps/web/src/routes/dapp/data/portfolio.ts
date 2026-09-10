@@ -39,9 +39,9 @@ import {
   DEPLOYMENTS,
   SEPOLIA_CHAIN_ID,
   client,
-  readRegisteredHooks,
+  readRegisteredLatches,
   type DeployedChainId,
-  type RegisteredHook,
+  type RegisteredLatch,
 } from '../../../lib/chain'
 import {
   amountsForLiquidity,
@@ -137,7 +137,7 @@ export interface Portfolio {
   checkedAtBlock: bigint
   positions: LpPosition[]
   balances: WalletBalance[]
-  submittedHooks: RegisteredHook[]
+  submittedHooks: RegisteredLatch[]
 }
 
 /* ---------------------------------------------------------------------------
@@ -328,7 +328,7 @@ export async function readPortfolio(
     c.getBlockNumber(),
     readOwnedTokenIds(chainId, address),
     readWalletBalances(chainId, address, tokenCache),
-    readRegisteredHooks(chainId),
+    readRegisteredLatches(chainId),
   ])
 
   // Hook names for the position table come from the registry, never from the hook.

@@ -72,9 +72,9 @@ export default function PrivacyPage() {
             operates them as a service, and nothing on chain is private.
           </li>
           <li>
-            <span className={styles['strong']}>Third-party hooks.</span> A hook (a &ldquo;Latch&rdquo;)
-            is a contract written and deployed by whoever wrote it. We do not control what it
-            does with the data it sees.
+            <span className={styles['strong']}>Third-party Latches.</span> A Latch is a hook
+            contract written and deployed by whoever wrote it. We do not control what it does with
+            the data it sees.
           </li>
           <li>
             <span className={styles['strong']}>Your wallet</span> and whichever wallet provider,

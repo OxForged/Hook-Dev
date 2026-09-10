@@ -17,7 +17,7 @@
  *   may curate. Curating this one would only mean re-curating it every time the
  *   contract grows a view.
  * - `LATCH_HOOK_REGISTRY_EVENTS_ABI` is the six events declared by
- *   `ILatchHookRegistry`, without the inherited role-management events. That is
+ *   `ILatchRegistry`, without the inherited role-management events. That is
  *   the exact set an indexer needs to rebuild registry state from logs, so it is
  *   worth having as its own log-filter-sized constant.
  *
@@ -39,26 +39,26 @@ const OUT_FILE = join(PKG_ROOT, "src", "registry", "generated", "abi.ts");
 const SOURCES = [
   {
     constant: "LATCH_HOOK_REGISTRY_ABI",
-    doc: "`LatchHookRegistry` - the on-chain hook marketplace, full deployed surface.",
-    contract: "LatchHookRegistry",
-    artifact: join(REGISTRY_OUT, "LatchHookRegistry.sol", "LatchHookRegistry.json"),
+    doc: "`LatchRegistry` - the on-chain hook marketplace, full deployed surface.",
+    contract: "LatchRegistry",
+    artifact: join(REGISTRY_OUT, "LatchRegistry.sol", "LatchRegistry.json"),
     keep: { function: null, event: null, error: null },
   },
   {
     constant: "LATCH_HOOK_REGISTRY_EVENTS_ABI",
     doc:
-      "Events declared by `ILatchHookRegistry`. Between them the entire registry " +
+      "Events declared by `ILatchRegistry`. Between them the entire registry " +
       "state is reconstructible from logs alone.",
-    contract: "ILatchHookRegistry",
-    artifact: join(REGISTRY_OUT, "ILatchHookRegistry.sol", "ILatchHookRegistry.json"),
+    contract: "ILatchRegistry",
+    artifact: join(REGISTRY_OUT, "ILatchRegistry.sol", "ILatchRegistry.json"),
     keep: {
       event: [
-        "HookRegistered",
-        "HookMetadataUpdated",
-        "HookVerificationChanged",
-        "HookListingChanged",
-        "HookStewardTransferred",
-        "HookPermissionsRefreshed",
+        "LatchRegistered",
+        "LatchMetadataUpdated",
+        "LatchVerificationChanged",
+        "LatchListingChanged",
+        "LatchStewardTransferred",
+        "LatchPermissionsRefreshed",
       ],
     },
   },

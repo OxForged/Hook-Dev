@@ -8,7 +8,7 @@
  * `../hooks/bitmap.ts`), which is a real advantage for hook authors and a real
  * problem for users: `0xAbCd...` no longer tells you, from the address alone,
  * that the hook behind it holds `beforeSwapReturnsDelta` and takes a cut of
- * every trade in the pool. `LatchHookRegistry` puts that back on chain, and the
+ * every trade in the pool. `LatchRegistry` puts that back on chain, and the
  * types here mirror it so a listing UI never has to invent its own vocabulary.
  *
  * ## Three independent axes, never one score
@@ -255,7 +255,7 @@ function assertBitmap(permissions: number): void {
  * Capability class of a permission bitmap.
  *
  * The single definition of the bitmap -> {@link RiskClass} relationship in this
- * SDK. It mirrors `LatchHookRegistry.classify`, which is `pure` and callable on
+ * SDK. It mirrors `LatchRegistry.classify`, which is `pure` and callable on
  * chain if you would rather have the contract's own answer.
  *
  * Classification is pool-type independent because both pool types use the same
@@ -305,7 +305,7 @@ export function canTrapLiquidity(permissions: number): boolean {
  * True when a bitmap is one the pool managers would accept: no reserved bits,
  * every returns-delta bit backed by its base callback.
  *
- * Mirrors `LatchHookRegistry.isValidBitmap`, and shares its implementation with
+ * Mirrors `LatchRegistry.isValidBitmap`, and shares its implementation with
  * pool-key validation via `validateHookRegistrationBitmap`.
  */
 export function isValidHookBitmap(permissions: number, poolType: PoolType = "CL"): boolean {
@@ -362,7 +362,7 @@ export function describeCapabilities<T extends PoolType = "CL">(
  * registry reads permissions off the hook itself and there is no parameter
  * through which a submitter can influence them.
  */
-export interface HookMetadata {
+export interface LatchMetadata {
   readonly name: string;
   readonly description: string;
   /** Source repository / verification URI. Required before `SourceVerified`. */
@@ -374,9 +374,9 @@ export interface HookMetadata {
 }
 
 /** The full registry record for one hook address. */
-export interface HookRecord {
+export interface LatchRecord {
   /** The hook this record describes. Not stored on chain (it is the mapping
-   * key), so it is filled in by {@link decodeHookRecord} from the address you
+   * key), so it is filled in by {@link decodeLatchRecord} from the address you
    * queried. */
   readonly hook: Address;
   /** Who called `register`. Immutable, historical. */
@@ -398,11 +398,11 @@ export interface HookRecord {
   readonly permissionsReadable: boolean;
   /** `hook.codehash` when permissions were last read. */
   readonly codehash: Hex;
-  readonly metadata: HookMetadata;
+  readonly metadata: LatchMetadata;
 }
 
-/** The shape viem decodes `getHook` into: enums still as `uint8`. */
-export interface RawHookRecord {
+/** The shape viem decodes `getLatch` into: enums still as `uint8`. */
+export interface RawLatchRecord {
   readonly submitter: Address;
   readonly submittedAt: bigint;
   readonly permissions: number;
@@ -423,7 +423,7 @@ export interface RawHookRecord {
 }
 
 /**
- * Turns a decoded `getHook` tuple into a {@link HookRecord}.
+ * Turns a decoded `getLatch` tuple into a {@link LatchRecord}.
  *
  * @param hook the address you queried; it is the mapping key, so the contract
  * does not repeat it inside the struct.
@@ -431,7 +431,7 @@ export interface RawHookRecord {
  * deployed contract is newer than this package - better to fail than to render
  * an unknown status as the safest-looking one.
  */
-export function decodeHookRecord(hook: Address, raw: RawHookRecord): HookRecord {
+export function decodeLatchRecord(hook: Address, raw: RawLatchRecord): LatchRecord {
   assertBitmap(raw.permissions);
   return {
     hook,
@@ -478,7 +478,7 @@ export type HookPermissionState =
  * currently knows what the hook's bitmap is.
  */
 export function hookPermissionState(
-  record: Pick<HookRecord, "permissionsReadable" | "permissionsValid">,
+  record: Pick<LatchRecord, "permissionsReadable" | "permissionsValid">,
 ): HookPermissionState {
   if (!record.permissionsReadable) return "Stale";
   if (!record.permissionsValid) return "Invalid";
@@ -486,7 +486,7 @@ export function hookPermissionState(
 }
 
 /** Derived {@link RiskClass} of a record's recorded bitmap. */
-export function riskClassOf(record: Pick<HookRecord, "permissions">): RiskClass {
+export function riskClassOf(record: Pick<LatchRecord, "permissions">): RiskClass {
   return classifyRiskClass(record.permissions);
 }
 
@@ -497,7 +497,7 @@ export function riskClassOf(record: Pick<HookRecord, "permissions">): RiskClass 
  * nothing is promoted while flagged malicious.
  */
 export function permissionsAreAttestable(
-  record: Pick<HookRecord, "permissionsReadable" | "permissionsValid" | "listing">,
+  record: Pick<LatchRecord, "permissionsReadable" | "permissionsValid" | "listing">,
 ): boolean {
   return (
     record.listing !== "Malicious" &&
@@ -511,7 +511,7 @@ export function permissionsAreAttestable(
 // ---------------------------------------------------------------------------
 
 /** A reason to show the user a warning, most severe first when produced by
- * {@link summarizeHook}. */
+ * {@link summarizeLatch}. */
 export type HookWarning =
   /** The registry says this hook harms users. */
   | "FlaggedMalicious"
@@ -550,7 +550,7 @@ export interface HookTrustSummary {
   readonly permissionState: HookPermissionState;
   /**
    * True only when every axis lines up: audited, active, and permissions both
-   * readable and valid. Mirrors `LatchHookRegistry.isAudited`, which is the
+   * readable and valid. Mirrors `LatchRegistry.isAudited`, which is the
    * single question a front end should ask before showing a trust badge.
    *
    * Note what it does *not* say: an audited hook may still be
@@ -565,7 +565,7 @@ export interface HookTrustSummary {
 }
 
 /** Builds a {@link HookTrustSummary} from a record. */
-export function summarizeHook(record: HookRecord): HookTrustSummary {
+export function summarizeLatch(record: LatchRecord): HookTrustSummary {
   const capabilities = describeCapabilities(record.permissions);
   const permissionState = hookPermissionState(record);
 
@@ -601,7 +601,7 @@ export function summarizeHook(record: HookRecord): HookTrustSummary {
  * Always prints all three axes, in that order, so a grep never sees one axis
  * standing in for another.
  */
-export function formatHookTrust(summary: HookTrustSummary): string {
+export function formatLatchTrust(summary: HookTrustSummary): string {
   const state = summary.permissionState === "Fresh" ? "" : ` permissions=${summary.permissionState}`;
   return (
     `${summary.hook} verification=${summary.verification} ` +

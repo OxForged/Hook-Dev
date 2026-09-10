@@ -22,7 +22,7 @@ import {Plan, Planner} from "infinity-periphery/src/libraries/Planner.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 
 import {LaunchGuardHook} from "latch-hooks/src/launch/LaunchGuardHook.sol";
-import {HookMetadata} from "latch-registry/src/ILatchHookRegistry.sol";
+import {LatchMetadata} from "latch-registry/src/ILatchRegistry.sol";
 
 import {
     ILaunchpadKit,
@@ -576,7 +576,7 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
 
     /// @notice List the hook in the registry on its own, outside a launch.
     /// @dev Same one-shot semantics as the in-launch path. Returns false if it was already listed.
-    function listHook(HookMetadata calldata metadata, address steward) external nonReentrant returns (bool listed) {
+    function listHook(LatchMetadata calldata metadata, address steward) external nonReentrant returns (bool listed) {
         if (address(registry) == address(0)) revert RegistryNotConfigured();
         if (registry.isRegistered(address(hook))) return false;
 

@@ -124,10 +124,14 @@ export function ActivityMixCard() {
 
         {state.k === 'ready' && state.events.length > 0 ? (
           <>
-            <BarList items={mix(state.events)} />
+            <BarList
+              items={mix(state.events)}
+              valueLabel="events"
+              shareLabel="of the most frequent event type"
+            />
             <p className="live-note">
-              Protocol events, not hook callbacks. No hook callback has ever fired on this
-              deployment — the live pool was initialized without a hook.
+              Protocol events, not Latch callbacks. No Latch callback has ever fired on this
+              deployment — the live pool was initialized without a Latch.
             </p>
           </>
         ) : (

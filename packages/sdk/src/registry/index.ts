@@ -2,7 +2,7 @@
 /**
  * The on-chain hook registry.
  *
- * `LatchHookRegistry` is the discovery and safety surface for Latch hooks: a
+ * `LatchRegistry` is the discovery and safety surface for Latch hooks: a
  * permissionless, free listing whose permission bitmaps are read off the hook
  * contracts themselves and whose curation is recorded on three independent
  * axes. This module is what a hook directory, a listing UI or an indexer builds
@@ -10,7 +10,7 @@
  *
  * - `./generated/abi.js` - the contract ABIs, produced by
  *   `npm run generate:registry` from the compiled artifacts.
- * - `./types.js` - the data model: {@link HookRecord}, {@link HookMetadata},
+ * - `./types.js` - the data model: {@link LatchRecord}, {@link LatchMetadata},
  *   and the three axes {@link Verification}, {@link Listing}, {@link RiskClass}.
  *
  * Nothing is removed from the registry, ever, so a consumer should filter

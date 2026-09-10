@@ -1,7 +1,9 @@
 /* ============================================================================
-   Hook Marketplace — the browse surface over the on-chain hook registry.
+   Latch Marketplace — the browse surface over the on-chain registry.
 
-   This is a SAFETY surface before it is a discovery surface. A hook holding a
+   A Latch is a hook contract attached to a pool.
+
+   This is a SAFETY surface before it is a discovery surface. A Latch holding a
    returns-delta permission can take a cut of every swap in its pool; one holding
    beforeSwap can stop trading entirely; one holding beforeRemoveLiquidity can
    refuse withdrawals, which strands funds as surely as taking them.
@@ -15,7 +17,7 @@
 
      1. Name and description are submitter-supplied strings. They are rendered as
         prose and never as a capability claim; every capability statement on this
-        screen traces to the bitmap the registry read off the hook's own code.
+        screen traces to the bitmap the registry read off the Latch's own code.
      2. A malicious listing is never rendered as a normal card, and no filter can
         hide it. A warning a filter can dismiss is not a warning.
 
@@ -31,9 +33,9 @@ import {
   VERIFICATION_LABEL,
   capabilityClaims,
   explorerAddress,
-  readRegisteredHooks,
+  readRegisteredLatches,
   type ListingState,
-  type RegisteredHook,
+  type RegisteredLatch,
   type RiskClass,
   type VerificationLevel,
 } from '../../../lib/chain'
@@ -41,16 +43,16 @@ import {
 type State =
   | { k: 'loading' }
   | { k: 'error'; message: string }
-  | { k: 'ready'; hooks: RegisteredHook[] }
+  | { k: 'ready'; hooks: RegisteredLatch[] }
 
-const NO_HOOKS: RegisteredHook[] = []
+const NO_HOOKS: RegisteredLatch[] = []
 
 const LISTING_ACTIVE = 0 satisfies ListingState
 const LISTING_DEPRECATED = 1 satisfies ListingState
 const LISTING_MALICIOUS = 2 satisfies ListingState
 const RISK_VALUE_EXTRACTING = 2 satisfies RiskClass
 
-/** An unverified hook must never borrow the visual language of an audited one. */
+/** An unverified Latch must never borrow the visual language of an audited one. */
 const VERIFICATION_BADGE: Record<VerificationLevel, string> = {
   0: 'dapp-badge dapp-badge--mute',
   1: 'dapp-badge dapp-badge--info',
@@ -86,7 +88,34 @@ function safeHttpUrl(uri: string): string | null {
   }
 }
 
-function matchesQuery(hook: RegisteredHook, q: string): boolean {
+/**
+ * What the live region says. The singular is spelled out rather than pluralised
+ * with a `(s)`, because a screen reader reads that aloud as "one Latch bracket s
+ * matches".
+ *
+ * Flagged listings are counted separately for the same reason they are rendered
+ * separately: they are not part of the filtered result set, and folding them
+ * into one total would let a warning disappear into a number.
+ */
+function resultSentence(matched: number, flagged: number): string {
+  const head =
+    matched === 0
+      ? 'No Latches match'
+      : matched === 1
+        ? '1 Latch matches'
+        : `${matched} Latches match`
+  if (flagged === 0) return `${head}.`
+  const tail =
+    flagged === 1
+      ? '1 flagged Latch is shown separately.'
+      : `${flagged} flagged Latches are shown separately.`
+  return `${head}. ${tail}`
+}
+
+/** A keystroke should not interrupt the previous announcement. */
+const ANNOUNCE_DELAY_MS = 700
+
+function matchesQuery(hook: RegisteredLatch, q: string): boolean {
   if (!q) return true
   return (
     hook.name.toLowerCase().includes(q) ||
@@ -95,7 +124,7 @@ function matchesQuery(hook: RegisteredHook, q: string): boolean {
   )
 }
 
-function HookCard({ hook, index }: { hook: RegisteredHook; index: number }) {
+function HookCard({ hook, index }: { hook: RegisteredLatch; index: number }) {
   const flagged = hook.listing === LISTING_MALICIOUS
   const source = safeHttpUrl(hook.sourceURI)
   const audit = safeHttpUrl(hook.auditURI)
@@ -118,7 +147,7 @@ function HookCard({ hook, index }: { hook: RegisteredHook; index: number }) {
           <span className="dapp-tile__diamond" />
         </span>
         <span className="dapp-latch__id">
-          <span className="dapp-latch__name">{hook.name || 'Unnamed hook'}</span>
+          <span className="dapp-latch__name">{hook.name || 'Unnamed Latch'}</span>
           <a
             className="dapp-latch__author hx-addr"
             href={explorerAddress(SEPOLIA_CHAIN_ID, hook.address)}
@@ -150,7 +179,7 @@ function HookCard({ hook, index }: { hook: RegisteredHook; index: number }) {
           submitter wrote about themselves. */}
       {flagged && (
         <p className="hx-alert hx-alert--danger">
-          A guardian has flagged this hook as known to harm users. Its verification has been
+          A guardian has flagged this Latch as known to harm users. Its verification has been
           reset. Do not route funds through a pool that uses it.
         </p>
       )}
@@ -165,7 +194,7 @@ function HookCard({ hook, index }: { hook: RegisteredHook; index: number }) {
 
       {hook.risk === RISK_VALUE_EXTRACTING && (
         <p className="hx-alert hx-alert--danger">
-          Value-extracting. This hook holds a permission that lets it take a cut of swaps or
+          Value-extracting. This Latch holds a permission that lets it take a cut of swaps or
           refuse liquidity withdrawals. Value routed through its pools moves at its discretion.
         </p>
       )}
@@ -189,7 +218,7 @@ function HookCard({ hook, index }: { hook: RegisteredHook; index: number }) {
       </p>
 
       <div className={`hx-caps ${dangerous ? 'hx-caps--danger' : ''}`}>
-        <p className="dapp-microlabel dapp-microlabel--tight">WHAT THIS HOOK CAN DO</p>
+        <p className="dapp-microlabel dapp-microlabel--tight">WHAT THIS LATCH CAN DO</p>
         <ul className="hx-caps__list">
           {claims.map((c) => (
             <li key={c}>{c}</li>
@@ -257,7 +286,7 @@ export default function Explorer() {
 
   useEffect(() => {
     let off = false
-    readRegisteredHooks()
+    readRegisteredLatches()
       .then((hooks) => !off && setState({ k: 'ready', hooks }))
       .catch(
         (e) =>
@@ -300,12 +329,30 @@ export default function Explorer() {
   const d = DEPLOYMENTS[SEPOLIA_CHAIN_ID]
   const filtersOn = verification !== 'all' || risk !== 'all' || q !== ''
 
+  /* The grid re-renders on every keystroke; the announcement must not. A polite
+     live region that changes on each character is read as a stream of interrupted
+     fragments and is worse than saying nothing, so this lags the grid by a beat
+     and only ever speaks a settled count. Empty until the registry has actually
+     been read — "0 Latches match" while still loading would be a false answer. */
+  const summary = state.k === 'ready' ? resultSentence(visible.length, flagged.length) : ''
+  const [settled, setSettled] = useState('')
+
+  useEffect(() => {
+    if (summary === '') return
+    const t = window.setTimeout(() => setSettled(summary), ANNOUNCE_DELAY_MS)
+    return () => window.clearTimeout(t)
+  }, [summary])
+
+  /* Derived, not stored: while the registry is still being read there is no
+     count to announce, and the last settled sentence must not linger. */
+  const announcement = summary === '' ? '' : settled
+
   return (
     <>
       <section className="dapp-card hx-head" aria-labelledby="hx-h">
         <div className="dapp-card__head">
           <h2 id="hx-h" className="dapp-card__title">
-            Hook marketplace
+            Latch Marketplace
           </h2>
           <span className="live-badge">
             <span className="live-dot" aria-hidden="true" />
@@ -314,7 +361,7 @@ export default function Explorer() {
         </div>
         <p className="live-note">
           Every listing is read from the LatchHookRegistry on {d.name}. Capabilities are read
-          from each hook&rsquo;s own contract — a submitter cannot declare permissions their code
+          from each Latch&rsquo;s own contract — a submitter cannot declare permissions their code
           does not have. Names and descriptions <em>are</em> submitter-supplied and are never a
           capability claim.{' '}
           <a
@@ -333,8 +380,8 @@ export default function Explorer() {
           <input
             type="search"
             className="dapp-search__input"
-            placeholder="Search hooks by name, description or address…"
-            aria-label="Search hooks by name, description or address"
+            placeholder="Search Latches by name, description or address…"
+            aria-label="Search Latches by name, description or address"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -399,9 +446,16 @@ export default function Explorer() {
         </div>
       </div>
 
+      {/* The chips and the grid both carry live counts, and neither is announced
+          by changing on screen. This is the one place that says the result count
+          out loud. Visually hidden — the counts are already on the chips. */}
+      <p className="dapp-sr" role="status" aria-live="polite" data-testid="hx-count-announce">
+        {announcement}
+      </p>
+
       {state.k === 'loading' && (
         <p className="dapp-empty hx-state" role="status">
-          Reading the registry&hellip;
+          Reading the Latch registry on {d.name}&hellip;
         </p>
       )}
 
@@ -414,7 +468,7 @@ export default function Explorer() {
 
       {state.k === 'ready' && hooks.length === 0 && (
         <p className="dapp-empty hx-state">
-          No hooks are listed yet. The registry is deployed at{' '}
+          No Latches are listed yet. The registry is deployed at{' '}
           <a
             href={explorerAddress(SEPOLIA_CHAIN_ID, d.registry)}
             target="_blank"
@@ -453,7 +507,7 @@ export default function Explorer() {
 
       {state.k === 'ready' && listable.length > 0 && visible.length === 0 && (
         <p className="dapp-empty hx-state">
-          No hook matches that {filtersOn ? 'search and filter' : 'view'}.{' '}
+          No Latch matches that {filtersOn ? 'search and filter' : 'view'}.{' '}
           <button
             type="button"
             className="hx-linkbtn"

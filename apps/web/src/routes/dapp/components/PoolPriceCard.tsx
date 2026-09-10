@@ -253,7 +253,7 @@ function PoolBlock({
           <dd className="tabular">{(pool.lpFeePips / 10_000).toFixed(2)}%</dd>
         </div>
         <div>
-          <dt>Hook</dt>
+          <dt>Latch</dt>
           <dd>{pool.hasHook ? 'attached' : 'none'}</dd>
         </div>
         <div>

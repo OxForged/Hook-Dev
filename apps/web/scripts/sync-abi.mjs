@@ -1,7 +1,7 @@
 // Extracts the ABIs the web app reads from the compiled Foundry artifacts.
 // Hand-written ABIs drift silently the moment a contract changes — that already
 // happened once in apps/api and was only caught by a diff test. Generate instead.
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -11,11 +11,29 @@ const out = resolve(here, '../src/lib/abi')
 mkdirSync(out, { recursive: true })
 
 const SOURCES = [
-  ['registry', 'packages/registry/foundry-out/LatchHookRegistry.sol/LatchHookRegistry.json'],
+  ['registry', 'packages/registry/foundry-out/LatchRegistry.sol/LatchRegistry.json'],
 ]
+
+// Foundry does NOT delete artifacts for source files that no longer exist. When
+// LatchHookRegistry.sol was renamed to LatchRegistry.sol, the stale artifact stayed
+// on disk and this script happily regenerated 72 entries from a dead contract — the
+// exact silent drift the header above warns about, caught only because the deployed
+// ABI stopped matching. Staleness is now a hard failure rather than a quiet success.
+const MAX_ARTIFACT_AGE_MS = 1000 * 60 * 60 * 24 * 7
 
 for (const [name, rel] of SOURCES) {
   const p = resolve(repo, rel)
+  if (!existsSync(p)) {
+    console.error(`[sync-abi] artifact not found: ${rel}`)
+    console.error('[sync-abi] the contract was probably renamed or moved. Run `forge build` in')
+    console.error('[sync-abi] that package and update SOURCES above — do NOT leave this pointing')
+    console.error('[sync-abi] at a path that no longer exists.')
+    process.exit(1)
+  }
+  const age = Date.now() - statSync(p).mtimeMs
+  if (age > MAX_ARTIFACT_AGE_MS) {
+    console.warn(`[sync-abi] ${name}: artifact is ${Math.round(age / 86400000)} days old — run \`forge build\` if the contract changed.`)
+  }
   const { abi } = JSON.parse(readFileSync(p, 'utf8'))
   writeFileSync(
     resolve(out, `${name}.ts`),

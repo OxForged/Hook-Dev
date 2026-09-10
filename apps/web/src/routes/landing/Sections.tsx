@@ -101,7 +101,7 @@ export function HowItWorks() {
           <p className={styles['interfaceBody']}>
             A Latch extends BaseCLHook and declares the callbacks it wants as a 16-bit bitmap. The
             same value is encoded in the pool key, and the pool manager checks the two agree when
-            the pool is initialized — so permissions live in the key, not in the hook&rsquo;s
+            the pool is initialized — so permissions live in the key, not in the Latch&rsquo;s
             address.
           </p>
           <ul className={styles['factList']}>

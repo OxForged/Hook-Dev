@@ -66,6 +66,14 @@ export interface MarketQuote {
    * close outside market hours, for example. Rendered verbatim.
    */
   note?: string
+  /**
+   * Absolute https URL of the asset's own mark, when the provider supplies one
+   * in the SAME response as the price. Never a URL this codebase composed by
+   * hand and never a second request per symbol — a guessed CDN path rots
+   * silently into a broken image. Absent means the view renders its monogram
+   * fallback, which is a designed state, not a failure.
+   */
+  logo?: string
 }
 
 /**
@@ -121,6 +129,31 @@ function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null
 }
 
+/** An ISO-8601 instant from a provider, as epoch ms. Null for anything else. */
+function isoMs(v: unknown): number | null {
+  if (typeof v !== 'string') return null
+  const t = Date.parse(v)
+  return Number.isFinite(t) ? t : null
+}
+
+/**
+ * A provider-supplied URL, admitted only if it really is absolute https.
+ *
+ * These strings go straight into an `<img src>`, so the check is a security
+ * boundary and not tidiness: a `javascript:` or `data:` value in a response we
+ * do not control must never reach the DOM. Anything else returns null and the
+ * view falls back to its monogram.
+ */
+function httpsUrl(v: unknown): string | null {
+  if (typeof v !== 'string' || v === '') return null
+  try {
+    const parsed = new URL(v)
+    return parsed.protocol === 'https:' ? parsed.toString() : null
+  } catch {
+    return null
+  }
+}
+
 /* ===========================================================================
    Provider 1 — CoinGecko. Crypto, keyless, public.
 
@@ -128,6 +161,17 @@ function num(v: unknown): number | null {
    uses to sanity-check that a ticker is live. CoinGecko silently omits ids it
    does not know, and this reader renders exactly what came back rather than
    filling a gap — an unlisted asset simply does not appear.
+
+   WHY /coins/markets AND NOT /simple/price. Both return a USD price and a 24h
+   change in one keyless request; only /coins/markets also returns `image`, the
+   asset's own mark. The ticker strips need a logo per row, and the alternative
+   — hand-writing CDN paths, or a second request per symbol — would either rot
+   into broken images or quadruple the call rate against a keyless tier. One
+   request, one response, price and mark from the same source.
+
+   `symbol` and `name` in the response are IGNORED. The labels below are ours
+   ("Hyperliquid — HyperEVM"), and letting a vendor rename a row underneath us
+   would change what the page says without anyone editing the page.
    =========================================================================== */
 
 const COINGECKO_ASSETS = [
@@ -148,27 +192,40 @@ export const coinGeckoCrypto: MarketFeedProvider = {
   async load(signal) {
     const ids = COINGECKO_ASSETS.map((a) => a.id).join(',')
     const url =
-      'https://api.coingecko.com/api/v3/simple/price' +
-      `?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true`
+      'https://api.coingecko.com/api/v3/coins/markets' +
+      `?vs_currency=usd&ids=${ids}&per_page=${COINGECKO_ASSETS.length}&page=1` +
+      '&sparkline=false&price_change_percentage=24h'
 
     try {
-      const body = (await getJson(url, signal)) as Record<string, Record<string, unknown>> | null
-      if (!body || typeof body !== 'object') return { k: 'error', reason: 'malformed response' }
+      const body = await getJson(url, signal)
+      if (!Array.isArray(body)) return { k: 'error', reason: 'malformed response' }
+
+      // Indexed by id, then walked in OUR order — the response is ranked by
+      // market cap and the strip's reading order should not shuffle when a
+      // ranking changes.
+      const byId = new Map<string, Record<string, unknown>>()
+      for (const raw of body) {
+        if (raw === null || typeof raw !== 'object') continue
+        const entry = raw as Record<string, unknown>
+        const id = entry['id']
+        if (typeof id === 'string') byId.set(id, entry)
+      }
 
       const rows: MarketQuote[] = []
       for (const asset of COINGECKO_ASSETS) {
-        const entry = body[asset.id]
+        const entry = byId.get(asset.id)
         if (!entry) continue // not listed / not returned — omitted, not guessed
-        const price = num(entry['usd'])
+        const price = num(entry['current_price'])
         if (price === null) continue
-        const updated = num(entry['last_updated_at'])
+        const logo = httpsUrl(entry['image'])
         rows.push({
           key: `cg:${asset.id}`,
           symbol: asset.symbol,
           name: asset.name,
           price,
-          changePct: num(entry['usd_24h_change']),
-          asOf: updated === null ? null : updated * 1000,
+          changePct: num(entry['price_change_percentage_24h']),
+          asOf: isoMs(entry['last_updated']),
+          ...(logo === null ? {} : { logo }),
         })
       }
       if (rows.length === 0) return { k: 'error', reason: 'no quotes returned' }
@@ -195,6 +252,11 @@ export const coinGeckoCrypto: MarketFeedProvider = {
        is labelled "last close" rather than presented as a live quote. Market
        hours are NOT computed locally — a hand-rolled holiday and DST calendar
        is exactly the kind of invention this file refuses.
+
+   NO `logo` IS SET ON THESE ROWS, deliberately. Finnhub does carry company
+   marks, but only from /stock/profile2, which is one extra request PER SYMBOL —
+   four more calls a minute against a 60-a-minute free tier, to decorate a strip.
+   The view renders its monogram fallback instead, which is a designed state.
    =========================================================================== */
 
 const FINNHUB_SYMBOLS = [

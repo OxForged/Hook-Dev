@@ -86,7 +86,7 @@ enum RiskClass {
 }
 
 /// @notice Human-supplied listing data. Never trusted for capability claims.
-struct HookMetadata {
+struct LatchMetadata {
     string name;
     string description;
     /// @dev Source repository / verification URI.
@@ -101,7 +101,7 @@ struct HookMetadata {
 /// @dev Field order is chosen for storage packing, not for prose:
 /// slot 0 = submitter|submittedAt|permissions|verification|listing (exactly 32 bytes),
 /// slot 1 = steward|updatedAt|permissionsValid|permissionsReadable, slot 2 = codehash.
-struct HookRecord {
+struct LatchRecord {
     /// @dev Who called `register`. Immutable, historical. Non-zero iff the hook is registered.
     address submitter;
     uint64 submittedAt;
@@ -119,7 +119,7 @@ struct HookRecord {
     bool permissionsReadable;
     /// @dev `hook.codehash` at the time permissions were last read.
     bytes32 codehash;
-    HookMetadata metadata;
+    LatchMetadata metadata;
 }
 
 /// @notice `permissions` expanded into named booleans, for UIs and off-chain consumers.
@@ -140,21 +140,21 @@ struct DecodedPermissions {
     bool afterRemoveLiquidityReturnsDelta;
 }
 
-/// @title ILatchHookRegistry
+/// @title ILatchRegistry
 /// @notice The on-chain hook registry for LatchProtocol.
-interface ILatchHookRegistry {
+interface ILatchRegistry {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
-        Between HookRegistered, HookMetadataUpdated,
-        HookVerificationChanged, HookListingChanged,
-        HookStewardTransferred and HookPermissionsRefreshed, the
+        Between LatchRegistered, LatchMetadataUpdated,
+        LatchVerificationChanged, LatchListingChanged,
+        LatchStewardTransferred and LatchPermissionsRefreshed, the
         entire registry state is reconstructible from logs alone.
-        HookMetadataUpdated is emitted at registration too, so an
+        LatchMetadataUpdated is emitted at registration too, so an
         indexer never has to read storage to learn the initial
         metadata.
     //////////////////////////////////////////////////////////////*/
 
-    event HookRegistered(
+    event LatchRegistered(
         address indexed hook,
         address indexed submitter,
         uint16 permissions,
@@ -163,7 +163,7 @@ interface ILatchHookRegistry {
         uint64 timestamp
     );
 
-    event HookMetadataUpdated(
+    event LatchMetadataUpdated(
         address indexed hook,
         address indexed updater,
         string name,
@@ -173,15 +173,15 @@ interface ILatchHookRegistry {
         uint256[] chainIds
     );
 
-    event HookVerificationChanged(
+    event LatchVerificationChanged(
         address indexed hook, address indexed actor, Verification previous, Verification current, string note
     );
 
-    event HookListingChanged(address indexed hook, address indexed actor, Listing previous, Listing current, string reason);
+    event LatchListingChanged(address indexed hook, address indexed actor, Listing previous, Listing current, string reason);
 
-    event HookStewardTransferred(address indexed hook, address indexed previous, address indexed current);
+    event LatchStewardTransferred(address indexed hook, address indexed previous, address indexed current);
 
-    event HookPermissionsRefreshed(
+    event LatchPermissionsRefreshed(
         address indexed hook,
         address indexed actor,
         uint16 previousPermissions,
@@ -197,9 +197,9 @@ interface ILatchHookRegistry {
     //////////////////////////////////////////////////////////////*/
 
     error ZeroAddress();
-    error HookAlreadyRegistered(address hook);
-    error HookNotRegistered(address hook);
-    error HookHasNoCode(address hook);
+    error LatchAlreadyRegistered(address hook);
+    error LatchNotRegistered(address hook);
+    error LatchHasNoCode(address hook);
 
     /// @notice `getHooksRegistrationBitmap()` reverted, ran out of the probe gas budget, or did
     /// not return exactly one clean 32-byte uint16.
@@ -223,7 +223,7 @@ interface ILatchHookRegistry {
 
     /// @notice Verification cannot be raised while the hook is flagged malicious. Clear the flag
     /// first, in its own transaction, so the rehabilitation is separately visible in the logs.
-    error HookFlaggedMalicious(address hook);
+    error LatchFlaggedMalicious(address hook);
 
     /// @notice Verification cannot be raised on a hook whose on-chain permissions are unreadable
     /// or invalid. You cannot attest to what you cannot read.

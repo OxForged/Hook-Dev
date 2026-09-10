@@ -17,15 +17,16 @@ export function Hero() {
       <div className={cx(styles['heroCopy'], styles['reveal'])}>
         <p className={styles['eyebrowPill']}>DEVELOPER INFRASTRUCTURE</p>
         <h1 className={styles['h1']}>
-          Powerful Hooks.
+          Powerful Latches.
           <br />
           Limitless <span className={styles['accent']}>Possibilities.</span>
         </h1>
         <p className={styles['lead']}>
-          Latch Protocol is the hook layer for DEXs, AMMs, launchpads and tokenized real-world
-          assets. Gate a stock pair on compliance and market hours, tax snipers on a decaying
-          curve, or route a share of trading volume to holders — without forking a protocol,
-          redeploying it, or mining a contract address.
+          Latch Protocol is the programmable logic layer for DEXs, AMMs, launchpads and tokenized
+          real-world assets. A Latch is a hook contract you attach to a pool: gate a stock pair on
+          compliance and market hours, tax snipers on a decaying curve, or route a share of trading
+          volume to holders — without forking a protocol, redeploying it, or mining a contract
+          address.
         </p>
         <div className={styles['heroActions']}>
           <Link to={LINKS.app} className={styles['btnPrimary']}>

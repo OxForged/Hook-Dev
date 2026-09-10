@@ -19,10 +19,10 @@ import styles from './legal.module.css'
  *                      is undeployed, and the dapp says so on its own surfaces.
  *   No custody         There is no backend and no key handling anywhere in
  *                      apps/web. Signing happens in the user's wallet.
- *   Hook risk          packages/core/src/libraries/Hooks.sol — a hook runs
+ *   Latch risk         packages/core/src/libraries/Hooks.sol — a Latch runs
  *                      inside the swap path and a revert in a callback reverts
  *                      the whole swap; the docs page states the same.
- *   Registry           The hook registry at 0x665e…43DE lists hooks. Listing
+ *   Registry           LatchHookRegistry at 0x665e…43DE lists Latches. Listing
  *                      is a write to a contract, not a review of the code.
  *   Fee mechanism      ProtocolFeeLibrary.MAX_PROTOCOL_FEE = 4000 pips of
  *                      1_000_000, i.e. a 0.4% ceiling, currently defaulting to
@@ -48,9 +48,9 @@ export default function TermsPage() {
     >
       <Section id="what-this-is" heading="1. What Latch Protocol is">
         <p className={styles['p']}>
-          Latch Protocol is a set of smart contracts and a hooks platform. A hook — a
-          &ldquo;Latch&rdquo; — is a contract that attaches programmable logic to a pool without
-          forking the protocol underneath it.
+          Latch Protocol is a set of smart contracts and a platform for Latches. A Latch is a hook
+          contract that attaches programmable logic to a pool without forking the protocol
+          underneath it.
         </p>
         <p className={styles['p']}>
           The contracts are deployed on public blockchains and are permissionless. Anyone can call
@@ -138,24 +138,24 @@ export default function TermsPage() {
         </p>
       </Section>
 
-      <Section id="hooks" heading="5. Hooks are third-party code — evaluate them yourself">
+      <Section id="latches" heading="5. Latches are third-party code — evaluate them yourself">
         <p className={styles['p']}>
-          The point of a hooks platform is that other people write the hooks. Except where a hook
-          is explicitly published by the Latch team, a hook is code written, deployed and
-          controlled by a third party we have no relationship with.
+          The point of the platform is that other people write the Latches. Except where a Latch is
+          explicitly published by the Latch team, a Latch is code written, deployed and controlled
+          by a third party we have no relationship with.
         </p>
         <ul className={styles['list']}>
           <li>
-            A hook runs <span className={styles['strong']}>inside the swap path</span>. It can
+            A Latch runs <span className={styles['strong']}>inside the swap path</span>. It can
             charge fees, alter the price you get, restrict who may trade, or revert your
-            transaction outright — a revert in a hook callback reverts the whole swap.
+            transaction outright — a revert in one of its callbacks reverts the whole swap.
           </li>
           <li>
-            A hook can be upgradeable, or have an admin key. Behaviour that is benign today can
+            A Latch can be upgradeable, or have an admin key. Behaviour that is benign today can
             change tomorrow without warning.
           </li>
           <li>
-            The on-chain hook registry lists hooks. A listing is a write to a public contract that
+            The on-chain registry lists Latches. A listing is a write to a public contract that
             anyone can make.{' '}
             <span className={styles['strong']}>
               It is not an audit, a review, a recommendation or an endorsement
@@ -163,13 +163,13 @@ export default function TermsPage() {
             , and neither is appearance anywhere in this interface.
           </li>
           <li>
-            Any &ldquo;audited&rdquo; label, link or badge shown against a hook is metadata
+            Any &ldquo;audited&rdquo; label, link or badge shown against a Latch is metadata
             supplied by whoever listed it. Read the audit yourself and check that it covers the
             deployed bytecode.
           </li>
         </ul>
         <p className={styles['p']}>
-          Read the source before you put funds behind a hook. If you cannot read it, treat that as
+          Read the source before you put funds behind a Latch. If you cannot read it, treat that as
           the answer.
         </p>
       </Section>
@@ -180,7 +180,7 @@ export default function TermsPage() {
           everything you commit. The realistic causes include, and are not limited to:
         </p>
         <ul className={styles['list']}>
-          <li>Bugs in the protocol contracts, in a hook, in a router, or in a dependency.</li>
+          <li>Bugs in the protocol contracts, in a Latch, in a router, or in a dependency.</li>
           <li>
             Economic attacks — flash loans, price and oracle manipulation, sandwiching and other
             MEV extraction around your transaction.
@@ -190,7 +190,7 @@ export default function TermsPage() {
             leave you worse off than simply holding.
           </li>
           <li>
-            Compromise or abuse of a privileged key — a hook admin, a fee controller, a protocol
+            Compromise or abuse of a privileged key — a Latch admin, a fee controller, a protocol
             owner — including by governance acting against your interest.
           </li>
           <li>
@@ -233,7 +233,7 @@ export default function TermsPage() {
             produce no tax statements and hold no records from which any could be produced.
           </li>
           <li>
-            If you deploy a hook, you are responsible for it — its correctness, its licensing, and
+            If you deploy a Latch, you are responsible for it — its correctness, its licensing, and
             the obligations you take on toward anyone who uses it.
           </li>
         </ul>
