@@ -27,8 +27,11 @@ abstract contract DeployUniversalRouter is Script {
     function getDeploymentSalt() public view virtual returns (bytes32);
 
     function run() external returns (address router) {
-        /// @dev address from https://github.com/pancakeswap/pancake-create3-factory
-        Create3Factory factory = Create3Factory(0x38Ab3f2CE00973A51d3A2A04d634C9bcbf20e4e1);
+        /// @dev Latch deploys through its OWN CREATE3 factory. PancakeSwap's (0x38Ab3f2C...) is
+        /// gated by onlyWhitelisted and owned by an address we do not control, so every deploy
+        /// through it reverts NotWhitelisted(). Overridable per chain via CREATE3_FACTORY.
+        address factoryAddr = vm.envOr("CREATE3_FACTORY", address(0x76473D174Aa17C23FBE49CAb50aAc4ED4d8c678F));
+        Create3Factory factory = Create3Factory(factoryAddr);
 
         // deployer will the the initial owner of universal router
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");

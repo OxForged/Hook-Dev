@@ -22,7 +22,10 @@ contract MaxInputAmountTest is Test {
     }
 
     function test_maxAmtInSlot() public {
-        bytes32 expectedSlot = bytes32(uint256(keccak256("MaxAmountIn")) - 1);
+        // MAX_AMOUNT_IN_SLOT became uint256 when this library moved onto the portable
+        // TransientSlot backend, whose API keys on uint256. The slot VALUE must be unchanged
+        // by that port — that is what this test exists to prove — so only the type moves.
+        uint256 expectedSlot = uint256(keccak256("MaxAmountIn")) - 1;
         assertEq(expectedSlot, MaxInputAmount.MAX_AMOUNT_IN_SLOT);
     }
 }
