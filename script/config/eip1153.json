@@ -1,0 +1,10 @@
+{
+  "_comment": "EIP-1153 (transient storage) support per chain id. Consumed by script/BackendGuard.sol.",
+  "_rules": [
+    "true  -> deploy the default build (forge build)",
+    "false -> deploy the legacy build (FOUNDRY_PROFILE=legacy forge build)",
+    "A chain absent from this file will REVERT the deploy. That is intentional.",
+    "Verify support against the chain's own upgrade docs before adding an entry.",
+    "Re-verify before every deploy: chains gain Cancun support over time."
+  ]
+}

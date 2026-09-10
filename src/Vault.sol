@@ -81,6 +81,11 @@ contract Vault is IVault, VaultToken, Ownable2Step {
         /// @notice any mid-lock borrow against an app's reserves must be fully repaid by now
         if (AppDeficit.count() != 0) revert AppCurrencyNotFullyRepaid();
 
+        /// @dev HookProtocol: zero the synced reserve before releasing the lock. Free under
+        /// EIP-1153, load-bearing under the storage backend (a surviving reserve enables a
+        /// settle-without-paying drain).
+        VaultReserve.clear();
+
         /// @dev release the lock
         SettlementGuard.setLocker(address(0));
     }
@@ -155,7 +160,10 @@ contract Vault is IVault, VaultToken, Ownable2Step {
         }
     }
 
-    function sync(Currency currency) public override {
+    /// @dev HookProtocol: gated by isLocked so no reserve can be written outside a lock.
+    /// Required by the storage backend (a surviving reserve enables a settle-without-paying
+    /// drain); applied in BOTH builds so semantics never diverge by chain.
+    function sync(Currency currency) public override isLocked {
         if (currency.isNative()) {
             VaultReserve.setVaultReserve(CurrencyLibrary.NATIVE, 0);
         } else {

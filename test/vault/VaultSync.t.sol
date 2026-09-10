@@ -123,8 +123,14 @@ contract VaultSyncTest is Test, TokenFixture, NoIsolate {
         assertEq(amount, 10 ether);
     }
 
-    function test_sync() public {
-        // it's ok to sync without lock
+    /// @dev HookProtocol divergence from upstream PancakeSwap Infinity.
+    /// Upstream allows sync() outside a lock, which is safe ONLY because EIP-1153 discards
+    /// the reserve at end of transaction. On the storage backend used for pre-Cancun chains
+    /// a reserve planted outside a lock persists, letting an attacker settle without paying
+    /// and drain the difference. sync() is therefore gated by isLocked in BOTH builds so the
+    /// semantics never diverge by chain. See test/transient/TransientBackendSafety.t.sol.
+    function test_sync_revertsWithoutLock() public {
+        vm.expectRevert(IVault.NoLocker.selector);
         vault.sync(currency0);
     }
 
