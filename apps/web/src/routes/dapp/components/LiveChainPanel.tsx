@@ -8,10 +8,12 @@ import {
   readProtocolStatus,
   readRecentSwaps,
   readVaultHoldings,
+  readGovernanceStatus,
   splitFee,
   type ProtocolStatus,
   type SwapRecord,
   type VaultHolding,
+  type GovernanceStatus,
 } from '../../../lib/chain'
 
 /**
@@ -30,7 +32,7 @@ import {
 type State =
   | { k: 'loading' }
   | { k: 'error'; message: string }
-  | { k: 'ready'; status: ProtocolStatus; holdings: VaultHolding[]; swaps: SwapRecord[] }
+  | { k: 'ready'; status: ProtocolStatus; holdings: VaultHolding[]; swaps: SwapRecord[]; gov: GovernanceStatus }
 
 export function LiveChainPanel() {
   const [state, setState] = useState<State>({ k: 'loading' })
@@ -39,12 +41,13 @@ export function LiveChainPanel() {
     let cancelled = false
     ;(async () => {
       try {
-        const [status, holdings, swaps] = await Promise.all([
+        const [status, holdings, swaps, gov] = await Promise.all([
           readProtocolStatus(),
           readVaultHoldings(),
           readRecentSwaps(SEPOLIA_CHAIN_ID, 5),
+          readGovernanceStatus(),
         ])
-        if (!cancelled) setState({ k: 'ready', status, holdings, swaps })
+        if (!cancelled) setState({ k: 'ready', status, holdings, swaps, gov })
       } catch (e) {
         if (!cancelled) {
           setState({
@@ -112,6 +115,40 @@ export function LiveChainPanel() {
               <dd>{state.status.feesDisabled ? 'DISABLED' : 'active'}</dd>
             </div>
           </dl>
+
+          <h3 className="live-sub-h">Registry &amp; governance</h3>
+          <dl className="live-grid">
+            <div>
+              <dt>Hooks listed</dt>
+              <dd className="tabular">{state.gov.hookCount.toString()}</dd>
+            </div>
+            <div>
+              <dt>Custody delay</dt>
+              <dd className="tabular">{Number(state.gov.custodyDelaySec) / 3600}h</dd>
+            </div>
+            <div>
+              <dt>Policy delay</dt>
+              <dd className="tabular">{Number(state.gov.policyDelaySec) / 3600}h</dd>
+            </div>
+            <div>
+              <dt>Registry</dt>
+              <dd>
+                <a
+                  href={explorerAddress(SEPOLIA_CHAIN_ID, state.gov.registry)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-hit
+                >
+                  view
+                </a>
+              </dd>
+            </div>
+          </dl>
+          <p className="live-note">
+            The registry is deployed but nothing is listed yet, so this reads zero rather than
+            showing example hooks. Timelocks are deployed and enforce their floors; on Sepolia the
+            Vault is still owned by an EOA so it stays iterable.
+          </p>
 
           <h3 className="live-sub-h">Vault holdings</h3>
           <p className="live-note">

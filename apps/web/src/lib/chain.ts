@@ -32,6 +32,12 @@ export const DEPLOYMENTS = {
     binPoolManager: '0xdBA93F91BA5B8535AE2b38be6a3A6CdcfDE6f6f3',
     feeController: '0xc1b7A4e61A4B6ceBA3e308425dc2390c2CE57ea9',
     create3Factory: '0x76473D174Aa17C23FBE49CAb50aAc4ED4d8c678F',
+    /** Hook marketplace backing contract. Permissions are read off each hook on chain. */
+    registry: '0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE',
+    /** 48h tier. Owns Vault + pool managers on mainnet, because registerApp is irreversible. */
+    timelockCustody: '0x35D72DbEeD5F2CE95a4DFb3917D2CD3c43e544CA',
+    /** 6h tier. Owns fee policy, which is reversible. */
+    timelockPolicy: '0x30897C9e7c1c336cDF68C7494f930C75A355d42F',
     /**
      * The pool created by the live exercise in
      * packages/fees/script/ExerciseSepolia.s.sol. Real liquidity, real swaps.
@@ -110,6 +116,16 @@ const FEE_CONTROLLER = parseAbi([
 const CL_SWAP_EVENT = parseAbi([
   'event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee, uint16 protocolFee)',
 ])
+
+const REGISTRY = parseAbi([
+  'function hookCount() view returns (uint256)',
+  'function classify(uint16) pure returns (uint8)',
+  'function takesSwapCut(uint16) pure returns (bool)',
+  'function canBlockSwaps(uint16) pure returns (bool)',
+  'function canTrapLiquidity(uint16) pure returns (bool)',
+])
+
+const TIMELOCK = parseAbi(['function getMinDelay() view returns (uint256)'])
 
 /* ---------------------------------------------------------------------------
    Reads
@@ -274,4 +290,30 @@ export function formatUnits(v: bigint, decimals: number, places = 4): string {
   const frac = ((abs % base) * 10n ** BigInt(places)) / base
   const s = `${whole}.${frac.toString().padStart(places, '0')}`
   return neg ? `-${s}` : s
+}
+
+export interface GovernanceStatus {
+  registry: Address
+  hookCount: bigint
+  custodyDelaySec: bigint
+  policyDelaySec: bigint
+}
+
+/**
+ * Registry and governance state, read live.
+ *
+ * hookCount is genuinely 0 today - the registry is deployed but nothing has been
+ * listed. That is shown as zero, not padded with examples.
+ */
+export async function readGovernanceStatus(
+  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+): Promise<GovernanceStatus> {
+  const d = DEPLOYMENTS[chainId]
+  const c = client(chainId)
+  const [hookCount, custodyDelaySec, policyDelaySec] = await Promise.all([
+    c.readContract({ address: d.registry, abi: REGISTRY, functionName: 'hookCount' }),
+    c.readContract({ address: d.timelockCustody, abi: TIMELOCK, functionName: 'getMinDelay' }),
+    c.readContract({ address: d.timelockPolicy, abi: TIMELOCK, functionName: 'getMinDelay' }),
+  ])
+  return { registry: d.registry, hookCount, custodyDelaySec, policyDelaySec }
 }
