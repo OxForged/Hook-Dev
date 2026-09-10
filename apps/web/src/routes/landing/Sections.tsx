@@ -17,6 +17,7 @@ import {
   ROADMAP,
   TEAM,
   USE_CASES,
+  SHARE_ROUTES,
 } from './data'
 import { CodePanel } from './CodePanel'
 import styles from './landing.module.css'
@@ -36,7 +37,7 @@ export function UseCases() {
         <br />
         <span className={styles['accent']}>Every Ecosystem.</span>
       </h2>
-      <div className={styles['cardGrid']}>
+      <div className={styles['cardGrid4']}>
         {USE_CASES.map((useCase) => (
           <article key={useCase.name} className={styles['useCase']}>
             <div className={styles['iconTile']} aria-hidden="true">
@@ -45,6 +46,16 @@ export function UseCases() {
             <h3 className={styles['useCaseName']}>{useCase.name}</h3>
             <p className={styles['useCaseBody']}>{useCase.body}</p>
             <p className={styles['useCaseTag']}>{useCase.tag}</p>
+            <p
+              className={cx(
+                styles['useCaseStatus'],
+                useCase.status === 'Live on testnet'
+                  ? styles['useCaseStatusLive']
+                  : styles['useCaseStatusSoon'],
+              )}
+            >
+              {useCase.status}
+            </p>
           </article>
         ))}
       </div>
@@ -289,3 +300,45 @@ export function CtaPanel() {
     </section>
   )
 }
+
+/**
+ * Revenue share — how a cut of trading volume reaches LPs, beneficiaries or holders.
+ *
+ * Placed straight after the use cases because "donations and holder share" is one
+ * of the four things Latch is sold on, and a visitor evaluating it will want the
+ * mechanism, not the slogan. Each card names the actual mechanism so an integrator
+ * can tell which one fits before reading a line of Solidity.
+ */
+export function RevenueShare() {
+  return (
+    <section
+      id="revenue"
+      className={cx(styles['section'], styles['reveal'], styles['delay2'])}
+      aria-labelledby="revenue-title"
+    >
+      <p className={styles['eyebrow']}>REVENUE SHARE</p>
+      <h2 id="revenue-title" className={cx(styles['h2'], styles['h2Large'])}>
+        A Share Of Volume.
+        <br />
+        <span className={styles['accent']}>Paid Three Ways.</span>
+      </h2>
+      <p className={styles['sectionLead']}>
+        Every route below is pull-based. Holder sets are unbounded and anyone can grow one, so
+        iterating them on chain would put a permanent denial of service on the swap path.
+      </p>
+      <div className={styles['cardGrid']}>
+        {SHARE_ROUTES.map((route) => (
+          <article key={route.name} className={styles['useCase']}>
+            <div className={styles['iconTile']} aria-hidden="true">
+              <div className={styles['iconDiamond']} />
+            </div>
+            <h3 className={styles['useCaseName']}>{route.name}</h3>
+            <p className={styles['useCaseTag']}>{route.mechanism}</p>
+            <p className={styles['useCaseBody']}>{route.body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+

@@ -331,7 +331,7 @@ Every chain read and write goes through one interface, `ProtocolAdapter` ([`src/
 
 ### `createMockAdapter` — development only
 
-> **No Latch Protocol contracts are deployed and there is no RPC endpoint.** The mock adapter exists so the widgets can be built and reviewed end to end. Everything it returns is invented.
+> **Everything this adapter returns is invented.** It exists so the widgets can be built, styled and reviewed end to end with no chain attached. Latch *is* deployed on Sepolia — see [Executed against a real deployment](#executed-against-a-real-deployment) — so if you want real numbers, use `createViemAdapter` and point it there.
 
 Three things keep that from becoming a lie a user could act on:
 
@@ -355,7 +355,7 @@ const adapter = createMockAdapter({
 
 Produces real calldata and submits real transactions.
 
-- **Encoding** is complete and unit-tested against the router and periphery sources.
+- **Encoding** is complete, unit-tested against the router and periphery sources, and — as of the fork suite below — **executed** against the live Sepolia deployment. See [Executed against a real deployment](#executed-against-a-real-deployment).
 - **Token, balance and allowance reads** are ordinary ERC-20 and Permit2 calls.
 - **Pool discovery** is not on-chain — the singleton has no pool enumeration. Pass the pools you support, or wire an indexer (`@latchprotocol/sdk/indexer` describes the schema).
 - **Quoting** needs a deployed quoter or a host-supplied `overrides.quoteSwap`. Without one it throws `UnsupportedOperationError` rather than inventing a number. **A fabricated quote is worse than no quote.**
@@ -412,13 +412,46 @@ Every gate is evaluated by `evaluateLaunchPurchase` and surfaced as a specific r
 npm install
 npm run dev          # demo harness at http://localhost:5180
 npm run typecheck    # tsc --noEmit, strict + noUncheckedIndexedAccess
-npm test             # vitest
+npm test             # vitest, unit only
+npm run test:fork    # execute real calldata on an anvil fork of Sepolia
+npm run test:all     # both
 npm run build        # ESM + .d.ts + dist/styles.css
 ```
 
 The harness renders all three widgets against the mock adapter, with live controls for the integrator fee, theme, wallet connection, a wallet that rejects, artificial latency, and a 360px sidebar toggle — plus the same swap widget rendered through the custom element. Set the fee and watch it appear in the summary and in the transaction the widget prepares.
 
 Tests cover fee attribution (validation, rounding parity with `BipsLibrary.calculatePortion`, and that the fee is genuinely in the encoded calldata), quote math (including the property that a swap clearing the gross floor always leaves the user at or above the net floor), call-path encoding for both pool types, and the mock adapter's contract.
+
+### Executed against a real deployment
+
+Those tests all assert an encoding by **decoding it back**, which proves the encoder agrees with itself and nothing more. A plan can round-trip through its own decoder and still be rejected on chain: wrong action order, wrong settle/take pairing, a delta left unsettled.
+
+So there is a second suite that **sends the calldata**.
+
+```bash
+npm run test:fork    # anvil --fork-url <sepolia>, then execute
+npm run test:all     # unit + fork
+```
+
+It boots an anvil forked from Sepolia and runs this package's ordinary public API — `createViemAdapter`, `buildSwapCall`, `buildCLMintCall`, `buildBinAddCall` — against the **live Latch deployment**: the real singleton, the real `UniversalRouter`, the real position managers, a real pool with real liquidity. Nothing is broadcast to Sepolia itself; the fork is local and disposable.
+
+What it executes:
+
+| | |
+| --- | --- |
+| Swap | exact-in fills at the quoted amount, to the wei |
+| Fee composition | the pool charges `3997` pips, which decomposes to protocol `1000` + LP `3000` |
+| Integrator fee | `TAKE_PORTION` pays the referrer `feeBps` of the **realised** output; the user still clears `minAmountOutNet`; no integrator pays nobody |
+| `pay-portion` mode | router-level `PAY_PORTION` + `SWEEP`, with nothing left in the router |
+| Two-minimum invariant | proved through a real fill at 0 bps slippage, not by arithmetic |
+| Multi-hop | a two-hop `CL_SWAP_EXACT_IN` with a real `PathKey[]`, intermediate never leaving the vault |
+| CL liquidity | mint and burn, amounts matching `SqrtPriceMath` to the wei in both rounding directions |
+| Bin liquidity | add across five bins, swap through them, burn; shares land on `activeId + deltaId` |
+| Failure modes | slippage, deadline and bin id-slippage revert **with the specific error**, and move no tokens |
+
+Prerequisites: `anvil` on `PATH` and a reachable Sepolia RPC (`LATCH_FORK_RPC_URL` overrides the public default; `LATCH_FORK_BLOCK` pins a block). The suite deploys none of the protocol — it verifies the deployed wiring instead, including that Permit2 is the PancakeSwap fork the router's immutables name and not the canonical address.
+
+The multi-hop case is the exception: Sepolia has one pool over two tokens, so that suite deploys a third `MockERC20` and a second pool on the fork. It needs `packages/core` built (`forge build`); everything else runs against deployed contracts only.
 
 ---
 

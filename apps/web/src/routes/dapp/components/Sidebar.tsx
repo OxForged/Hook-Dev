@@ -2,17 +2,23 @@
    Sidebar — README § Dapp shell.
    238px, ground #060A12, right border #101A2C. Seven nav rows, each with a
    3x16px indicator bar (Latch Blue when active), 13.5px label, the sidebar
-   gradient behind the active row, 0.22s transitions. Bottom: gas sponsor
-   credits card (62%) and the wallet button with its pulsing green dot.
+   gradient behind the active row, 0.22s transitions. Bottom: the real wallet
+   connect control (@latchprotocol/connect).
+
+   The gas-sponsor credits card that used to sit here is gone. There is no gas
+   sponsor, so a progress bar reading "0.62 ETH remaining" was a picture of a
+   feature that does not exist - the same class of thing as an invented chart.
 
    Under 1024px it becomes a drawer: fixed panel + scrim, focus trapped,
    Escape closes, and it is `inert` while closed so nothing inside is tabbable.
    ============================================================================ */
 
 import { useRef } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
+import { LatchConnectButton } from '@latchprotocol/connect'
 import type { ShellData } from '../data/shell.ts'
 import { useFocusTrap } from '../lib/dom.ts'
+import { NavIcon } from '../../../components/NavIcon'
 
 interface SidebarProps {
   shell: ShellData
@@ -42,13 +48,18 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
         aria-label="Dapp navigation"
         inert={isDrawer && !open}
       >
-        <div className="dapp-lockup">
+        {/* The lockup goes home. It is the one element every dapp user already
+            expects to be clickable, and until now it was inert — leaving no way
+            back to the marketing site from inside the app except the browser
+            button. `Link`, not NavLink: it navigates out of the dapp, so it
+            never carries an active state. */}
+        <Link to="/" className="dapp-lockup" aria-label="Latch Protocol — home">
           <img src="/brand/latch-mark-transparent.png" alt="" className="dapp-lockup__mark" />
           <span className="dapp-lockup__type">
             <span className="dapp-lockup__name">LATCH</span>
             <span className="dapp-lockup__tag">PROTOCOL</span>
           </span>
-        </div>
+        </Link>
 
         <nav aria-label="Screens">
           <ul className="dapp-nav">
@@ -63,6 +74,7 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
                   onClick={onClose}
                 >
                   <span className="dapp-nav__bar" aria-hidden="true" />
+                  {item.icon && <NavIcon name={item.icon} size={17} />}
                   <span>{item.label}</span>
                 </NavLink>
               </li>
@@ -72,28 +84,9 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
 
         <div className="dapp-sidebar__foot">
           <p className="dapp-sample-note">
-            Sample data · not connected to any chain
+            Live on Sepolia · testnet only
           </p>
-          <div className="dapp-credits">
-            <p className="dapp-microlabel">{shell.gasCredits.label}</p>
-            <div
-              className="dapp-credits__track"
-              role="progressbar"
-              aria-label={shell.gasCredits.label}
-              aria-valuenow={shell.gasCredits.pct}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <span className="dapp-credits__fill" style={{ width: `${shell.gasCredits.pct}%` }} />
-            </div>
-            <p className="dapp-credits__value">{shell.gasCredits.remaining}</p>
-          </div>
-          <button type="button" className="dapp-wallet">
-            <span className="dapp-wallet__avatar" aria-hidden="true" />
-            <span className="dapp-wallet__address">{shell.wallet.address}</span>
-            <span className="dapp-dot dapp-dot--success dapp-dot--pulse" aria-hidden="true" />
-            <span className="dapp-sr">Wallet connected (sample session)</span>
-          </button>
+          <LatchConnectButton variant="sidebar" showChain />
         </div>
       </aside>
     </>

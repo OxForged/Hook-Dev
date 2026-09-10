@@ -145,9 +145,11 @@ export function LiveChainPanel() {
             </div>
           </dl>
           <p className="live-note">
-            The registry is deployed but nothing is listed yet, so this reads zero rather than
-            showing example hooks. Timelocks are deployed and enforce their floors; on Sepolia the
-            Vault is still owned by an EOA so it stays iterable.
+            {state.gov.hookCount === 0n
+              ? 'The registry is deployed but nothing is listed yet, so this reads zero rather than showing example hooks. '
+              : `Every one of these ${state.gov.hookCount} listings was read from the registry contract; none is an example. `}
+            Timelocks are deployed and enforce their floors; on Sepolia the Vault is still owned by
+            an EOA so it stays iterable.
           </p>
 
           <h3 className="live-sub-h">Vault holdings</h3>

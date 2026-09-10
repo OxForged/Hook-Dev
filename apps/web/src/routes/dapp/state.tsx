@@ -22,11 +22,11 @@ import type { ChainKey } from '../../data/chains.ts'
 import type { DappState, Filter, Flags, Range, Screen } from './data/types.ts'
 import { loadDeploy } from './data/deploy.ts'
 import { loadSettings } from './data/settings.ts'
-import { loadShell } from './data/shell.ts'
-import { useReducedMotion } from './lib/motion.ts'
+import { readBlockNumber } from '../../lib/chain'
 
 /** README § Interactions: "Block ticker — +1 every 4000ms". */
-const BLOCK_INTERVAL = 4000
+/* Sepolia produces a block roughly every 12s; polling faster just wastes RPC. */
+const BLOCK_POLL_MS = 12000
 /** README § Interactions: "Deploy simulation — 2.2s". */
 const SIMULATION_MS = 2200
 
@@ -47,8 +47,6 @@ const DappContext = createContext<DappStore | null>(null)
 export function DappStateProvider({ screen, children }: { screen: Screen; children: ReactNode }) {
   const deployDefaults = useMemo(loadDeploy, [])
   const settingsDefaults = useMemo(loadSettings, [])
-  const shell = useMemo(loadShell, [])
-  const reduced = useReducedMotion()
 
   const [range, setRange] = useState<Range>('30D')
   const [filter, setFilter] = useState<Filter>('All')
@@ -58,16 +56,34 @@ export function DappStateProvider({ screen, children }: { screen: Screen; childr
   const [deployed, setDeployed] = useState(false)
   const [net, setNet] = useState(settingsDefaults.defaultNetwork)
   const [flags, setFlags] = useState<Flags>(settingsDefaults.defaultFlags)
-  const [block, setBlock] = useState(shell.block)
+  const [block, setBlock] = useState<number | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  /* Live block ticker. JS-driven, so it carries its own reduced-motion guard:
-     under `reduce` the height stays put instead of animating on a timer. */
+  /* Real chain head, polled.
+
+     This used to seed a hardcoded 21,904,118 and increment it locally every 4s,
+     which produced a confident, monotonic, and entirely invented block height —
+     one that sat in the header a few hundred pixels above the live panel showing
+     Sepolia's actual height of 11.6M. Two different "block numbers" on one screen,
+     only one of them true.
+
+     `reduced` no longer gates this. Motion preferences govern animation, not
+     whether the number is real; under `reduce` the value still updates, it just
+     never had any business being a 4s tick in the first place. */
   useEffect(() => {
-    if (reduced) return
-    const id = setInterval(() => setBlock((b) => b + 1), BLOCK_INTERVAL)
-    return () => clearInterval(id)
-  }, [reduced])
+    let off = false
+    const tick = () => {
+      readBlockNumber()
+        .then((b) => !off && setBlock(Number(b)))
+        .catch(() => !off && setBlock(null))
+    }
+    tick()
+    const id = setInterval(tick, BLOCK_POLL_MS)
+    return () => {
+      off = true
+      clearInterval(id)
+    }
+  }, [])
 
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current)

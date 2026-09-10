@@ -19,14 +19,19 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { BaseError, decodeErrorResult, decodeFunctionData, parseAbi, type Hex } from "viem";
+import { decodeFunctionData, parseAbi } from "viem";
 import { buildQuoteBreakdown } from "../../src/core/math.js";
 import { validateIntegratorConfig, NO_INTEGRATOR_FEE } from "../../src/config/integrator.js";
 import { UNIVERSAL_ROUTER_ABI } from "../../src/callpath/constants.js";
 import { setupFork, type ForkContext } from "./harness.js";
 import {
+  CANONICAL_PERMIT2,
+  LATCH_PERIPHERY_SEPOLIA,
   LATCH_SEPOLIA,
   LIVE_POOL_ID,
+  PERMIT2,
+  lpFeeFromSwapFee,
+  POOL_LP_FEE_PIPS,
   POOL_PROTOCOL_FEE_PIPS,
   POOL_SWAP_FEE_PIPS,
   PROTOCOL_FEES_ABI,
@@ -128,6 +133,17 @@ describe("fork: swap execution", () => {
       args: [LIVE_POOL_ID],
     });
     expect(liquidity).toBeGreaterThan(0n);
+
+    // Nothing of the protocol was deployed by the harness: these are the live
+    // addresses, and setupFork has already re-read their wiring off the chain.
+    expect(fork.chain.contracts.universalRouter).toBe(LATCH_PERIPHERY_SEPOLIA.universalRouter);
+    expect(fork.chain.contracts.clPositionManager).toBe(
+      LATCH_PERIPHERY_SEPOLIA.clPositionManager,
+    );
+    // Permit2 is PancakeSwap's fork, baked into the router's immutables. The
+    // canonical address would take approvals and never be read.
+    expect(fork.chain.contracts.permit2).toBe(PERMIT2);
+    expect(fork.chain.contracts.permit2).not.toBe(CANONICAL_PERMIT2);
   });
 
   it("executes calldata from buildSwapCall and fills at the quoted amount", async () => {
@@ -167,6 +183,10 @@ describe("fork: swap execution", () => {
     expect(swap.fee).toBe(POOL_SWAP_FEE_PIPS);
     expect(swap.fee).toBe(3_997);
     expect(swap.protocolFee).toBe(POOL_PROTOCOL_FEE_PIPS);
+    // And the composition inverts: 3997 and 1000 decompose to exactly the LP fee
+    // the pool key declares, not merely to some pair that sums the same way.
+    expect(lpFeeFromSwapFee(swap.fee, swap.protocolFee)).toBe(POOL_LP_FEE_PIPS);
+    expect(lpFeeFromSwapFee(swap.fee, swap.protocolFee)).toBe(3_000);
     // The event reports the *swapper's* deltas: negative is paid in, positive is
     // taken out. ltUSD is currency0, so a zero-for-one exact-in shows -amountIn.
     expect(swap.amount0).toBe(-AMOUNT_IN);
@@ -311,7 +331,7 @@ describe("fork: swap execution", () => {
       value: request.value,
     });
     expect(receipt.status).toBe("reverted");
-    expect(await revertErrorName(request)).toBe("TooLittleReceived");
+    expect(await fork.revertErrorName(request)).toBe("TooLittleReceived");
 
     // Nothing moved: the revert is real, not a silently-succeeded swap.
     expect(await fork.balanceOf(fork.token0.address, fork.user)).toBe(beforeIn);
@@ -344,58 +364,9 @@ describe("fork: swap execution", () => {
     await expect(
       fork.send({ to: request.to, data: request.data, value: request.value }),
     ).rejects.toThrow(/reverted/);
-    expect(await revertErrorName(request)).toBe("TransactionDeadlinePassed");
+    expect(await fork.revertErrorName(request)).toBe("TransactionDeadlinePassed");
   });
 });
-
-/**
- * Names the custom error a transaction reverts with.
- *
- * Router failures arrive wrapped in `ExecutionFailed(commandIndex, message)`, so
- * this unwraps one level before naming the inner error - the difference between
- * "the swap floor was missed" and "the whole call was malformed" is exactly what
- * a failure-mode test has to distinguish.
- */
-async function revertErrorName(request: {
-  to: `0x${string}`;
-  data: Hex;
-  value: bigint;
-}): Promise<string | null> {
-  let data: Hex | null = null;
-  try {
-    await fork.publicClient.call({
-      account: fork.user,
-      to: request.to,
-      data: request.data,
-      value: request.value,
-    });
-    return null;
-  } catch (error) {
-    const raw = error as { walk?: (fn: (e: unknown) => boolean) => unknown };
-    const inner = raw.walk?.((e) => e instanceof BaseError && "data" in e) as
-      | { data?: Hex }
-      | undefined;
-    data = inner?.data ?? null;
-    if (data === null) {
-      const message = error instanceof Error ? error.message : String(error);
-      const match = /0x[0-9a-fA-F]{8,}/.exec(message);
-      data = match ? (match[0] as Hex) : null;
-    }
-  }
-  if (data === null) return null;
-
-  const errorAbi = parseAbi([
-    "error ExecutionFailed(uint256 commandIndex, bytes message)",
-    "error TransactionDeadlinePassed()",
-    "error TooLittleReceived(uint256 minAmountOutReceived, uint256 amountReceived)",
-    "error TooMuchRequested(uint256 maxAmountInRequested, uint256 amountRequested)",
-  ]);
-  const decoded = decodeErrorResult({ abi: errorAbi, data });
-  if (decoded.errorName !== "ExecutionFailed") return decoded.errorName;
-  const wrapped = decoded.args?.[1] as Hex | undefined;
-  if (wrapped === undefined || wrapped === "0x") return "ExecutionFailed";
-  return decodeErrorResult({ abi: errorAbi, data: wrapped }).errorName;
-}
 
 function request_integratorFee(request: { integratorFee?: { expectedAmount: bigint } }): bigint {
   return request.integratorFee?.expectedAmount ?? 0n;

@@ -41,6 +41,55 @@ export type {
   DecodedEventBase,
 } from "./events/index.js";
 
+// --- hook registry ---------------------------------------------------------
+// The on-chain hook marketplace. Three independent axes - what a curator
+// attested (Verification), whether the registry still recommends it (Listing),
+// and what the code can do (RiskClass, derived from the bitmap alone).
+export * as registry from "./registry/index.js";
+export {
+  LATCH_HOOK_REGISTRY_ABI,
+  LATCH_HOOK_REGISTRY_EVENTS_ABI,
+  LISTING_STATUSES,
+  RISK_CLASSES,
+  VERIFICATION_LEVELS,
+  classifyRiskClass,
+  decodeHookRecord,
+  describeCapabilities,
+  formatHookTrust,
+  hookPermissionState,
+  isValidHookBitmap,
+  listingFromUint8,
+  listingToUint8,
+  permissionsAreAttestable,
+  riskClassFromUint8,
+  riskClassOf,
+  riskClassToUint8,
+  summarizeHook,
+  verificationFromUint8,
+  verificationRank,
+  verificationToUint8,
+} from "./registry/index.js";
+export type {
+  HookCapabilities,
+  HookMetadata,
+  HookPermissionState,
+  HookRecord,
+  HookTrustSummary,
+  HookWarning,
+  Listing,
+  RawHookRecord,
+  RiskClass,
+  Verification,
+} from "./registry/index.js";
+
+// --- launchpad -------------------------------------------------------------
+export * as launchpad from "./launchpad/index.js";
+export {
+  BIN_LAUNCH_GUARD_HOOK_ABI,
+  LAUNCHPAD_KIT_ABI,
+  LAUNCH_GUARD_HOOK_ABI,
+} from "./launchpad/index.js";
+
 // --- indexer model ---------------------------------------------------------
 export * as indexer from "./indexer/index.js";
 

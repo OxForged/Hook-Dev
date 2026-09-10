@@ -275,6 +275,11 @@ img {
   --dapp-badge-warn-bg: rgba(79, 67, 33, 0.3);
   --dapp-badge-mute-border: #2a3448;
   --dapp-badge-mute-bg: rgba(42, 52, 72, 0.3);
+  /* One step past --warn, for the hook marketplace's value-extracting and
+     flagged-malicious badges. Derived from --error so it cannot drift from the
+     error dot and the flagged card border it sits beside. */
+  --dapp-badge-danger-border: color-mix(in srgb, var(--error) 45%, transparent);
+  --dapp-badge-danger-bg: color-mix(in srgb, var(--error) 16%, transparent);
 
   --dapp-grad-panel: linear-gradient(180deg, #080e1a, #05080f);
   --dapp-grad-pool: linear-gradient(120deg, #081227, #05080f);

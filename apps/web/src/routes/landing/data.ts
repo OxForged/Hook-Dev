@@ -27,6 +27,8 @@
  * the report accompanying this change.
  */
 
+import { GITHUB_URL } from './socials'
+
 /* ------------------------------------------------------------------ tones */
 
 /** Data-series tones. Components map these to token-backed CSS classes so a
@@ -36,28 +38,70 @@ export type Tone = 'primary' | 'signal' | 'violet' | 'success' | 'amber'
 /* ------------------------------------------------------------------ header */
 
 export interface NavItem {
+  /** Decorative glyph; the visible label carries the accessible name. */
+  icon?: import('../../components/NavIcon').IconName
   readonly label: string
-  /** Router path when internal, `#anchor` when it targets this page. */
+  /**
+   * A router path (`/docs`) or a landing-page section (`#ecosystem`).
+   *
+   * There is deliberately no `active` flag. `SiteHeader` is rendered by the
+   * legal pages and the verify page as well as by `/`, so a flag baked into
+   * the data announced the same item as the current page on every route — the
+   * screen-reader bug this replaced. Active state is derived from the router's
+   * location at render time instead, and only a real route can be "current":
+   * a section anchor is a position on a page, not a page.
+   */
   readonly href: string
-  readonly active?: boolean
 }
 
+/**
+ * PRIMARY NAV — four destinations and one call to action, and nothing else.
+ *
+ * What was dropped and why:
+ *   Home       the lockup beside it is already a link to `/`. Two home links in
+ *              12cm of chrome is one too many, and this was the item carrying
+ *              the bogus `active: true`.
+ *   Revenue    a subsection of the pitch, not a destination. It sits in the
+ *              footer's Protocol column with the rest of the story.
+ *   Brand Kit  a resource for people who already know what Latch is. Footer,
+ *              plus the mobile menu (see MENU_NAV) where space is cheap.
+ *
+ * The order is the order a stranger needs them: what you can build with it,
+ * how it works, the reference, who is building it.
+ */
 export const NAV: readonly NavItem[] = [
-  { label: 'Home', href: '#home', active: true },
-  { label: 'Developers', href: '#developers' },
-  { label: 'Docs', href: '/docs' },
-  { label: 'Ecosystem', href: '#ecosystem' },
-  { label: 'About', href: '#about' },
-  { label: 'Brand Kit', href: '/brand' },
+  { label: 'Ecosystem', href: '#ecosystem', icon: 'ecosystem' },
+  { label: 'Developers', href: '#developers', icon: 'developers' },
+  { label: 'Docs', href: '/docs', icon: 'docs' },
+  { label: 'About', href: '#about', icon: 'about' },
 ]
 
-/** Route targets. Placeholders until the real repo / audit pages exist. */
+/**
+ * The mobile disclosure menu carries one more row than the desktop bar: a
+ * vertical list has room for Brand Kit, and small-screen visitors are the ones
+ * least able to go hunting in the footer for it.
+ */
+export const MENU_NAV: readonly NavItem[] = [
+  ...NAV,
+  { label: 'Brand Kit', href: '/brand', icon: 'brand' },
+]
+
+/**
+ * Route targets. `github` is the real org, imported from ./socials.ts so
+ * exactly one module in the app knows the URL.
+ *
+ * `audits` used to be `#audit` — an anchor that exists on no page, so the
+ * footer link silently did nothing. It now points at the activity section,
+ * which is where the audit status is actually stated (and stated as "None").
+ */
 export const LINKS = {
   docs: '/docs',
   brand: '/brand',
   app: '/app',
-  github: '#github',
-  audits: '#audit',
+  github: GITHUB_URL,
+  audits: '#activity',
+  privacy: '/privacy',
+  terms: '/terms',
 } as const
 
 /* -------------------------------------------------------------------- hero */
@@ -70,118 +114,61 @@ export interface HeroNode {
 }
 
 export const HERO_NODES: readonly HeroNode[] = [
-  { label: 'LENDING', x: 20, y: 4 },
-  { label: 'NFTs', x: 74, y: 10 },
-  { label: 'GAMING', x: 80, y: 46 },
-  { label: 'DeFi', x: 70, y: 84 },
-  { label: 'RWA', x: 8, y: 78 },
+  { label: 'LAUNCHPADS', x: 20, y: 4 },
+  { label: 'STOCK PAIRS', x: 74, y: 10 },
+  { label: 'RWA', x: 80, y: 46 },
+  { label: 'PERPS', x: 70, y: 84 },
+  { label: 'DEX', x: 8, y: 78 },
   { label: 'AMM', x: 0, y: 40 },
 ]
 
-/* ------------------------------------------------------------- stats strip */
+/* ------------------------------------------------- verified protocol facts */
 
-export interface Stat {
-  readonly value: string
-  readonly label: string
-}
+/**
+ * Everything below is a figure someone can check, and every one of them was
+ * produced by running something rather than by choosing a number that looked
+ * plausible. What they replaced — a TVL area chart, a gas histogram, a
+ * TVL-by-network donut, "1,840 latches deployed", and "Audit coverage: 94% of
+ * TVL" — was invented and merely labelled as illustrative.
+ */
 
-/** Placeholder figures — see the file header. */
-export const STATS: readonly Stat[] = [
-  { value: '$412M', label: 'VALUE ROUTED THROUGH LATCHES' },
-  { value: '1,840', label: 'LATCHES DEPLOYED' },
-  { value: '9', label: 'NETWORKS LIVE' },
-  { value: '27ms', label: 'MEDIAN HOOK OVERHEAD' },
-]
-
-/* ---------------------------------------------------------------- activity */
-
-export type RangeKey = '30D' | '90D' | '1Y'
-
-export const RANGES: readonly RangeKey[] = ['30D', '90D', '1Y']
-export const DEFAULT_RANGE: RangeKey = '1Y'
-
-export interface ActivitySeries {
-  readonly labels: readonly string[]
-  readonly pts: readonly number[]
-  readonly headline: string
-  readonly delta: string
-}
-
-export const ACTIVITY: Record<RangeKey, ActivitySeries> = {
-  '30D': {
-    labels: ['W1', 'W2', 'W3', 'W4'],
-    pts: [352, 368, 381, 412],
-    headline: '$412M',
-    delta: '+17.0% / 30d',
-  },
-  '90D': {
-    labels: ['Apr', 'May', 'Jun'],
-    pts: [268, 301, 344, 362, 381, 412],
-    headline: '$412M',
-    delta: '+53.7% / 90d',
-  },
-  '1Y': {
-    labels: ['Oct', 'Dec', 'Feb', 'Apr', 'Jun', 'Sep'],
-    pts: [64, 88, 102, 141, 168, 205, 248, 262, 301, 344, 381, 412],
-    headline: '$412M',
-    delta: '+544% / 1y',
-  },
-}
-
-export interface CategoryBar {
+export interface FactRow {
   readonly name: string
   readonly value: string
-  /** Bar width, 0–100. */
-  readonly pct: number
-  readonly tone: Tone
-}
-
-export const CALL_CATEGORIES: readonly CategoryBar[] = [
-  { name: 'AMM / swap hooks', value: '18.4M', pct: 100, tone: 'primary' },
-  { name: 'Lending markets', value: '7.1M', pct: 39, tone: 'signal' },
-  { name: 'NFT / assets', value: '3.6M', pct: 20, tone: 'violet' },
-  { name: 'Gaming', value: '2.2M', pct: 12, tone: 'success' },
-]
-
-/** Gas overhead histogram, 14 buckets, values as a percentage of the peak. */
-export const GAS_COLUMNS: readonly number[] = [8, 17, 34, 58, 92, 100, 84, 61, 44, 31, 22, 15, 10, 6]
-export const GAS_AXIS = ['2k', 'median 8.4k', '40k'] as const
-
-export interface NetworkShare {
-  readonly name: string
-  readonly pct: number
-  readonly tone: Tone
-}
-
-export const TVL_BY_NETWORK: readonly NetworkShare[] = [
-  { name: 'Ethereum', pct: 41, tone: 'primary' },
-  { name: 'Base', pct: 27, tone: 'signal' },
-  { name: 'Arbitrum', pct: 19, tone: 'violet' },
-  { name: 'Others', pct: 13, tone: 'success' },
-]
-
-/** Latches deployed per week, 20 buckets. Scaled against the last value. */
-export const DEPLOY_COLUMNS: readonly number[] = [
-  12, 18, 15, 24, 31, 27, 38, 44, 36, 52, 48, 61, 57, 70, 66, 74, 81, 77, 88, 96,
-]
-export const DEPLOY_CAPTION = '1,840 total · 96 added this week'
-
-export interface HealthRow {
-  readonly name: string
-  readonly value: string
-  readonly tone: Tone
+  /** Maps to a landing.module.css tone class. */
+  readonly toneClass: string
 }
 
 /**
- * SCREENS.md § A4 calls this card "REGISTRY HEALTH" with a "Verified latches"
- * row. There is no registry contract, so the card is PROTOCOL HEALTH and the
- * row is source verification — the thing that is actually verifiable on a block
- * explorer. The figures remain placeholders.
+ * Gas observed in executed transactions on an anvil fork of Sepolia
+ * (packages/widgets test/fork), not `eth_estimateGas` and not a guess.
  */
-export const PROTOCOL_HEALTH: readonly HealthRow[] = [
-  { name: 'Source-verified hooks', value: '1,612 / 1,840', tone: 'success' },
-  { name: 'Reverts (24h)', value: '0.021%', tone: 'primary' },
-  { name: 'Audit coverage', value: '94% of TVL', tone: 'amber' },
+export const MEASURED_GAS: readonly { name: string; gas: string }[] = [
+  { name: 'Single-hop swap', gas: '172,049' },
+  { name: 'Two-hop swap', gas: '225,618' },
+]
+
+/**
+ * Contracts exist on exactly one network. The other ten are targets, and the
+ * chain switcher, the dapp network chip and this row all say so identically —
+ * a visitor should never have to reconcile two different answers.
+ */
+export const NETWORK_REACH: readonly FactRow[] = [
+  { name: 'Deployed', value: 'Ethereum Sepolia', toneClass: 'toneSuccess' },
+  { name: 'Targeted, no contracts', value: '10 networks', toneClass: 'toneMuted' },
+  { name: 'Mainnet', value: 'None yet', toneClass: 'toneMuted' },
+]
+
+/**
+ * Test counts from suites that run in CI, each figure taken from that suite's
+ * own output. The audit row is the reason this card exists: it is the one place
+ * a placeholder could have done real harm.
+ */
+export const TEST_COVERAGE: readonly FactRow[] = [
+  { name: 'Solidity tests', value: '256 passing', toneClass: 'toneSuccess' },
+  { name: 'Widget tests', value: '77 unit + 22 fork', toneClass: 'toneSuccess' },
+  { name: 'Hook linter rules', value: '12 rules, 65 tests', toneClass: 'toneSuccess' },
+  { name: 'Third-party audit', value: 'None', toneClass: 'toneAmber' },
 ]
 
 /* --------------------------------------------------------------- use cases */
@@ -190,28 +177,82 @@ export interface UseCase {
   readonly name: string
   readonly tag: string
   readonly body: string
+  /** What actually exists today. The cards are a roadmap as much as a pitch, and
+      a visitor who integrates on a promise and finds a stub does not come back. */
+  readonly status: 'Live on testnet' | 'In development'
 }
 
+/**
+ * The four markets Latch is built for.
+ *
+ * These replaced a generic DeFi / Gaming / NFTs / RWA grid. That grid described
+ * every hook protocol ever written and therefore described none of them; these
+ * are the integrations we are actually shipping for, in the order we are
+ * shipping them.
+ *
+ * Each carries its real status. LaunchGuard is deployed, registered on chain and
+ * covered by 55 tests; the stock-pair and revenue-share kits are contracts under
+ * active development. Labelling all four "live" would win a visitor once.
+ */
 export const USE_CASES: readonly UseCase[] = [
   {
-    name: 'DeFi',
-    tag: 'AMM · LENDING',
-    body: 'Dynamic fees, custom curves, JIT liquidity and yield routing attached directly to pool lifecycle events.',
+    name: 'DEX & AMM',
+    tag: 'DYNAMIC FEES · CUSTOM CURVES',
+    body: 'Attach fee logic, JIT liquidity and routing to pool lifecycle events. Concentrated-liquidity and bin pools share one Vault, so a hook written once serves both.',
+    status: 'Live on testnet',
   },
   {
-    name: 'Gaming',
-    tag: 'ONCHAIN GAMES',
-    body: 'Mint, burn and reward logic that reacts to in-game state without a custom AMM deployment per title.',
+    name: 'Launchpads',
+    tag: 'SNIPER PROTECTION',
+    body: 'A decaying launch tax priced on time rather than identity — the only thing a hook can actually see. One call attaches it to a new pool; no address mining, no redeploy.',
+    status: 'Live on testnet',
   },
   {
-    name: 'NFTs',
-    tag: 'PROGRAMMABLE ASSETS',
-    body: 'Latches let collections mutate metadata, royalties and access rules from onchain conditions.',
+    name: 'Stock & RWA pairs',
+    tag: 'COMPLIANCE · MARKET HOURS',
+    body: 'Trading gated on a pluggable compliance oracle, with session hours, issuer halts and oracle price bands. Equities do not trade around the clock and the pool should not pretend otherwise.',
+    status: 'In development',
   },
   {
-    name: 'RWA',
-    tag: 'COMPLIANCE',
-    body: 'Transfer restrictions, KYC gating and oracle-driven settlement enforced at the hook layer.',
+    name: 'Donations & holder share',
+    tag: 'REVENUE FROM VOLUME',
+    body: 'Route a share of trading volume to liquidity providers, named beneficiaries or token holders — accrued and claimed, never pushed, so one hostile recipient cannot block a swap.',
+    status: 'In development',
+  },
+]
+
+/* --------------------------------------------------- revenue share mechanics */
+
+export interface ShareRoute {
+  readonly name: string
+  readonly mechanism: string
+  readonly body: string
+}
+
+/**
+ * How a share of trading volume actually reaches someone.
+ *
+ * This section exists because "holders earn from volume" is the easiest claim in
+ * DeFi to make and one of the harder ones to implement honestly. The naive
+ * version iterates holders on chain; holder sets are unbounded and anyone can
+ * grow one, so that loop is a permanent denial of service on the swap path
+ * waiting to be triggered. All three routes below are pull-based for that reason.
+ */
+export const SHARE_ROUTES: readonly ShareRoute[] = [
+  {
+    name: 'Liquidity providers',
+    mechanism: 'Native donate()',
+    body: 'The pool distributes directly to in-range liquidity. Cheapest route, and the only one that needs no extra accounting — it is a protocol primitive, not a hook invention.',
+  },
+  {
+    name: 'Named beneficiaries',
+    mechanism: 'Weighted pull claims',
+    body: 'A treasury, a creator, a donation address. Fees accrue to a per-recipient balance and are claimed, never pushed: a push to a contract that reverts would revert the swap that funded it.',
+  },
+  {
+    name: 'Token holders',
+    mechanism: 'Merkle epochs',
+    body: 'An epoch closes, a root is posted, holders claim against it. This is how an ordinary ERC-20 gets a holder share without a snapshot token and without an unbounded on-chain loop.',
   },
 ]
 
@@ -345,12 +386,56 @@ export interface FooterLink {
   readonly href: string
 }
 
-export const FOOTER_LINKS: readonly FooterLink[] = [
-  { label: 'Docs', href: LINKS.docs },
-  { label: 'GitHub', href: LINKS.github },
-  { label: 'Audits', href: LINKS.audits },
-  { label: 'Brand Kit', href: LINKS.brand },
-  { label: 'Launch App', href: LINKS.app },
+export interface FooterGroup {
+  /** Mono micro-label above the column. */
+  readonly title: string
+  readonly links: readonly FooterLink[]
+}
+
+/**
+ * FOOTER — the full map of the site, grouped.
+ *
+ * The old footer was a single undifferentiated row of seven: Docs sat beside
+ * Terms sat beside Launch App, which told a reader nothing about which of them
+ * they wanted. Four columns answer four different questions — what the protocol
+ * does, how to build on it, who made it, and what the legal position is — and
+ * everything the top nav no longer carries has a home here.
+ *
+ * Legal lives here and only here. A privacy policy is something a visitor looks
+ * for deliberately, once; it does not earn a slot in the primary nav.
+ */
+export const FOOTER_GROUPS: readonly FooterGroup[] = [
+  {
+    title: 'Protocol',
+    links: [
+      { label: 'Use cases', href: '#ecosystem' },
+      { label: 'Revenue share', href: '#revenue' },
+      { label: 'How it works', href: '#developers' },
+      { label: 'Activity & audits', href: LINKS.audits },
+    ],
+  },
+  {
+    title: 'Build',
+    links: [
+      { label: 'Docs', href: LINKS.docs },
+      { label: 'Launch App', href: LINKS.app },
+      { label: 'GitHub', href: LINKS.github },
+    ],
+  },
+  {
+    title: 'Project',
+    links: [
+      { label: 'About', href: '#about' },
+      { label: 'Brand Kit', href: LINKS.brand },
+    ],
+  },
+  {
+    title: 'Legal',
+    links: [
+      { label: 'Privacy', href: LINKS.privacy },
+      { label: 'Terms', href: LINKS.terms },
+    ],
+  },
 ]
 
 export const COPYRIGHT = '© 2026 LATCH PROTOCOL'

@@ -22,9 +22,10 @@ export function Hero() {
           Limitless <span className={styles['accent']}>Possibilities.</span>
         </h1>
         <p className={styles['lead']}>
-          Latch Protocol is the infrastructure layer for custom hooks — we call them Latches. Attach
-          programmable logic to pools, markets and assets without forking a protocol or redeploying
-          it.
+          Latch Protocol is the hook layer for DEXs, AMMs, launchpads and tokenized real-world
+          assets. Gate a stock pair on compliance and market hours, tax snipers on a decaying
+          curve, or route a share of trading volume to holders — without forking a protocol,
+          redeploying it, or mining a contract address.
         </p>
         <div className={styles['heroActions']}>
           <Link to={LINKS.app} className={styles['btnPrimary']}>

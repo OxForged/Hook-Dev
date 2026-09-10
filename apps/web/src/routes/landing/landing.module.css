@@ -137,15 +137,23 @@
   position: sticky;
   top: 0;
   z-index: 50;
+  background: var(--header-bg);
+  backdrop-filter: blur(var(--header-blur));
+  -webkit-backdrop-filter: blur(var(--header-blur));
+  border-bottom: 1px solid var(--header-border);
+}
+
+/* The bar itself. Separate from .header so the disclosure panel can hang off
+   the header's box without changing its height, and so the bar can sit above
+   the scrim in the same stacking context. */
+.headerBar {
+  position: relative;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
   padding: 14px 28px;
-  background: var(--header-bg);
-  backdrop-filter: blur(var(--header-blur));
-  -webkit-backdrop-filter: blur(var(--header-blur));
-  border-bottom: 1px solid var(--header-border);
 }
 
 .lockup {
@@ -199,28 +207,177 @@
   font-size: 11px;
 }
 
+/* Nav, accounts, CTA — three groups, not one undifferentiated run of items, so
+   the eye can tell "places to go" from "the thing to click". */
 .nav {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 26px;
+  gap: 18px;
   font-size: 14px;
 }
 
+.navList {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Decorative glyph + label; the glyph inherits currentColor from the link. */
 .navLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: var(--nav-ink);
   text-decoration: none;
+  white-space: nowrap;
   transition: color 0.2s;
 }
 
-.navLink:hover {
+.navLink svg {
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.navLink:hover,
+.navLink:focus-visible {
   color: var(--sky-ink);
+}
+
+.navLink:hover svg,
+.navLink:focus-visible svg,
+.navLinkActive svg {
+  opacity: 1;
 }
 
 .navLinkActive {
   color: var(--signal-blue);
   font-weight: 500;
+}
+
+/* Account cluster. A hairline, not a gap, separates it from the links: it is a
+   different kind of thing, and 26px of empty space would have read as one more
+   nav item that had simply lost its label. */
+.headerSocials {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 0 14px;
+  list-style: none;
+  border-left: 1px solid var(--header-border);
+}
+
+.socialLinkSm {
+  width: 28px;
+  height: 28px;
+}
+
+/* Disclosure trigger — hidden until the links collapse (see the 860px block). */
+.menuBtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-chip);
+  background: var(--panel-alt);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.menuBtn:hover {
+  border-color: var(--border-hover);
+  color: var(--sky-ink);
+}
+
+/* Covers the page, never the bar: the bar is z-index 3 in this same context, so
+   the lockup and the CTA stay legible while the menu is open. */
+.menuScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: var(--docs-scrim);
+}
+
+.menuPanel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: min(72vh, 560px);
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--header-border);
+  box-shadow: var(--sh-card-hover);
+}
+
+/* .menuPanel sets display:flex, which would beat the UA's [hidden] rule. */
+.menuPanel[hidden] {
+  display: none;
+}
+
+.menuList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.menuLink {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px;
+  border-radius: var(--r-chip);
+  color: var(--ink);
+  font-size: 15px;
+  text-decoration: none;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+
+.menuLink svg {
+  color: var(--signal-blue);
+  opacity: 0.85;
+}
+
+.menuLink:hover,
+.menuLink:focus-visible {
+  background: var(--active-nav);
+  color: var(--ink-bright);
+}
+
+.menuFoot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.menuLabel {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  color: var(--label-ink);
 }
 
 .launchPill {
@@ -618,7 +775,7 @@
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.16em;
-  color: var(--label-ink);
+  --tone: var(--label-ink);
 }
 
 .areaChart {
@@ -682,7 +839,7 @@
   font-weight: 400;
   font-size: 10.5px;
   letter-spacing: 0.16em;
-  color: var(--label-ink);
+  --tone: var(--label-ink);
 }
 
 .barList {
@@ -1170,7 +1327,7 @@
   font-weight: 500;
   font-size: 11px;
   letter-spacing: 0.22em;
-  color: var(--label-ink);
+  --tone: var(--label-ink);
 }
 
 .chainGroupCount {
@@ -1253,7 +1410,7 @@ span.chainMark {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.04em;
-  color: var(--label-ink);
+  --tone: var(--label-ink);
 }
 
 .chainBadge {
@@ -1508,22 +1665,59 @@ span.chainMark {
 
 .footer {
   box-sizing: content-box;
+  max-width: var(--max-landing);
+  margin: 0 auto;
+  padding: 56px var(--gutter-landing) 56px;
+}
+
+.footerTop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr);
+  gap: 44px;
+  align-items: start;
+}
+
+.footerBrand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.footerGroups {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 30px 20px;
+}
+
+.footerGroupTitle {
+  margin: 0 0 14px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--label-ink);
+}
+
+.footerList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+}
+
+.footerBottom {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  max-width: var(--max-landing);
-  margin: 0 auto;
-  padding: 56px var(--gutter-landing) 64px;
-}
-
-.footerLinks {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 24px;
-  font-size: 13.5px;
+  gap: 16px;
+  margin-top: 44px;
+  padding-top: 22px;
+  border-top: 1px solid var(--hairline-soft);
 }
 
 .footerLink {
@@ -1532,8 +1726,47 @@ span.chainMark {
   transition: color 0.2s;
 }
 
-.footerLink:hover {
+.footerLink:hover,
+.footerLink:focus-visible {
   color: var(--sky-ink);
+}
+
+.footerLink:focus-visible,
+.socialLink:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 3px;
+  border-radius: var(--r-micro);
+}
+
+/* Social icon row. Icons are drawn with `fill: currentColor`, so the same
+   colour transition the text links use recolours the glyph — no second set of
+   hover rules and no per-brand colour anywhere. */
+.socials {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.socialLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-micro);
+  color: var(--mono-data-dim);
+  transition:
+    color 0.2s,
+    background 0.2s;
+}
+
+.socialLink:hover,
+.socialLink:focus-visible {
+  color: var(--sky-ink);
+  background: var(--active-nav);
 }
 
 .copyright {
@@ -1565,17 +1798,28 @@ span.chainMark {
   }
 }
 
+/* The nav collapses here. `COMPACT` in SiteHeader.tsx must match this width —
+   it is what closes a menu that is left open while the window is widened. */
 @media (max-width: 860px) {
-  .header {
-    flex-wrap: wrap;
-    gap: 14px;
+  .headerBar {
+    gap: 12px;
     padding: 12px 20px;
   }
 
-  .nav {
-    gap: 18px;
-    width: 100%;
-    justify-content: flex-start;
+  /* display:none, not visibility or opacity: these links must leave the tab
+     order entirely while the menu owns them. */
+  .navList,
+  .headerSocials {
+    display: none;
+  }
+
+  .menuBtn {
+    display: inline-flex;
+  }
+
+  .footerTop {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 34px;
   }
 
   .section,
@@ -1623,9 +1867,23 @@ span.chainMark {
     font-size: clamp(28px, 8vw, 38px);
   }
 
-  .nav {
-    gap: 14px;
-    font-size: 13px;
+  /* 320px is the floor: lockup + pill + trigger have to fit one row. */
+  .headerBar {
+    gap: 10px;
+    padding: 10px 16px;
+  }
+
+  .launchPill {
+    padding: 9px 16px;
+  }
+
+  .menuBtn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .footerGroups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .graph {
@@ -1666,8 +1924,8 @@ span.chainMark {
     left: 18px;
   }
 
-  .footer {
-    justify-content: flex-start;
+  .footerBottom {
+    margin-top: 34px;
   }
 }
 
@@ -1724,8 +1982,67 @@ span.chainMark {
   .btnSecondary,
   .launchPill,
   .navLink,
+  .navLink svg,
+  .menuBtn,
+  .menuLink,
   .rangeBtn,
-  .footerLink {
+  .footerLink,
+  .socialLink {
     transition: none !important;
   }
+}
+
+/* Use-case status badge.
+
+   The use-case cards double as a roadmap: two of the four markets are contracts
+   under active development. Live and in-development read differently at a glance
+   — green filled versus a muted outline — because a visitor scanning the grid
+   should not have to read the word to know which is which. Colour is not the only
+   carrier: the label itself always says which state it is in. */
+.useCaseStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.useCaseStatus::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.useCaseStatusLive {
+  color: var(--success-ink, #4ade80);
+  background: color-mix(in srgb, var(--success-ink, #4ade80) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success-ink, #4ade80) 28%, transparent);
+}
+.useCaseStatusSoon {
+  --tone: var(--label-ink);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--label-ink) 32%, transparent);
+}
+
+/* Lead paragraph under a section heading, above its card grid. */
+.sectionLead {
+  max-width: 62ch;
+  margin: 14px auto 0;
+  --tone: var(--label-ink);
+  font-size: 14.5px;
+  line-height: 1.65;
+  text-align: center;
+}
+
+/* Neutral tone for a fact that is neither good news nor a warning — a network we
+   have not deployed to yet is simply a fact, and colouring it red would overstate
+   it as much as colouring it green would flatter it. */
+.toneMuted {
+  --tone: var(--label-ink);
 }

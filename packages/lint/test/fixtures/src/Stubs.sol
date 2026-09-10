@@ -147,3 +147,68 @@ library Hooks {
         bool afterRemoveLiquidityReturnDelta;
     }
 }
+
+interface IBinPoolManager {
+    struct MintParams {
+        bytes32[] liquidityConfigs;
+        bytes32 amountIn;
+        bytes32 salt;
+    }
+
+    struct BurnParams {
+        uint256[] ids;
+        uint256[] amountsToBurn;
+        bytes32 salt;
+    }
+
+    struct SwapParams {
+        bool swapForY;
+        int128 amountSpecified;
+    }
+}
+
+/// @notice Bin callbacks. `beforeMint` returns `(bytes4, uint24)`: the fee sits
+/// at tuple position 1, not 2 as it does on `beforeSwap`.
+interface IBinHooks {
+    function beforeInitialize(address sender, PoolKey calldata key, uint24 activeId) external returns (bytes4);
+    function afterInitialize(address sender, PoolKey calldata key, uint24 activeId) external returns (bytes4);
+    function beforeMint(
+        address sender,
+        PoolKey calldata key,
+        IBinPoolManager.MintParams calldata params,
+        bytes calldata hookData
+    ) external returns (bytes4, uint24);
+    function afterMint(
+        address sender,
+        PoolKey calldata key,
+        IBinPoolManager.MintParams calldata params,
+        BalanceDelta delta,
+        bytes calldata hookData
+    ) external returns (bytes4, BalanceDelta);
+    function beforeBurn(
+        address sender,
+        PoolKey calldata key,
+        IBinPoolManager.BurnParams calldata params,
+        bytes calldata hookData
+    ) external returns (bytes4);
+    function afterBurn(
+        address sender,
+        PoolKey calldata key,
+        IBinPoolManager.BurnParams calldata params,
+        BalanceDelta delta,
+        bytes calldata hookData
+    ) external returns (bytes4, BalanceDelta);
+    function beforeSwap(
+        address sender,
+        PoolKey calldata key,
+        IBinPoolManager.SwapParams calldata params,
+        bytes calldata hookData
+    ) external returns (bytes4, BeforeSwapDelta, uint24);
+    function afterSwap(
+        address sender,
+        PoolKey calldata key,
+        IBinPoolManager.SwapParams calldata params,
+        BalanceDelta delta,
+        bytes calldata hookData
+    ) external returns (bytes4, int128);
+}

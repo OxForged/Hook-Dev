@@ -1,8 +1,15 @@
 /* ============================================================================
-   Deploy a Hook data — SCREENS.md § C3.
-   MOCK SEAM: `loadDeploy()` plus `simulationLines()` / `preflightChecks()`,
-   which stand in for the simulator's response. No transaction is ever signed
-   or submitted: the "Register on Base ✓" state is a UI placeholder.
+   Register a Hook — screen data.
+
+   THIS IS NO LONGER A MOCK SEAM. The screen it backs signs a real
+   `LatchHookRegistry.register` transaction on Ethereum Sepolia. Everything the
+   user is shown about their hook — its permission bitmap, its capability class,
+   whether the registry will accept it — is read off chain by
+   `../lib/registryWrite.ts` and never fabricated here.
+
+   What remains in this module is the parts that genuinely are static screen
+   copy: the four step labels and the shape of the pre-flight list. The verdicts
+   filling that list are passed in; this file cannot invent one.
    ============================================================================ */
 
 export interface DeployStep {
@@ -11,74 +18,47 @@ export interface DeployStep {
   hint: string
 }
 
+/** A pre-flight row. `state` is tri-valued because "not yet known" is a real answer. */
+export type CheckState = 'ok' | 'fail' | 'pending' | 'idle'
+
 export interface PreflightCheck {
   name: string
   value: string
-  ok: boolean
+  state: CheckState
 }
 
 export interface DeployData {
   steps: DeployStep[]
-  contractAddress: string
-  callbacks: string[]
-  /** README § State management: `cbs` default. */
+  /*  ------------------------------------------------------------------------
+      Legacy state defaults.
+
+      `routes/dapp/state.tsx` still seeds its `cbs` and `budget` fields from
+      here. Those belonged to the old mock flow's callback chips and gas-budget
+      slider, both of which are gone from this screen: a submitter does not
+      choose a hook's callbacks, the hook's own bytecode does, and the registry
+      reads them rather than being told. They are kept only so the shared store
+      keeps compiling; nothing on this screen reads them.
+      ------------------------------------------------------------------------ */
   defaultCallbacks: string[]
-  /** README § State management: `budget` default 24, max 60 (thousands of gas). */
   defaultBudget: number
-  maxBudget: number
-  minBudget: number
-  /** Axis captions under the gas bar. */
-  budgetAxis: [string, string]
 }
 
 export function loadDeploy(): DeployData {
   return {
     steps: [
-      { n: '1', name: 'Contract', hint: 'address + ABI' },
-      { n: '2', name: 'Callbacks', hint: 'permission bitmap' },
-      { n: '3', name: 'Simulate', hint: 'replay mainnet' },
-      { n: '4', name: 'Register', hint: 'sign + submit' },
+      { n: '1', name: 'Hook contract', hint: 'deployed address' },
+      { n: '2', name: 'Listing', hint: 'name + links' },
+      { n: '3', name: 'Pre-flight', hint: 'simulate register()' },
+      { n: '4', name: 'Register', hint: 'sign + confirm' },
     ],
-    contractAddress: '0x71c2…9ef4',
-    callbacks: [
-      'beforeSwap',
-      'afterSwap',
-      'beforeAddLiquidity',
-      'afterAddLiquidity',
-      'beforeRemoveLiquidity',
-      'afterDonate',
-    ],
-    defaultCallbacks: ['beforeSwap', 'afterSwap'],
+    defaultCallbacks: [],
     defaultBudget: 24,
-    maxBudget: 60,
-    minBudget: 2,
-    budgetAxis: ['2k', '60k'],
   }
 }
 
-/** The six mono lines in the simulation output panel (SCREENS.md § C3). */
-export function simulationLines(deployed: boolean): string[] {
-  return [
-    '→ compiling FeeLatch.sol',
-    '✓ bytecode 4.2 KB · under 24 KB limit',
-    '✓ permission bitmap 0x0003 accepted',
-    '→ replaying 1,000 mainnet swaps',
-    '✓ median overhead 8,412 gas',
-    deployed ? '✓ ready to register on Base' : '· awaiting simulation',
-  ]
-}
-
-/** PRE-FLIGHT CHECKS. "Gas within budget" fails below 9k (SCREENS.md § C3). */
-export function preflightChecks(budget: number): PreflightCheck[] {
-  const withinBudget = budget >= 9
-  return [
-    { name: 'Bytecode size', value: '4.2 KB', ok: true },
-    { name: 'Reentrancy scan', value: 'clean', ok: true },
-    {
-      name: 'Gas within budget',
-      value: withinBudget ? `8.4k / ${budget}k` : 'over budget',
-      ok: withinBudget,
-    },
-    { name: 'Registry slot', value: 'available', ok: true },
-  ]
+export const DOT_BY_STATE: Record<CheckState, string> = {
+  ok: 'dapp-dot dapp-dot--success dapp-dot--lg',
+  fail: 'dapp-dot dapp-dot--error dapp-dot--lg',
+  pending: 'dapp-dot dapp-dot--primary dapp-dot--lg dapp-dot--pulse',
+  idle: 'dapp-dot dapp-dot--lg dapp-dot--flat',
 }

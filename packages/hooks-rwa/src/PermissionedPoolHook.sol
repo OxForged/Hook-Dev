@@ -347,7 +347,7 @@ contract PermissionedPoolHook is BaseCLHook, Ownable2Step, Pausable {
     /// @dev `beforeInitialize` gates pool creation; `beforeSwap` and `beforeAddLiquidity` gate
     /// entry; `beforeRemoveLiquidity` maintains the investor accumulator and applies the optional
     /// exit freeze. No returns-delta permission: this hook takes no value from the pool.
-    function getHooksRegistrationBitmap() public pure override returns (uint16) {
+    function getHooksRegistrationBitmap() public pure virtual override returns (uint16) {
         return BEFORE_INITIALIZE | BEFORE_ADD_LIQUIDITY | BEFORE_REMOVE_LIQUIDITY | BEFORE_SWAP;
     }
 
@@ -654,6 +654,7 @@ contract PermissionedPoolHook is BaseCLHook, Ownable2Step, Pausable {
     function _beforeInitialize(address, /* sender */ PoolKey calldata key, uint160 /* sqrtPriceX96 */ )
         internal
         view
+        virtual
         override
         returns (bytes4)
     {
@@ -677,7 +678,7 @@ contract PermissionedPoolHook is BaseCLHook, Ownable2Step, Pausable {
         PoolKey calldata key,
         ICLPoolManager.SwapParams calldata params,
         bytes calldata hookData
-    ) internal view override returns (bytes4, BeforeSwapDelta, uint24) {
+    ) internal view virtual override returns (bytes4, BeforeSwapDelta, uint24) {
         PoolId poolId = key.toId();
         PoolConfig storage cfg = _pools[poolId];
 
@@ -712,7 +713,7 @@ contract PermissionedPoolHook is BaseCLHook, Ownable2Step, Pausable {
         PoolKey calldata key,
         ICLPoolManager.ModifyLiquidityParams calldata params,
         bytes calldata hookData
-    ) internal override returns (bytes4) {
+    ) internal virtual override returns (bytes4) {
         PoolId poolId = key.toId();
         PoolConfig storage cfg = _pools[poolId];
 
@@ -759,7 +760,7 @@ contract PermissionedPoolHook is BaseCLHook, Ownable2Step, Pausable {
         PoolKey calldata key,
         ICLPoolManager.ModifyLiquidityParams calldata params,
         bytes calldata hookData
-    ) internal override returns (bytes4) {
+    ) internal virtual override returns (bytes4) {
         PoolId poolId = key.toId();
         PoolConfig storage cfg = _pools[poolId];
 

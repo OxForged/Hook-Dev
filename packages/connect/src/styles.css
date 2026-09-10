@@ -1,0 +1,339 @@
+/* ============================================================================
+   @latchprotocol/connect — component styles.
+
+   Import once, near the app's other global sheets:
+
+     import '@rainbow-me/rainbowkit/styles.css'
+     import '@latchprotocol/connect/styles.css'
+
+   RainbowKit's sheet must come FIRST. Ours only ever adds rules; it never
+   depends on cascade order against RainbowKit except for the optional modal
+   logo at the bottom of this file, which needs to win over their heading rules.
+
+   Every colour is written as `var(--token, #literal)`. In the Latch dapp the
+   fallback is never used — `apps/web/src/styles/tokens.css` defines all of them,
+   so this control inherits any future token change for free. In a third-party
+   host that never loaded those tokens, the literals carry the brand unaided.
+   Values are transcribed from that same token sheet; see src/theme/tokens.ts.
+   ============================================================================ */
+
+.latch-connect,
+.latch-chain {
+  --lc-ease: var(--ease, cubic-bezier(0.22, 0.61, 0.36, 1));
+  --lc-panel: var(--panel-alt, #080e1a);
+  --lc-line: var(--hairline, #16223a);
+  --lc-line-hover: var(--border-hover, #25528f);
+  --lc-ink: var(--ink, #e4ecf9);
+  --lc-ink-muted: var(--muted-ink, #8a9bb6);
+  --lc-ink-faint: var(--faint-ink, #697c9a);
+  --lc-blue: var(--latch-blue, #2b8bff);
+  --lc-blue-deep: var(--deep-blue, #0a63e0);
+  --lc-success: var(--success, #5fd39a);
+  --lc-warning: var(--warning, #e0c05f);
+  --lc-error: var(--error, #e06a6a);
+  --lc-radius: var(--r-btn, 12px);
+
+  font-family: var(--font-body, "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif);
+}
+
+/* ---------------------------------------------------------- screen-reader text */
+
+.latch-connect__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------------------------ status dot */
+
+.latch-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--lc-ink-faint);
+}
+.latch-dot--success { background: var(--lc-success); }
+.latch-dot--warning { background: var(--lc-warning); }
+.latch-dot--error { background: var(--lc-error); }
+.latch-dot--pending { background: var(--lc-warning); }
+
+.latch-dot--pulse { animation: latch-dot-pulse 2.4s var(--lc-ease) infinite; }
+
+@keyframes latch-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.82); }
+}
+
+/* Respect the OS setting. A pulsing dot is decoration; a vestibular trigger is
+   not an acceptable price for it. */
+@media (prefers-reduced-motion: reduce) {
+  .latch-dot--pulse { animation: none; }
+  .latch-connect__btn,
+  .latch-chain__trigger { transition: none; }
+}
+
+/* -------------------------------------------------------------- connect button */
+
+.latch-connect { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.latch-connect--sidebar { flex-direction: column; align-items: stretch; }
+
+.latch-connect__btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--lc-line);
+  border-radius: var(--lc-radius);
+  background: var(--lc-panel);
+  color: var(--lc-ink);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 0.25s var(--lc-ease), transform 0.25s var(--lc-ease),
+    background-color 0.25s var(--lc-ease);
+}
+.latch-connect__btn:hover:not(:disabled) {
+  border-color: var(--lc-line-hover);
+  transform: translateY(-1px);
+}
+.latch-connect__btn:focus-visible {
+  outline: 2px solid var(--lc-blue);
+  outline-offset: 2px;
+}
+.latch-connect__btn:disabled { cursor: not-allowed; opacity: 0.55; }
+
+.latch-connect--sidebar .latch-connect__btn { width: 100%; }
+.latch-connect--inline .latch-connect__btn { padding: 8px 12px; }
+
+/* CTA (disconnected) — the one control on the page that must read as primary. */
+.latch-connect__btn--cta {
+  justify-content: center;
+  border-color: transparent;
+  background: var(--grad-primary, linear-gradient(180deg, #2b8bff, #0a63e0));
+  color: var(--ink-bright, #ffffff);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.latch-connect__btn--cta:hover:not(:disabled) {
+  border-color: transparent;
+  box-shadow: var(--sh-btn, 0 10px 30px rgba(26, 127, 255, 0.32));
+}
+
+.latch-connect__plug {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  /* A plug glyph, inlined so the control needs no icon font or extra request. */
+  -webkit-mask: var(--latch-connect-plug-mask, none) center / contain no-repeat;
+  mask: var(--latch-connect-plug-mask, none) center / contain no-repeat;
+  border-radius: 3px;
+  opacity: 0.9;
+}
+
+.latch-connect__btn--error {
+  border-color: var(--lc-error);
+  color: var(--lc-error);
+  background: color-mix(in srgb, var(--lc-error) 10%, transparent);
+}
+
+.latch-connect__avatar {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--dapp-grad-avatar, linear-gradient(135deg, #2b8bff, #6c5cff));
+}
+
+.latch-connect__address {
+  font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.latch-connect__balance {
+  font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 11px;
+  color: var(--lc-ink-muted);
+}
+
+.latch-connect__label { min-width: 0; }
+
+.latch-connect__btn--account .latch-dot,
+.latch-connect__btn--error .latch-dot { margin-left: auto; }
+
+/* chain chip beside the account */
+.latch-connect__btn--chain { gap: 8px; padding: 9px 10px; }
+.latch-connect__chain-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--lc-line);
+  object-fit: contain;
+}
+.latch-connect__chain-name {
+  font-size: 12px;
+  color: var(--lc-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------- chain switcher */
+
+.latch-chain { position: relative; display: inline-block; }
+
+.latch-chain__trigger {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+  border: 1px solid var(--lc-line);
+  border-radius: var(--r-chip, 10px);
+  background: var(--lc-panel);
+  color: var(--lc-ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.25s var(--lc-ease);
+}
+.latch-chain__trigger:hover:not(:disabled) { border-color: var(--lc-line-hover); }
+.latch-chain__trigger:focus-visible { outline: 2px solid var(--lc-blue); outline-offset: 2px; }
+.latch-chain__trigger:disabled { cursor: not-allowed; opacity: 0.55; }
+.latch-chain__trigger.is-error { border-color: var(--lc-error); color: var(--lc-error); }
+
+.latch-chain__trigger-label {
+  max-width: 15ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.latch-chain__caret {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  opacity: 0.65;
+}
+
+.latch-chain__menu {
+  position: absolute;
+  z-index: 60;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 232px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--lc-line);
+  border-radius: var(--r-sm, 14px);
+  background: var(--panel, #070c17);
+  box-shadow: var(--sh-card-hover, 0 18px 48px rgba(4, 10, 24, 0.8));
+}
+
+.latch-chain__group {
+  padding: 8px 10px 4px;
+  font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lc-ink-faint);
+}
+
+.latch-chain__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--r-badge, 8px);
+  background: transparent;
+  color: var(--lc-ink);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.18s var(--lc-ease);
+}
+.latch-chain__row:hover:not(:disabled) { background: var(--lc-panel); }
+.latch-chain__row:focus-visible { outline: 2px solid var(--lc-blue); outline-offset: -2px; }
+.latch-chain__row:disabled { cursor: progress; opacity: 0.6; }
+.latch-chain__row.is-active { background: var(--active-nav, #173768); }
+
+.latch-chain__row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.latch-chain__row-id {
+  font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 10.5px;
+  color: var(--lc-ink-faint);
+}
+.latch-chain__row-tag {
+  padding: 2px 6px;
+  border-radius: var(--r-micro, 7px);
+  background: color-mix(in srgb, var(--lc-warning) 16%, transparent);
+  color: var(--lc-warning);
+  font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.latch-chain__row-state { font-size: 11px; color: var(--lc-ink-muted); }
+
+.latch-chain__error {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--lc-error);
+}
+
+/* ============================================================================
+   RainbowKit modal branding.
+
+   RainbowKit v2 exposes no prop for a logo in the connect modal — `appInfo`
+   carries `appName`, `learnMoreUrl` and `disclaimer` and nothing else — so the
+   mark is placed with CSS against `#rk_connect_title`, the id RainbowKit puts on
+   the modal heading for `aria-labelledby`.
+
+   This is the one rule in this file that reaches into RainbowKit's DOM, and it
+   is deliberately the cheapest possible dependency on it: if the id ever
+   changes, the selector stops matching and the modal simply renders without the
+   mark. Nothing breaks, nothing is mispositioned, no interaction is lost.
+
+   The image is a custom property so a host can point it at its own asset, or
+   set it to `none` to switch the branding off entirely.
+   ============================================================================ */
+
+[data-rk] #rk_connect_title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+[data-rk] #rk_connect_title::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  background-image: var(--latch-connect-logo, url('/brand/latch-mark-transparent.png'));
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}

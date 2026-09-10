@@ -25,7 +25,29 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* SINGLETON DEDUPE — load-bearing.
+       `@latchprotocol/connect` is linked in via `file:../../packages/connect`,
+       and that package has its own node_modules containing a SECOND copy of
+       viem, wagmi and react. TypeScript treats two copies of a structurally
+       identical type as different nominal types, so `sepolia` from the linked
+       package was not assignable to `Chain` from ours. These paths pin every
+       shared singleton to this app's copy. `vite.config.ts` carries the same
+       list under `resolve.dedupe` (which additionally covers react itself —
+       pinning react HERE would resolve past @types/react and make every hook
+       implicitly `any`) — the two MUST stay in step, or the types
+       will agree while the bundle still ships two wagmi stores and the wallet
+       silently fails to connect. */
+    "paths": {
+      "viem": ["./node_modules/viem"],
+      "viem/*": ["./node_modules/viem/*"],
+      "wagmi": ["./node_modules/wagmi"],
+      "wagmi/*": ["./node_modules/wagmi/*"],
+      "@tanstack/react-query": ["./node_modules/@tanstack/react-query"],
+      "@rainbow-me/rainbowkit": ["./node_modules/@rainbow-me/rainbowkit"],
+      "@rainbow-me/rainbowkit/*": ["./node_modules/@rainbow-me/rainbowkit/*"]
+    },
   },
   "include": ["src"]
 }

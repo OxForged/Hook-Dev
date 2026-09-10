@@ -92,11 +92,25 @@
   background: var(--dapp-sidebar-bg);
 }
 
+/* The lockup is a link home. It must not inherit generic link chrome — an
+   underlined wordmark reads as broken — but it does need to look interactive,
+   so the mark and type lift together on hover and it keeps a visible focus
+   ring for keyboard users. */
 .dapp-lockup {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.22s ease, opacity 0.22s ease;
+}
+.dapp-lockup:hover { background: rgba(255, 255, 255, 0.04); }
+.dapp-lockup:active { opacity: 0.75; }
+.dapp-lockup:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 .dapp-lockup__mark { height: 26px; width: auto; }
 .dapp-lockup__type { display: flex; flex-direction: column; gap: 2px; line-height: 1; }
@@ -221,15 +235,36 @@
   background: var(--dapp-header-bg);
   backdrop-filter: blur(14px);
 }
-.dapp-header__meta { min-width: 0; }
+/* The header is a single row of fixed-size controls plus one flexible title.
+   `flex-shrink: 0` on the control group is what stops the browser solving the
+   overflow by squeezing the title column to ~130px, which is what made "Latch
+   Explorer" and "Ethereum Sepolia" each wrap onto two lines and grew the bar
+   from 76px to 119px. Below the breakpoint further down, the group drops to its
+   own row instead - wrapping once, deliberately, beats crushing everything. */
+.dapp-header__meta { min-width: 0; flex: 1 1 auto; }
 .dapp-header__title {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 20px;
   margin: 0;
+  /* One line, clipped with an ellipsis if a screen name is ever long enough.
+     A wrapped h1 pushes every control in the bar down with it. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.dapp-header__subtitle { margin: 3px 0 0; font-size: 12.5px; color: var(--dapp-ink-sub); }
-.dapp-header__right { display: flex; align-items: center; gap: 10px; }
+.dapp-header__subtitle {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--dapp-ink-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dapp-header__right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+/* The network chip carries three separate facts. Keeping it on one line is the
+   difference between a 39px control and a 63px one. */
+.dapp-net-chip { white-space: nowrap; }
 
 .dapp-burger {
   display: grid;
@@ -957,6 +992,58 @@
 .dapp-table__num.is-fees { color: var(--success); }
 .dapp-table .dapp-badge { display: inline-block; font-size: 10px; padding: 5px 10px; }
 
+/* ---- 6. Analytics -------------------------------------------------------- */
+/* The screen reads live contract state, so it needs a LIVE badge, a stat strip
+   whose figures come off chain, and a visible container for the cases where the
+   chain genuinely has nothing — an empty state has to look deliberate, or it
+   reads as a panel that failed to load. */
+
+.an-badge { display: inline-flex; align-items: center; gap: 6px; }
+
+.an-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 14px;
+  margin: 16px 0 0;
+}
+.an-stats > div { min-width: 0; }
+.an-stats dt {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+  margin-bottom: 5px;
+}
+.an-stats dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--ink-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.an-note { margin-top: 12px; line-height: 1.55; }
+.dapp-card__donut-body .an-note { margin-top: 10px; }
+
+.an-empty {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border: 1px dashed var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--panel-alt);
+}
+.an-empty__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-ink-2);
+}
+.an-empty .live-note { margin: 0; line-height: 1.55; }
+
+.an-hooks { margin-top: 14px; }
+
 /* ---- 7. Settings --------------------------------------------------------- */
 
 .dapp-prefs { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; }
@@ -1153,10 +1240,18 @@ span.dapp-net-chip__mark {
   .dapp-row--deploy { grid-template-columns: minmax(0, 1fr); }
 }
 
-@media (max-width: 720px) {
+/* The controls stop fitting beside the title well before the mobile breakpoint:
+   with the sidebar taking 238px, the bar runs out of room around 1180px. Wrap
+   the control group to its own row from there rather than letting it compete
+   with the title for space. */
+@media (max-width: 1180px) {
   .dapp-header { flex-wrap: wrap; gap: 12px; }
-  .dapp-header__meta { flex: 1 1 auto; }
   .dapp-header__right { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-start; }
+}
+
+@media (max-width: 720px) {
+  .dapp-header { gap: 12px; }
+  .dapp-header__meta { flex: 1 1 auto; }
   .dapp-pool-stats { margin-left: 0; gap: 20px; }
   .dapp-latch__foot { gap: 16px; }
 
@@ -1280,3 +1375,229 @@ span.dapp-net-chip__mark {
 .live-list a { color: var(--signal-blue); text-decoration: none; }
 .live-list a:hover { text-decoration: underline; }
 .live-fee { color: var(--muted-ink); font-size: 11px; }
+
+/* Nav rows carry a decorative glyph beside the label. */
+.dapp-nav__row { display: flex; align-items: center; gap: 10px; }
+.dapp-nav__row svg { opacity: .72; transition: opacity .15s; }
+.dapp-nav__row.is-active svg,
+.dapp-nav__row:hover svg { opacity: 1; }
+
+/* ---- Hook marketplace (screens/Explorer): real hooks, read from chain ------
+   The safety treatments here are load-bearing, not decoration. A flagged card
+   must be unmissable at a glance, a value-extracting warning must not be
+   possible to mistake for body copy, and a deprecated marker must stay calm —
+   it is a status, not an accusation.
+   -------------------------------------------------------------------------- */
+
+.hx-head { display: grid; gap: 10px; margin-bottom: 14px; }
+.hx-head a { color: var(--signal-blue); }
+
+.hx-filters { display: flex; flex-wrap: wrap; gap: 18px 28px; margin-top: 14px; }
+.hx-filterset { display: grid; gap: 2px; }
+.hx-count {
+  margin-left: 7px;
+  color: var(--faint-ink);
+  font-size: 10.5px;
+}
+.dapp-chip.is-active .hx-count { color: var(--dapp-ink-sub); }
+
+/* Cards are not links — this surface is read-only, so the pointer and the lift
+   that dapp-card--latch carries would both be promising an action that is not
+   there. */
+.hx-card { cursor: default; display: grid; gap: 10px; }
+.hx-card:hover,
+.hx-card:focus-within { transform: none; box-shadow: none; border-color: var(--hairline); }
+.hx-card--flagged {
+  border-color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, var(--panel));
+}
+.hx-card--flagged:hover { border-color: var(--error); }
+.hx-card--deprecated { opacity: 0.82; }
+
+.hx-card .dapp-latch__desc { margin-top: 0; }
+.hx-card .dapp-tags { margin-top: 0; }
+.hx-card .dapp-latch__foot { margin-top: 4px; }
+
+.hx-addr { text-decoration: none; color: var(--label-ink); }
+.hx-addr:hover { color: var(--signal-blue); text-decoration: underline; }
+.hx-muted { color: var(--faint-ink); }
+
+.hx-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.dapp-badge--danger {
+  border-color: var(--dapp-badge-danger-border);
+  background: var(--dapp-badge-danger-bg);
+  color: var(--error);
+}
+
+/* Always visible, never behind a disclosure. */
+.hx-alert {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--dapp-badge-warn-border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--r-micro);
+  background: var(--dapp-badge-warn-bg);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--warning);
+}
+.hx-alert--danger {
+  border-color: var(--dapp-badge-danger-border);
+  border-left-color: var(--error);
+  background: var(--dapp-badge-danger-bg);
+  color: var(--error);
+}
+/* Deprecated is marked, not alarmed. */
+.hx-note {
+  margin: 0;
+  padding: 9px 11px;
+  border-left: 2px solid var(--hairline-blue-2);
+  border-radius: 0 var(--r-micro) var(--r-micro) 0;
+  background: var(--panel-alt);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+
+.hx-caps {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-micro);
+  background: var(--panel-alt);
+}
+.hx-caps--danger { border-color: color-mix(in srgb, var(--error) 45%, transparent); }
+.hx-caps__list {
+  margin: 0;
+  padding-left: 1.05em;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted-ink);
+}
+.hx-caps--danger .hx-caps__list { color: var(--warning); }
+
+.hx-links { flex: 1 1 auto; }
+.hx-links__row { display: flex; flex-wrap: wrap; gap: 12px; font-family: var(--font-mono); font-size: 12px; }
+.hx-links__row a { color: var(--signal-blue); text-decoration: none; }
+.hx-links__row a:hover { text-decoration: underline; }
+
+.hx-flagged {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--error);
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--error) 5%, transparent);
+}
+.hx-flagged__title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--error);
+}
+.hx-flagged__note { margin: 6px 0 0; font-size: 12.5px; color: var(--muted-ink); }
+.hx-flagged__grid { margin-top: 12px; }
+
+.hx-state { margin-top: 18px; }
+.hx-state a { color: var(--signal-blue); }
+.hx-state--err { color: var(--warning); }
+.hx-linkbtn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--signal-blue);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ---- 3b. Register a Hook — the write path ---------------------------------
+   Form chrome for the registry write flow. Everything here is layout for real
+   state: a failure block, a transaction block, a tri-state pre-flight dot.
+   Nothing paints a success colour that the chain has not confirmed.
+   -------------------------------------------------------------------------- */
+
+.dp-lede { margin: 10px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-ink); }
+.dp-lede a { color: var(--signal-blue); }
+.dp-lede code,
+.dp-gap code,
+.dp-ok code { font-family: var(--font-mono); font-size: 12px; color: var(--dapp-ink-sub); }
+
+.dp-gate {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-sm);
+  background: var(--panel-alt);
+}
+.dp-gate--warn {
+  border-color: var(--dapp-badge-warn-border);
+  background: var(--dapp-badge-warn-bg);
+}
+.dp-gate__title { margin: 0; font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.dp-gate--warn .dp-gate__title { color: var(--warning); }
+.dp-gate__body { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--muted-ink); }
+
+.dp-field { display: grid; gap: 6px; }
+.dp-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-chip);
+  background: var(--code-ground);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.dp-input--mono { font-family: var(--font-mono); font-size: 12.5px; }
+.dp-input--area { resize: vertical; min-height: 66px; }
+.dp-input::placeholder { color: var(--faint-ink); }
+.dp-input:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 1px; border-color: var(--latch-blue); }
+.dp-input:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.dp-hint { margin: 0; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.5; color: var(--faint-ink); }
+.dp-hint--err { color: var(--error); }
+
+.dp-ok {
+  margin: 14px 0 0;
+  padding: 9px 11px;
+  border-left: 3px solid var(--success);
+  border-radius: 0 var(--r-micro) var(--r-micro) 0;
+  background: var(--dapp-badge-ok-bg);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dapp-ink-data);
+}
+.dp-ok a { color: var(--signal-blue); }
+
+.dp-failure { display: grid; gap: 5px; margin-top: 14px; }
+.dp-failure__name { margin: 0; font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
+.dp-failure__body { margin: 0; font-size: 12.5px; line-height: 1.55; }
+.dp-failure__raw {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--faint-ink);
+  overflow-wrap: anywhere;
+}
+
+.dp-caps-card { display: grid; gap: 10px; }
+.dp-gap { margin-top: 0; }
+
+.dp-tx { display: grid; gap: 8px; }
+.dp-tx__row { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 13px; color: var(--dapp-ink-data); }
+.dp-tx__hash { margin: 0; font-family: var(--font-mono); font-size: 11.5px; overflow-wrap: anywhere; }
+.dp-tx__hash a { color: var(--signal-blue); }
+.dp-tx__meta { margin: 0; font-family: var(--font-mono); font-size: 10.5px; color: var(--faint-ink); }
+
+/* "Not yet known" must not borrow the colour of "passed". */
+.dp-dot--idle { background: var(--dapp-track); }
+
+.dapp-console__line.is-err { color: var(--error); }

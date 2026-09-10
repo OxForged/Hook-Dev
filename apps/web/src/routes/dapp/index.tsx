@@ -34,6 +34,7 @@ import Analytics from './screens/Analytics.tsx'
 import Dashboard from './screens/Dashboard.tsx'
 import Deploy from './screens/Deploy.tsx'
 import Explorer from './screens/Explorer.tsx'
+import LatchDetail from './screens/LatchDetail.tsx'
 import PoolDetail from './screens/PoolDetail.tsx'
 import Portfolio from './screens/Portfolio.tsx'
 import Settings from './screens/Settings.tsx'
@@ -45,7 +46,11 @@ const DRAWER_QUERY = '(max-width: 1023.98px)'
 
 const SCREEN_BY_SEGMENT: Record<string, Screen> = {
   '': 'dashboard',
-  explorer: 'explorer',
+  marketplace: 'marketplace',
+  /* `explorer` is the old segment. Kept in the map so a bookmarked or shared
+     /app/explorer link still resolves the header and highlights the right nav
+     row while the route below redirects it. */
+  explorer: 'marketplace',
   deploy: 'deploy',
   pool: 'pool',
   portfolio: 'portfolio',
@@ -55,7 +60,10 @@ const SCREEN_BY_SEGMENT: Record<string, Screen> = {
 
 function screenFromPath(pathname: string): Screen {
   const segment = pathname.replace(DAPP_BASE, '').replace(/^\/+|\/+$/g, '')
-  return SCREEN_BY_SEGMENT[segment] ?? 'dashboard'
+  // A Latch detail route is `marketplace/0x…`; it belongs to the marketplace
+  // screen, so match on the first segment rather than the whole path.
+  const first = segment.split('/')[0] ?? ''
+  return SCREEN_BY_SEGMENT[segment] ?? SCREEN_BY_SEGMENT[first] ?? 'dashboard'
 }
 
 export default function DappShell() {
@@ -114,7 +122,11 @@ function Shell() {
         <main id="dapp-content" className="dapp-content" key={location.pathname}>
           <Routes>
             <Route index element={<Dashboard />} />
-            <Route path="explorer" element={<Explorer />} />
+            <Route path="marketplace" element={<Explorer />} />
+            <Route path="marketplace/:address" element={<LatchDetail />} />
+            {/* Old path. Redirect rather than delete: the previous nav shipped
+                /app/explorer, and a dead link is worse than a hop. */}
+            <Route path="explorer" element={<Navigate to={dappPath('marketplace')} replace />} />
             <Route path="deploy" element={<Deploy />} />
             <Route path="pool" element={<PoolDetail />} />
             <Route path="portfolio" element={<Portfolio />} />

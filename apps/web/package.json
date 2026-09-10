@@ -10,14 +10,19 @@
     "preview": "vite preview",
     "sync-brand": "node scripts/sync-brand.mjs",
     "sync-chains": "node scripts/sync-chains.mjs",
-    "predev": "node scripts/sync-brand.mjs && node scripts/sync-chains.mjs",
-    "prebuild": "node scripts/sync-brand.mjs && node scripts/sync-chains.mjs"
+    "predev": "node scripts/sync-brand.mjs && node scripts/sync-chains.mjs && node scripts/sync-abi.mjs",
+    "prebuild": "node scripts/sync-brand.mjs && node scripts/sync-chains.mjs && node scripts/sync-abi.mjs",
+    "sync-abi": "node scripts/sync-abi.mjs"
   },
   "dependencies": {
+    "@latchprotocol/connect": "file:../../packages/connect",
+    "@rainbow-me/rainbowkit": "^2.2.11",
+    "@tanstack/react-query": "^5.102.8",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
-    "viem": "^2.56.3"
+    "viem": "^2.56.3",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

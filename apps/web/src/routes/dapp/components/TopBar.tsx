@@ -1,7 +1,7 @@
 /* ============================================================================
    Header — README § Dapp shell.
-   Screen title (Chakra Petch 600 20px) + subtitle (12.5px), a mono
-   "BLOCK 21,904,118" chip that increments every 4s behind a pulsing green dot,
+   Screen title (Chakra Petch 600 20px) + subtitle (12.5px), a mono block chip
+   carrying the real Sepolia head behind a pulsing green dot,
    and the primary "Deploy Latch" button with its sheen sweep.
 
    Plus two pieces of truth-telling. The sample-data chip: every figure in this
@@ -18,7 +18,7 @@ import type { ScreenMeta } from '../data/shell.ts'
 
 interface TopBarProps {
   meta: ScreenMeta
-  block: number
+  block: number | null
   net: ChainRow
   deployHref: string
   isDrawer: boolean
@@ -58,12 +58,11 @@ export function TopBar({
       <div className="dapp-header__right">
         <p
           className="dapp-sample-chip"
-          title="Every figure in this app is placeholder data. Latch Protocol's only deployment is on Ethereum Sepolia."
+          title="Mixed data. The dashboard, hook explorer, analytics, portfolio, registration and the live pool price all read from the deployed Ethereum Sepolia contracts. Two things are still sample data: the Pool Detail header strip and the Settings screen."
         >
-          <span aria-hidden="true">SAMPLE DATA</span>
+          <span aria-hidden="true">PARTLY LIVE</span>
           <span className="dapp-sr">
-            Sample data. Every figure in this app is a placeholder — Latch Protocol's only
-            deployment is on Ethereum Sepolia.
+            Partly live. The dashboard, hook explorer, analytics, portfolio, hook registration and the live pool price are read from the deployed Sepolia contracts. Two things are still sample data: the Pool Detail header strip and the Settings screen.
           </span>
         </p>
 
@@ -80,7 +79,7 @@ export function TopBar({
 
         <p className="dapp-block">
           <span className="dapp-dot dapp-dot--success dapp-dot--pulse dapp-dot--sm" aria-hidden="true" />
-          <span>BLOCK {block.toLocaleString('en-US')}</span>
+          <span>{block === null ? 'BLOCK —' : `BLOCK ${block.toLocaleString('en-US')}`}</span>
         </p>
 
         <Link to={deployHref} className="dapp-btn dapp-btn--primary dapp-btn--sm">

@@ -23,6 +23,16 @@
       "import": "./dist/indexer/index.js",
       "default": "./dist/indexer/index.js"
     },
+    "./registry": {
+      "types": "./dist/registry/index.d.ts",
+      "import": "./dist/registry/index.js",
+      "default": "./dist/registry/index.js"
+    },
+    "./launchpad": {
+      "types": "./dist/launchpad/index.d.ts",
+      "import": "./dist/launchpad/index.js",
+      "default": "./dist/launchpad/index.js"
+    },
     "./schema.graphql": "./schema.graphql",
     "./package.json": "./package.json"
   },
@@ -37,7 +47,11 @@
     "node": ">=20"
   },
   "scripts": {
-    "generate": "node scripts/generate-events.mjs",
+    "generate": "npm run generate:events && npm run generate:launchpad && npm run generate:registry",
+    "generate:events": "node scripts/generate-events.mjs",
+    "generate:launchpad": "node scripts/generate-launchpad-abi.mjs",
+    "generate:registry": "node scripts/generate-registry-abi.mjs",
+    "generate:check": "node scripts/generate-events.mjs --check && node scripts/generate-launchpad-abi.mjs --check && node scripts/generate-registry-abi.mjs --check",
     "build": "npm run generate && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

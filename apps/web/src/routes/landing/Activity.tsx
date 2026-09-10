@@ -1,247 +1,205 @@
 import { useEffect, useState } from 'react'
-import {
-  ACTIVITY,
-  CALL_CATEGORIES,
-  DEFAULT_RANGE,
-  DEPLOY_CAPTION,
-  DEPLOY_COLUMNS,
-  GAS_AXIS,
-  GAS_COLUMNS,
-  RANGES,
-  PROTOCOL_HEALTH,
-  TVL_BY_NETWORK,
-  type RangeKey,
-} from './data'
-import { buildAreaChart, buildDonut, CHART_H, CHART_W, columnHeights, DONUT } from './chart'
+import { MEASURED_GAS, NETWORK_REACH, TEST_COVERAGE } from './data'
+import { SEPOLIA_CHAIN_ID, readActivity, type ActivityEvent } from '../../lib/chain'
+import { useProtocolMetrics, fmtToken } from '../../lib/useMetrics'
 import styles from './landing.module.css'
-import { cx, prefersReducedMotion, toneClass } from './ui'
+import { cx } from './ui'
 
-const GRADIENT_ID = 'landing-tvl-fill'
+/**
+ * A4. Protocol activity — real, or absent.
+ *
+ * This section used to be six charts of invented figures behind an "ILLUSTRATIVE
+ * FIGURES" label: a TVL area chart, a gas histogram, a TVL-by-network donut,
+ * 1,840 latches deployed at 96 a week, and a PROTOCOL HEALTH card reporting
+ * "Audit coverage: 94% of TVL".
+ *
+ * The disclaimer made those figures disclosed, not true. And an invented audit
+ * number is the one placeholder that should never have been drawn at all — this
+ * protocol has never been audited, the audience for this page is developers
+ * deciding whether to trust it with other people's money, and a security claim is
+ * the last place a reader expects an illustration.
+ *
+ * What replaces them is smaller and entirely checkable: live chain reads, gas
+ * measured by executing the calls, test counts from suites that run, and an audit
+ * status that says "none". For the audience this page is trying to reach, a
+ * verifiable small number outperforms an impressive invented one.
+ */
 
-/** Widths animate from zero on first paint (README § Interactions: 1s). */
-function useMountedWidths(): boolean {
-  const [ready, setReady] = useState(() => prefersReducedMotion())
-  useEffect(() => {
-    if (ready) return
-    let inner = 0
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => setReady(true))
-    })
-    return () => {
-      cancelAnimationFrame(outer)
-      cancelAnimationFrame(inner)
-    }
-  }, [ready])
-  return ready
-}
+const MIN_POINTS_FOR_SERIES = 12
 
-function RangeSwitcher({
-  range,
-  onChange,
-}: {
-  range: RangeKey
-  onChange: (next: RangeKey) => void
-}) {
-  return (
-    <div className={styles['rangeSwitcher']} role="group" aria-label="Chart range">
-      {RANGES.map((option) => (
-        <button
-          key={option}
-          type="button"
-          onClick={() => onChange(option)}
-          aria-pressed={option === range}
-          className={cx(styles['rangeBtn'], option === range && styles['rangeBtnActive'])}
-        >
-          {option}
-        </button>
-      ))}
-    </div>
-  )
-}
+type FeedState =
+  | { k: 'loading' }
+  | { k: 'error'; message: string }
+  | { k: 'ready'; events: ActivityEvent[] }
 
-function AreaCard({ range }: { range: RangeKey }) {
-  const series = ACTIVITY[range]
-  const chart = buildAreaChart(series.pts)
+/** Live pools, swaps and vault TVL, read from the deployed Sepolia contracts. */
+function LiveState() {
+  const s = useProtocolMetrics()
 
-  return (
-    <div className={styles['chartCard']}>
-      <div className={styles['chartHead']}>
-        <div className={styles['chartHeadline']}>{series.headline}</div>
-        <div className={styles['chartDelta']}>{series.delta}</div>
-        <div className={styles['chartCaption']}>VALUE ROUTED THROUGH LATCHES</div>
-      </div>
-
-      <svg
-        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-        preserveAspectRatio="none"
-        className={styles['areaChart']}
-        role="img"
-        aria-label={`Illustrative value routed through latches over ${range}, rising to ${series.headline}`}
-      >
-        <defs>
-          {/* README § Design tokens: chart area fill, Latch Blue 42% -> 0%. */}
-          <linearGradient id={GRADIENT_ID} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--latch-blue)" stopOpacity="0.42" />
-            <stop offset="100%" stopColor="var(--latch-blue)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {chart.gridY.map((y) => (
-          <line key={y} x1={0} x2={CHART_W} y1={y} y2={y} className={styles['gridLine']} />
-        ))}
-        {/* Remounting on range change replays the draw-on and the dot stagger. */}
-        <g key={range}>
-          <path d={chart.area} fill={`url(#${GRADIENT_ID})`} />
-          <path d={chart.line} className={styles['areaLine']} />
-          {chart.dots.map((dot, i) => (
-            <circle
-              key={`${dot.x}-${dot.y}`}
-              cx={dot.x.toFixed(1)}
-              cy={dot.y.toFixed(1)}
-              r={3}
-              className={styles['areaDot']}
-              style={{ animationDelay: `${(0.25 + i * 0.09).toFixed(2)}s` }}
-            />
-          ))}
-        </g>
-      </svg>
-
-      <div className={styles['axisRow']}>
-        {series.labels.map((label) => (
-          <span key={label}>{label}</span>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function CategoryBars() {
-  const ready = useMountedWidths()
   return (
     <div className={styles['card']}>
-      <h3 className={styles['microLabel']}>HOOK CALLS BY CATEGORY</h3>
-      <div className={styles['barList']}>
-        {CALL_CATEGORIES.map((bar) => (
-          <div key={bar.name} className={toneClass(bar.tone)}>
-            <div className={styles['barHead']}>
-              <span>{bar.name}</span>
-              <span className={styles['barValue']}>{bar.value}</span>
+      <h3 className={styles['microLabel']}>LIVE PROTOCOL STATE · ETHEREUM SEPOLIA</h3>
+
+      {s.k === 'loading' && <p className={styles['placeholderNote']}>READING CHAIN&hellip;</p>}
+      {s.k === 'error' && (
+        <p className={styles['placeholderNote']}>
+          COULD NOT REACH THE CHAIN — NO FIGURES SHOWN RATHER THAN STALE ONES
+        </p>
+      )}
+
+      {s.k === 'ready' && (
+        <>
+          <div className={styles['healthList']}>
+            <div className={styles['healthRow']}>
+              <span className={styles['healthName']}>Pools initialized</span>
+              <span className={styles['healthValue']}>{s.m.poolCount}</span>
             </div>
-            <div className={styles['barTrack']}>
-              <div className={styles['barFill']} style={{ width: ready ? `${bar.pct}%` : 0 }} />
+            <div className={styles['healthRow']}>
+              <span className={styles['healthName']}>Swaps executed</span>
+              <span className={styles['healthValue']}>{s.m.swapCount}</span>
             </div>
+            {s.m.tvl.map((t) => (
+              <div key={t.token} className={styles['healthRow']}>
+                <span className={styles['healthName']}>Vault holds {t.symbol}</span>
+                <span className={styles['healthValue']}>{fmtToken(t.balance, t.decimals, 2)}</span>
+              </div>
+            ))}
+            <div className={styles['healthRow']}>
+              <span className={styles['healthName']}>Protocol fee taken</span>
+              <span className={styles['healthValue']}>0.1% of 0.4% cap</span>
+            </div>
+          </div>
+          <p className={styles['deployCaption']}>
+            Block {s.m.latestBlock.toString()} · testnet only, no mainnet deployment. No USD figure:
+            these are unpriced testnet tokens, and inventing a price to produce a dollar headline is
+            the failure this section replaced.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+/** Real protocol events by type. Not hook callbacks — none have ever fired. */
+function EventMix() {
+  const [state, setState] = useState<FeedState>({ k: 'loading' })
+
+  useEffect(() => {
+    let off = false
+    readActivity(SEPOLIA_CHAIN_ID, 200)
+      .then((events) => !off && setState({ k: 'ready', events }))
+      .catch(
+        (e) =>
+          !off && setState({ k: 'error', message: e instanceof Error ? e.message : 'unreachable' }),
+      )
+    return () => {
+      off = true
+    }
+  }, [])
+
+  const counts = new Map<string, number>()
+  if (state.k === 'ready') {
+    for (const e of state.events) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1)
+  }
+  const rows = [...counts.entries()].sort((a, b) => b[1] - a[1])
+  const swaps = counts.get('Swap') ?? 0
+
+  return (
+    <div className={styles['card']}>
+      <h3 className={styles['microLabel']}>PROTOCOL EVENTS BY TYPE</h3>
+
+      {state.k !== 'ready' ? (
+        <p className={styles['placeholderNote']}>
+          {state.k === 'loading' ? 'READING CONTRACT LOGS…' : 'CHAIN UNREACHABLE'}
+        </p>
+      ) : rows.length === 0 ? (
+        <p className={styles['placeholderNote']}>NO EVENTS RECORDED YET</p>
+      ) : (
+        <>
+          <div className={styles['healthList']}>
+            {rows.map(([name, n]) => (
+              <div key={name} className={styles['healthRow']}>
+                <span className={styles['healthName']}>{name}</span>
+                <span className={styles['healthValue']}>{n}</span>
+              </div>
+            ))}
+          </div>
+          <p className={styles['deployCaption']}>
+            {swaps < MIN_POINTS_FOR_SERIES
+              ? `Too few swaps (${swaps}) to plot a time series; the count is shown instead.`
+              : 'Protocol events, not hook callbacks.'}
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+/** Gas measured by executing the calls against a Sepolia fork, not estimated. */
+function MeasuredGas() {
+  return (
+    <div className={styles['card']}>
+      <h3 className={styles['microLabel']}>GAS, MEASURED ON A SEPOLIA FORK</h3>
+      <div className={styles['healthList']}>
+        {MEASURED_GAS.map((row) => (
+          <div key={row.name} className={styles['healthRow']}>
+            <span className={styles['healthName']}>{row.name}</span>
+            <span className={styles['healthValue']}>{row.gas}</span>
           </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-function GasHistogram() {
-  return (
-    <div className={styles['card']}>
-      <h3 className={styles['microLabel']}>GAS OVERHEAD PER CALL (µ, GAS)</h3>
-      <div className={cx(styles['columns'], styles['gasColumns'])} aria-hidden="true">
-        {GAS_COLUMNS.map((value, i) => (
-          <div
-            key={`${i}-${value}`}
-            className={cx(styles['gasColumn'], value > 80 && styles['gasColumnPeak'])}
-            style={{ height: `${value}%`, animationDelay: `${(i * 0.045).toFixed(3)}s` }}
-          />
-        ))}
-      </div>
-      <p className={styles['captionRow']}>
-        {GAS_AXIS.map((label) => (
-          <span key={label}>{label}</span>
-        ))}
+      <p className={styles['deployCaption']}>
+        Observed in executed transactions, not estimated. A hook adds its own cost on top.
       </p>
-      <span className={styles['srOnly']}>
-        Gas overhead per hook call is spread between {GAS_AXIS[0]} and {GAS_AXIS[2]}, clustered
-        around a {GAS_AXIS[1]}.
-      </span>
     </div>
   )
 }
 
-function NetworkDonut() {
-  const segments = buildDonut(TVL_BY_NETWORK.map((n) => n.pct))
-  return (
-    <div className={styles['donutCard']}>
-      <svg viewBox={`0 0 ${DONUT.size} ${DONUT.size}`} className={styles['donut']} aria-hidden="true">
-        <circle cx={DONUT.cx} cy={DONUT.cy} r={DONUT.r} className={styles['donutTrack']} />
-        {TVL_BY_NETWORK.map((net, i) => {
-          const seg = segments[i]
-          if (!seg) return null
-          return (
-            <circle
-              key={net.name}
-              cx={DONUT.cx}
-              cy={DONUT.cy}
-              r={DONUT.r}
-              className={cx(styles['donutSeg'], toneClass(net.tone))}
-              strokeDasharray={seg.dash}
-              strokeDashoffset={seg.offset}
-              transform={`rotate(-90 ${DONUT.cx} ${DONUT.cy})`}
-            />
-          )
-        })}
-      </svg>
-      <div className={styles['donutBody']}>
-        <h3 className={styles['microLabel']}>TVL BY NETWORK</h3>
-        <div className={styles['legend']}>
-          {TVL_BY_NETWORK.map((net) => (
-            <div key={net.name} className={cx(styles['legendRow'], toneClass(net.tone))}>
-              <span className={styles['swatch']} aria-hidden="true" />
-              <span>{net.name}</span>
-              <span className={styles['legendPct']}>{net.pct}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function DeployHistogram() {
-  const heights = columnHeights(DEPLOY_COLUMNS)
+/** Where Latch actually is, versus where it is going. */
+function NetworkReach() {
   return (
     <div className={styles['card']}>
-      <h3 className={styles['microLabel']}>LATCHES DEPLOYED · WEEKLY</h3>
-      <div className={cx(styles['columns'], styles['deployColumns'])} aria-hidden="true">
-        {heights.map((height, i) => (
-          <div
-            key={`${i}-${height}`}
-            className={styles['deployColumn']}
-            style={{ height: `${height}%`, animationDelay: `${(i * 0.035).toFixed(3)}s` }}
-          />
-        ))}
-      </div>
-      <p className={styles['deployCaption']}>{DEPLOY_CAPTION}</p>
-    </div>
-  )
-}
-
-/** SCREENS.md § A4 titles this "REGISTRY HEALTH"; there is no registry contract. */
-function ProtocolHealth() {
-  return (
-    <div className={styles['card']}>
-      <h3 className={styles['microLabel']}>PROTOCOL HEALTH</h3>
+      <h3 className={styles['microLabel']}>NETWORK REACH</h3>
       <div className={styles['healthList']}>
-        {PROTOCOL_HEALTH.map((row) => (
-          <div key={row.name} className={cx(styles['healthRow'], toneClass(row.tone))}>
+        {NETWORK_REACH.map((row) => (
+          <div key={row.name} className={cx(styles['healthRow'], styles[row.toneClass])}>
             <span className={styles['statusDot']} aria-hidden="true" />
             <span className={styles['healthName']}>{row.name}</span>
             <span className={styles['healthValue']}>{row.value}</span>
           </div>
         ))}
       </div>
+      <p className={styles['deployCaption']}>
+        Contracts are deployed on one network. The other ten are targets, and are labelled as such
+        everywhere in this app.
+      </p>
     </div>
   )
 }
 
-/** A4. Protocol activity. Every figure here is illustrative — see data.ts. */
-export function Activity() {
-  const [range, setRange] = useState<RangeKey>(DEFAULT_RANGE)
+/** Test counts from suites that actually run, and the audit status. */
+function Assurance() {
+  return (
+    <div className={styles['card']}>
+      <h3 className={styles['microLabel']}>ASSURANCE</h3>
+      <div className={styles['healthList']}>
+        {TEST_COVERAGE.map((row) => (
+          <div key={row.name} className={cx(styles['healthRow'], styles[row.toneClass])}>
+            <span className={styles['statusDot']} aria-hidden="true" />
+            <span className={styles['healthName']}>{row.name}</span>
+            <span className={styles['healthValue']}>{row.value}</span>
+          </div>
+        ))}
+      </div>
+      <p className={styles['deployCaption']}>
+        No third-party audit has been performed. Said plainly, because a reader deciding whether to
+        trust this with other people&rsquo;s money should not have to infer it from silence.
+      </p>
+    </div>
+  )
+}
 
+export function Activity() {
   return (
     <section
       id="activity"
@@ -252,28 +210,22 @@ export function Activity() {
         <div>
           <p className={styles['eyebrow']}>PROTOCOL ACTIVITY</p>
           <h2 id="activity-title" className={styles['h2']}>
-            Measured at the hook layer.
+            Measured, not illustrated.
           </h2>
         </div>
-        <RangeSwitcher range={range} onChange={setRange} />
       </div>
 
-      <p className={styles['placeholderNote']}>
-        ILLUSTRATIVE FIGURES · LATCH IS LIVE ON SEPOLIA TESTNET ONLY
-      </p>
-
       <div className={styles['activityGrid']}>
-        <AreaCard range={range} />
+        <LiveState />
         <div className={styles['sideColumn']}>
-          <CategoryBars />
-          <GasHistogram />
+          <EventMix />
+          <MeasuredGas />
         </div>
       </div>
 
       <div className={styles['activityRow']}>
-        <NetworkDonut />
-        <DeployHistogram />
-        <ProtocolHealth />
+        <NetworkReach />
+        <Assurance />
       </div>
     </section>
   )

@@ -2,38 +2,39 @@
 /**
  * The fork harness.
  *
- * Boots one anvil forked from Sepolia, puts the missing pieces of the stack on
- * it, funds an account, and hands back a live `createViemAdapter` wired to the
- * result. From there a fork suite builds calldata with this package's ordinary
- * public API and **sends it**.
+ * Boots one anvil forked from Sepolia, funds an account, and hands back a live
+ * `createViemAdapter` wired to the **deployed** Latch stack. From there a fork
+ * suite builds calldata with this package's ordinary public API and **sends it**.
  *
- * ## What has to be deployed, and why
+ * ## Nothing of the protocol is deployed by this harness
  *
- * Sepolia carries Latch's core only - `Vault`, `CLPoolManager`, `BinPoolManager`,
- * the fee controller. The periphery and the universal router are not there. A
- * `UniversalRouter` does exist at `0x19Dbcfc8…` on Sepolia, but it is
- * PancakeSwap's: its `vault()` is `0x4670F769…`, a different singleton entirely,
- * so it cannot reach the Latch pool. The harness therefore deploys, onto the
- * fork only:
+ * Core, periphery and the universal router are all live on Sepolia and wired to
+ * each other. {@link assertLiveStack} re-reads that wiring on the fork before any
+ * test runs, rather than trusting the address list: PancakeSwap also has a
+ * `UniversalRouter` on Sepolia (`0x19Dbcfc8…`, vault `0x4670F769…`), and calldata
+ * sent to the wrong one fails in a way that reads like an encoding bug.
  *
- * | Contract | From | Why |
- * | --- | --- | --- |
- * | `UniversalRouter` | `packages/router` | the swap entry point `buildSwapCall` targets |
- * | `CLPositionManager` | `packages/periphery` | the entry point `buildCLMintCall`/`buildCLDecreaseCall` target |
- * | `CLPositionDescriptorOffChain` | `packages/periphery` | non-optional constructor argument of the above |
- * | `CLQuoter` | `packages/periphery` | a *real* quote, so "matches the quote" means something |
+ * The only contracts the harness ever deploys are a `MockERC20` third token and
+ * a second pool, and only in the multi-hop suite, which needs a route Sepolia
+ * does not have. Those are called out where they happen.
  *
- * Everything the calldata actually touches - the singleton, the pool, its
- * liquidity, its protocol fee - is the live deployment, unmodified.
+ * ## Permit2 is the PancakeSwap fork
+ *
+ * `0x31c2F6fc…`, not the canonical `0x0000000000022D473…`. It is an immutable in
+ * the router and the position managers, so approving the wrong one leaves the
+ * real spender with no allowance. {@link assertLiveStack} checks it.
  */
 
 import {
+  BaseError,
   createPublicClient,
   createWalletClient,
+  decodeErrorResult,
   encodeAbiParameters,
   encodeFunctionData,
   http,
   keccak256,
+  parseAbi,
   parseEventLogs,
   type Address,
   type Hex,
@@ -56,8 +57,10 @@ import type {
 import { startAnvilFork, type AnvilInstance } from "./anvil.js";
 import { loadArtifact } from "./artifacts.js";
 import {
+  CANONICAL_PERMIT2,
   CL_POOL_MANAGER_ABI,
   DERIVED_POOL_ID,
+  LATCH_PERIPHERY_SEPOLIA,
   LATCH_SEPOLIA,
   LIVE_POOL_ID,
   LIVE_POOL_KEY,
@@ -68,7 +71,6 @@ import {
   POOL_LP_FEE_PIPS,
   POOL_TICK_SPACING,
   SEPOLIA_CHAIN_ID,
-  WETH9_SEPOLIA,
 } from "./sepolia.js";
 
 /** Anvil's first default account. Local fork only; never a real key. */
@@ -77,6 +79,24 @@ const ANVIL_KEY_0: Hex = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae78
 const ANVIL_KEY_1: Hex = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
 
 const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
+
+/**
+ * Custom errors the stack reverts with on the paths this harness exercises.
+ *
+ * Transcribed from `IUniversalRouter`, `IInfinityRouter`, `CLPool`, `BinPool`
+ * and the position managers.
+ */
+const FORK_ERROR_ABI = parseAbi([
+  "error ExecutionFailed(uint256 commandIndex, bytes message)",
+  "error TransactionDeadlinePassed()",
+  "error TooLittleReceived(uint256 minAmountOutReceived, uint256 amountReceived)",
+  "error TooMuchRequested(uint256 maxAmountInRequested, uint256 amountRequested)",
+  "error PoolNotInitialized()",
+  "error IdSlippageCaught(uint256 activeIdDesired, uint256 idSlippage, uint24 activeId)",
+  "error MinimumAmountInsufficient(uint128 minimumAmount, uint128 amountReceived)",
+  "error DeadlinePassed(uint256 deadline)",
+  "error CurrencyNotSettled()",
+]);
 
 /** Gas limit for a swap or a position mint on the fork. */
 const FORK_GAS = 6_000_000n;
@@ -135,12 +155,20 @@ const ERC721_ABI = [
   },
 ] as const;
 
-/** Contracts the harness put on the fork. */
+/**
+ * The deployed Latch stack, as verified on the fork.
+ *
+ * Named `deployments` because that is what they are - just not *ours*. Every
+ * address here already exists on Sepolia.
+ */
 export interface ForkDeployments {
   readonly universalRouter: Address;
   readonly clPositionManager: Address;
+  readonly binPositionManager: Address;
   readonly clPositionDescriptor: Address;
   readonly clQuoter: Address;
+  readonly binQuoter: Address;
+  readonly permit2: Address;
 }
 
 /** Everything a fork suite needs. */
@@ -178,6 +206,14 @@ export interface ForkContext {
     data: Hex;
     value?: bigint;
   }): Promise<TransactionReceipt>;
+  /**
+   * Names the custom error a call reverts with, or `null` if it succeeds.
+   *
+   * A negative test that only asserts "it reverted" passes for any reason at
+   * all, including a bug elsewhere in the plan. This lets one assert *which*
+   * guard fired.
+   */
+  revertErrorName(request: { to: Address; data: Hex; value?: bigint }): Promise<string | null>;
   /** The `Swap` events the pool manager emitted in a receipt. */
   swapEvents(receipt: TransactionReceipt): readonly {
     amount0: bigint;
@@ -230,15 +266,7 @@ async function buildContext(anvil: AnvilInstance): Promise<ForkContext> {
     );
   }
 
-  // Fail early and specifically if the core we are testing against is not there.
-  for (const [label, address] of Object.entries(LATCH_SEPOLIA)) {
-    const code = await publicClient.getCode({ address: address as Address });
-    if (code === undefined || code === "0x") {
-      throw new Error(`[fork] ${label} at ${address} has no code on the fork`);
-    }
-  }
-
-  const deployments = await deployMissingStack(publicClient, walletClient, account.address);
+  const deployments = await assertLiveStack(publicClient);
 
   const chain: ChainConfig = {
     chainId: SEPOLIA_CHAIN_ID,
@@ -250,7 +278,8 @@ async function buildContext(anvil: AnvilInstance): Promise<ForkContext> {
       binPoolManager: LATCH_SEPOLIA.binPoolManager,
       universalRouter: deployments.universalRouter,
       clPositionManager: deployments.clPositionManager,
-      permit2: PERMIT2,
+      binPositionManager: deployments.binPositionManager,
+      permit2: deployments.permit2,
       quoter: deployments.clQuoter,
     },
     blockExplorerUrl: "https://sepolia.etherscan.io",
@@ -358,24 +387,41 @@ async function buildContext(anvil: AnvilInstance): Promise<ForkContext> {
   }
 
   async function approveThrough(tokenAddress: Address, spender: Address): Promise<void> {
+    const permit2 = deployments.permit2;
     const erc20 = await walletClient.writeContract({
       account,
       chain: foundry,
       address: tokenAddress,
       abi: ERC20_ABI,
       functionName: "approve",
-      args: [PERMIT2, (1n << 256n) - 1n],
+      args: [permit2, (1n << 256n) - 1n],
     });
     await publicClient.waitForTransactionReceipt({ hash: erc20 });
     const permit = await walletClient.writeContract({
       account,
       chain: foundry,
-      address: PERMIT2,
+      address: permit2,
       abi: PERMIT2_ABI,
       functionName: "approve",
       args: [tokenAddress, spender, MAX_UINT160, Number(MAX_UINT48)],
     });
     await publicClient.waitForTransactionReceipt({ hash: permit });
+
+    // Read it back. Approving the *wrong* Permit2 - the canonical one rather
+    // than the fork this deployment is built against - succeeds silently and
+    // only surfaces later as an opaque settle failure.
+    const [allowance] = await publicClient.readContract({
+      address: permit2,
+      abi: PERMIT2_ABI,
+      functionName: "allowance",
+      args: [account.address, tokenAddress, spender],
+    });
+    if (allowance === 0n) {
+      throw new Error(
+        `[fork] Permit2 ${permit2} reports no allowance for ${spender} over ${tokenAddress} ` +
+          "immediately after approving it",
+      );
+    }
   }
 
   async function balanceOf(tokenAddress: Address, owner: Address): Promise<bigint> {
@@ -430,6 +476,41 @@ async function buildContext(anvil: AnvilInstance): Promise<ForkContext> {
     return receipt;
   }
 
+  async function revertErrorName(request: {
+    to: Address;
+    data: Hex;
+    value?: bigint;
+  }): Promise<string | null> {
+    let data: Hex | null = null;
+    try {
+      await publicClient.call({
+        account,
+        to: request.to,
+        data: request.data,
+        value: request.value ?? 0n,
+      });
+      return null;
+    } catch (error) {
+      const walkable = error as { walk?: (fn: (e: unknown) => boolean) => unknown };
+      const inner = walkable.walk?.((e) => e instanceof BaseError && "data" in e) as
+        | { data?: Hex }
+        | undefined;
+      data = inner?.data ?? null;
+      if (data === null) {
+        const message = error instanceof Error ? error.message : String(error);
+        const match = /0x[0-9a-fA-F]{8,}/.exec(message);
+        data = match ? (match[0] as Hex) : null;
+      }
+    }
+    if (data === null || data === "0x") return null;
+    const decoded = decodeErrorResult({ abi: FORK_ERROR_ABI, data });
+    // Router failures arrive wrapped: ExecutionFailed(commandIndex, message).
+    if (decoded.errorName !== "ExecutionFailed") return decoded.errorName;
+    const wrapped = decoded.args?.[1] as Hex | undefined;
+    if (wrapped === undefined || wrapped === "0x") return "ExecutionFailed";
+    return decodeErrorResult({ abi: FORK_ERROR_ABI, data: wrapped }).errorName;
+  }
+
   function swapEvents(receipt: TransactionReceipt): readonly {
     amount0: bigint;
     amount1: bigint;
@@ -467,6 +548,7 @@ async function buildContext(anvil: AnvilInstance): Promise<ForkContext> {
     balanceOf,
     send,
     sendAllowingRevert,
+    revertErrorName,
     swapEvents,
     async teardown() {
       await anvil.stop();
@@ -474,76 +556,111 @@ async function buildContext(anvil: AnvilInstance): Promise<ForkContext> {
   };
 }
 
-async function deployMissingStack(
-  publicClient: PublicClient,
-  walletClient: WalletClient,
-  deployer: Address,
-): Promise<ForkDeployments> {
-  const routerArtifact = loadArtifact("router", "UniversalRouter.sol", "UniversalRouter");
-  const posmArtifact = loadArtifact("periphery", "CLPositionManager.sol", "CLPositionManager");
-  const descriptorArtifact = loadArtifact(
-    "periphery",
-    "CLPositionDescriptorOffChain.sol",
-    "CLPositionDescriptorOffChain",
-  );
-  const quoterArtifact = loadArtifact("periphery", "CLQuoter.sol", "CLQuoter");
+/** Reads an `address` getter with no arguments. */
+const ADDRESS_GETTER_ABI = [
+  { type: "function", name: "vault", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  {
+    type: "function",
+    name: "clPoolManager",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+  {
+    type: "function",
+    name: "binPoolManager",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+  { type: "function", name: "permit2", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  {
+    type: "function",
+    name: "poolManager",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+  { type: "function", name: "paused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+] as const;
 
-  async function deploy(
-    label: string,
-    artifact: { abi: typeof routerArtifact.abi; bytecode: Hex },
-    args: readonly unknown[],
-  ): Promise<Address> {
-    const hash = await walletClient.deployContract({
-      account: walletClient.account ?? deployer,
-      chain: foundry,
-      abi: artifact.abi,
-      bytecode: artifact.bytecode,
-      args: args as never,
-      gas: 12_000_000n,
-    } as never);
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success" || receipt.contractAddress == null) {
-      throw new Error(`[fork] deploying ${label} failed (status ${receipt.status})`);
+function sameAddress(a: Address, b: Address): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+/**
+ * Verifies the deployed stack on the fork before any test uses it.
+ *
+ * Every check here has a specific failure it prevents. The address list is a
+ * claim; the chain is the authority, and a harness that trusts the list will
+ * happily blame the encoder for a mis-wired deployment.
+ */
+async function assertLiveStack(publicClient: PublicClient): Promise<ForkDeployments> {
+  const all: Record<string, Address> = { ...LATCH_SEPOLIA, ...LATCH_PERIPHERY_SEPOLIA, permit2: PERMIT2 };
+  for (const [label, address] of Object.entries(all)) {
+    const code = await publicClient.getCode({ address });
+    if (code === undefined || code === "0x") {
+      throw new Error(`[fork] ${label} at ${address} has no code on the fork`);
     }
-    return receipt.contractAddress;
   }
 
-  const universalRouter = await deploy("UniversalRouter", routerArtifact, [
-    {
-      permit2: PERMIT2,
-      weth9: WETH9_SEPOLIA,
-      // The PCS v2/v3/stable legs are unreachable from every command this
-      // package emits, so they are wired to the zero address rather than to
-      // stubs that would only add ways for the harness to be wrong.
-      v2Factory: ZERO_ADDRESS,
-      v3Factory: ZERO_ADDRESS,
-      v3Deployer: ZERO_ADDRESS,
-      v2InitCodeHash: `0x${"00".repeat(32)}` as Hex,
-      v3InitCodeHash: `0x${"00".repeat(32)}` as Hex,
-      stableFactory: ZERO_ADDRESS,
-      stableInfo: ZERO_ADDRESS,
-      infiVault: LATCH_SEPOLIA.vault,
-      infiClPoolManager: LATCH_SEPOLIA.clPoolManager,
-      infiBinPoolManager: LATCH_SEPOLIA.binPoolManager,
-    },
-  ]);
+  async function readAddress(
+    address: Address,
+    functionName: "vault" | "clPoolManager" | "binPoolManager" | "permit2" | "poolManager",
+  ): Promise<Address> {
+    return publicClient.readContract({ address, abi: ADDRESS_GETTER_ABI, functionName });
+  }
 
-  const clPositionDescriptor = await deploy("CLPositionDescriptorOffChain", descriptorArtifact, [
-    "https://latch.invalid/positions/",
-  ]);
+  const router = LATCH_PERIPHERY_SEPOLIA.universalRouter;
+  const routerVault = await readAddress(router, "vault");
+  if (!sameAddress(routerVault, LATCH_SEPOLIA.vault)) {
+    throw new Error(
+      `[fork] UniversalRouter ${router} points at vault ${routerVault}, not Latch's ` +
+        `${LATCH_SEPOLIA.vault}. This is the wrong router - PancakeSwap has one on Sepolia too.`,
+    );
+  }
+  const routerClPm = await readAddress(router, "clPoolManager");
+  if (!sameAddress(routerClPm, LATCH_SEPOLIA.clPoolManager)) {
+    throw new Error(`[fork] router's clPoolManager is ${routerClPm}, not ${LATCH_SEPOLIA.clPoolManager}`);
+  }
+  const routerBinPm = await readAddress(router, "binPoolManager");
+  if (!sameAddress(routerBinPm, LATCH_SEPOLIA.binPoolManager)) {
+    throw new Error(
+      `[fork] router's binPoolManager is ${routerBinPm}, not ${LATCH_SEPOLIA.binPoolManager}`,
+    );
+  }
+  const paused = await publicClient.readContract({
+    address: router,
+    abi: ADDRESS_GETTER_ABI,
+    functionName: "paused",
+  });
+  if (paused) throw new Error(`[fork] UniversalRouter ${router} is paused; no swap can execute`);
 
-  const clPositionManager = await deploy("CLPositionManager", posmArtifact, [
-    LATCH_SEPOLIA.vault,
-    LATCH_SEPOLIA.clPoolManager,
-    PERMIT2,
-    100_000n,
-    clPositionDescriptor,
-    WETH9_SEPOLIA,
-  ]);
+  // Permit2 is an immutable in both position managers. If it is not the fork
+  // this deployment was built against, approvals go to a contract nobody reads.
+  for (const [label, address] of [
+    ["clPositionManager", LATCH_PERIPHERY_SEPOLIA.clPositionManager],
+    ["binPositionManager", LATCH_PERIPHERY_SEPOLIA.binPositionManager],
+  ] as const) {
+    const permit2 = await readAddress(address, "permit2");
+    if (!sameAddress(permit2, PERMIT2)) {
+      const note = sameAddress(permit2, CANONICAL_PERMIT2)
+        ? " (it is the canonical Permit2; this harness is configured for the PancakeSwap fork)"
+        : "";
+      throw new Error(`[fork] ${label} uses Permit2 ${permit2}, not ${PERMIT2}${note}`);
+    }
+    const vault = await readAddress(address, "vault");
+    if (!sameAddress(vault, LATCH_SEPOLIA.vault)) {
+      throw new Error(`[fork] ${label} points at vault ${vault}, not ${LATCH_SEPOLIA.vault}`);
+    }
+  }
 
-  const clQuoter = await deploy("CLQuoter", quoterArtifact, [LATCH_SEPOLIA.clPoolManager]);
+  const quoterPm = await readAddress(LATCH_PERIPHERY_SEPOLIA.clQuoter, "poolManager");
+  if (!sameAddress(quoterPm, LATCH_SEPOLIA.clPoolManager)) {
+    throw new Error(`[fork] CLQuoter quotes pool manager ${quoterPm}, not ${LATCH_SEPOLIA.clPoolManager}`);
+  }
 
-  return { universalRouter, clPositionManager, clPositionDescriptor, clQuoter };
+  return { ...LATCH_PERIPHERY_SEPOLIA, permit2: PERMIT2 };
 }
 
 /**
@@ -574,33 +691,6 @@ export async function deployMockErc20(
   const receipt = await context.publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success" || receipt.contractAddress == null) {
     throw new Error(`[fork] deploying MockERC20 ${symbol} failed`);
-  }
-  return receipt.contractAddress;
-}
-
-/**
- * Deploys a `BinPositionManager` onto the fork.
- *
- * Deployed on demand rather than in {@link setupFork}: only the liquidity-book
- * suite needs it, and the deployment is not free.
- */
-export async function deployBinPositionManager(
-  context: Pick<ForkContext, "publicClient" | "walletClient">,
-): Promise<Address> {
-  const artifact = loadArtifact("periphery", "BinPositionManager.sol", "BinPositionManager");
-  const account = context.walletClient.account;
-  if (account === undefined) throw new Error("[fork] wallet client has no account");
-  const hash = await context.walletClient.deployContract({
-    account,
-    chain: foundry,
-    abi: artifact.abi,
-    bytecode: artifact.bytecode,
-    args: [LATCH_SEPOLIA.vault, LATCH_SEPOLIA.binPoolManager, PERMIT2, WETH9_SEPOLIA],
-    gas: 12_000_000n,
-  } as never);
-  const receipt = await context.publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success" || receipt.contractAddress == null) {
-    throw new Error("[fork] deploying BinPositionManager failed");
   }
   return receipt.contractAddress;
 }

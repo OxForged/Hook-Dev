@@ -9,7 +9,7 @@ import {
   NoCompilerOutputError,
   type Compilation,
 } from "./ast/compilation.js";
-import { findProjectRoot, normalisePath, readFoundryConfig } from "./ast/project.js";
+import { findProjectRoot, normalisePath, readFoundryConfig, solidityFilesUnder } from "./ast/project.js";
 import { sortFindings, type Finding } from "./finding.js";
 import { findHookContracts, type HookContract } from "./model/hook.js";
 import { ALL_RULES, materialise, type Rule } from "./rules/index.js";
@@ -99,7 +99,9 @@ export function analyze(target: string, options: AnalyzeOptions = {}): AnalysisR
   }
 
   const project = readFoundryConfig(root, options.profile);
+  const mustCover = solidityFilesUnder(targetAbsolute);
   const compilation = loadCompilation(project, {
+    mustCover,
     ...(options.buildInfo === undefined ? {} : { buildInfo: options.buildInfo }),
     ...(options.build === undefined ? {} : { build: options.build }),
     ...(options.rebuild === undefined ? {} : { rebuild: options.rebuild }),
@@ -115,6 +117,20 @@ export function analyze(target: string, options: AnalyzeOptions = {}): AnalysisR
   if (compilation.origin === "artifacts") {
     warnings.push(
       "no build-info was available, so per-artifact ASTs were used; cross-file resolution may be incomplete",
+    );
+  }
+  if (compilation.partial) {
+    const missing = mustCover.filter(
+      (path) =>
+        ![...compilation.sources.values()].some(
+          (source) => normalisePath(source.absolutePath).toLowerCase() === normalisePath(path).toLowerCase(),
+        ),
+    );
+    warnings.push(
+      `the compilation being analysed does not include ${missing.length} of the ${mustCover.length} ` +
+        `Solidity file(s) under the target, so they were NOT linted: ` +
+        `${missing.slice(0, 5).map((path) => normalisePath(relative(root, path))).join(", ")}` +
+        `${missing.length > 5 ? ", ..." : ""}`,
     );
   }
 
