@@ -37,32 +37,65 @@ export const DISTRIBUTOR_ABI = parseAbi([
   // --- writes (both permissionless on both distributors) ---
   'function closeEpoch() returns (uint256 epochId)',
   'function rollover(uint256 epochId)',
-  // --- shared reads ---
+  // --- reads with identical shape on both distributors ---
   'function epochCount() view returns (uint256)',
   'function lastCloseAt() view returns (uint64)',
   'function minEpochDuration() view returns (uint64)',
   'function claimWindow() view returns (uint64)',
   'function carryOver0() view returns (uint256)',
   'function carryOver1() view returns (uint256)',
-  'function getEpoch(uint256 epochId) view returns ((uint256,uint256,uint256,uint256,uint256,uint48,uint64,uint64,bool))',
   // --- type probes, read-only, never sent ---
   'function token() view returns (address)',
   'function challengeDelay() view returns (uint64)',
 ])
 
-/** Field order of the `Epoch` tuple above, so index math stays readable. */
+/**
+ * `getEpoch` is the one call whose RETURN SHAPE DIFFERS between the two
+ * distributors, so it gets two ABIs rather than one.
+ *
+ * Both structs are nine fields and both are all-static, so every field occupies
+ * one 32-byte word and the positions line up. That is exactly what makes a
+ * single shared ABI dangerous rather than merely wrong: decoding does not fail,
+ * it silently reinterprets.
+ *
+ *   idx  snapshot                     merkle
+ *   ---  ---------------------------  --------------------------
+ *    4   totalVotingSupply (uint256)  root (bytes32)
+ *    5   timepoint (uint48)           closedAt (uint64)
+ *    6   closedAt (uint64)            claimableAt (uint64)
+ *    7   expiresAt                    expiresAt
+ *    8   rolledOver                   rolledOver
+ *
+ * The jobs in this package read only 0-3, 7 and 8, which agree on both — so
+ * this was a latent fault, not an active misread. It stops being latent the
+ * moment somebody reads `closedAt` and gets `claimableAt` on a merkle epoch.
+ */
+export const SNAPSHOT_EPOCH_ABI = parseAbi([
+  'function getEpoch(uint256 epochId) view returns ((uint256,uint256,uint256,uint256,uint256,uint48,uint64,uint64,bool))',
+])
+
+export const MERKLE_EPOCH_ABI = parseAbi([
+  'function getEpoch(uint256 epochId) view returns ((uint256,uint256,uint256,uint256,bytes32,uint64,uint64,uint64,bool))',
+])
+
+/** Which distributor a target is. `unknown` means the probe was inconclusive. */
+export type DistributorKind = 'snapshot' | 'merkle' | 'unknown'
+
+/**
+ * Indices that mean the same thing on BOTH distributors. Nothing above index 3
+ * is listed except the two that genuinely agree — anything distributor-specific
+ * has to go through the matching ABI and be named there, not guessed from here.
+ */
 export const EPOCH = {
   amount0: 0,
   amount1: 1,
   claimed0: 2,
   claimed1: 3,
-  totalVotingSupply: 4,
-  timepoint: 5,
-  closedAt: 6,
   expiresAt: 7,
   rolledOver: 8,
 } as const
 
+/** Deliberately loose at 4-6: those positions do not share a meaning. */
 export type EpochTuple = readonly [
-  bigint, bigint, bigint, bigint, bigint, number, bigint, bigint, boolean,
+  bigint, bigint, bigint, bigint, unknown, unknown, unknown, bigint, boolean,
 ]

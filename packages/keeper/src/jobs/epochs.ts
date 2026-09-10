@@ -9,7 +9,14 @@
    ============================================================================ */
 
 import type { Address } from 'viem'
-import { DISTRIBUTOR_ABI, EPOCH, type EpochTuple } from '../abi.js'
+import {
+  DISTRIBUTOR_ABI,
+  EPOCH,
+  MERKLE_EPOCH_ABI,
+  SNAPSHOT_EPOCH_ABI,
+  type DistributorKind,
+  type EpochTuple,
+} from '../abi.js'
 import type { WatchTarget } from '../config.js'
 import { type Job, type JobContext, type JobVerdict, failed, notDue } from './types.js'
 
@@ -57,6 +64,28 @@ async function simulateAndMaybeSend(
     // A revert here is the normal, expected outcome most of the time.
     return notDue(`${label}: not due — ${revertReason(e)}`)
   }
+}
+
+/**
+ * Which distributor is this? There is no `kind()` on chain and the two have no
+ * common interface, so the only way to tell them apart is to ask each a question
+ * the other cannot answer: `token()` exists only on the snapshot distributor,
+ * `challengeDelay()` only on the merkle one.
+ *
+ * Exactly one must answer. If both do, or neither does, the answer is `unknown`
+ * and the caller must stop rather than guess — reading a merkle epoch through
+ * the snapshot ABI decodes without error and returns nonsense.
+ */
+async function probeKind(ctx: JobContext, address: Address): Promise<DistributorKind> {
+  const [snap, merk] = await Promise.allSettled([
+    ctx.publicClient.readContract({ address, abi: DISTRIBUTOR_ABI, functionName: 'token' }),
+    ctx.publicClient.readContract({ address, abi: DISTRIBUTOR_ABI, functionName: 'challengeDelay' }),
+  ])
+  const isSnap = snap.status === 'fulfilled'
+  const isMerk = merk.status === 'fulfilled'
+  if (isSnap && !isMerk) return 'snapshot'
+  if (isMerk && !isSnap) return 'merkle'
+  return 'unknown'
 }
 
 export function closeEpochJob(targets: readonly WatchTarget[]): Job {
@@ -110,6 +139,17 @@ export function rolloverJob(targets: readonly WatchTarget[]): Job {
       for (const t of targets) {
         if (!t.distributor) continue
         try {
+          const kind = await probeKind(ctx, t.distributor)
+          if (kind === 'unknown') {
+            out.push(
+              failed(
+                `${t.label} rollover: could not tell which distributor this is — it answered both or neither of token() and challengeDelay(). Refusing to guess, because a merkle epoch read through the snapshot ABI decodes silently into nonsense.`,
+              ),
+            )
+            continue
+          }
+          const epochAbi = kind === 'snapshot' ? SNAPSHOT_EPOCH_ABI : MERKLE_EPOCH_ABI
+
           const count = (await ctx.publicClient.readContract({
             address: t.distributor, abi: DISTRIBUTOR_ABI, functionName: 'epochCount',
           })) as bigint
@@ -125,7 +165,7 @@ export function rolloverJob(targets: readonly WatchTarget[]): Job {
           for (let id = 0n; id < count; id++) {
             const label = `${t.label} rollover#${id}`
             const epoch = (await ctx.publicClient.readContract({
-              address: t.distributor, abi: DISTRIBUTOR_ABI, functionName: 'getEpoch', args: [id],
+              address: t.distributor, abi: epochAbi, functionName: 'getEpoch', args: [id],
             })) as EpochTuple
 
             if (epoch[EPOCH.rolledOver]) continue

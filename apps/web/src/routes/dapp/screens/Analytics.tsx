@@ -120,14 +120,14 @@ export default function Analytics() {
                 return {
                   pct: b.pct,
                   value: n(b.count),
+                  unit: b.count === 1 ? 'protocol event' : 'protocol events',
                   label:
                     b.fromBlock === to
                       ? `Block #${n(b.fromBlock)}`
                       : `Blocks #${n(b.fromBlock)}–#${n(to)}`,
                 }
               })}
-              unit="protocol events"
-              label={`${d.eventCount} protocol events across blocks ${d.firstEventBlock} to ${d.lastEventBlock}, ${d.buckets.length} columns of ${d.blocksPerBucket} block${d.blocksPerBucket === 1 ? '' : 's'}`}
+              label={`${n(d.eventCount)} protocol events across blocks ${n(d.firstEventBlock ?? 0n)} to ${n(d.lastEventBlock ?? 0n)}, ${n(d.buckets.length)} column${d.buckets.length === 1 ? '' : 's'} of ${n(d.blocksPerBucket)} block${d.blocksPerBucket === 1 ? '' : 's'}`}
             />
             <div className="dapp-axis">
               <span>#{n(d.firstEventBlock ?? 0n)}</span>

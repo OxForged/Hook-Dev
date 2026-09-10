@@ -29,6 +29,7 @@ export type IconName =
   | 'portfolio'
   | 'analytics'
   | 'settings'
+  | 'claim'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   // landing
@@ -100,6 +101,14 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   analytics: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
+  // Claim: a share of a pot, coming out to an open hand.
+  claim: (
+    <>
+      <path d="M4.5 8.5h15v4a7.5 7.5 0 0 1-15 0z" />
+      <path d="M8 8.5V5.5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v3" />
+      <path d="M12 15v5.5" />
+    </>
+  ),
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />

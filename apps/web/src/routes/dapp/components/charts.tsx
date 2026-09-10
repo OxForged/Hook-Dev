@@ -148,17 +148,16 @@ export interface ColumnPoint {
   value: string
   /** What this column covers — a block, or a block range. */
   label: string
+  /** What `value` counts. Per-point, so the caller can get plurals right. */
+  unit: string
 }
 
 export function ColumnChart({
   points,
   label,
-  unit,
 }: {
   points: readonly ColumnPoint[]
   label: string
-  /** What `value` counts, e.g. "protocol events". Shown beside the number. */
-  unit: string
 }) {
   const tip = useChartTip()
   const active = tip.activeId === null ? null : (points[Number(tip.activeId)] ?? null)
@@ -176,7 +175,7 @@ export function ColumnChart({
         const color = SERIES_VAR[i === last ? 'success' : 'primary']
         const content: TipContent = {
           title: p.label,
-          rows: [{ label: unit, value: p.value, color }],
+          rows: [{ label: p.unit, value: p.value, color }],
         }
         return (
           <button
@@ -184,7 +183,7 @@ export function ColumnChart({
             type="button"
             className="dapp-cols__col"
             data-on={tip.activeId === id ? 'true' : undefined}
-            aria-label={`${p.label}: ${p.value} ${unit}`}
+            aria-label={`${p.label}: ${p.value} ${p.unit}`}
             {...tip.datumProps(id, content)}
           >
             <span

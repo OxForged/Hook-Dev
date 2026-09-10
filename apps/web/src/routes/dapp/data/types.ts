@@ -22,6 +22,12 @@ export type Screen =
   | 'deploy'
   | 'pool'
   | 'portfolio'
+  /* Revenue share, the operator's side: /app/protocol, /app/protocol/:poolId
+     and /app/protocol/:poolId/epochs all belong to this screen, because
+     `screenFromPath` matches on the FIRST path segment. */
+  | 'protocol'
+  /* Revenue share, the holder's side: /app/claim. */
+  | 'claim'
   | 'analytics'
   | 'settings'
 

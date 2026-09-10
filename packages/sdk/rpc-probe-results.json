@@ -1,0 +1,947 @@
+{
+  "ethereum": {
+    "chainId": 1,
+    "endpoints": [
+      {
+        "url": "https://1.rpc.thirdweb.com",
+        "latencyMs": 59,
+        "block": 25949674,
+        "eip1153": true
+      },
+      {
+        "url": "https://eth.drpc.org",
+        "latencyMs": 63,
+        "block": 25949673,
+        "eip1153": true
+      },
+      {
+        "url": "https://1rpc.io/eth",
+        "latencyMs": 94,
+        "block": 25949673,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.flashbots.net",
+        "latencyMs": 98,
+        "block": 25949673,
+        "eip1153": null
+      },
+      {
+        "url": "https://eth.rpc.blxrbdn.com",
+        "latencyMs": 105,
+        "block": 25949674,
+        "eip1153": true
+      },
+      {
+        "url": "https://gateway.tenderly.co/public/mainnet",
+        "latencyMs": 110,
+        "block": 25949674,
+        "eip1153": true
+      },
+      {
+        "url": "https://eth-mainnet.public.blastapi.io",
+        "latencyMs": 143,
+        "block": 25949674,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://ethereum-rpc.publicnode.com",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://eth.merkle.io",
+        "reason": "HTTP 429"
+      },
+      {
+        "url": "https://cloudflare-eth.com",
+        "reason": "no blockNumber (Cannot fulfill request)"
+      },
+      {
+        "url": "https://eth.llamarpc.com",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://rpc.mevblocker.io",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://ethereum.blockpi.network/v1/rpc/public",
+        "reason": "HTTP 521"
+      },
+      {
+        "url": "https://rpc.payload.de",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/eth/mainnet/public",
+        "reason": "HTTP 521"
+      },
+      {
+        "url": "https://eth.api.onfinality.io/public",
+        "reason": "HTTP 429"
+      },
+      {
+        "url": "https://api.securerpc.com/v1",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://eth.meowrpc.com",
+        "reason": "no blockNumber (HTTP 429)"
+      }
+    ]
+  },
+  "base": {
+    "chainId": 8453,
+    "endpoints": [
+      {
+        "url": "https://8453.rpc.thirdweb.com",
+        "latencyMs": 51,
+        "block": 51143160,
+        "eip1153": true
+      },
+      {
+        "url": "https://base.drpc.org",
+        "latencyMs": 68,
+        "block": 51143158,
+        "eip1153": true
+      },
+      {
+        "url": "https://base.gateway.tenderly.co",
+        "latencyMs": 113,
+        "block": 51143160,
+        "eip1153": true
+      },
+      {
+        "url": "https://base-rpc.publicnode.com",
+        "latencyMs": 132,
+        "block": 51143159,
+        "eip1153": true
+      },
+      {
+        "url": "https://base-mainnet.public.blastapi.io",
+        "latencyMs": 132,
+        "block": 51143160,
+        "eip1153": true
+      },
+      {
+        "url": "https://mainnet.base.org",
+        "latencyMs": 160,
+        "block": 51143158,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://base.llamarpc.com",
+        "reason": "HTTP 525"
+      },
+      {
+        "url": "https://1rpc.io/base",
+        "reason": "no blockNumber (HTTP 429)"
+      },
+      {
+        "url": "https://base.meowrpc.com",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://base.blockpi.network/v1/rpc/public",
+        "reason": "HTTP 521"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/base/mainnet/public",
+        "reason": "HTTP 521"
+      },
+      {
+        "url": "https://base.api.onfinality.io/public",
+        "reason": "HTTP 429"
+      }
+    ]
+  },
+  "bsc": {
+    "chainId": 56,
+    "endpoints": [
+      {
+        "url": "https://56.rpc.thirdweb.com",
+        "latencyMs": 41,
+        "block": 121142031,
+        "eip1153": true
+      },
+      {
+        "url": "https://bsc-dataseed1.defibit.io",
+        "latencyMs": 93,
+        "block": 121142013,
+        "eip1153": true
+      },
+      {
+        "url": "https://bsc-dataseed3.bnbchain.org",
+        "latencyMs": 95,
+        "block": 121142023,
+        "eip1153": true
+      },
+      {
+        "url": "https://bsc-dataseed.bnbchain.org",
+        "latencyMs": 96,
+        "block": 121142012,
+        "eip1153": true
+      },
+      {
+        "url": "https://bsc-dataseed2.bnbchain.org",
+        "latencyMs": 99,
+        "block": 121142021,
+        "eip1153": true
+      },
+      {
+        "url": "https://bsc-dataseed4.bnbchain.org",
+        "latencyMs": 100,
+        "block": 121142025,
+        "eip1153": true
+      },
+      {
+        "url": "https://bsc-dataseed1.ninicoin.io",
+        "latencyMs": 103,
+        "block": 121142027,
+        "eip1153": true
+      },
+      {
+        "url": "https://bsc-rpc.publicnode.com",
+        "latencyMs": 115,
+        "block": 121142016,
+        "eip1153": true
+      },
+      {
+        "url": "https://bsc-mainnet.public.blastapi.io",
+        "latencyMs": 129,
+        "block": 121142030,
+        "eip1153": true
+      },
+      {
+        "url": "https://1rpc.io/bnb",
+        "latencyMs": 133,
+        "block": 121142010,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://bsc.drpc.org",
+        "reason": "no blockNumber (HTTP 429)"
+      },
+      {
+        "url": "https://binance.llamarpc.com",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://bsc.blockpi.network/v1/rpc/public",
+        "reason": "HTTP 521"
+      },
+      {
+        "url": "https://bsc.meowrpc.com",
+        "reason": "fetch failed"
+      }
+    ]
+  },
+  "linea": {
+    "chainId": 59144,
+    "endpoints": [
+      {
+        "url": "https://linea.drpc.org",
+        "latencyMs": 71,
+        "block": 31996611,
+        "eip1153": true
+      },
+      {
+        "url": "https://59144.rpc.thirdweb.com",
+        "latencyMs": 118,
+        "block": 31996612,
+        "eip1153": true
+      },
+      {
+        "url": "https://linea-rpc.publicnode.com",
+        "latencyMs": 134,
+        "block": 31996611,
+        "eip1153": true
+      },
+      {
+        "url": "https://1rpc.io/linea",
+        "latencyMs": 136,
+        "block": 31996611,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.linea.build",
+        "latencyMs": 142,
+        "block": 31996611,
+        "eip1153": true
+      },
+      {
+        "url": "https://linea.gateway.tenderly.co",
+        "latencyMs": 199,
+        "block": 31996611,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://linea.blockpi.network/v1/rpc/public",
+        "reason": "HTTP 521"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/linea/mainnet/public",
+        "reason": "HTTP 521"
+      },
+      {
+        "url": "https://linea-mainnet.public.blastapi.io",
+        "reason": "HTTP 403"
+      },
+      {
+        "url": "https://linea.decubate.com",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://linea.api.onfinality.io/public",
+        "reason": "fetch failed"
+      }
+    ]
+  },
+  "ink": {
+    "chainId": 57073,
+    "endpoints": [
+      {
+        "url": "https://ink.drpc.org",
+        "latencyMs": 50,
+        "block": 55577278,
+        "eip1153": true
+      },
+      {
+        "url": "https://ink.gateway.tenderly.co",
+        "latencyMs": 102,
+        "block": 55577279,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc-qnd.inkonchain.com",
+        "latencyMs": 112,
+        "block": 55577277,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc-gel.inkonchain.com",
+        "latencyMs": 183,
+        "block": 55577276,
+        "eip1153": true
+      },
+      {
+        "url": "https://57073.rpc.thirdweb.com",
+        "latencyMs": 198,
+        "block": 55577280,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://ink-rpc.publicnode.com",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://ink-mainnet.public.blastapi.io",
+        "reason": "HTTP 403"
+      },
+      {
+        "url": "https://rpc.inkonchain.com",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://ink.api.onfinality.io/public",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://ink.blockpi.network/v1/rpc/public",
+        "reason": "HTTP 503"
+      },
+      {
+        "url": "https://ink-json-rpc.stakely.io",
+        "reason": "fetch failed"
+      }
+    ]
+  },
+  "xlayer": {
+    "chainId": 196,
+    "endpoints": [
+      {
+        "url": "https://xlayer.drpc.org",
+        "latencyMs": 61,
+        "block": 70306654,
+        "eip1153": true
+      },
+      {
+        "url": "https://196.rpc.thirdweb.com",
+        "latencyMs": 215,
+        "block": 70306661,
+        "eip1153": true
+      },
+      {
+        "url": "https://xlayerrpc.okx.com",
+        "latencyMs": 218,
+        "block": 70306657,
+        "eip1153": true
+      },
+      {
+        "url": "https://xlayer-mainnet.gateway.tatum.io",
+        "latencyMs": 231,
+        "block": 70306657,
+        "eip1153": null
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://rpc.xlayer.tech",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/xlayer/mainnet/public",
+        "reason": "HTTP 521"
+      },
+      {
+        "url": "https://xlayer-rpc.publicnode.com",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://xlayer-mainnet.public.blastapi.io",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://rpc.ankr.com/xlayer",
+        "reason": "HTTP 403"
+      },
+      {
+        "url": "https://xlayer.blockpi.network/v1/rpc/public",
+        "reason": "HTTP 402"
+      },
+      {
+        "url": "https://1rpc.io/xlayer",
+        "reason": "HTTP 400"
+      },
+      {
+        "url": "https://xlayer.gateway.tenderly.co",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://xlayer-json-rpc.stakely.io",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://x-layer.drpc.org",
+        "reason": "HTTP 404"
+      }
+    ]
+  },
+  "sepolia": {
+    "chainId": 11155111,
+    "endpoints": [
+      {
+        "url": "https://sepolia.rpc.thirdweb.com",
+        "latencyMs": 33,
+        "block": 11677556,
+        "eip1153": true
+      },
+      {
+        "url": "https://11155111.rpc.thirdweb.com",
+        "latencyMs": 43,
+        "block": 11677556,
+        "eip1153": true
+      },
+      {
+        "url": "https://gateway.tenderly.co/public/sepolia",
+        "latencyMs": 104,
+        "block": 11677556,
+        "eip1153": true
+      },
+      {
+        "url": "https://ethereum-sepolia-rpc.publicnode.com",
+        "latencyMs": 131,
+        "block": 11677555,
+        "eip1153": true
+      },
+      {
+        "url": "https://1rpc.io/sepolia",
+        "latencyMs": 131,
+        "block": 11677554,
+        "eip1153": true
+      },
+      {
+        "url": "https://0xrpc.io/sep",
+        "latencyMs": 192,
+        "block": 11677556,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://sepolia.drpc.org",
+        "reason": "HTTP 400"
+      },
+      {
+        "url": "https://rpc.sepolia.org",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://eth-sepolia.public.blastapi.io",
+        "reason": "HTTP 403"
+      },
+      {
+        "url": "https://sepolia.gateway.tenderly.co",
+        "reason": "no blockNumber (fetch failed)"
+      },
+      {
+        "url": "https://rpc2.sepolia.org",
+        "reason": "timeout"
+      },
+      {
+        "url": "https://endpoints.omniatech.io/v1/eth/sepolia/public",
+        "reason": "HTTP 521"
+      },
+      {
+        "url": "https://rpc-sepolia.rockx.com",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://ethereum-sepolia.rpc.subquery.network/public",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://sepolia.blockpi.network/v1/rpc/public",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://eth-sepolia.api.onfinality.io/public",
+        "reason": "HTTP 429"
+      },
+      {
+        "url": "https://sepolia.meowrpc.com",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://rpc.ankr.com/eth_sepolia",
+        "reason": "Unauthorized: You must authenticate your request with an API key. Create an account on https://www.ankr.com/rpc/ and generate your personal API key for free."
+      }
+    ]
+  },
+  "hyperevm": {
+    "chainId": 999,
+    "endpoints": [
+      {
+        "url": "https://rpc.purroofgroup.com",
+        "latencyMs": 28,
+        "block": 45566421,
+        "eip1153": true
+      },
+      {
+        "url": "https://hyperliquid.drpc.org",
+        "latencyMs": 52,
+        "block": 45566417,
+        "eip1153": true
+      },
+      {
+        "url": "https://1rpc.io/hyperliquid",
+        "latencyMs": 97,
+        "block": 45566423,
+        "eip1153": true
+      },
+      {
+        "url": "https://999.rpc.thirdweb.com",
+        "latencyMs": 107,
+        "block": 45566424,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.hyperliquid.xyz/evm",
+        "latencyMs": 122,
+        "block": 45566415,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.hypurrscan.io",
+        "latencyMs": 161,
+        "block": 45566417,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.hyperlend.finance",
+        "latencyMs": 193,
+        "block": 45566418,
+        "eip1153": false
+      },
+      {
+        "url": "https://hyperliquid-json-rpc.stakely.io",
+        "latencyMs": 204,
+        "block": 45566413,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://hyperliquid.api.onfinality.io/public",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://hyperliquid-rpc.publicnode.com",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://hyperliquid.gateway.tenderly.co",
+        "reason": "HTTP 404"
+      }
+    ]
+  },
+  "monad": {
+    "chainId": 143,
+    "endpoints": [
+      {
+        "url": "https://rpc.monad.xyz",
+        "latencyMs": 63,
+        "block": 103718050,
+        "eip1153": true
+      },
+      {
+        "url": "https://143.rpc.thirdweb.com",
+        "latencyMs": 81,
+        "block": 103718060,
+        "eip1153": true
+      },
+      {
+        "url": "https://monad.gateway.tenderly.co",
+        "latencyMs": 139,
+        "block": 103718063,
+        "eip1153": true
+      },
+      {
+        "url": "https://monad.drpc.org",
+        "latencyMs": 253,
+        "block": 103718053,
+        "eip1153": null
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://monad-rpc.publicnode.com",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://monad-mainnet.public.blastapi.io",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://monad.blockpi.network/v1/rpc/public",
+        "reason": "HTTP 503"
+      },
+      {
+        "url": "https://rpc.ankr.com/monad",
+        "reason": "HTTP 403"
+      },
+      {
+        "url": "https://monad.api.onfinality.io/public",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://1rpc.io/monad",
+        "reason": "HTTP 400"
+      },
+      {
+        "url": "https://monad-json-rpc.stakely.io",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://monad-mainnet.gateway.tatum.io",
+        "reason": "HTTP 429"
+      }
+    ]
+  },
+  "plasma": {
+    "chainId": 9745,
+    "endpoints": [
+      {
+        "url": "https://rpc.plasma.to",
+        "latencyMs": 94,
+        "block": 32135167,
+        "eip1153": true
+      },
+      {
+        "url": "https://plasma.gateway.tenderly.co",
+        "latencyMs": 103,
+        "block": 32135170,
+        "eip1153": true
+      },
+      {
+        "url": "https://9745.rpc.thirdweb.com",
+        "latencyMs": 119,
+        "block": 32135169,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://plasma.drpc.org",
+        "reason": "HTTP 400"
+      },
+      {
+        "url": "https://plasma-rpc.publicnode.com",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://rpc.plasma.blockpi.network/v1/rpc/public",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://plasma.blockpi.network/v1/rpc/public",
+        "reason": "HTTP 402"
+      },
+      {
+        "url": "https://plasma-mainnet.public.blastapi.io",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://plasma.api.onfinality.io/public",
+        "reason": "HTTP 429"
+      },
+      {
+        "url": "https://plasma-json-rpc.stakely.io",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://rpc.ankr.com/plasma",
+        "reason": "HTTP 403"
+      }
+    ]
+  },
+  "stable": {
+    "chainId": 988,
+    "endpoints": [
+      {
+        "url": "https://stable.drpc.org",
+        "latencyMs": 53,
+        "block": 38893219,
+        "eip1153": true
+      },
+      {
+        "url": "https://stable.gateway.tenderly.co",
+        "latencyMs": 104,
+        "block": 38893224,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.stable.xyz",
+        "latencyMs": 185,
+        "block": 38893218,
+        "eip1153": true
+      },
+      {
+        "url": "https://988.rpc.thirdweb.com",
+        "latencyMs": 200,
+        "block": 38893222,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://rpc.stablescan.xyz",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://stable-rpc.publicnode.com",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://rpc.mainnet.stable.xyz",
+        "reason": "fetch failed"
+      }
+    ]
+  },
+  "arc": {
+    "chainId": 5042,
+    "endpoints": [],
+    "failed": [
+      {
+        "url": "https://rpc.arc.io",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://rpc.mainnet.arc.io",
+        "reason": "HTTP 403"
+      },
+      {
+        "url": "https://arc.drpc.org",
+        "reason": "HTTP 400"
+      },
+      {
+        "url": "https://rpc.drpc.mainnet.arc.io",
+        "reason": "HTTP 401"
+      },
+      {
+        "url": "https://rpc.quicknode.mainnet.arc.io",
+        "reason": "HTTP 403"
+      },
+      {
+        "url": "https://rpc.blockdaemon.mainnet.arc.io",
+        "reason": "HTTP 401"
+      },
+      {
+        "url": "https://rpc.arc.network",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://rpc.mainnet.arc.network",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://rpc.arc-scan.org",
+        "reason": "fetch failed"
+      },
+      {
+        "url": "https://5042.rpc.thirdweb.com",
+        "reason": "no blockNumber (We are not able to process your request at this time. Please contact thirdweb support 4d45165d-0ff0-44ac-8e1c-b1f0e8d4bff3.)"
+      },
+      {
+        "url": "https://arc.gateway.tenderly.co",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://arc.rpc.thirdweb.com",
+        "reason": "Invalid chain"
+      }
+    ]
+  },
+  "monadTestnet": {
+    "chainId": 10143,
+    "endpoints": [
+      {
+        "url": "https://10143.rpc.thirdweb.com",
+        "latencyMs": 34,
+        "block": 61437464,
+        "eip1153": true
+      },
+      {
+        "url": "https://monad-testnet.drpc.org",
+        "latencyMs": 77,
+        "block": 61437458,
+        "eip1153": null
+      },
+      {
+        "url": "https://testnet-rpc.monad.xyz",
+        "latencyMs": 95,
+        "block": 61437456,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.ankr.com/monad_testnet",
+        "latencyMs": 101,
+        "block": 61437463,
+        "eip1153": true
+      },
+      {
+        "url": "https://monad-testnet.gateway.tenderly.co",
+        "latencyMs": 111,
+        "block": 61437467,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://monad-testnet-rpc.publicnode.com",
+        "reason": "HTTP 404"
+      },
+      {
+        "url": "https://monad-testnet.blockpi.network/v1/rpc/public",
+        "reason": "HTTP 503"
+      }
+    ]
+  },
+  "stableTestnet": {
+    "chainId": 2201,
+    "endpoints": [
+      {
+        "url": "https://2201.rpc.thirdweb.com",
+        "latencyMs": 211,
+        "block": 68543216,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.testnet.stable.xyz",
+        "latencyMs": 503,
+        "block": 68543214,
+        "eip1153": true
+      }
+    ],
+    "failed": [
+      {
+        "url": "https://stable-testnet.drpc.org",
+        "reason": "HTTP 400"
+      },
+      {
+        "url": "https://rpc.testnet.stablescan.xyz",
+        "reason": "fetch failed"
+      }
+    ]
+  },
+  "arcTestnet": {
+    "chainId": 5042002,
+    "endpoints": [
+      {
+        "url": "https://rpc.testnet.arc.network",
+        "latencyMs": 56,
+        "block": 61460367,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.testnet.arc.io",
+        "latencyMs": 62,
+        "block": 61460359,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.drpc.testnet.arc.io",
+        "latencyMs": 62,
+        "block": 61460362,
+        "eip1153": true
+      },
+      {
+        "url": "https://arc-testnet.drpc.org",
+        "latencyMs": 63,
+        "block": 61460372,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.quicknode.testnet.arc.network",
+        "latencyMs": 91,
+        "block": 61460368,
+        "eip1153": true
+      },
+      {
+        "url": "https://5042002.rpc.thirdweb.com",
+        "latencyMs": 92,
+        "block": 61460373,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.quicknode.testnet.arc.io",
+        "latencyMs": 122,
+        "block": 61460363,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.blockdaemon.testnet.arc.network",
+        "latencyMs": 167,
+        "block": 61460370,
+        "eip1153": true
+      },
+      {
+        "url": "https://rpc.blockdaemon.testnet.arc.io",
+        "latencyMs": 176,
+        "block": 61460365,
+        "eip1153": true
+      }
+    ],
+    "failed": []
+  }
+}

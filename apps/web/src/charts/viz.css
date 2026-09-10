@@ -1,0 +1,134 @@
+/* ============================================================================
+   Chart-kit styles (`.viz-*`).
+
+   These rules used to live in src/index.css — the pre-redesign global sheet,
+   which also carried its own `:root`, nav, hero and button styles. That file is
+   imported by nothing and its `:root` would fight styles/tokens.css if it ever
+   were, so the viz rules are extracted here and the rest is deleted.
+
+   Every colour, face and hairline below has been remapped from the old
+   variables (--accent, --text-dim, --bg-sunken, ...) onto the current tokens.
+   None of the old names exist in tokens.css, which is why these charts rendered
+   unstyled while they sat orphaned.
+
+   Imported by the chart components themselves, matching the TickerStrip.css
+   pattern, so the sheet travels with the only thing that uses it.
+   ============================================================================ */
+
+:root {
+  /* The old sheet's one geometry value with no equivalent in tokens.css.
+     Scoped here rather than added to the design system, because it describes
+     this chart kit's inner controls and nothing else. */
+  --radius-viz-sm: 6px;
+
+  /* The two-series palette. index.css hardcoded these as #2a78d6 / #eb6834 with
+     a second pair under a media query; both are gone. They now resolve through
+     the same tokens the dapp's SERIES_VAR uses (lib/series.ts), so the two
+     chart systems cannot drift into different blues.
+
+     `--s2` is violet rather than the old orange: these two series are read
+     against each other in a stacked bar, and the dapp already settled on
+     blue/violet for exactly that comparison after finding two blues
+     indistinguishable in a donut. */
+  --s1: var(--latch-blue);
+  --s2: var(--violet);
+}
+
+.viz-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.viz-heading { min-width: 0; }
+
+.viz-title { font-size: 15.5px; font-weight: 620; letter-spacing: -0.01em; margin: 0 0 5px; }
+
+.viz-sub { margin: 0; font-size: 13px; color: var(--label-ink); max-width: 58ch; }
+
+.viz-toggle { display: flex; gap: 2px; padding: 2px; background: var(--code-ground); border: 1px solid var(--hairline); border-radius: 8px; flex: none; }
+
+.viz-toggle button {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  padding: 4px 11px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--label-ink);
+  cursor: pointer;
+}
+
+.viz-toggle button[aria-pressed='true'] { background: var(--deep-panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .07); }
+
+.viz-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; margin: 0 0 16px; padding: 0; font-size: 12.5px; color: var(--label-ink); }
+
+.viz-legend li { display: flex; align-items: center; gap: 7px; }
+
+.viz-swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+
+/* clip (not hidden) so an axis label can never push the page sideways,
+   without turning the plot into a scroll container */
+.viz-plot { position: relative; overflow-x: clip; }
+
+.viz-band { padding: 6px 0 12px; border-radius: 6px; }
+
+.viz-band:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+
+.viz-band:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 1px; }
+
+.viz-band-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
+
+.viz-band-name { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+
+.viz-band-delta { font-size: 11.5px; color: var(--label-ink); white-space: nowrap; flex: none; font-variant-numeric: tabular-nums; }
+
+.viz-val { font-family: var(--font-mono); font-size: 10.5px; fill: var(--label-ink); font-variant-numeric: tabular-nums; }
+
+.viz-tick { font-family: var(--font-mono); font-size: 10.5px; fill: var(--label-ink); font-variant-numeric: tabular-nums; }
+
+.viz-axis { margin-top: 2px; }
+
+.viz-axis-title { margin: 5px 0 0; font-size: 11.5px; color: var(--label-ink); }
+
+.viz-tip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  background: var(--deep-panel);
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--radius-viz-sm);
+  box-shadow: 0 6px 20px rgb(0 0 0 / .16);
+  padding: 9px 11px;
+  font-size: 12px;
+}
+
+.viz-tip-title { font-family: var(--font-mono); font-size: 10.5px; color: var(--label-ink); margin-bottom: 6px; overflow-wrap: anywhere; }
+
+.viz-tip-row { display: flex; align-items: baseline; gap: 7px; }
+
+.viz-tip-row + .viz-tip-row { margin-top: 3px; }
+
+.viz-tip-key { width: 10px; height: 2px; border-radius: 1px; flex: none; transform: translateY(-3px); }
+
+.viz-tip-val { font-family: var(--font-mono); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.viz-tip-series { color: var(--label-ink); font-size: 11.5px; }
+
+.viz-cap {
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--label-ink);
+  max-width: 76ch;
+}
+
+.viz-cap code { font-size: 11.5px; color: var(--ink); background: var(--code-ground); padding: 1px 5px; border-radius: 4px; }
+
+.viz-cap strong { color: var(--ink); font-weight: 600; }

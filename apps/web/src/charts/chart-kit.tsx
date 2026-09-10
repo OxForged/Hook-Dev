@@ -1,29 +1,13 @@
+/* The tooltip that used to live here was `role="presentation"`, hand-clamped to
+   the figure's own width, and driven by pointer events only — so it was clipped
+   at the viewport edge, silent to a screen reader, and absent on touch. It is
+   replaced by the shared `useChartTip` / `ChartTip` pair, which is
+   viewport-collision-aware, carries `role="tooltip"` with `aria-describedby`,
+   and answers pointer, keyboard and tap alike. */
+
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import type { LegendItem, TipState } from './chart-utils'
-
-/* ------------------------------------------------------------------ */
-/* Tooltip — value leads, series name follows, short line keys         */
-/* ------------------------------------------------------------------ */
-
-export function Tooltip({ tip, containerWidth }: { tip: TipState; containerWidth: number }) {
-  if (!tip) return null
-  // Keep the card inside the figure at every width.
-  const w = Math.min(240, Math.max(150, containerWidth - 16))
-  const left = Math.min(Math.max(tip.x - w / 2, 0), Math.max(containerWidth - w, 0))
-  return (
-    <div className="viz-tip" style={{ left, top: tip.y, width: w }} role="presentation">
-      <div className="viz-tip-title">{tip.title}</div>
-      {tip.rows.map((r) => (
-        <div className="viz-tip-row" key={r.series}>
-          <span className="viz-tip-key" style={{ background: r.color }} aria-hidden="true" />
-          <span className="viz-tip-val">{r.value}</span>
-          <span className="viz-tip-series">{r.series}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
+import type { LegendItem } from './chart-utils'
 
 /* ------------------------------------------------------------------ */
 /* Figure shell — title, legend, chart/table toggle, caption           */

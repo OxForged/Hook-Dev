@@ -126,7 +126,7 @@ export function ActivityMixCard() {
           <>
             <BarList
               items={mix(state.events)}
-              valueLabel="events"
+              valueLabel="recorded"
               shareLabel="of the most frequent event type"
             />
             <p className="live-note">

@@ -12,6 +12,10 @@
      /app/deploy                 Deploy a Latch
      /app/pool                   Pool Detail
      /app/portfolio              Portfolio
+     /app/protocol               Revenue Share — pools the connected address owns
+     /app/protocol/:poolId       Revenue Share — one pool, in full (public)
+     /app/protocol/:poolId/epochs  Revenue Share — the distributor's epochs
+     /app/claim                  Claim — what a hook and its distributors owe
      /app/analytics              Analytics
      /app/settings               Settings
 
@@ -35,12 +39,16 @@ import type { Screen } from './data/types.ts'
 import { useMediaQuery } from './lib/dom.ts'
 import { DAPP_BASE, dappPath } from './paths.ts'
 import Analytics from './screens/Analytics.tsx'
+import Claim from './screens/Claim.tsx'
 import Dashboard from './screens/Dashboard.tsx'
 import Deploy from './screens/Deploy.tsx'
 import Explorer from './screens/Explorer.tsx'
 import LatchDetail from './screens/LatchDetail.tsx'
 import PoolDetail from './screens/PoolDetail.tsx'
 import Portfolio from './screens/Portfolio.tsx'
+import ProtocolEpochs from './screens/ProtocolEpochs.tsx'
+import ProtocolPool from './screens/ProtocolPool.tsx'
+import ProtocolRevenue from './screens/ProtocolRevenue.tsx'
 import Settings from './screens/Settings.tsx'
 import { DappStateProvider, useDapp } from './state.tsx'
 import './dapp.css'
@@ -58,6 +66,10 @@ const SCREEN_BY_SEGMENT: Record<string, Screen> = {
   deploy: 'deploy',
   pool: 'pool',
   portfolio: 'portfolio',
+  /* `protocol/:poolId` and `protocol/:poolId/epochs` resolve through the
+     first-segment fallback below, so only the bare segment is listed. */
+  protocol: 'protocol',
+  claim: 'claim',
   analytics: 'analytics',
   settings: 'settings',
 }
@@ -134,6 +146,12 @@ function Shell() {
             <Route path="deploy" element={<Deploy />} />
             <Route path="pool" element={<PoolDetail />} />
             <Route path="portfolio" element={<Portfolio />} />
+            {/* Revenue share. `protocol` is public except for the owned-pools
+                list; `protocol/:poolId` and its epoch timeline need no wallet. */}
+            <Route path="protocol" element={<ProtocolRevenue />} />
+            <Route path="protocol/:poolId" element={<ProtocolPool />} />
+            <Route path="protocol/:poolId/epochs" element={<ProtocolEpochs />} />
+            <Route path="claim" element={<Claim />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to={DAPP_BASE} replace />} />

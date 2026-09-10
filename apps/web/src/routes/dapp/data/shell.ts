@@ -36,6 +36,8 @@ const nav: NavItem[] = [
   { screen: 'deploy', label: 'Deploy a Latch', path: 'deploy', icon: 'deploy' },
   { screen: 'pool', label: 'Pool Detail', path: 'pool', icon: 'pool' },
   { screen: 'portfolio', label: 'Portfolio', path: 'portfolio', icon: 'portfolio' },
+  { screen: 'protocol', label: 'Revenue Share', path: 'protocol', icon: 'revenue' },
+  { screen: 'claim', label: 'Claim', path: 'claim', icon: 'claim' },
   { screen: 'analytics', label: 'Analytics', path: 'analytics', icon: 'analytics' },
   { screen: 'settings', label: 'Settings', path: 'settings', icon: 'settings' },
 ]
@@ -48,6 +50,11 @@ const meta: Record<Screen, ScreenMeta> = {
   /* Sepolia, not Base: Base is a verified target with no Latch contracts on it. */
   pool: { title: 'Pool detail', subtitle: 'ETH / USDC · 0.05% · Ethereum Sepolia' },
   portfolio: { title: 'Portfolio', subtitle: 'Positions held by the connected address' },
+  /* Read live off a RevShareHook. No hook is deployed on Sepolia yet, so the
+     default state of both screens is an honest "nothing to read" rather than a
+     zeroed dashboard — see lib/useHookRef.ts. */
+  protocol: { title: 'Revenue share', subtitle: 'RevShareHook · pools, roster, epochs' },
+  claim: { title: 'Claim', subtitle: 'What a RevShareHook and its distributors owe an address' },
   analytics: { title: 'Analytics', subtitle: 'Protocol-wide Latch activity' },
   settings: { title: 'Settings', subtitle: 'Account, network and API access' },
 }

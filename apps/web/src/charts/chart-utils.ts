@@ -58,13 +58,6 @@ export function ticksFor(max: number, step: number, plotWidth: number): number[]
 /* Shared shapes                                                       */
 /* ------------------------------------------------------------------ */
 
-export type TipRow = { readonly series: string; readonly value: string; readonly color: string }
-
-export type TipState = {
-  readonly x: number
-  readonly y: number
-  readonly title: string
-  readonly rows: readonly TipRow[]
-} | null
+/* Tooltip shapes now live in ./tip, shared with the dapp's charts. */
 
 export type LegendItem = { readonly label: string; readonly color: string }

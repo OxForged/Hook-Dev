@@ -1,0 +1,75 @@
+/* ============================================================================
+   Chart tooltip card. Portalled to <body>, so it is styled from the global
+   token layer (styles/tokens.css) and borrows nothing from a surface.
+
+   The fade is a CSS transition, so tokens.css's global
+   `prefers-reduced-motion: reduce` block collapses it to nothing.
+   ============================================================================ */
+
+.chart-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  /* Never intercept a pointer: on touch the card can land under the finger. */
+  pointer-events: none;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 9px 11px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-badge);
+  background: var(--panel);
+  box-shadow: var(--sh-card-hover);
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dapp-ink-data);
+  opacity: 0;
+  transition: opacity 0.12s var(--ease);
+}
+
+.chart-tip[data-ready='true'] {
+  opacity: 1;
+}
+
+.chart-tip__title {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--label-ink);
+  overflow-wrap: anywhere;
+}
+
+.chart-tip__row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0;
+}
+
+.chart-tip__row + .chart-tip__row {
+  margin-top: 3px;
+}
+
+.chart-tip__key {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+  transform: translateY(-3px);
+}
+
+.chart-tip__val {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.chart-tip__label {
+  color: var(--dapp-ink-sub);
+  font-size: 11.5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

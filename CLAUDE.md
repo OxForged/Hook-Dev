@@ -380,6 +380,21 @@ Two rules to preserve:
    read. Note `settleBeneficiaries` does NOT revert when pointless — it returns early — so that
    job must read `pendingBeneficiary` first or it will pay gas to do nothing forever.
 
+**The `getEpoch` shape trap.** The two distributors have no common interface and no
+`kind()`. Both `Epoch` structs are nine all-static fields, so the positions line up and a
+single shared ABI **decodes without error while silently reinterpreting**:
+
+| idx | SnapshotEpochDistributor | MerkleEpochDistributor |
+|---|---|---|
+| 4 | `totalVotingSupply` (uint256) | `root` (bytes32) |
+| 5 | `timepoint` (uint48) | `closedAt` (uint64) |
+| 6 | `closedAt` (uint64) | `claimableAt` (uint64) |
+
+Indices 0-3, 7 and 8 do agree, which is why this stayed latent. Always probe first —
+`token()` answers only on snapshot, `challengeDelay()` only on merkle, exactly one must
+answer — then read through the matching ABI. Never guess: the wrong ABI returns nonsense,
+not an error.
+
 ### `packages/latch-ai` (LatchAI) — MIT
 
 **We do not fork agent frameworks.** Forking ElizaOS/OpenClaw to rebrand would mean inheriting a

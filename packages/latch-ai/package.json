@@ -1,0 +1,69 @@
+{
+  "name": "@latchprotocol/latch-ai",
+  "version": "0.1.0",
+  "description": "LatchAI: framework-agnostic tool definitions that let an AI agent read and reason about Latch Protocol. No LLM SDK, no agent framework, no chatbot - just typed capabilities and thin adapters.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./adapters/openai": {
+      "types": "./dist/adapters/openai.d.ts",
+      "import": "./dist/adapters/openai.js",
+      "default": "./dist/adapters/openai.js"
+    },
+    "./adapters/anthropic": {
+      "types": "./dist/adapters/anthropic.d.ts",
+      "import": "./dist/adapters/anthropic.js",
+      "default": "./dist/adapters/anthropic.js"
+    },
+    "./adapters/mcp": {
+      "types": "./dist/adapters/mcp.d.ts",
+      "import": "./dist/adapters/mcp.js",
+      "default": "./dist/adapters/mcp.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "live": "node scripts/live-check.mjs",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "keywords": [
+    "latchprotocol",
+    "ai",
+    "agent",
+    "tools",
+    "tool-calling",
+    "mcp",
+    "defi",
+    "ethereum"
+  ],
+  "dependencies": {
+    "@latchprotocol/sdk": "file:../sdk",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

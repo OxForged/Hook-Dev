@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import './viz.css'
 import {
   FEE_MAX,
   FEE_ROWS,
@@ -9,9 +9,10 @@ import {
   pipsToPct,
 } from './data'
 import type { FeeTierComputed } from './data'
-import { Figure, Tooltip } from './chart-kit'
+import { Figure } from './chart-kit'
 import { hBarPath, ticksFor, useMeasuredWidth } from './chart-utils'
-import type { TipState } from './chart-utils'
+import { useChartTip } from './useChartTip'
+import type { DatumTipProps } from './useChartTip'
 
 const S1 = 'var(--s1)'
 const S2 = 'var(--s2)'
@@ -27,15 +28,13 @@ function FeeBand({
   width,
   plotW,
   ticks,
-  onTip,
-  onClear,
+  tipProps,
 }: {
   row: FeeTierComputed
   width: number
   plotW: number
   ticks: readonly number[]
-  onTip: (row: FeeTierComputed, clientX: number, anchorY: number) => void
-  onClear: () => void
+  tipProps: DatumTipProps
 }) {
   const x = (v: number) => (v / FEE_MAX) * plotW
   const lpW = Math.max(x(row.lp), 1.5)
@@ -47,19 +46,7 @@ function FeeBand({
   )} alone.`
 
   return (
-    <div
-      className="viz-band"
-      tabIndex={0}
-      role="img"
-      aria-label={label}
-      onPointerMove={(e) => onTip(row, e.clientX, e.currentTarget.offsetTop + e.currentTarget.offsetHeight)}
-      onPointerLeave={onClear}
-      onFocus={(e) => {
-        const box = e.currentTarget.getBoundingClientRect()
-        onTip(row, box.left + Math.min(width, box.width) / 2, e.currentTarget.offsetTop + e.currentTarget.offsetHeight)
-      }}
-      onBlur={onClear}
-    >
+    <div className="viz-band" tabIndex={0} role="img" aria-label={label} {...tipProps}>
       <div className="viz-band-head">
         <span className="viz-band-name">{row.tier}</span>
         <span className="viz-band-delta">{increasePhrase(row.ratio)}</span>
@@ -91,26 +78,11 @@ function FeeBand({
 
 export function FeeChart() {
   const [ref, width] = useMeasuredWidth<HTMLDivElement>()
-  const [tip, setTip] = useState<TipState>(null)
+  const tip = useChartTip()
 
   const plotW = Math.max(80, width - RIGHT_PAD)
   const ticks = ticksFor(10000, 2500, plotW)
   const x = (v: number) => (v / FEE_MAX) * plotW
-
-  const showTip = (row: FeeTierComputed, clientX: number, anchorY: number) => {
-    const el = ref.current
-    if (!el) return
-    const box = el.getBoundingClientRect()
-    setTip({
-      x: clientX - box.left,
-      y: anchorY - 2,
-      title: `${row.tier} · ${fmt.format(row.total)} pips total`,
-      rows: [
-        { series: 'LP fee', value: `${fmt.format(row.lp)} pips`, color: S1 },
-        { series: 'Protocol fee', value: `${fmt.format(row.protocol)} pips`, color: S2 },
-      ],
-    })
-  }
 
   const chart = (
     <div className="viz-plot" ref={ref}>
@@ -123,8 +95,13 @@ export function FeeChart() {
               width={width}
               plotW={plotW}
               ticks={ticks}
-              onTip={showTip}
-              onClear={() => setTip(null)}
+              tipProps={tip.datumProps(row.tier, {
+                title: `${row.tier} · ${fmt.format(row.total)} pips total`,
+                rows: [
+                  { label: 'LP fee', value: `${fmt.format(row.lp)} pips`, color: S1 },
+                  { label: 'Protocol fee', value: `${fmt.format(row.protocol)} pips`, color: S2 },
+                ],
+              })}
             />
           ))}
           <svg width={width} height={20} className="viz-axis" role="presentation" focusable="false">
@@ -150,7 +127,7 @@ export function FeeChart() {
             ))}
           </svg>
           <p className="viz-axis-title">Pips of swap input · 10,000 pips = 1.00%</p>
-          <Tooltip tip={tip} containerWidth={width} />
+          {tip.element}
         </>
       )}
     </div>

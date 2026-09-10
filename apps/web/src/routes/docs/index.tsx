@@ -5,6 +5,8 @@ import CodeBlock from './CodeBlock'
 import DocsFooter from './DocsFooter'
 import DocsHeader from './DocsHeader'
 import LeftRail from './LeftRail'
+import { FeeChart } from '../../charts/FeeChart'
+import { GasChart } from '../../charts/GasChart'
 import {
   BITMAP_SHELL,
   CALLBACKS,
@@ -396,6 +398,35 @@ export default function DocsPage() {
                 </div>
               ))}
             </dl>
+          </section>
+
+          {/* ------------------------------------------- B9b. Measured facts
+
+              Two charts, both plotting numbers that can be checked rather than
+              taken on trust:
+
+                FeeChart  ports `ProtocolFeeLibrary.calculateSwapFee` exactly,
+                          truncation included, so the composed rate it shows is
+                          the rate core charges.
+                GasChart  plots gas measured by `forge test` under each build
+                          profile. Reproduce it with:
+                            forge test --match-path test/transient/TransientBackendSafety.t.sol
+                            FOUNDRY_PROFILE=legacy forge test --match-path ...
+                          Both columns were re-verified on 2026-09-10 and every
+                          shanghai figure still matches to the gas unit.
+
+              This kit sat orphaned after the invented activity charts were
+              removed; it was never invented data, only unmounted. */}
+          <section id="costs" className="dk-section dk-reveal" style={vars({ '--d': '0.19s' })}>
+            <h2 className="dk-h2">What it costs</h2>
+            <p className="dk-body">
+              Two numbers a Latch author has to reason about: the fee your pool ends up charging
+              once the protocol fee composes with your LP fee, and what the settlement layer costs
+              on a chain without EIP-1153. Neither is an estimate &mdash; the first is a port of the
+              library core actually calls, the second is measured by the test suite.
+            </p>
+            <FeeChart />
+            <GasChart />
           </section>
 
           {/* --------------------------------------------- B10. Next panel */}

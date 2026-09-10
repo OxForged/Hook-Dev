@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import './viz.css'
 import { GAS_MAX, GAS_ROWS, fmt, gasDeltaPct } from './data'
 import type { GasRow } from './data'
-import { Figure, Tooltip } from './chart-kit'
+import { Figure } from './chart-kit'
 import { hBarPath, ticksFor, useMeasuredWidth } from './chart-utils'
-import type { TipState } from './chart-utils'
+import { useChartTip } from './useChartTip'
+import type { DatumTipProps } from './useChartTip'
 
 const S1 = 'var(--s1)'
 const S2 = 'var(--s2)'
@@ -23,15 +24,13 @@ function GasBand({
   width,
   plotW,
   ticks,
-  onTip,
-  onClear,
+  tipProps,
 }: {
   row: GasRow
   width: number
   plotW: number
   ticks: readonly number[]
-  onTip: (row: GasRow, clientX: number, anchorY: number) => void
-  onClear: () => void
+  tipProps: DatumTipProps
 }) {
   const x = (v: number) => (v / GAS_MAX) * plotW
   const label = `${row.test}: ${fmt.format(row.cancun)} gas on Cancun, ${fmt.format(
@@ -39,19 +38,7 @@ function GasBand({
   )} gas on Shanghai, ${deltaLabel(row)} more.`
 
   return (
-    <div
-      className="viz-band"
-      tabIndex={0}
-      role="img"
-      aria-label={label}
-      onPointerMove={(e) => onTip(row, e.clientX, e.currentTarget.offsetTop + e.currentTarget.offsetHeight)}
-      onPointerLeave={onClear}
-      onFocus={(e) => {
-        const box = e.currentTarget.getBoundingClientRect()
-        onTip(row, box.left + Math.min(width, box.width) / 2, e.currentTarget.offsetTop + e.currentTarget.offsetHeight)
-      }}
-      onBlur={onClear}
-    >
+    <div className="viz-band" tabIndex={0} role="img" aria-label={label} {...tipProps}>
       <div className="viz-band-head">
         <span className="viz-band-name">{row.test}</span>
         <span className="viz-band-delta">{deltaLabel(row)}</span>
@@ -89,26 +76,11 @@ function GasBand({
 
 export function GasChart() {
   const [ref, width] = useMeasuredWidth<HTMLDivElement>()
-  const [tip, setTip] = useState<TipState>(null)
+  const tip = useChartTip()
 
   const plotW = Math.max(80, width - RIGHT_PAD)
   const ticks = ticksFor(GAS_MAX, 50000, plotW)
   const x = (v: number) => (v / GAS_MAX) * plotW
-
-  const showTip = (row: GasRow, clientX: number, anchorY: number) => {
-    const el = ref.current
-    if (!el) return
-    const box = el.getBoundingClientRect()
-    setTip({
-      x: clientX - box.left,
-      y: anchorY - 2,
-      title: row.test,
-      rows: [
-        { series: 'Cancun (EIP-1153)', value: `${fmt.format(row.cancun)} gas`, color: S1 },
-        { series: 'Shanghai (storage)', value: `${fmt.format(row.shanghai)} gas`, color: S2 },
-      ],
-    })
-  }
 
   const chart = (
     <div className="viz-plot" ref={ref}>
@@ -121,8 +93,13 @@ export function GasChart() {
               width={width}
               plotW={plotW}
               ticks={ticks}
-              onTip={showTip}
-              onClear={() => setTip(null)}
+              tipProps={tip.datumProps(row.test, {
+                title: row.test,
+                rows: [
+                  { label: 'Cancun (EIP-1153)', value: `${fmt.format(row.cancun)} gas`, color: S1 },
+                  { label: 'Shanghai (storage)', value: `${fmt.format(row.shanghai)} gas`, color: S2 },
+                ],
+              })}
             />
           ))}
           <svg width={width} height={20} className="viz-axis" role="presentation" focusable="false">
@@ -148,7 +125,7 @@ export function GasChart() {
             ))}
           </svg>
           <p className="viz-axis-title">Gas used</p>
-          <Tooltip tip={tip} containerWidth={width} />
+          {tip.element}
         </>
       )}
     </div>
