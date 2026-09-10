@@ -36,6 +36,8 @@ export type Tone = 'primary' | 'signal' | 'violet' | 'success' | 'amber'
 /* ------------------------------------------------------------------ header */
 
 export interface NavItem {
+  /** Decorative glyph; the visible label carries the accessible name. */
+  icon?: import('../../components/NavIcon').IconName
   readonly label: string
   /** Router path when internal, `#anchor` when it targets this page. */
   readonly href: string
@@ -43,12 +45,12 @@ export interface NavItem {
 }
 
 export const NAV: readonly NavItem[] = [
-  { label: 'Home', href: '#home', active: true },
-  { label: 'Developers', href: '#developers' },
-  { label: 'Docs', href: '/docs' },
-  { label: 'Ecosystem', href: '#ecosystem' },
-  { label: 'About', href: '#about' },
-  { label: 'Brand Kit', href: '/brand' },
+  { label: 'Home', href: '#home', active: true, icon: 'home' },
+  { label: 'Developers', href: '#developers', icon: 'developers' },
+  { label: 'Docs', href: '/docs', icon: 'docs' },
+  { label: 'Ecosystem', href: '#ecosystem', icon: 'ecosystem' },
+  { label: 'About', href: '#about', icon: 'about' },
+  { label: 'Brand Kit', href: '/brand', icon: 'brand' },
 ]
 
 /** Route targets. Placeholders until the real repo / audit pages exist. */

@@ -58,12 +58,11 @@ export function TopBar({
       <div className="dapp-header__right">
         <p
           className="dapp-sample-chip"
-          title="Every figure in this app is placeholder data. Latch Protocol's only deployment is on Ethereum Sepolia."
+          title="Mixed data. KPIs, vault holdings, recent swaps and governance read live from Ethereum Sepolia; charts, activity feed, portfolio and analytics are still placeholders."
         >
-          <span aria-hidden="true">SAMPLE DATA</span>
+          <span aria-hidden="true">PARTLY LIVE</span>
           <span className="dapp-sr">
-            Sample data. Every figure in this app is a placeholder — Latch Protocol's only
-            deployment is on Ethereum Sepolia.
+            Partly live. KPIs, vault holdings, recent swaps and governance are read from the deployed Sepolia contracts. Charts, activity feed, portfolio and analytics are still placeholders.
           </span>
         </p>
 

@@ -328,3 +328,132 @@ export async function readGovernanceStatus(
   ])
   return { registry: d.registry, hookCount, custodyDelaySec, policyDelaySec }
 }
+
+/* ---------------------------------------------------------------------------
+   Aggregations for the dapp screens.
+
+   These replace the mock `data/*.ts` modules. Every figure is derived from chain.
+   The numbers are SMALL because this is a testnet with one pool and a handful of
+   swaps — that is the honest picture, and showing it beats showing invented
+   millions. A dashboard is only useful if its numbers mean something.
+   --------------------------------------------------------------------------- */
+
+const CL_INITIALIZE_EVENT = parseAbi([
+  'event Initialize(bytes32 indexed id, address indexed currency0, address indexed currency1, address hooks, uint24 fee, bytes32 parameters, uint160 sqrtPriceX96, int24 tick)',
+])
+
+export interface PoolRecord {
+  id: Hex
+  currency0: Address
+  currency1: Address
+  hooks: Address
+  /** true when the pool has a hook attached. */
+  hasHook: boolean
+  lpFeePips: number
+  createdAtBlock: bigint
+}
+
+/** Every pool ever initialized on the CL manager, from logs. */
+export async function readPools(
+  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+): Promise<PoolRecord[]> {
+  const d = DEPLOYMENTS[chainId]
+  const logs = await client(chainId).getLogs({
+    address: d.clPoolManager,
+    event: CL_INITIALIZE_EVENT[0],
+    fromBlock: d.deployedAtBlock,
+    toBlock: 'latest',
+  })
+  return logs.map((l) => {
+    const hooks = l.args.hooks as Address
+    return {
+      id: l.args.id as Hex,
+      currency0: l.args.currency0 as Address,
+      currency1: l.args.currency1 as Address,
+      hooks,
+      hasHook: hooks !== '0x0000000000000000000000000000000000000000',
+      lpFeePips: Number(l.args.fee),
+      createdAtBlock: l.blockNumber,
+    }
+  })
+}
+
+export interface ProtocolMetrics {
+  poolCount: number
+  hookedPoolCount: number
+  swapCount: number
+  /** Sum of |amount0| across swaps, in token0 units. Testnet tokens have no price. */
+  volume0: bigint
+  volume1: bigint
+  /** Fee taken by the protocol, in token units, derived from each swap's own pips. */
+  protocolFees0: bigint
+  protocolFees1: bigint
+  lpFees0: bigint
+  lpFees1: bigint
+  tvl: VaultHolding[]
+  latestBlock: bigint
+}
+
+const abs = (v: bigint) => (v < 0n ? -v : v)
+
+/**
+ * Protocol-wide metrics, computed from real logs and balances.
+ *
+ * Fees are apportioned per swap from that swap's OWN fee/protocolFee fields rather
+ * than the controller's current default — a fee change would otherwise silently
+ * rewrite history.
+ *
+ * NOTE: no USD anywhere. These are testnet tokens that nothing prices, and inventing
+ * a price to make a dashboard look busy would be the exact failure this avoids.
+ */
+export async function readProtocolMetrics(
+  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+): Promise<ProtocolMetrics> {
+  const [pools, swaps, tvl, latestBlock] = await Promise.all([
+    readPools(chainId),
+    readRecentSwaps(chainId, 1000),
+    readVaultHoldings(chainId),
+    client(chainId).getBlockNumber(),
+  ])
+
+  let volume0 = 0n
+  let volume1 = 0n
+  let protocolFees0 = 0n
+  let protocolFees1 = 0n
+  let lpFees0 = 0n
+  let lpFees1 = 0n
+
+  for (const s of swaps) {
+    // The INPUT side is the positive delta: tokens flowing into the pool.
+    const inIs0 = s.amount0 > 0n
+    const gross = inIs0 ? abs(s.amount0) : abs(s.amount1)
+
+    const total = (gross * BigInt(s.feePips)) / 1_000_000n
+    const proto = (gross * BigInt(s.protocolFeePips)) / 1_000_000n
+    const lp = total > proto ? total - proto : 0n
+
+    if (inIs0) {
+      volume0 += gross
+      protocolFees0 += proto
+      lpFees0 += lp
+    } else {
+      volume1 += gross
+      protocolFees1 += proto
+      lpFees1 += lp
+    }
+  }
+
+  return {
+    poolCount: pools.length,
+    hookedPoolCount: pools.filter((p) => p.hasHook).length,
+    swapCount: swaps.length,
+    volume0,
+    volume1,
+    protocolFees0,
+    protocolFees1,
+    lpFees0,
+    lpFees1,
+    tvl,
+    latestBlock,
+  }
+}

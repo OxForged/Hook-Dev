@@ -1729,3 +1729,8 @@ span.chainMark {
     transition: none !important;
   }
 }
+
+/* nav glyph — decorative, inherits currentColor from the link */
+.navLink { display: inline-flex; align-items: center; gap: 7px; }
+.navLink svg { opacity: .7; transition: opacity .15s; }
+.navLink:hover svg, .navLinkActive svg { opacity: 1; }

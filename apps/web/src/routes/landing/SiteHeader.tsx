@@ -3,6 +3,7 @@ import { LINKS, NAV } from './data'
 import styles from './landing.module.css'
 import { Lockup } from './Lockup'
 import { cx } from './ui'
+import { NavIcon } from '../../components/NavIcon'
 
 /** A1. Sticky translucent header — lockup left, nav + Launch App pill right. */
 export function SiteHeader() {
@@ -19,10 +20,12 @@ export function SiteHeader() {
               className={className}
               aria-current={item.active ? 'page' : undefined}
             >
+              {item.icon && <NavIcon name={item.icon} size={15} />}
               {item.label}
             </a>
           ) : (
             <Link key={item.label} to={item.href} className={className}>
+              {item.icon && <NavIcon name={item.icon} size={15} />}
               {item.label}
             </Link>
           )

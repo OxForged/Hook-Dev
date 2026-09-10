@@ -7,8 +7,50 @@ import { AreaChart, BarList, Sparkline } from '../components/charts.tsx'
 import { loadDashboard } from '../data/dashboard.ts'
 import { useDapp } from '../state.tsx'
 import { LiveChainPanel } from '../components/LiveChainPanel'
+import { useProtocolMetrics, fmtToken } from '../../../lib/useMetrics'
 
+/**
+ * Real KPI tiles, read from the deployed Sepolia contracts.
+ *
+ * The design spec put $48.2M TVL / 412,905 hook calls / $186.4K fees here. Those
+ * were placeholders and are gone. What replaces them is a fresh testnet: one pool,
+ * two swaps, a few thousandths of a token in fees.
+ *
+ * No USD. ltUSD and ltETH are unpriced testnet tokens; a fabricated price to make
+ * a dollar headline is the exact failure this replaces. Sparklines keep the
+ * reference's shape but carry no claim - there is not enough history to plot.
+ */
+function liveKpis(
+  m: import('../../../lib/chain').ProtocolMetrics,
+  fallbackSpark: number[][],
+): { label: string; value: string; trend: string; up: boolean; spark: number[] }[] {
+  const t0 = m.tvl[0]
+  const t1 = m.tvl[1]
+  return [
+    {
+      label: `VAULT TVL · ${t0?.symbol ?? 'TOKEN'}`,
+      value: t0 ? fmtToken(t0.balance, t0.decimals, 2) : '0',
+      trend: 'live', up: true, spark: fallbackSpark[0] ?? [],
+    },
+    {
+      label: 'SWAPS EXECUTED',
+      value: String(m.swapCount),
+      trend: 'all time', up: true, spark: fallbackSpark[1] ?? [],
+    },
+    {
+      label: `PROTOCOL FEES · ${t0?.symbol ?? 'TOKEN'}`,
+      value: t0 ? fmtToken(m.protocolFees0, t0.decimals, 6) : '0',
+      trend: '0.1%', up: true, spark: fallbackSpark[2] ?? [],
+    },
+    {
+      label: `LP FEES · ${t1?.symbol ?? 'TOKEN'}`,
+      value: t1 ? fmtToken(m.lpFees1, t1.decimals, 6) : '0',
+      trend: '0.3%', up: true, spark: fallbackSpark[3] ?? [],
+    },
+  ]
+}
 export default function Dashboard() {
+  const metrics = useProtocolMetrics()
   const data = useMemo(loadDashboard, [])
   const { range, setRange } = useDapp()
   const series = data.volume[range]
@@ -17,7 +59,7 @@ export default function Dashboard() {
     <>
       <LiveChainPanel />
       <div className="dapp-kpis">
-        {data.kpis.map((k, i) => (
+        {(metrics.k === 'ready' ? liveKpis(metrics.m, data.kpis.map((k) => k.spark)) : data.kpis).map((k, i) => (
           <article
             key={k.label}
             className="dapp-card dapp-card--kpi"

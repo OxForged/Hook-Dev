@@ -11,6 +11,8 @@ import type { Screen } from './types.ts'
 export interface NavItem {
   screen: Screen
   label: string
+  /** Decorative glyph; the visible label carries the accessible name. */
+  icon?: import('../../../components/NavIcon').IconName
   /** Path relative to the dapp mount point. '' is the index route. */
   path: string
 }
@@ -31,13 +33,13 @@ export interface ShellData {
 
 /** SCREENS.md § C: sidebar nav order. */
 const nav: NavItem[] = [
-  { screen: 'dashboard', label: 'Dashboard', path: '' },
-  { screen: 'explorer', label: 'Hook Explorer', path: 'explorer' },
-  { screen: 'deploy', label: 'Deploy a Hook', path: 'deploy' },
-  { screen: 'pool', label: 'Pool Detail', path: 'pool' },
-  { screen: 'portfolio', label: 'Portfolio', path: 'portfolio' },
-  { screen: 'analytics', label: 'Analytics', path: 'analytics' },
-  { screen: 'settings', label: 'Settings', path: 'settings' },
+  { screen: 'dashboard', label: 'Dashboard', path: '', icon: 'dashboard' },
+  { screen: 'explorer', label: 'Hook Explorer', path: 'explorer', icon: 'explorer' },
+  { screen: 'deploy', label: 'Deploy a Hook', path: 'deploy', icon: 'deploy' },
+  { screen: 'pool', label: 'Pool Detail', path: 'pool', icon: 'pool' },
+  { screen: 'portfolio', label: 'Portfolio', path: 'portfolio', icon: 'portfolio' },
+  { screen: 'analytics', label: 'Analytics', path: 'analytics', icon: 'analytics' },
+  { screen: 'settings', label: 'Settings', path: 'settings', icon: 'settings' },
 ]
 
 /** SCREENS.md § C: header title + subtitle per screen. */

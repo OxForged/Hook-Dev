@@ -1280,3 +1280,9 @@ span.dapp-net-chip__mark {
 .live-list a { color: var(--signal-blue); text-decoration: none; }
 .live-list a:hover { text-decoration: underline; }
 .live-fee { color: var(--muted-ink); font-size: 11px; }
+
+/* Nav rows carry a decorative glyph beside the label. */
+.dapp-nav__row { display: flex; align-items: center; gap: 10px; }
+.dapp-nav__row svg { opacity: .72; transition: opacity .15s; }
+.dapp-nav__row.is-active svg,
+.dapp-nav__row:hover svg { opacity: 1; }

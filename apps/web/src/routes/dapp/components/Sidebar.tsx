@@ -13,6 +13,7 @@ import { useRef } from 'react'
 import { NavLink } from 'react-router-dom'
 import type { ShellData } from '../data/shell.ts'
 import { useFocusTrap } from '../lib/dom.ts'
+import { NavIcon } from '../../../components/NavIcon'
 
 interface SidebarProps {
   shell: ShellData
@@ -63,6 +64,7 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
                   onClick={onClose}
                 >
                   <span className="dapp-nav__bar" aria-hidden="true" />
+                  {item.icon && <NavIcon name={item.icon} size={17} />}
                   <span>{item.label}</span>
                 </NavLink>
               </li>
@@ -72,7 +74,7 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
 
         <div className="dapp-sidebar__foot">
           <p className="dapp-sample-note">
-            Sample data · not connected to any chain
+            Live on Sepolia · some panels still sample
           </p>
           <div className="dapp-credits">
             <p className="dapp-microlabel">{shell.gasCredits.label}</p>
