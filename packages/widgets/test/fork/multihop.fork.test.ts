@@ -243,6 +243,9 @@ describe("fork: multi-hop swap execution", () => {
     await expect(
       fork.send({ to: call.to, data: call.data, value: call.value }),
     ).rejects.toThrow(/reverted/);
+    // Specifically the slippage guard - not, say, a malformed path that would
+    // also "revert" and make this test pass for the wrong reason.
+    expect(await fork.revertErrorName(call)).toBe("TooLittleReceived");
     expect(await fork.balanceOf(fork.token0.address, fork.user)).toBe(beforeIn);
   });
 });

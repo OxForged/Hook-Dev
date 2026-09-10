@@ -19,7 +19,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { BaseError, decodeErrorResult, decodeFunctionData, parseAbi, type Hex } from "viem";
+import { decodeFunctionData, parseAbi } from "viem";
 import { buildQuoteBreakdown } from "../../src/core/math.js";
 import { validateIntegratorConfig, NO_INTEGRATOR_FEE } from "../../src/config/integrator.js";
 import { UNIVERSAL_ROUTER_ABI } from "../../src/callpath/constants.js";
@@ -331,7 +331,7 @@ describe("fork: swap execution", () => {
       value: request.value,
     });
     expect(receipt.status).toBe("reverted");
-    expect(await revertErrorName(request)).toBe("TooLittleReceived");
+    expect(await fork.revertErrorName(request)).toBe("TooLittleReceived");
 
     // Nothing moved: the revert is real, not a silently-succeeded swap.
     expect(await fork.balanceOf(fork.token0.address, fork.user)).toBe(beforeIn);
@@ -364,58 +364,9 @@ describe("fork: swap execution", () => {
     await expect(
       fork.send({ to: request.to, data: request.data, value: request.value }),
     ).rejects.toThrow(/reverted/);
-    expect(await revertErrorName(request)).toBe("TransactionDeadlinePassed");
+    expect(await fork.revertErrorName(request)).toBe("TransactionDeadlinePassed");
   });
 });
-
-/**
- * Names the custom error a transaction reverts with.
- *
- * Router failures arrive wrapped in `ExecutionFailed(commandIndex, message)`, so
- * this unwraps one level before naming the inner error - the difference between
- * "the swap floor was missed" and "the whole call was malformed" is exactly what
- * a failure-mode test has to distinguish.
- */
-async function revertErrorName(request: {
-  to: `0x${string}`;
-  data: Hex;
-  value: bigint;
-}): Promise<string | null> {
-  let data: Hex | null = null;
-  try {
-    await fork.publicClient.call({
-      account: fork.user,
-      to: request.to,
-      data: request.data,
-      value: request.value,
-    });
-    return null;
-  } catch (error) {
-    const raw = error as { walk?: (fn: (e: unknown) => boolean) => unknown };
-    const inner = raw.walk?.((e) => e instanceof BaseError && "data" in e) as
-      | { data?: Hex }
-      | undefined;
-    data = inner?.data ?? null;
-    if (data === null) {
-      const message = error instanceof Error ? error.message : String(error);
-      const match = /0x[0-9a-fA-F]{8,}/.exec(message);
-      data = match ? (match[0] as Hex) : null;
-    }
-  }
-  if (data === null) return null;
-
-  const errorAbi = parseAbi([
-    "error ExecutionFailed(uint256 commandIndex, bytes message)",
-    "error TransactionDeadlinePassed()",
-    "error TooLittleReceived(uint256 minAmountOutReceived, uint256 amountReceived)",
-    "error TooMuchRequested(uint256 maxAmountInRequested, uint256 amountRequested)",
-  ]);
-  const decoded = decodeErrorResult({ abi: errorAbi, data });
-  if (decoded.errorName !== "ExecutionFailed") return decoded.errorName;
-  const wrapped = decoded.args?.[1] as Hex | undefined;
-  if (wrapped === undefined || wrapped === "0x") return "ExecutionFailed";
-  return decodeErrorResult({ abi: errorAbi, data: wrapped }).errorName;
-}
 
 function request_integratorFee(request: { integratorFee?: { expectedAmount: bigint } }): bigint {
   return request.integratorFee?.expectedAmount ?? 0n;

@@ -26,12 +26,15 @@
  */
 
 import {
+  BaseError,
   createPublicClient,
   createWalletClient,
+  decodeErrorResult,
   encodeAbiParameters,
   encodeFunctionData,
   http,
   keccak256,
+  parseAbi,
   parseEventLogs,
   type Address,
   type Hex,
@@ -76,6 +79,24 @@ const ANVIL_KEY_0: Hex = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae78
 const ANVIL_KEY_1: Hex = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
 
 const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
+
+/**
+ * Custom errors the stack reverts with on the paths this harness exercises.
+ *
+ * Transcribed from `IUniversalRouter`, `IInfinityRouter`, `CLPool`, `BinPool`
+ * and the position managers.
+ */
+const FORK_ERROR_ABI = parseAbi([
+  "error ExecutionFailed(uint256 commandIndex, bytes message)",
+  "error TransactionDeadlinePassed()",
+  "error TooLittleReceived(uint256 minAmountOutReceived, uint256 amountReceived)",
+  "error TooMuchRequested(uint256 maxAmountInRequested, uint256 amountRequested)",
+  "error PoolNotInitialized()",
+  "error IdSlippageCaught(uint256 activeIdDesired, uint256 idSlippage, uint24 activeId)",
+  "error MinimumAmountInsufficient(uint128 minimumAmount, uint128 amountReceived)",
+  "error DeadlinePassed(uint256 deadline)",
+  "error CurrencyNotSettled()",
+]);
 
 /** Gas limit for a swap or a position mint on the fork. */
 const FORK_GAS = 6_000_000n;
@@ -185,6 +206,14 @@ export interface ForkContext {
     data: Hex;
     value?: bigint;
   }): Promise<TransactionReceipt>;
+  /**
+   * Names the custom error a call reverts with, or `null` if it succeeds.
+   *
+   * A negative test that only asserts "it reverted" passes for any reason at
+   * all, including a bug elsewhere in the plan. This lets one assert *which*
+   * guard fired.
+   */
+  revertErrorName(request: { to: Address; data: Hex; value?: bigint }): Promise<string | null>;
   /** The `Swap` events the pool manager emitted in a receipt. */
   swapEvents(receipt: TransactionReceipt): readonly {
     amount0: bigint;
@@ -447,6 +476,41 @@ async function buildContext(anvil: AnvilInstance): Promise<ForkContext> {
     return receipt;
   }
 
+  async function revertErrorName(request: {
+    to: Address;
+    data: Hex;
+    value?: bigint;
+  }): Promise<string | null> {
+    let data: Hex | null = null;
+    try {
+      await publicClient.call({
+        account,
+        to: request.to,
+        data: request.data,
+        value: request.value ?? 0n,
+      });
+      return null;
+    } catch (error) {
+      const walkable = error as { walk?: (fn: (e: unknown) => boolean) => unknown };
+      const inner = walkable.walk?.((e) => e instanceof BaseError && "data" in e) as
+        | { data?: Hex }
+        | undefined;
+      data = inner?.data ?? null;
+      if (data === null) {
+        const message = error instanceof Error ? error.message : String(error);
+        const match = /0x[0-9a-fA-F]{8,}/.exec(message);
+        data = match ? (match[0] as Hex) : null;
+      }
+    }
+    if (data === null || data === "0x") return null;
+    const decoded = decodeErrorResult({ abi: FORK_ERROR_ABI, data });
+    // Router failures arrive wrapped: ExecutionFailed(commandIndex, message).
+    if (decoded.errorName !== "ExecutionFailed") return decoded.errorName;
+    const wrapped = decoded.args?.[1] as Hex | undefined;
+    if (wrapped === undefined || wrapped === "0x") return "ExecutionFailed";
+    return decodeErrorResult({ abi: FORK_ERROR_ABI, data: wrapped }).errorName;
+  }
+
   function swapEvents(receipt: TransactionReceipt): readonly {
     amount0: bigint;
     amount1: bigint;
@@ -484,6 +548,7 @@ async function buildContext(anvil: AnvilInstance): Promise<ForkContext> {
     balanceOf,
     send,
     sendAllowingRevert,
+    revertErrorName,
     swapEvents,
     async teardown() {
       await anvil.stop();

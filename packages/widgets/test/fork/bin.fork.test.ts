@@ -265,6 +265,7 @@ describe("fork: liquidity-book execution", () => {
     await expect(
       fork.send({ to: call.to, data: call.data, value: call.value }),
     ).rejects.toThrow(/reverted/);
+    expect(await fork.revertErrorName(call)).toBe("IdSlippageCaught");
   });
 
   it("encodes no fee step on the bin liquidity path", async () => {

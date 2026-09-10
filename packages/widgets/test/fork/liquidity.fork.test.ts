@@ -223,17 +223,40 @@ describe("fork: concentrated-liquidity execution", () => {
   });
 
   it("rejects a removal whose minimum-out cannot be met", async () => {
-    const tokenId = mintedTokenId;
-    if (tokenId === null) throw new Error("mint did not run");
-    // The position is already empty, so any positive minimum is unmeetable.
+    // Mint a fresh position so the failure is genuinely the slippage guard.
+    // Attempting this against the already-emptied position instead reverts in
+    // `SafeCast` - still a revert, but a different one, and a negative test that
+    // accepts any revert would have called that a pass.
+    const liquidity = getLiquidityForAmounts(
+      sqrtPriceX96,
+      getSqrtRatioAtTick(TICK_LOWER),
+      getSqrtRatioAtTick(TICK_UPPER),
+      10n * 10n ** 18n,
+      10n * 10n ** 18n,
+    );
+    const tokenId = await nextPositionTokenId(
+      fork.publicClient,
+      fork.deployments.clPositionManager,
+    );
+    const mint = await fork.adapter.buildAddLiquidity({
+      quote: quoteFor(liquidity),
+      amount0Max: DESIRED_0,
+      amount1Max: DESIRED_1,
+      recipient: fork.user,
+      deadline: BigInt(Math.floor(Date.now() / 1000) + 1_200),
+      integrator: NO_INTEGRATOR_FEE,
+    });
+    await fork.send({ to: mint.to, data: mint.data, value: mint.value });
+
+    const held = amountsForLiquidity(sqrtPriceX96, TICK_LOWER, TICK_UPPER, liquidity, false);
     const position: PositionInfo = {
       id: String(tokenId),
       tokenId,
       pool: fork.pool,
       range: { type: "CL", tickLower: TICK_LOWER, tickUpper: TICK_UPPER },
-      liquidity: mintedLiquidity,
-      amount0: 0n,
-      amount1: 0n,
+      liquidity,
+      amount0: held.amount0,
+      amount1: held.amount1,
       feesOwed0: 0n,
       feesOwed1: 0n,
       inRange: true,
@@ -242,15 +265,20 @@ describe("fork: concentrated-liquidity execution", () => {
     const request = await fork.adapter.buildRemoveLiquidity({
       position,
       percentBps: 10_000,
-      amount0Min: 1n,
-      amount1Min: 1n,
+      // Ten times what the position can possibly return.
+      amount0Min: held.amount0 * 10n,
+      amount1Min: held.amount1 * 10n,
       recipient: fork.user,
       deadline: BigInt(Math.floor(Date.now() / 1000) + 1_200),
       integrator: NO_INTEGRATOR_FEE,
     });
+
+    const before0 = await fork.balanceOf(fork.token0.address, fork.user);
     await expect(
       fork.send({ to: request.to, data: request.data, value: request.value }),
     ).rejects.toThrow(/reverted/);
+    expect(await fork.revertErrorName(request)).toBe("MinimumAmountInsufficient");
+    expect(await fork.balanceOf(fork.token0.address, fork.user)).toBe(before0);
   });
 
   it("carries the integrator config without taking anything on the liquidity path", async () => {
