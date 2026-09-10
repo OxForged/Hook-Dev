@@ -38,6 +38,17 @@ export const DEPLOYMENTS = {
     timelockCustody: '0x35D72DbEeD5F2CE95a4DFb3917D2CD3c43e544CA',
     /** 6h tier. Owns fee policy, which is reversible. */
     timelockPolicy: '0x30897C9e7c1c336cDF68C7494f930C75A355d42F',
+
+    // Periphery + router. Until these existed, a developer had to write their own
+    // ILockCallback to add liquidity or swap; now there is a real path.
+    universalRouter: '0xB647CEbd5b8d6bE38C198634828187F482f4874B',
+    clPositionManager: '0xb3505d48A84651c104a02D41B2b9D8CB84dFEC33',
+    binPositionManager: '0x965b1D98BB0cd4E0125D78AD17ea4d2D1d62AE6f',
+    clQuoter: '0x4471e61fE697204908CA97CdF4810EeAf406e9C1',
+    binQuoter: '0x3544C594f12F7c89aa1D8C596d793b661206Ab17',
+    clPositionDescriptor: '0xFe386132bE4A3D85267488A1C64061ba691cfc7a',
+    permit2: '0x31c2F6fcFf4F8759b3Bd5Bf0e1084A055615c768',
+    weth: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
     /**
      * The pool created by the live exercise in
      * packages/fees/script/ExerciseSepolia.s.sol. Real liquidity, real swaps.

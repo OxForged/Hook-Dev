@@ -56,6 +56,10 @@ export const FEE_CONTROLLER_EVENTS_ABI = parseAbi([
   "event TierFeeUpdated(uint24 indexed lpFeeTier, bool isSet, uint16 zeroForOne, uint16 oneForZero)",
   "event DynamicFeeUpdated(bool isSet, uint16 zeroForOne, uint16 oneForZero)",
   "event FeesDisabledSet(bool disabled)",
+  // Added when the controller gained a guardian: an address that can switch fees OFF
+  // immediately and can do nothing else. Re-enabling stays owner-only, so it is timelocked.
+  "event GuardianUpdated(address indexed previousGuardian, address indexed newGuardian)",
+  "event EmergencyFeesDisabled(address indexed caller)",
   "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
   "event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner)",
 ]);
