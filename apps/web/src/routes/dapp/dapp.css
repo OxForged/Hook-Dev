@@ -1237,3 +1237,46 @@ span.dapp-net-chip__mark {
   .dapp-dot--pulse { animation: none !important; opacity: 1 !important; }
   .dapp-sheen { display: none !important; }
 }
+
+/* ---- LiveChainPanel: the only surface reading real chain state ---- */
+.live-panel { display: grid; gap: 10px; }
+.live-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.live-title { font-size: 15px; font-weight: 600; margin: 0; }
+.live-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .14em;
+  color: var(--success); background: var(--dapp-badge-ok-bg, rgba(95,211,154,.12));
+  border-radius: var(--r-micro); padding: 3px 8px; white-space: nowrap;
+}
+.live-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--success) 78%, transparent);
+  animation: live-pulse 2s ease-in-out infinite;
+}
+@keyframes live-pulse { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
+.live-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+  gap: 10px; margin: 4px 0 2px;
+}
+.live-grid dt {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--label-ink); margin-bottom: 3px;
+}
+.live-grid dd { margin: 0; font-size: 14px; color: var(--ink); }
+.live-sub { color: var(--muted-ink); font-size: 12px; }
+.live-sub-h {
+  font-size: 12px; font-weight: 600; color: var(--muted-ink-2);
+  margin: 8px 0 2px; letter-spacing: -.005em;
+}
+.live-note { font-size: 12.5px; color: var(--muted-ink); margin: 0 0 4px; }
+.live-note--err { color: var(--warning); }
+.live-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.live-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-family: var(--font-mono); font-size: 12px; flex-wrap: wrap;
+  padding-bottom: 6px; border-bottom: 1px solid var(--hairline-soft);
+}
+.live-list li:last-child { border-bottom: none; padding-bottom: 0; }
+.live-list a { color: var(--signal-blue); text-decoration: none; }
+.live-list a:hover { text-decoration: underline; }
+.live-fee { color: var(--muted-ink); font-size: 11px; }

@@ -6,6 +6,7 @@ import { RangeSwitcher } from '../components/RangeSwitcher.tsx'
 import { AreaChart, BarList, Sparkline } from '../components/charts.tsx'
 import { loadDashboard } from '../data/dashboard.ts'
 import { useDapp } from '../state.tsx'
+import { LiveChainPanel } from '../components/LiveChainPanel'
 
 export default function Dashboard() {
   const data = useMemo(loadDashboard, [])
@@ -14,6 +15,7 @@ export default function Dashboard() {
 
   return (
     <>
+      <LiveChainPanel />
       <div className="dapp-kpis">
         {data.kpis.map((k, i) => (
           <article
