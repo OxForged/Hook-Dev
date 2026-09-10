@@ -49,6 +49,7 @@ export const NAV: readonly NavItem[] = [
   { label: 'Developers', href: '#developers', icon: 'developers' },
   { label: 'Docs', href: '/docs', icon: 'docs' },
   { label: 'Ecosystem', href: '#ecosystem', icon: 'ecosystem' },
+  { label: 'Revenue', href: '#revenue', icon: 'revenue' },
   { label: 'About', href: '#about', icon: 'about' },
   { label: 'Brand Kit', href: '/brand', icon: 'brand' },
 ]
@@ -72,11 +73,11 @@ export interface HeroNode {
 }
 
 export const HERO_NODES: readonly HeroNode[] = [
-  { label: 'LENDING', x: 20, y: 4 },
-  { label: 'NFTs', x: 74, y: 10 },
-  { label: 'GAMING', x: 80, y: 46 },
-  { label: 'DeFi', x: 70, y: 84 },
-  { label: 'RWA', x: 8, y: 78 },
+  { label: 'LAUNCHPADS', x: 20, y: 4 },
+  { label: 'STOCK PAIRS', x: 74, y: 10 },
+  { label: 'RWA', x: 80, y: 46 },
+  { label: 'PERPS', x: 70, y: 84 },
+  { label: 'DEX', x: 8, y: 78 },
   { label: 'AMM', x: 0, y: 40 },
 ]
 
@@ -192,28 +193,82 @@ export interface UseCase {
   readonly name: string
   readonly tag: string
   readonly body: string
+  /** What actually exists today. The cards are a roadmap as much as a pitch, and
+      a visitor who integrates on a promise and finds a stub does not come back. */
+  readonly status: 'Live on testnet' | 'In development'
 }
 
+/**
+ * The four markets Latch is built for.
+ *
+ * These replaced a generic DeFi / Gaming / NFTs / RWA grid. That grid described
+ * every hook protocol ever written and therefore described none of them; these
+ * are the integrations we are actually shipping for, in the order we are
+ * shipping them.
+ *
+ * Each carries its real status. LaunchGuard is deployed, registered on chain and
+ * covered by 55 tests; the stock-pair and revenue-share kits are contracts under
+ * active development. Labelling all four "live" would win a visitor once.
+ */
 export const USE_CASES: readonly UseCase[] = [
   {
-    name: 'DeFi',
-    tag: 'AMM · LENDING',
-    body: 'Dynamic fees, custom curves, JIT liquidity and yield routing attached directly to pool lifecycle events.',
+    name: 'DEX & AMM',
+    tag: 'DYNAMIC FEES · CUSTOM CURVES',
+    body: 'Attach fee logic, JIT liquidity and routing to pool lifecycle events. Concentrated-liquidity and bin pools share one Vault, so a hook written once serves both.',
+    status: 'Live on testnet',
   },
   {
-    name: 'Gaming',
-    tag: 'ONCHAIN GAMES',
-    body: 'Mint, burn and reward logic that reacts to in-game state without a custom AMM deployment per title.',
+    name: 'Launchpads',
+    tag: 'SNIPER PROTECTION',
+    body: 'A decaying launch tax priced on time rather than identity — the only thing a hook can actually see. One call attaches it to a new pool; no address mining, no redeploy.',
+    status: 'Live on testnet',
   },
   {
-    name: 'NFTs',
-    tag: 'PROGRAMMABLE ASSETS',
-    body: 'Latches let collections mutate metadata, royalties and access rules from onchain conditions.',
+    name: 'Stock & RWA pairs',
+    tag: 'COMPLIANCE · MARKET HOURS',
+    body: 'Trading gated on a pluggable compliance oracle, with session hours, issuer halts and oracle price bands. Equities do not trade around the clock and the pool should not pretend otherwise.',
+    status: 'In development',
   },
   {
-    name: 'RWA',
-    tag: 'COMPLIANCE',
-    body: 'Transfer restrictions, KYC gating and oracle-driven settlement enforced at the hook layer.',
+    name: 'Donations & holder share',
+    tag: 'REVENUE FROM VOLUME',
+    body: 'Route a share of trading volume to liquidity providers, named beneficiaries or token holders — accrued and claimed, never pushed, so one hostile recipient cannot block a swap.',
+    status: 'In development',
+  },
+]
+
+/* --------------------------------------------------- revenue share mechanics */
+
+export interface ShareRoute {
+  readonly name: string
+  readonly mechanism: string
+  readonly body: string
+}
+
+/**
+ * How a share of trading volume actually reaches someone.
+ *
+ * This section exists because "holders earn from volume" is the easiest claim in
+ * DeFi to make and one of the harder ones to implement honestly. The naive
+ * version iterates holders on chain; holder sets are unbounded and anyone can
+ * grow one, so that loop is a permanent denial of service on the swap path
+ * waiting to be triggered. All three routes below are pull-based for that reason.
+ */
+export const SHARE_ROUTES: readonly ShareRoute[] = [
+  {
+    name: 'Liquidity providers',
+    mechanism: 'Native donate()',
+    body: 'The pool distributes directly to in-range liquidity. Cheapest route, and the only one that needs no extra accounting — it is a protocol primitive, not a hook invention.',
+  },
+  {
+    name: 'Named beneficiaries',
+    mechanism: 'Weighted pull claims',
+    body: 'A treasury, a creator, a donation address. Fees accrue to a per-recipient balance and are claimed, never pushed: a push to a contract that reverts would revert the swap that funded it.',
+  },
+  {
+    name: 'Token holders',
+    mechanism: 'Merkle epochs',
+    body: 'An epoch closes, a root is posted, holders claim against it. This is how an ordinary ERC-20 gets a holder share without a snapshot token and without an unbounded on-chain loop.',
   },
 ]
 

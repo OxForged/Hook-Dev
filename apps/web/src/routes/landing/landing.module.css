@@ -1734,3 +1734,51 @@ span.chainMark {
 .navLink { display: inline-flex; align-items: center; gap: 7px; }
 .navLink svg { opacity: .7; transition: opacity .15s; }
 .navLink:hover svg, .navLinkActive svg { opacity: 1; }
+
+/* Use-case status badge.
+
+   The use-case cards double as a roadmap: two of the four markets are contracts
+   under active development. Live and in-development read differently at a glance
+   — green filled versus a muted outline — because a visitor scanning the grid
+   should not have to read the word to know which is which. Colour is not the only
+   carrier: the label itself always says which state it is in. */
+.useCaseStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.useCaseStatus::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.useCaseStatusLive {
+  color: var(--success-ink, #4ade80);
+  background: color-mix(in srgb, var(--success-ink, #4ade80) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success-ink, #4ade80) 28%, transparent);
+}
+.useCaseStatusSoon {
+  color: var(--label-ink);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--label-ink) 32%, transparent);
+}
+
+/* Lead paragraph under a section heading, above its card grid. */
+.sectionLead {
+  max-width: 62ch;
+  margin: 14px auto 0;
+  color: var(--label-ink);
+  font-size: 14.5px;
+  line-height: 1.65;
+  text-align: center;
+}

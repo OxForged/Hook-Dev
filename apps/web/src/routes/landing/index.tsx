@@ -1,6 +1,15 @@
 import { Activity } from './Activity'
 import { Hero } from './Hero'
-import { Chains, CtaPanel, Features, HowItWorks, Roadmap, Team, UseCases } from './Sections'
+import {
+  Chains,
+  CtaPanel,
+  Features,
+  HowItWorks,
+  RevenueShare,
+  Roadmap,
+  Team,
+  UseCases,
+} from './Sections'
 import { SiteFooter } from './SiteFooter'
 import { SiteHeader } from './SiteHeader'
 import { StatsStrip } from './StatsStrip'
@@ -22,6 +31,7 @@ export default function LandingPage() {
         <StatsStrip />
         <Activity />
         <UseCases />
+        <RevenueShare />
         <HowItWorks />
         <Features />
         <Chains />

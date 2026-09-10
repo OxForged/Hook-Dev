@@ -21,6 +21,7 @@ export type IconName =
   | 'about'
   | 'brand'
   | 'launch'
+  | 'revenue'
   | 'dashboard'
   | 'explorer'
   | 'deploy'
@@ -61,6 +62,16 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   launch: <path d="M5 19 19 5M10 5h9v9" />,
+  // Revenue share: one source splitting three ways.
+  revenue: (
+    <>
+      <circle cx="12" cy="5" r="2.5" />
+      <circle cx="4.5" cy="19" r="2.5" />
+      <circle cx="12" cy="19" r="2.5" />
+      <circle cx="19.5" cy="19" r="2.5" />
+      <path d="M12 7.5v3M12 10.5H5.2a.7.7 0 0 0-.7.7v5.3M12 10.5v6M12 10.5h6.8a.7.7 0 0 1 .7.7v5.3" />
+    </>
+  ),
 
   // dapp
   dashboard: (
