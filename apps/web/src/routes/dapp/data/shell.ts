@@ -28,7 +28,6 @@ export interface ShellData {
   gasCredits: { label: string; pct: number; remaining: string }
   wallet: { address: string }
   /** Starting block height; the shell ticks it +1 every 4000ms (README). */
-  block: number
 }
 
 /** SCREENS.md § C: sidebar nav order. */
@@ -44,7 +43,7 @@ const nav: NavItem[] = [
 
 /** SCREENS.md § C: header title + subtitle per screen. */
 const meta: Record<Screen, ScreenMeta> = {
-  dashboard: { title: 'Dashboard', subtitle: 'Sample data · Latch is live on Ethereum Sepolia' },
+  dashboard: { title: 'Dashboard', subtitle: 'Live from Ethereum Sepolia · testnet only' },
   explorer: { title: 'Latch Explorer', subtitle: 'On-chain registry · Sepolia' },
   deploy: { title: 'Deploy a Latch', subtitle: 'Register a hook against the protocol registry' },
   /* Sepolia, not Base: Base is a verified target with no Latch contracts on it. */
@@ -60,6 +59,5 @@ export function loadShell(): ShellData {
     meta,
     gasCredits: { label: 'GAS SPONSOR CREDITS', pct: 62, remaining: '0.62 ETH remaining' },
     wallet: { address: '0x8f2c…41ba' },
-    block: 21904118,
   }
 }

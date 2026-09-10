@@ -49,7 +49,8 @@ export interface DappState {
   /** Selected network, keyed to the SDK's chain list — not a free string. */
   net: ChainKey
   flags: Flags
-  block: number
+  /** Real Sepolia head, polled. null while loading or if the chain is unreachable. */
+  block: number | null
 }
 
 /** README § Design tokens — data series colours, referenced by key never by hex. */

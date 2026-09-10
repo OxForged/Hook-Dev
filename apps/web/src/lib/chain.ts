@@ -631,3 +631,10 @@ export async function readActivity(
 
   return out.sort((a, b) => Number(b.blockNumber - a.blockNumber)).slice(0, limit)
 }
+
+/** Current head of the chain. Used by the dapp shell's block chip. */
+export async function readBlockNumber(
+  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+): Promise<bigint> {
+  return client(chainId).getBlockNumber()
+}
