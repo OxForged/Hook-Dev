@@ -425,8 +425,7 @@ contract BinLaunchGuardHook is BaseBinHook {
         if (!l.enabled) return l.finalFeeBips | LPFeeLibrary.OVERRIDE_FEE_FLAG;
         uint256 startBlock = l.startBlock;
         uint256 elapsed = block.number < startBlock ? 0 : block.number - startBlock;
-        return _decayedFee(l.initialFeeBips, l.finalFeeBips, elapsed, l.decayBlocks)
-            | LPFeeLibrary.OVERRIDE_FEE_FLAG;
+        return _decayedFee(l.initialFeeBips, l.finalFeeBips, elapsed, l.decayBlocks) | LPFeeLibrary.OVERRIDE_FEE_FLAG;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -437,7 +436,12 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// claimed. `sender` is intentionally ignored: it is the caller of `initialize`, which may be
     /// any periphery contract, and is not a trustworthy identity. `activeId` is likewise ignored -
     /// the starting price is the launcher's business, not the guard's.
-    function _beforeInitialize(address, /* sender */ PoolKey calldata key, uint24 /* activeId */ )
+    function _beforeInitialize(
+        address,
+        /* sender */
+        PoolKey calldata key,
+        uint24 /* activeId */
+    )
         internal
         view
         virtual
@@ -466,7 +470,12 @@ contract BinLaunchGuardHook is BaseBinHook {
         bool swapForY,
         int128 amountSpecified,
         bytes calldata /* hookData */
-    ) internal virtual override returns (bytes4, BeforeSwapDelta, uint24) {
+    )
+        internal
+        virtual
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
         PoolId poolId = key.toId();
         Launch storage l = _launches[poolId];
 
@@ -516,7 +525,12 @@ contract BinLaunchGuardHook is BaseBinHook {
         PoolKey calldata key,
         IBinPoolManager.MintParams calldata, /* params */
         bytes calldata /* hookData */
-    ) internal virtual override returns (bytes4, uint24) {
+    )
+        internal
+        virtual
+        override
+        returns (bytes4, uint24)
+    {
         PoolId poolId = key.toId();
         Launch storage l = _launches[poolId];
         if (l.owner == address(0)) revert LaunchNotConfigured(poolId);

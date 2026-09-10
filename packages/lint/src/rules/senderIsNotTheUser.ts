@@ -7,6 +7,7 @@ import {
   getNodes,
   getString,
   referencedDeclaration,
+  typeStringOf,
   type AstNode,
 } from "../ast/node.js";
 import type { FindingDraft, Rule, RuleContext } from "./rule.js";
@@ -107,7 +108,7 @@ export const senderIsNotTheUserRule: Rule = {
         if (first === undefined) continue;
         const parameterName = getString(first, "name");
         if (parameterName === undefined || parameterName.length === 0) continue;
-        if (getString(getNode(first, "typeDescriptions"), "typeString") !== "address") continue;
+        if (typeStringOf(first) !== "address") continue;
         const parameterId = first["id"];
         if (typeof parameterId !== "number") continue;
 

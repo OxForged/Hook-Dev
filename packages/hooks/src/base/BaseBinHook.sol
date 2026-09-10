@@ -317,13 +317,11 @@ abstract contract BaseBinHook is IBinHooks {
         revert HookNotImplemented();
     }
 
-    function _afterMint(
-        address,
-        PoolKey calldata,
-        IBinPoolManager.MintParams calldata,
-        BalanceDelta,
-        bytes calldata
-    ) internal virtual returns (bytes4, BalanceDelta) {
+    function _afterMint(address, PoolKey calldata, IBinPoolManager.MintParams calldata, BalanceDelta, bytes calldata)
+        internal
+        virtual
+        returns (bytes4, BalanceDelta)
+    {
         revert HookNotImplemented();
     }
 
@@ -335,13 +333,11 @@ abstract contract BaseBinHook is IBinHooks {
         revert HookNotImplemented();
     }
 
-    function _afterBurn(
-        address,
-        PoolKey calldata,
-        IBinPoolManager.BurnParams calldata,
-        BalanceDelta,
-        bytes calldata
-    ) internal virtual returns (bytes4, BalanceDelta) {
+    function _afterBurn(address, PoolKey calldata, IBinPoolManager.BurnParams calldata, BalanceDelta, bytes calldata)
+        internal
+        virtual
+        returns (bytes4, BalanceDelta)
+    {
         revert HookNotImplemented();
     }
 

@@ -25,6 +25,7 @@ import {
   getNodes,
   getString,
   referencedDeclaration,
+  typeStringOf,
   type AstNode,
 } from "../ast/node.js";
 import {
@@ -291,7 +292,7 @@ export function senderParameter(fn: AstNode | undefined): AstNode | undefined {
   if (first === undefined) return undefined;
   const name = getString(first, "name");
   if (name === undefined || name.length === 0) return undefined;
-  const type = getString(getNode(first, "typeDescriptions"), "typeString");
+  const type = typeStringOf(first);
   if (type !== "address") return undefined;
   return first;
 }

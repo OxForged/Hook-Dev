@@ -2,7 +2,7 @@
 /** LATCH-010 - re-entering the pool manager, or an arbitrary contract, from inside a callback. */
 
 import { reachableFunctions } from "../analysis/reach.js";
-import { collect, getNode, getString, type AstNode } from "../ast/node.js";
+import { collect, getNode, getString, typeStringOf, type AstNode } from "../ast/node.js";
 import { resolveNamedDeclaration } from "../ast/query.js";
 import type { FindingDraft, Rule, RuleContext } from "./rule.js";
 
@@ -23,12 +23,12 @@ const LOW_LEVEL = new Set(["call", "delegatecall", "staticcall"]);
 
 function targetsPoolManager(context: RuleContext, base: AstNode | undefined): boolean {
   if (base === undefined) return false;
-  const inlineType = getString(getNode(base, "typeDescriptions"), "typeString");
+  const inlineType = typeStringOf(base);
   if (inlineType !== undefined && MANAGER_TYPE.test(inlineType)) return true;
   const declaration = resolveNamedDeclaration(context.compilation, base);
   const name = getString(declaration, "name");
   if (name !== undefined && MANAGER_NAME.test(name)) return true;
-  const declaredType = getString(getNode(declaration, "typeDescriptions"), "typeString");
+  const declaredType = typeStringOf(declaration);
   return declaredType !== undefined && MANAGER_TYPE.test(declaredType);
 }
 

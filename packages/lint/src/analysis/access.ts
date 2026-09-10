@@ -11,7 +11,7 @@
  */
 
 import type { Compilation } from "../ast/compilation.js";
-import { getNode, getString, referencedDeclaration, type AstNode } from "../ast/node.js";
+import { getNode, getString, referencedDeclaration, typeStringOf, type AstNode } from "../ast/node.js";
 import {
   containsRevert,
   msgSenderComparisons,
@@ -61,10 +61,10 @@ function comparesAgainstPoolManager(
   if (declaration !== undefined) {
     const name = getString(declaration, "name");
     if (name !== undefined && POOL_MANAGER_NAMES.test(name)) return true;
-    const typeName = getString(getNode(declaration, "typeDescriptions"), "typeString");
+    const typeName = typeStringOf(declaration);
     if (typeName !== undefined && POOL_MANAGER_TYPES.test(typeName)) return true;
   }
-  const inlineType = getString(getNode(against, "typeDescriptions"), "typeString");
+  const inlineType = typeStringOf(against);
   if (inlineType !== undefined && POOL_MANAGER_TYPES.test(inlineType)) return true;
   return false;
 }

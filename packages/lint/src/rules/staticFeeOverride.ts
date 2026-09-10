@@ -71,7 +71,10 @@ function assertsDynamicFee(compilation: Compilation, bodies: readonly AstNode[])
 
     for (const comparison of collect(body, "BinaryOperation")) {
       const operator = getString(comparison, "operator");
-      if (operator !== "==" && operator !== "!=") continue;
+      // `&` is the wrong test, but it *is* an attempt: reporting both "you have
+      // no assertion" and "your assertion is a bitmask" on the same line is
+      // noise. The bitmask finding below says what to change.
+      if (operator !== "==" && operator !== "!=" && operator !== "&") continue;
       const left = foldConstant(getNode(comparison, "leftExpression"), resolve);
       const right = foldConstant(getNode(comparison, "rightExpression"), resolve);
       if (left === DYNAMIC_FLAG || right === DYNAMIC_FLAG) return true;

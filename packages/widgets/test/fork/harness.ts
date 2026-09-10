@@ -30,8 +30,10 @@
 import {
   createPublicClient,
   createWalletClient,
+  encodeAbiParameters,
   encodeFunctionData,
   http,
+  keccak256,
   parseEventLogs,
   type Address,
   type Hex,
@@ -576,12 +578,100 @@ export async function deployMockErc20(
   return receipt.contractAddress;
 }
 
-/** `CLPositionManager.initializePool`, used to create the second fork-only pool. */
-export const POSITION_MANAGER_INIT_ABI = [
+/**
+ * Deploys a `BinPositionManager` onto the fork.
+ *
+ * Deployed on demand rather than in {@link setupFork}: only the liquidity-book
+ * suite needs it, and the deployment is not free.
+ */
+export async function deployBinPositionManager(
+  context: Pick<ForkContext, "publicClient" | "walletClient">,
+): Promise<Address> {
+  const artifact = loadArtifact("periphery", "BinPositionManager.sol", "BinPositionManager");
+  const account = context.walletClient.account;
+  if (account === undefined) throw new Error("[fork] wallet client has no account");
+  const hash = await context.walletClient.deployContract({
+    account,
+    chain: foundry,
+    abi: artifact.abi,
+    bytecode: artifact.bytecode,
+    args: [LATCH_SEPOLIA.vault, LATCH_SEPOLIA.binPoolManager, PERMIT2, WETH9_SEPOLIA],
+    gas: 12_000_000n,
+  } as never);
+  const receipt = await context.publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success" || receipt.contractAddress == null) {
+    throw new Error("[fork] deploying BinPositionManager failed");
+  }
+  return receipt.contractAddress;
+}
+
+/** `BinPoolManager.initialize(key, activeId)`. */
+export const BIN_POOL_MANAGER_INIT_ABI = [
   {
     type: "function",
-    name: "initializePool",
-    stateMutability: "payable",
+    name: "initialize",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "key",
+        type: "tuple",
+        components: [
+          { name: "currency0", type: "address" },
+          { name: "currency1", type: "address" },
+          { name: "hooks", type: "address" },
+          { name: "poolManager", type: "address" },
+          { name: "fee", type: "uint24" },
+          { name: "parameters", type: "bytes32" },
+        ],
+      },
+      { name: "activeId", type: "uint24" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+/** `BinPositionManager` is an ERC-6909-style share token keyed by bin. */
+export const BIN_SHARES_ABI = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "tokenId", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+/** `BinTokenLibrary.toTokenId`: `keccak256(abi.encode(poolId, binId))`. */
+export function binShareTokenId(poolId: Hex, binId: number): bigint {
+  return BigInt(
+    keccak256(
+      encodeAbiParameters(
+        [
+          { name: "poolId", type: "bytes32" },
+          { name: "binId", type: "uint256" },
+        ],
+        [poolId, BigInt(binId)],
+      ),
+    ),
+  );
+}
+
+/**
+ * `CLPoolManager.initialize`, used to create the second fork-only pool.
+ *
+ * Called on the pool manager directly rather than through
+ * `CLPositionManager.initializePool`, which swallows the revert and returns
+ * `type(int24).max` - a silent no-op that only shows up two transactions later
+ * as `PoolNotInitialized`.
+ */
+export const CL_POOL_MANAGER_INIT_ABI = [
+  {
+    type: "function",
+    name: "initialize",
+    stateMutability: "nonpayable",
     inputs: [
       {
         name: "key",

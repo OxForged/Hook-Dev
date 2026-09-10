@@ -10,7 +10,7 @@
  */
 
 import type { Compilation } from "../ast/compilation.js";
-import { collect, getNode, getString, referencedDeclaration, type AstNode } from "../ast/node.js";
+import { collect, getNode, getString, referencedDeclaration, typeStringOf, type AstNode } from "../ast/node.js";
 import { resolveVirtual } from "../ast/query.js";
 
 /** A function reached from a callback, with how far away it is. */
@@ -85,7 +85,7 @@ export function externalCallTarget(call: AstNode): AstNode | undefined {
   const target = getNode(call, "expression");
   if (target?.nodeType !== "MemberAccess") return undefined;
   const base = getNode(target, "expression");
-  const baseType = getString(getNode(base, "typeDescriptions"), "typeString");
+  const baseType = typeStringOf(base);
   if (baseType === undefined) return undefined;
   // solc renders a contract instance as `contract IFoo` and an address as `address`.
   if (!baseType.startsWith("contract ") && !baseType.startsWith("address")) return undefined;

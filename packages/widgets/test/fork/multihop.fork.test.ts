@@ -24,8 +24,8 @@ import { buildCLMintCall } from "../../src/callpath/liquidity.js";
 import { validateIntegratorConfig, NO_INTEGRATOR_FEE } from "../../src/config/integrator.js";
 import { buildQuoteBreakdown } from "../../src/core/math.js";
 import {
+  CL_POOL_MANAGER_INIT_ABI,
   deployMockErc20,
-  POSITION_MANAGER_INIT_ABI,
   setupFork,
   type ForkContext,
 } from "./harness.js";
@@ -65,9 +65,9 @@ beforeAll(async () => {
   const initHash = await fork.walletClient.writeContract({
     account: fork.walletClient.account ?? fork.user,
     chain: foundry,
-    address: fork.deployments.clPositionManager,
-    abi: POSITION_MANAGER_INIT_ABI,
-    functionName: "initializePool",
+    address: LATCH_SEPOLIA.clPoolManager,
+    abi: CL_POOL_MANAGER_INIT_ABI,
+    functionName: "initialize",
     args: [
       {
         currency0: secondPoolKey.currency0,

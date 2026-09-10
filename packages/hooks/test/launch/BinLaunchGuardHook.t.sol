@@ -421,10 +421,10 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     //////////////////////////////////////////////////////////////*/
 
     function test_base_acceptsEveryReturnsDeltaFlagWithItsBaseCallback() public {
-        uint16 full = uint16(1) << HOOKS_BEFORE_SWAP_OFFSET | uint16(1) << HOOKS_AFTER_SWAP_OFFSET
-            | uint16(1) << HOOKS_AFTER_MINT_OFFSET | uint16(1) << HOOKS_AFTER_BURN_OFFSET
-            | uint16(1) << HOOKS_BEFORE_SWAP_RETURNS_DELTA_OFFSET | uint16(1) << HOOKS_AFTER_SWAP_RETURNS_DELTA_OFFSET
-            | uint16(1) << HOOKS_AFTER_MINT_RETURNS_DELTA_OFFSET | uint16(1) << HOOKS_AFTER_BURN_RETURNS_DELTA_OFFSET;
+        uint16 full = uint16(1) << HOOKS_BEFORE_SWAP_OFFSET | uint16(1) << HOOKS_AFTER_SWAP_OFFSET | uint16(1)
+            << HOOKS_AFTER_MINT_OFFSET | uint16(1) << HOOKS_AFTER_BURN_OFFSET | uint16(1)
+            << HOOKS_BEFORE_SWAP_RETURNS_DELTA_OFFSET | uint16(1) << HOOKS_AFTER_SWAP_RETURNS_DELTA_OFFSET | uint16(1)
+            << HOOKS_AFTER_MINT_RETURNS_DELTA_OFFSET | uint16(1) << HOOKS_AFTER_BURN_RETURNS_DELTA_OFFSET;
         // Does not revert.
         new ConfigurableBinHook(poolManager, full);
     }
@@ -539,9 +539,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     function test_configure_revertsOnForeignPoolManager() public {
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 20);
         k.poolManager = IPoolManager(makeAddr("someOtherManager"));
-        vm.expectRevert(
-            abi.encodeWithSelector(BinLaunchGuardHook.PoolManagerMismatch.selector, address(k.poolManager))
-        );
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.PoolManagerMismatch.selector, address(k.poolManager)));
         hook.configureLaunch(k, _defaultConfig());
     }
 
@@ -1461,9 +1459,12 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
 
     /// @dev The mint route reads the SAME schedule as the swap route at every block, so there is
     /// never a block in which minting is the cheaper way through the tax.
-    function testFuzz_mintAndSwapReadTheSameSchedule(uint24 initialFee, uint24 finalFee, uint32 decayBlocks, uint16 elapsed)
-        public
-    {
+    function testFuzz_mintAndSwapReadTheSameSchedule(
+        uint24 initialFee,
+        uint24 finalFee,
+        uint32 decayBlocks,
+        uint16 elapsed
+    ) public {
         decayBlocks = uint32(bound(decayBlocks, 1, 5_000));
         (initialFee, finalFee, decayBlocks) = _fuzzConfigure(initialFee, finalFee, decayBlocks);
 

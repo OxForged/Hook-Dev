@@ -56,9 +56,21 @@ export function referencedDeclaration(node: AstNode | undefined): number | undef
   return typeof v === "number" && v >= 0 ? v : undefined;
 }
 
-/** The `typeString` solc inferred for an expression, if any. */
-export function typeString(node: AstNode | undefined): string | undefined {
-  return getString(getNode(node, "typeDescriptions"), "typeString");
+/**
+ * The `typeString` solc inferred for an expression or declaration.
+ *
+ * `typeDescriptions` is a bare `{typeIdentifier, typeString}` object with no
+ * `nodeType`, so it is not reachable through the node accessors - reading it as
+ * one silently yields `undefined` and quietly disables every rule that asks
+ * what type something is.
+ */
+export function typeStringOf(node: AstNode | undefined): string | undefined {
+  const descriptions = node?.["typeDescriptions"];
+  if (typeof descriptions !== "object" || descriptions === null || Array.isArray(descriptions)) {
+    return undefined;
+  }
+  const value = (descriptions as Record<string, unknown>)["typeString"];
+  return typeof value === "string" ? value : undefined;
 }
 
 /** A decoded `offset:length:sourceIndex` source location. */

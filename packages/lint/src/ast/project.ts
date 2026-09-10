@@ -133,6 +133,36 @@ export function findArtifacts(outDir: string): string[] {
   return out;
 }
 
+/** Every `.sol` file at or under `path` (a file yields itself). */
+export function solidityFilesUnder(path: string): string[] {
+  const out: string[] = [];
+  let isDirectory = false;
+  try {
+    isDirectory = statSync(path).isDirectory();
+  } catch {
+    return out;
+  }
+  if (!isDirectory) return path.endsWith(".sol") ? [path] : out;
+
+  const visit = (current: string, depth: number): void => {
+    if (depth > 12) return;
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      const child = join(current, entry.name);
+      if (entry.isDirectory()) visit(child, depth + 1);
+      else if (entry.isFile() && entry.name.endsWith(".sol")) out.push(child);
+    }
+  };
+  visit(path, 0);
+  return out;
+}
+
 /** Newest mtime among `.sol` files under `dir`, for staleness reporting. */
 export function newestSolidityMtime(dir: string): number | undefined {
   let newest: number | undefined;
