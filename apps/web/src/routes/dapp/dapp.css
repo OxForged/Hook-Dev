@@ -1286,3 +1286,46 @@ span.dapp-net-chip__mark {
 .dapp-nav__row svg { opacity: .72; transition: opacity .15s; }
 .dapp-nav__row.is-active svg,
 .dapp-nav__row:hover svg { opacity: 1; }
+
+/* ---- LiveRegistry: real hooks, read from chain ---- */
+.lr { display: grid; gap: 10px; margin-bottom: 14px; }
+.lr-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.lr-title { font-size: 15px; font-weight: 600; margin: 0; }
+.lr-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .14em;
+  color: var(--success); background: var(--dapp-badge-ok-bg, rgba(95,211,154,.12));
+  border-radius: var(--r-micro); padding: 3px 8px;
+}
+.lr-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--success) 78%, transparent);
+  animation: live-pulse 2s ease-in-out infinite; }
+.lr-note { font-size: 12.5px; color: var(--muted-ink); margin: 0; }
+.lr-note--err { color: var(--warning); }
+.lr-note a { color: var(--signal-blue); }
+.lr-list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 10px; }
+.lr-item { border: 1px solid var(--hairline); border-radius: var(--r-sm); padding: 13px 15px; display: grid; gap: 7px; }
+/* A flagged hook must be unmissable, not a subtle tint. */
+.lr-item--flagged { border-color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); }
+.lr-item__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lr-name { font-family: var(--font-display); font-weight: 600; font-size: 14.5px; color: var(--ink); text-decoration: none; }
+.lr-name:hover { text-decoration: underline; }
+.lr-chip { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  padding: 3px 7px; border-radius: var(--r-micro); border: 1px solid var(--hairline-blue); color: var(--muted-ink); }
+/* An unverified hook must never borrow the visual language of an audited one. */
+.lr-chip--v0 { color: var(--muted-ink); }
+.lr-chip--v1 { color: var(--sky-ink); border-color: var(--hairline-blue-2); }
+.lr-chip--v2 { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); }
+.lr-chip--r0 { color: var(--muted-ink); }
+.lr-chip--r1 { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 40%, transparent); }
+.lr-chip--r2 { color: var(--error); border-color: color-mix(in srgb, var(--error) 55%, transparent); }
+.lr-chip--flag { color: var(--error); border-color: var(--error); }
+.lr-desc { font-size: 13px; color: var(--muted-ink-2); margin: 0; }
+.lr-cap { margin: 0; padding-left: 1.05em; font-size: 12.5px; color: var(--muted-ink); }
+.lr-cap--danger { color: var(--warning); }
+.lr-meta { font-family: var(--font-mono); font-size: 11px; color: var(--label-ink); margin: 0; }
+.dapp-illustrative-note {
+  font-size: 12.5px; color: var(--muted-ink); margin: 0 0 12px;
+  padding: 9px 12px; border-left: 2px solid var(--hairline-blue-2); border-radius: 0 var(--r-micro) var(--r-micro) 0;
+  background: var(--panel-alt);
+}

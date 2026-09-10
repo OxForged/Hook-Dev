@@ -457,3 +457,93 @@ export async function readProtocolMetrics(
     latestBlock,
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Hook registry — the marketplace's backing contract.
+   --------------------------------------------------------------------------- */
+
+import { registryAbi } from './abi/registry'
+
+/** 0 Passive · 1 Restrictive · 2 ValueExtracting — computed on chain, uncheatable. */
+export type RiskClass = 0 | 1 | 2
+/** 0 Unverified · 1 SourceVerified · 2 Audited */
+export type VerificationLevel = 0 | 1 | 2
+/** 0 Active · 1 Deprecated · 2 Malicious */
+export type ListingState = 0 | 1 | 2
+
+export interface RegisteredHook {
+  address: Address
+  name: string
+  description: string
+  sourceURI: string
+  auditURI: string
+  submitter: Address
+  /** Read off the hook itself at registration — never supplied by the submitter. */
+  permissions: number
+  /** False when the hook's bitmap could not be read, or is malformed. Show it. */
+  permissionsReadable: boolean
+  permissionsValid: boolean
+  risk: RiskClass
+  takesSwapCut: boolean
+  canBlockSwaps: boolean
+  canTrapLiquidity: boolean
+  verification: VerificationLevel
+  listing: ListingState
+}
+
+/**
+ * Every hook listed in the registry.
+ *
+ * Capability flags come from the registry's own pure classifiers rather than being
+ * re-derived here. Three components describing one bitmap three different ways is
+ * how a user ends up trusting a hook the chain would have warned them about.
+ */
+export async function readRegisteredHooks(
+  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+): Promise<RegisteredHook[]> {
+  const d = DEPLOYMENTS[chainId]
+  const c = client(chainId)
+  const abi = registryAbi
+
+  const count = await c.readContract({ address: d.registry, abi, functionName: 'hookCount' }) as bigint
+  if (count === 0n) return []
+
+  const addrs = (await Promise.all(
+    Array.from({ length: Number(count) }, (_, i) =>
+      c.readContract({ address: d.registry, abi, functionName: 'hookAt', args: [BigInt(i)] }),
+    ),
+  )) as Address[]
+
+  return Promise.all(
+    addrs.map(async (a) => {
+      const r = (await c.readContract({
+        address: d.registry, abi, functionName: 'getHook', args: [a],
+      })) as any
+      const p = Number(r.permissions)
+      const [risk, cut, block, trap] = (await Promise.all([
+        c.readContract({ address: d.registry, abi, functionName: 'classify', args: [p] }),
+        c.readContract({ address: d.registry, abi, functionName: 'takesSwapCut', args: [p] }),
+        c.readContract({ address: d.registry, abi, functionName: 'canBlockSwaps', args: [p] }),
+        c.readContract({ address: d.registry, abi, functionName: 'canTrapLiquidity', args: [p] }),
+      ])) as [number, boolean, boolean, boolean]
+
+      return {
+        address: a,
+        name: r.metadata?.name ?? '',
+        description: r.metadata?.description ?? '',
+        sourceURI: r.metadata?.sourceURI ?? '',
+        auditURI: r.metadata?.auditURI ?? '',
+        submitter: r.submitter as Address,
+        permissions: p,
+        permissionsReadable: Boolean(r.permissionsReadable),
+        permissionsValid: Boolean(r.permissionsValid),
+        risk: Number(risk) as RiskClass,
+        takesSwapCut: cut,
+        canBlockSwaps: block,
+        canTrapLiquidity: trap,
+        verification: Number(r.verification) as VerificationLevel,
+        listing: Number(r.listing) as ListingState,
+      }
+    }),
+  )
+}

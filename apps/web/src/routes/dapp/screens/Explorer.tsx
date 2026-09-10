@@ -6,6 +6,7 @@ import { filterLatches, loadExplorer } from '../data/explorer.ts'
 import type { LatchStatus } from '../data/explorer.ts'
 import { dappPath } from '../paths.ts'
 import { useDapp } from '../state.tsx'
+import { LiveRegistry } from '../components/LiveRegistry'
 
 const BADGE_CLASS: Record<LatchStatus, string> = {
   VERIFIED: 'dapp-badge dapp-badge--ok',
@@ -24,6 +25,13 @@ export default function Explorer() {
 
   return (
     <>
+      <LiveRegistry />
+
+      <p className="dapp-illustrative-note">
+        Below: illustrative listings from the design spec, kept to show the browse and
+        filter experience. They are not real hooks and are not on chain.
+      </p>
+
       <div className="dapp-toolbar">
         <div className="dapp-search">
           <span className="dapp-search__ring" aria-hidden="true" />

@@ -45,7 +45,7 @@ const nav: NavItem[] = [
 /** SCREENS.md § C: header title + subtitle per screen. */
 const meta: Record<Screen, ScreenMeta> = {
   dashboard: { title: 'Dashboard', subtitle: 'Sample data · Latch is live on Ethereum Sepolia' },
-  explorer: { title: 'Latch Explorer', subtitle: '1,840 latches · 1,612 verified' },
+  explorer: { title: 'Latch Explorer', subtitle: 'On-chain registry · Sepolia' },
   deploy: { title: 'Deploy a Latch', subtitle: 'Register a hook against the protocol registry' },
   /* Sepolia, not Base: Base is a verified target with no Latch contracts on it. */
   pool: { title: 'Pool detail', subtitle: 'ETH / USDC · 0.05% · Ethereum Sepolia' },

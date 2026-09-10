@@ -10,8 +10,9 @@
     "preview": "vite preview",
     "sync-brand": "node scripts/sync-brand.mjs",
     "sync-chains": "node scripts/sync-chains.mjs",
-    "predev": "node scripts/sync-brand.mjs && node scripts/sync-chains.mjs",
-    "prebuild": "node scripts/sync-brand.mjs && node scripts/sync-chains.mjs"
+    "predev": "node scripts/sync-brand.mjs && node scripts/sync-chains.mjs && node scripts/sync-abi.mjs",
+    "prebuild": "node scripts/sync-brand.mjs && node scripts/sync-chains.mjs && node scripts/sync-abi.mjs",
+    "sync-abi": "node scripts/sync-abi.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",
