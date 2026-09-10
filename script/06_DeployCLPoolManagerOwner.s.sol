@@ -21,7 +21,7 @@ import {CLPoolManagerOwner} from "../src/pool-cl/CLPoolManagerOwner.sol";
  */
 contract DeployCLPoolManagerOwnerScript is BaseScript {
     function getDeploymentSalt() public pure override returns (bytes32) {
-        return keccak256("INFINITY-CORE/CLPoolManagerOwner/1.0.0");
+        return keccak256("LATCH-CORE/CLPoolManagerOwner/1.0.0");
     }
 
     function run() public {

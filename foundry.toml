@@ -80,3 +80,21 @@ remappings = [
 
 [profile.legacy.fuzz]
 runs = 5
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Latch Protocol: networks and verification.
+# Values come from the environment (packages/core/.env, gitignored). Never inline
+# a key or a credentialed RPC URL here — this file is committed.
+# ─────────────────────────────────────────────────────────────────────────────
+[rpc_endpoints]
+sepolia = "${SEPOLIA_RPC_URL}"
+hyperevm = "${HYPEREVM_RPC_URL}"
+plasma = "${PLASMA_RPC_URL}"
+stable = "${STABLE_RPC_URL}"
+arc_testnet = "${ARC_TESTNET_RPC_URL}"
+
+[etherscan]
+# Etherscan covers Ethereum and Sepolia. HyperEVM, Plasma, Stable and Arc run
+# their own explorers (plasmascan.to, arcscan, …) and need per-explorer
+# verification config — an Etherscan key does not verify contracts there.
+sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111 }

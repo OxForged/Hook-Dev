@@ -21,7 +21,7 @@ import {BinPoolManagerOwner} from "../src/pool-bin/BinPoolManagerOwner.sol";
  */
 contract DeployBinPoolManagerOwnerScript is BaseScript {
     function getDeploymentSalt() public pure override returns (bytes32) {
-        return keccak256("INFINITY-CORE/BinPoolManagerOwner/1.0.0");
+        return keccak256("LATCH-CORE/BinPoolManagerOwner/1.0.0");
     }
 
     function run() public {

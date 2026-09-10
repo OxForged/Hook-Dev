@@ -4,7 +4,41 @@
     "true  -> deploy the default build (forge build)",
     "false -> deploy the legacy build (FOUNDRY_PROFILE=legacy forge build)",
     "A chain absent from this file will REVERT the deploy. That is intentional.",
-    "Verify support against the chain's own upgrade docs before adding an entry.",
-    "Re-verify before every deploy: chains gain Cancun support over time."
-  ]
+    "Re-verify before every deploy: chains gain Cancun support over time, and an entry",
+    "written months ago is a claim about a network that may have upgraded since."
+  ],
+  "_verification_method": [
+    "Every entry below was verified EMPIRICALLY against the live chain, not from documentation.",
+    "Neither Plasma nor Stable documents its hardfork, so reading docs would have meant guessing.",
+    "Probe: a read-only eth_call executing initcode 0x600060005D60006000F3",
+    "       (PUSH1 0, PUSH1 0, TSTORE, PUSH1 0, PUSH1 0, RETURN).",
+    "Control: the same initcode with SSTORE (0x55) in place of TSTORE (0x5D), valid on every EVM,",
+    "         to prove the endpoint accepts the call shape at all.",
+    "A chain lacking EIP-1153 treats 0x5D as an invalid opcode and the call fails.",
+    "Verified 2026-09-09. Re-run before deploying."
+  ],
+  "_not_yet_classified": [
+    "998 (HyperEVM testnet): the endpoint probed did not respond. Unreachable is NOT the same as",
+    "  failing, but it is unverified either way, so it stays out.",
+    "5042 (Arc mainnet): scheduled to launch 2026-09-16 and not live at time of verification.",
+    "  Arc testnet (5042002) passes and Arc targets the Prague hardfork, which succeeds Cancun,",
+    "  so mainnet is expected to pass - but expected is not verified.",
+    "Both absences make a deploy to those chains fail closed until someone probes them."
+  ],
+
+  "11155111": true,
+  "999": true,
+  "9745": true,
+  "988": true,
+  "2201": true,
+  "5042002": true,
+
+  "_chain_names": {
+    "11155111": "Ethereum Sepolia testnet",
+    "999": "HyperEVM mainnet (Hyperliquid) - docs state Cancun without blobs; probe confirms",
+    "9745": "Plasma mainnet (stablecoin L1, modified Reth execution layer)",
+    "988": "Stable mainnet (USDT0-native gas)",
+    "2201": "Stable testnet",
+    "5042002": "Arc testnet (Circle, USDC-native gas)"
+  }
 }
