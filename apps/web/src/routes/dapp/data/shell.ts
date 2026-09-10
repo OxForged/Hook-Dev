@@ -47,8 +47,11 @@ const meta: Record<Screen, ScreenMeta> = {
   dashboard: { title: 'Dashboard', subtitle: 'Live from Ethereum Sepolia · testnet only' },
   marketplace: { title: 'Latch Marketplace', subtitle: 'On-chain registry · Sepolia' },
   deploy: { title: 'Deploy a Latch', subtitle: 'List a Latch in the on-chain registry' },
-  /* Sepolia, not Base: Base is a verified target with no Latch contracts on it. */
-  pool: { title: 'Pool detail', subtitle: 'ETH / USDC · 0.05% · Ethereum Sepolia' },
+  /* No pair or fee here any more. This meta is static, and the screen reads the
+     real pair, fee and vault balances off chain — a hardcoded "ETH / USDC · 0.05%"
+     in the subtitle contradicted the "ltUSD / ltETH · 0.30%" the page itself
+     rendered a few pixels below it. */
+  pool: { title: 'Pool detail', subtitle: 'Live pool state, read from chain' },
   portfolio: { title: 'Portfolio', subtitle: 'Positions held by the connected address' },
   /* Read live off a RevShareHook. No hook is deployed on Sepolia yet, so the
      default state of both screens is an honest "nothing to read" rather than a

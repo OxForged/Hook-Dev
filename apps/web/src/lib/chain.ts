@@ -109,6 +109,16 @@ const RPCS: Record<DeployedChainId, readonly string[]> = {
 const clients = new Map<number, PublicClient>()
 
 /**
+ * The endpoints configured for a chain, in the order the fallback tries them.
+ *
+ * Exposed so the Settings screen can show what the app is ACTUALLY talking to,
+ * rather than describing it in prose that drifts from the array.
+ */
+export function rpcsFor(chainId: DeployedChainId): readonly string[] {
+  return RPCS[chainId] ?? []
+}
+
+/**
  * The dapp's read client FOR ONE CHAIN.
  *
  * The retry shape is chosen for rate limits, not for flaky networks. `retryCount: 0`

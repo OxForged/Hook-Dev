@@ -1,7 +1,13 @@
 /* ============================================================================
    Settings data — SCREENS.md § C7.
-   MOCK SEAM: `loadSettings()`. Preferences live in component state only; the
-   API key is a placeholder string and ROTATE calls nothing.
+   Preferences live in component state only — they are display toggles, not
+   anything persisted or read by a contract.
+
+   The API key is GONE. It was `latch_sk_••••••••••••7f21` beside a ROTATE button
+   that called nothing: there is no Latch API and no account system, so both the
+   credential and the action were fiction dressed as a feature. The screen now
+   shows the configuration that genuinely exists — the RPC endpoints in use and
+   the two build-time variables that switch real features on.
    ============================================================================ */
 
 import type { ChainKey, ChainRow } from '../../../data/chains.ts'
@@ -24,8 +30,6 @@ export interface SettingsData {
   defaultNetwork: ChainKey
   /** README § State management: `flags` defaults. */
   defaultFlags: Flags
-  apiKey: string
-  apiNote: string
 }
 
 export function loadSettings(): SettingsData {
@@ -61,7 +65,5 @@ export function loadSettings(): SettingsData {
     /* The README's default has `testnet` off. It is on here for the same reason:
        with Sepolia the only deployment, hiding testnets hides everything real. */
     defaultFlags: { sim: true, alerts: true, testnet: true, autoGas: true },
-    apiKey: 'latch_sk_••••••••••••7f21',
-    apiNote: 'Rotating the key invalidates existing simulation sessions within 60 seconds.',
   }
 }

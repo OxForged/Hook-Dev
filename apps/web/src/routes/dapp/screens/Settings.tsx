@@ -10,6 +10,10 @@ import { useMemo } from 'react'
 import { ChainMark } from '../../../components/ChainMark.tsx'
 import type { ChainRow } from '../../../data/chains.ts'
 import { explorerAddressUrl } from '../../../data/chains.ts'
+import { ChainTag } from '../../../components/ChainTag.tsx'
+import { rpcsFor } from '../../../lib/chain'
+import { walletConnectEnabled } from '../../../lib/wallet.ts'
+import { stocksConfigured } from '../../../lib/prices.ts'
 import { loadSettings } from '../data/settings.ts'
 import { useDapp } from '../state.tsx'
 
@@ -61,7 +65,8 @@ function NetworkGroup({
 
 export default function Settings() {
   const data = useMemo(loadSettings, [])
-  const { flags, toggleFlag, net, setNet } = useDapp()
+  const { flags, toggleFlag, net, setNet, browsingChain } = useDapp()
+  const endpoints = useMemo(() => rpcsFor(browsingChain), [browsingChain])
   const selected = useMemo(
     () => data.networks.find((c) => c.key === net) ?? data.networks[0],
     [data.networks, net],
@@ -180,15 +185,62 @@ export default function Settings() {
           </section>
         ) : null}
 
+        {/* This used to be an API KEY card showing `latch_sk_••••••••••••7f21`
+            beside a ROTATE button that called nothing. There is no Latch API and
+            no account system — the app is a client-side reader, which the privacy
+            policy already states. A fake credential next to a fake action is the
+            worst kind of placeholder, because both look real.
+
+            What replaces it is the configuration that genuinely exists: the RPC
+            endpoints this build talks to, and the two build-time variables that
+            switch real features on. */}
         <section className="dapp-card dapp-card--config">
-          <h2 className="dapp-microlabel">API KEY</h2>
-          <div className="dapp-apikey">
-            <span className="dapp-apikey__value">{data.apiKey}</span>
-            <button type="button" className="dapp-btn dapp-btn--ghost">
-              ROTATE
-            </button>
+          <div className="dapp-card__bar">
+            <h2 className="dapp-microlabel">RPC ENDPOINTS</h2>
+            <ChainTag chainId={browsingChain} size={13} />
           </div>
-          <p className="dapp-note">{data.apiNote}</p>
+          <ol className="live-list live-list--ordered">
+            {endpoints.map((url, i) => (
+              <li key={url}>
+                <span className="tabular">{i + 1}.</span>{' '}
+                <span className="dapp-apikey__value">{url}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="dapp-note">
+            Tried in this order. Each is probed before shipping — it answered{' '}
+            <code>eth_chainId</code> with the expected id and served{' '}
+            <code>eth_blockNumber</code>. A rate-limited endpoint falls straight through to the
+            next rather than being retried, so one pass asks all of them before any is asked
+            twice. None carries an API key.
+          </p>
+        </section>
+
+        <section className="dapp-card dapp-card--config">
+          <h2 className="dapp-microlabel">BUILD CONFIGURATION</h2>
+          <ul className="live-list">
+            <li>
+              <span>WalletConnect</span>
+              <span className={walletConnectEnabled ? 'dapp-badge dapp-badge--ok' : 'dapp-badge dapp-badge--mute'}>
+                {walletConnectEnabled ? 'CONFIGURED' : 'NOT SET'}
+              </span>
+            </li>
+            <li>
+              <span>US equity quotes</span>
+              <span className={stocksConfigured() ? 'dapp-badge dapp-badge--ok' : 'dapp-badge dapp-badge--mute'}>
+                {stocksConfigured() ? 'CONFIGURED' : 'NOT SET'}
+              </span>
+            </li>
+          </ul>
+          <p className="dapp-note">
+            Both are read at build time from the environment and neither is required.
+            Without a WalletConnect project id the connect modal offers browser wallets only,
+            rather than showing rows that cannot complete. Without a Finnhub key the equities
+            ticker says it is unconfigured instead of showing a price it does not have.
+          </p>
+          <p className="dapp-note">
+            There is no Latch API key. The app reads chain directly and keeps no account.
+          </p>
         </section>
       </div>
     </div>
