@@ -6,6 +6,7 @@ import {
   Features,
   HowItWorks,
   RevenueShare,
+  Oracles,
   Roadmap,
   Team,
   UseCases,
@@ -32,6 +33,7 @@ export default function LandingPage() {
         <Activity />
         <UseCases />
         <RevenueShare />
+        <Oracles />
         <HowItWorks />
         <Features />
         <Chains />

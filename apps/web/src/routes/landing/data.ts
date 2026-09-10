@@ -563,3 +563,69 @@ export const FEE_LATCH_SOL: readonly CodeToken[] = [
     ' (ICLHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, fee | LPFeeLibrary.OVERRIDE_FEE_FLAG);\n\t}\n}',
   ),
 ]
+
+/* ---------------------------------------------------------------------------
+   Oracles — what actually ships, and what each one costs you in trust.
+
+   Both entries below are real contracts in packages/hooks-rwa/src/oracles/, and
+   the trade-off column is the honest reason a reader would pick one over the
+   other. A page that listed only the Pyth adapter would be marketing; a page
+   that listed only the manual one would be underselling. Listing both, with the
+   trust assumption named, is the thing a developer can act on.
+   --------------------------------------------------------------------------- */
+
+export interface OracleEntry {
+  readonly name: string
+  readonly contract: string
+  /** One line: what it is. */
+  readonly kind: string
+  /** The trust assumption, stated plainly. This is the column that matters. */
+  readonly trust: string
+  readonly body: string
+  /** Verified on chain, so the claim is checkable rather than asserted. */
+  readonly status: string
+}
+
+export const ORACLES: readonly OracleEntry[] = [
+  {
+    name: 'Pyth price band',
+    contract: 'PythPriceBandAdapter',
+    kind: 'Signed off-chain feed, pulled on chain',
+    trust: 'Pyth’s publisher set',
+    body:
+      'Reads a Pyth feed and converts it into the pool’s own sqrtPriceX96 units. Split in two: a permissionless refresh does the conversion and caches it, so the read on every swap is a single storage slot. Rejects a stale publish time, a confidence interval wider than the issuer allows, and any price outside the range core can represent.',
+    status: 'Exercised against live Pyth on Sepolia — 19 checks',
+  },
+  {
+    name: 'Manual price band',
+    contract: 'ManualPriceBandOracle',
+    kind: 'Issuer publishes the reference itself',
+    trust: 'One publisher key, bounded',
+    body:
+      'For an issuer who already knows what the asset is worth, from a transfer agent or their own desk. It verifies nothing and says so. A publisher may move the reference by at most a configured percentage per update, measured against an anchor that survives clearing — otherwise clear-then-republish would be a way around the bound.',
+    status: 'Bound added after an internal review found the key could move the band',
+  },
+]
+
+/* ---------------------------------------------------------------------------
+   The two markets a price band has to serve, and why they are not the same job.
+   --------------------------------------------------------------------------- */
+
+export interface MarketKind {
+  readonly label: string
+  readonly tickers: readonly string[]
+  readonly note: string
+}
+
+export const MARKET_KINDS: readonly MarketKind[] = [
+  {
+    label: 'Crypto',
+    tickers: ['BTC', 'ETH', 'BNB', 'HYPE', 'MON', 'XPL'],
+    note: 'Trades continuously. A deep pair can carry its own TWAP; a thin one cannot.',
+  },
+  {
+    label: 'US equities',
+    tickers: ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL'],
+    note: 'Closed most of the week. A calendar decides when the pool may trade at all, and a band decides how far from the reference it may print.',
+  },
+]

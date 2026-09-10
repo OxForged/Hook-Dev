@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { ChainMark } from '../../components/ChainMark.tsx'
 import type { ChainRow } from '../../data/chains.ts'
@@ -18,6 +19,8 @@ import {
   TEAM,
   USE_CASES,
   SHARE_ROUTES,
+  ORACLES,
+  MARKET_KINDS,
 } from './data'
 import { CodePanel } from './CodePanel'
 import styles from './landing.module.css'
@@ -342,3 +345,89 @@ export function RevenueShare() {
   )
 }
 
+/* ===========================================================================
+   Oracles.
+
+   The landing page had no oracle content at all, which was a real omission: a
+   price band is the whole reason a tokenized equity can trade on an AMM without
+   printing a price nobody would honour, and there are two shipping
+   implementations behind it.
+
+   Each card names its TRUST ASSUMPTION in its own column. That is the honest
+   axis of comparison — both work, they differ in who you have to believe — and
+   it is the thing a developer choosing between them actually needs.
+
+   The ticker tiles are TYPOGRAPHIC on purpose. Chain marks on this site are
+   official assets taken from each network's own brand kit (see
+   public/chains/SOURCES.md). No such route exists for AAPL or TSLA: those are
+   corporate trademarks, their owners publish no kit for this use, and pulling
+   them off a logo aggregator would break both that rule and, more to the point,
+   would be using someone's mark to market a protocol they have no relationship
+   with. A ticker set in the design system's own mono face says the same thing
+   and claims nothing.
+   =========================================================================== */
+
+export function Oracles() {
+  return (
+    <section
+      id="oracles"
+      className={cx(styles['section'], styles['reveal'], styles['delay2'])}
+      aria-labelledby="oracles-title"
+    >
+      <p className={styles['eyebrow']}>PRICE ORACLES</p>
+      <h2 id="oracles-title" className={cx(styles['h2'], styles['h2Large'])}>
+        A Reference Price.
+        <br />
+        <span className={styles['accent']}>And Who You Trust For It.</span>
+      </h2>
+      <p className={styles['sectionLead']}>
+        A price band asks one question on every swap: is this pool printing a price close enough
+        to the outside world? Both answers below ship today, and they differ in exactly one way
+        that matters &mdash; whose word you are taking.
+      </p>
+
+      <div className={styles['cardGrid']}>
+        {ORACLES.map((o) => (
+          <article key={o.contract} className={styles['useCase']}>
+            <div className={styles['iconTile']} aria-hidden="true">
+              <div className={styles['iconDiamond']} />
+            </div>
+            <h3 className={styles['useCaseName']}>{o.name}</h3>
+            <p className={styles['useCaseTag']}>{o.kind}</p>
+            <p className={styles['oracleTrust']}>
+              <span className={styles['oracleTrustLabel']}>Trusts</span>
+              <span className={styles['oracleTrustValue']}>{o.trust}</span>
+            </p>
+            <p className={styles['useCaseBody']}>{o.body}</p>
+            <p className={styles['oracleStatus']}>
+              <code>{o.contract}</code>
+              <span>{o.status}</span>
+            </p>
+          </article>
+        ))}
+      </div>
+
+      <div className={styles['marketGrid']}>
+        {MARKET_KINDS.map((m) => (
+          <div key={m.label} className={styles['marketCard']}>
+            <p className={styles['marketLabel']}>{m.label}</p>
+            <ul className={styles['tickerRow']}>
+              {m.tickers.map((t, i) => (
+                <li
+                  key={t}
+                  className={styles['tickerTile']}
+                  /* Stagger index for the entry animation; collapsed by the
+                     global prefers-reduced-motion block in tokens.css. */
+                  style={{ '--i': i } as CSSProperties}
+                >
+                  {t}
+                </li>
+              ))}
+            </ul>
+            <p className={styles['marketNote']}>{m.note}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}

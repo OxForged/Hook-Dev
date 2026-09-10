@@ -128,24 +128,32 @@ export const CHAIN_RPCS = {
     ],
   },
   /**
-   * Robinhood Chain — Robinhood's own L2.
+   * Robinhood Chain — Robinhood's own L2. Five probed endpoints, five operators.
    *
-   * ONE working public endpoint, and that is not for want of looking. `robinhood.drpc.org`
-   * answers `eth_chainId` with the correct 4663 from a config table while rejecting
-   * `eth_blockNumber` and `eth_call` outright ("the method does not exist/is not available") —
-   * alive to a chain-id check, dead to a real request. Shipping it would spend a fallback
-   * attempt on a provider that cannot answer, which is worse than not listing it. Same shape
-   * as the Arc mainnet problem; see the note on `arcTestnet`.
+   * All five answered `eth_chainId` with 4663, served `eth_blockNumber`, and executed a
+   * TSTORE probe, so EIP-1153 is confirmed per endpoint rather than inferred from one.
+   * Ordered fastest-first by measured round trip; the canonical Robinhood endpoint is
+   * included even though four others were quicker.
    *
-   * EIP-1153 confirmed by TSTORE probe against the canonical endpoint, so this is a
-   * default-profile (cancun) deploy target.
+   * Two candidates were REJECTED rather than padded in:
+   *   `lb.routeme.sh/rpc/evm/4663`  returned no usable JSON-RPC response at all.
+   *   `robinhood.drpc.org`          answers eth_chainId with the correct 4663 from a
+   *                                 config table while rejecting eth_blockNumber and
+   *                                 eth_call — alive to a chain-id check, dead to a real
+   *                                 request. Listing it would spend a fallback attempt on
+   *                                 a provider that cannot answer.
+   * The two `wss://` endpoints are out of scope: the transports here are http.
    */
   robinhood: {
     chainId: 4663,
     name: 'Robinhood Chain',
     supportsEip1153: true,
     endpoints: [
-      { url: 'https://rpc.mainnet.chain.robinhood.com', latencyMs: 551, eip1153: true },
+      { url: 'https://rpc.nodeflare.app/robinhood/public', latencyMs: 545, eip1153: true },
+      { url: 'https://robinhood.rpc.blxrbdn.com', latencyMs: 606, eip1153: true },
+      { url: 'https://rpc-robinhood.blockmachine.io', latencyMs: 671, eip1153: true },
+      { url: 'https://rpc.ordofi.network', latencyMs: 707, eip1153: true },
+      { url: 'https://rpc.mainnet.chain.robinhood.com', latencyMs: 825, eip1153: true },
     ],
   },
   /** Ink — Kraken's OP-Stack L2. Two of the five are Ink's own gel/qnd nodes. */
@@ -305,7 +313,7 @@ export type ChainKey = keyof typeof CHAIN_RPCS
  * a deploy check should make, and it will stop being empty the moment a chain is
  * added ahead of its provider ecosystem.
  */
-export const SINGLE_ENDPOINT_CHAINS: readonly ChainKey[] = ['robinhood']
+export const SINGLE_ENDPOINT_CHAINS: readonly ChainKey[] = []
 
 /**
  * Chains carrying FEWER than the five-endpoint target.
@@ -315,7 +323,7 @@ export const SINGLE_ENDPOINT_CHAINS: readonly ChainKey[] = ['robinhood']
  * degrade first. On these chains treat a paid or self-hosted node supplied through
  * `LATCH_RPC_<chainId>` as a requirement rather than an optimisation.
  */
-export const THIN_ENDPOINT_CHAINS: readonly ChainKey[] = ['robinhood', 'xlayer', 'plasma', 'stable', 'stableTestnet']
+export const THIN_ENDPOINT_CHAINS: readonly ChainKey[] = ['xlayer', 'plasma', 'stable', 'stableTestnet']
 
 /** The number of public endpoints this file aims to carry per chain. */
 export const ENDPOINT_TARGET = 5

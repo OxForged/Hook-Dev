@@ -2105,3 +2105,107 @@ span.chainMark {
 .toneMuted {
   --tone: var(--label-ink);
 }
+
+/* ---- Oracles ---------------------------------------------------------------
+   The trust line is set apart from the body copy on purpose: it is the axis a
+   reader is comparing the two cards on, so it should be findable by scanning
+   rather than by reading. */
+.oracleTrust {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: 8px;
+  background: var(--code-ground);
+}
+.oracleTrustLabel {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint-ink);
+  flex: none;
+}
+.oracleTrustValue {
+  font-size: 13px;
+  color: var(--ink);
+}
+.oracleStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 14px 0 0;
+  font-size: 11.5px;
+  color: var(--label-ink);
+}
+.oracleStatus code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--eyebrow-blue);
+}
+
+/* ---- Market kinds ---------------------------------------------------------
+   Tickers are typographic, not logos. Chain marks on this site come from each
+   network's own brand kit; AAPL and TSLA publish no equivalent, and borrowing a
+   trademark to market an unrelated protocol is not a sourcing problem we can
+   solve with a better CDN. A ticker in the mono face claims nothing. */
+.marketGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+  margin-top: 28px;
+}
+.marketCard {
+  padding: 20px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--deep-panel);
+}
+.marketLabel {
+  margin: 0 0 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--eyebrow-blue);
+}
+.tickerRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.tickerTile {
+  padding: 7px 11px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: 8px;
+  background: var(--dapp-tile-bg, var(--code-ground));
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--mono-data-ink);
+  /* Entry stagger. `--i` is set per tile; the whole thing is collapsed by the
+     global prefers-reduced-motion block, so no JS guard is needed. */
+  animation: tickerIn 0.34s var(--ease, ease) backwards;
+  animation-delay: calc(var(--i, 0) * 0.045s);
+  transition: border-color 0.18s var(--ease, ease), color 0.18s var(--ease, ease);
+}
+.tickerTile:hover {
+  border-color: var(--latch-blue);
+  color: var(--ink-bright);
+}
+@keyframes tickerIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.marketNote {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--label-ink);
+}
