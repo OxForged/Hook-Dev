@@ -34,6 +34,7 @@ import {
 } from '../../../lib/chain'
 import type { LpPosition, Portfolio as PortfolioData, TokenMeta } from '../data/portfolio'
 import { MIN_TICK, MAX_TICK } from '../lib/portfolioMath'
+import { useDapp } from '../state.tsx'
 import { usePortfolio } from '../lib/usePortfolio'
 import { dappPath } from '../paths'
 
@@ -156,21 +157,36 @@ function NotConnected() {
   )
 }
 
-function WrongNetwork({ chainId }: { chainId: number | undefined }) {
+/**
+ * A NOTICE, not a gate.
+ *
+ * The copy matters here. It used to say "there is nothing to read here until you
+ * switch", which stopped being true the moment reads followed the browsing chain
+ * instead of the wallet's: everything below this notice is real data about the
+ * connected address, fetched without the wallet's chain being involved at all.
+ * Switching networks buys the ability to SEND, and nothing else.
+ */
+function WrongNetwork({
+  chainId,
+  browsingChainName,
+}: {
+  chainId: number | undefined
+  browsingChainName: string
+}) {
   const { switchChain, isPending, error } = useSwitchChain()
   const d = DEPLOYMENTS[SEPOLIA_CHAIN_ID]
   return (
     <section className="dapp-card" aria-labelledby="pf-wn">
       <div className="dapp-card__head">
         <h3 id="pf-wn" className="dapp-card__title">
-          Wrong network
+          Wallet is on another network
         </h3>
-        <span className="dapp-badge dapp-badge--warn">NO DEPLOYMENT</span>
+        <span className="dapp-badge dapp-badge--mute">READ ONLY</span>
       </div>
-      <p className="dapp-note dapp-note--warn">
-        Your wallet is on chain {chainId ?? '—'}. Latch Protocol contracts exist only on{' '}
-        {d.name} (chain {SEPOLIA_CHAIN_ID}), so there is nothing to read here until you
-        switch.
+      <p className="dapp-note">
+        Your wallet is on chain {chainId ?? '—'}, and the positions below are read from{' '}
+        {browsingChainName}. That is fine for looking — reading an address needs no
+        particular network. Switch to {d.name} when you want to send a transaction.
       </p>
       <div className="dapp-toolbar" style={{ marginTop: 16 }}>
         <button
@@ -427,18 +443,28 @@ function HooksCard({ p }: { p: PortfolioData }) {
 
 export default function Portfolio() {
   const { address, chainId, isConnected, status } = useAccount()
-  const onDeployedChain = isConnected && chainId !== undefined && isDeployed(chainId)
-  const activeChain = onDeployedChain ? (chainId as DeployedChainId) : undefined
+  const { browsingChain } = useDapp()
 
+  /**
+   * READS follow the BROWSING chain, not the wallet's.
+   *
+   * This used to gate the read on `isDeployed(walletChainId)`, so a wallet
+   * sitting on Base rendered an empty portfolio — even though the positions were
+   * on Sepolia, and reading them needs no wallet chain at all. An address is an
+   * address on whichever chain you ask about.
+   *
+   * The wallet's chain still matters, but only for WRITES, and only at the
+   * button. `walletOnBrowsingChain` below drives that, and nothing else.
+   */
   const { state, reload } = usePortfolio(
-    onDeployedChain ? address : undefined,
-    activeChain,
+    isConnected ? address : undefined,
+    browsingChain,
   )
 
-  const chainName = useMemo(
-    () => DEPLOYMENTS[activeChain ?? SEPOLIA_CHAIN_ID].name,
-    [activeChain],
-  )
+  const walletOnBrowsingChain =
+    isConnected && chainId !== undefined && isDeployed(chainId) && chainId === browsingChain
+
+  const chainName = useMemo(() => DEPLOYMENTS[browsingChain].name, [browsingChain])
 
   /* wagmi is restoring a previous session from storage. Brief, but rendering
      "not connected" during it flashes the connect CTA at an already-connected
@@ -463,25 +489,25 @@ export default function Portfolio() {
     )
   }
 
-  if (!onDeployedChain) {
-    return (
-      <>
-        <Header chainName={chainName} />
-        <WrongNetwork chainId={chainId} />
-      </>
-    )
-  }
+  /* No early return for a wrong-network wallet any more. Everything below is a
+     READ against `browsingChain`, and a read does not care where the wallet is
+     pointed. The notice is rendered inline, above the data, so it informs
+     without hiding what the visitor came to see. */
 
   return (
     <>
       <Header chainName={chainName} />
+
+      {!walletOnBrowsingChain ? (
+        <WrongNetwork chainId={chainId} browsingChainName={chainName} />
+      ) : null}
 
       <section className="dapp-card" aria-label="Connected address">
         <div className="dapp-card__bar">
           <span className="dapp-microlabel dapp-microlabel--tight">ADDRESS</span>
           <a
             className="hx-addr"
-            href={explorerAddress(activeChain!, address)}
+            href={explorerAddress(browsingChain, address)}
             target="_blank"
             rel="noopener noreferrer"
           >

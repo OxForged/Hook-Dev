@@ -22,7 +22,8 @@ import type { ChainKey } from '../../data/chains.ts'
 import type { DappState, Filter, Flags, Range, Screen } from './data/types.ts'
 import { loadDeploy } from './data/deploy.ts'
 import { loadSettings } from './data/settings.ts'
-import { readBlockNumber } from '../../lib/chain'
+import { readBlockNumber, SEPOLIA_CHAIN_ID, isDeployed } from '../../lib/chain'
+import type { DeployedChainId } from '../../lib/chain'
 
 /** README § Interactions: "Block ticker — +1 every 4000ms". */
 /* Sepolia produces a block roughly every 12s; polling faster just wastes RPC. */
@@ -32,6 +33,23 @@ const SIMULATION_MS = 2200
 
 interface DappStore extends Omit<DappState, 'screen'> {
   screen: Screen
+
+  /**
+   * The chain whose data the dapp is READING.
+   *
+   * Deliberately separate from the wallet's chain. Browsing is a read, and a read
+   * needs no wallet at all — a visitor with no wallet, or a wallet sitting on
+   * Base, should still be able to look at what exists on Sepolia. Conflating the
+   * two is why the portfolio used to render nothing whenever the wallet happened
+   * to be on the wrong network: the data was there, the wallet's chain was simply
+   * being used as a gate on reading it.
+   *
+   * The wallet's chain still constrains WRITES, and must: you cannot send a
+   * transaction to a chain you are not connected to. That check belongs at the
+   * button, not at the query.
+   */
+  browsingChain: DeployedChainId
+  setBrowsingChain: (chainId: DeployedChainId) => void
   setRange: (range: Range) => void
   setFilter: (filter: Filter) => void
   toggleCallback: (name: string) => void
@@ -47,6 +65,16 @@ const DappContext = createContext<DappStore | null>(null)
 export function DappStateProvider({ screen, children }: { screen: Screen; children: ReactNode }) {
   const deployDefaults = useMemo(loadDeploy, [])
   const settingsDefaults = useMemo(loadSettings, [])
+
+  /* Defaults to the one chain with contracts. Not derived from the wallet: a
+     visitor with no wallet must still get a chain to look at. */
+  const [browsingChain, setBrowsingChainRaw] = useState<DeployedChainId>(SEPOLIA_CHAIN_ID)
+
+  const setBrowsingChain = useCallback((chainId: DeployedChainId) => {
+    // Guard rather than trust: a chain with no DEPLOYMENTS entry has no contracts
+    // and no client, so switching to it would turn every read into a throw.
+    if (isDeployed(chainId)) setBrowsingChainRaw(chainId)
+  }, [])
 
   const [range, setRange] = useState<Range>('30D')
   const [filter, setFilter] = useState<Filter>('All')
@@ -119,6 +147,8 @@ export function DappStateProvider({ screen, children }: { screen: Screen; childr
   const value = useMemo<DappStore>(
     () => ({
       screen,
+      browsingChain,
+      setBrowsingChain,
       range,
       filter,
       cbs,
@@ -139,6 +169,8 @@ export function DappStateProvider({ screen, children }: { screen: Screen; childr
     }),
     [
       screen,
+      browsingChain,
+      setBrowsingChain,
       range,
       filter,
       cbs,

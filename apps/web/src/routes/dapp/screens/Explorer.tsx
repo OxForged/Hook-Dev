@@ -36,6 +36,7 @@
    READ ONLY. There is deliberately no wallet, no signing and no write path here.
    ============================================================================ */
 
+import { ChainTag } from '../../../components/ChainTag.tsx'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -294,12 +295,15 @@ function LatchCard({ hook, index }: { hook: RegisteredLatch; index: number }) {
           </h3>
           <a
             className="lx-card__addr"
-            href={explorerAddress(SEPOLIA_CHAIN_ID, hook.address)}
+            href={explorerAddress(hook.chainId, hook.address)}
             target="_blank"
             rel="noopener noreferrer"
           >
             {short(hook.address)} ↗
           </a>
+          {/* Which chain this Latch lives on. Read off the record, not the page —
+              a marketplace that spans chains cannot infer it from context. */}
+          <ChainTag chainId={hook.chainId} size={13} className="lx-card__chain" />
         </div>
       </div>
 
@@ -349,7 +353,7 @@ function LatchCard({ hook, index }: { hook: RegisteredLatch; index: number }) {
       <div className="lx-card__foot">
         <span className="lx-links">
           <a
-            href={explorerAddress(SEPOLIA_CHAIN_ID, hook.address)}
+            href={explorerAddress(hook.chainId, hook.address)}
             target="_blank"
             rel="noopener noreferrer"
           >

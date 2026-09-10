@@ -1995,3 +1995,37 @@ span.dapp-net-chip__mark {
   .lx-hero__icon { width: 46px; height: 46px; }
   .lx-card { padding: 16px; }
 }
+
+/* ---- Chain tag ------------------------------------------------------------
+   The chain a record lives on, shown beside the record rather than inferred
+   from the page. Sized to sit inline in a table cell or a card meta row. */
+.chain-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--dapp-ink-sub);
+  white-space: nowrap;
+}
+.chain-tag__mark {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  border-radius: 3px;
+}
+.chain-tag__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A chain the app does not carry. Deliberately a neutral dot: borrowing another
+   network's logo would be worse than showing no logo at all. */
+.chain-tag__unknown {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px dashed var(--hairline);
+  background: var(--dapp-tile-bg);
+}

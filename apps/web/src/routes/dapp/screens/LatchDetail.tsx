@@ -233,7 +233,7 @@ export default function LatchDetail() {
             </h2>
             <p className="lx-hero__addr">
               <a
-                href={explorerAddress(SEPOLIA_CHAIN_ID, h.address)}
+                href={explorerAddress(h.chainId, h.address)}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -321,7 +321,7 @@ export default function LatchDetail() {
           <cite className="lx-quote__by">
             — {h.name || 'Unnamed Latch'}, as listed by{' '}
             <a
-              href={explorerAddress(SEPOLIA_CHAIN_ID, h.submitter)}
+              href={explorerAddress(h.chainId, h.submitter)}
               target="_blank"
               rel="noopener noreferrer"
             >
