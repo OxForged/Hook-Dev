@@ -19,7 +19,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
  */
 contract DeployCLPositionDescriptorOffChainScript is BaseScript {
     function getDeploymentSalt() public pure override returns (bytes32) {
-        return keccak256("INFINITY-PERIPHERY/CLPositionDescriptorOffChain/1.0.0");
+        return keccak256("LATCH-PERIPHERY/CLPositionDescriptorOffChain/1.0.0");
     }
 
     function run() public {

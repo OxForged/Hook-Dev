@@ -19,7 +19,7 @@ import {Create3Factory} from "pancake-create3-factory/src/Create3Factory.sol";
  */
 contract DeployCLTickLensScript is BaseScript {
     function getDeploymentSalt() public pure override returns (bytes32) {
-        return keccak256("INFINITY-PERIPHERY/TickLens/1.0.0");
+        return keccak256("LATCH-PERIPHERY/TickLens/1.0.0");
     }
 
     function run() public {
