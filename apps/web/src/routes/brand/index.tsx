@@ -22,7 +22,7 @@ export default function BrandKit() {
     <div className="bk">
       <header className="bk-header">
         <Lockup />
-        <nav className="bk-nav" aria-label="Brand kit">
+        <nav className="bk-nav" aria-label="Primary">
           <Link to="/">Home</Link>
           <a href="#logo" aria-current="page">
             Brand Kit

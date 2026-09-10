@@ -2,11 +2,14 @@
    Dapp — shared data types.
 
    Shapes follow "latch design/README.md" § State management. Every value the
-   seven screens render is a PLACEHOLDER: Latch Protocol is not deployed on any
-   chain, so none of these numbers describe a live system. Each screen reads
-   from its own module in this folder (`data/<screen>.ts`); swapping a module's
-   `load*()` for a registry / subgraph / RPC call is the whole migration.
+   seven screens render is a PLACEHOLDER: Latch Protocol's only deployment is on
+   Ethereum Sepolia, and none of the numbers here were read off it. Each screen
+   reads from its own module in this folder (`data/<screen>.ts`); swapping a
+   module's `load*()` for a registry / subgraph / RPC call is the whole
+   migration.
    ============================================================================ */
+
+import type { ChainKey } from '../../../data/chains.ts'
 
 /** README § State management: `screen`. Mirrors the seven nested routes. */
 export type Screen =
@@ -43,7 +46,8 @@ export interface DappState {
   budget: number
   deploying: boolean
   deployed: boolean
-  net: string
+  /** Selected network, keyed to the SDK's chain list — not a free string. */
+  net: ChainKey
   flags: Flags
   block: number
 }

@@ -18,6 +18,7 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
+import type { ChainKey } from '../../data/chains.ts'
 import type { DappState, Filter, Flags, Range, Screen } from './data/types.ts'
 import { loadDeploy } from './data/deploy.ts'
 import { loadSettings } from './data/settings.ts'
@@ -37,7 +38,7 @@ interface DappStore extends Omit<DappState, 'screen'> {
   setBudget: (budget: number) => void
   simulate: () => void
   resetDeployment: () => void
-  setNet: (net: string) => void
+  setNet: (net: ChainKey) => void
   toggleFlag: (key: keyof Flags) => void
 }
 

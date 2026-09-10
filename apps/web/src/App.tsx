@@ -1,11 +1,14 @@
 import { Routes, Route, Link } from 'react-router-dom'
+import Landing from './routes/landing'
+import Docs from './routes/docs'
+import Dapp from './routes/dapp'
+import Brand from './routes/brand'
 
 /**
  * Route shell for the Latch Protocol web surfaces.
  *
- * Each surface is owned by its own route module and built to
- * `latch design/README.md` + `SCREENS.md`. The README is authoritative:
- * where a reference HTML disagrees with it, the README wins.
+ * Each surface is built to `latch design/README.md` + `SCREENS.md`. The README
+ * is authoritative: where a reference HTML disagrees with it, the README wins.
  *
  *   /        Landing    — design-references/Latch Landing.dc.html
  *   /docs    Docs       — design-references/Latch Docs.dc.html
@@ -15,12 +18,9 @@ import { Routes, Route, Link } from 'react-router-dom'
  * Design tokens live in src/styles/tokens.css, transcribed from the spec.
  * Never hardcode a hex, radius or shadow in a component — add it to the spec
  * first, then to tokens.css, then reference it.
- *
- * The previous hand-built landing page lives in git at d35ed73 if its copy or
- * its verified gas/fee charts (src/charts/) are wanted again.
  */
 
-function Pending({ name, file }: { name: string; file: string }) {
+function NotFound() {
   return (
     <main style={{ padding: '80px 40px', maxWidth: 720, margin: '0 auto' }}>
       <p
@@ -33,14 +33,14 @@ function Pending({ name, file }: { name: string; file: string }) {
           margin: '0 0 12px',
         }}
       >
-        Not built yet
+        404
       </p>
-      <h1 style={{ fontSize: 40, lineHeight: 1.06, margin: '0 0 14px' }}>{name}</h1>
+      <h1 style={{ fontSize: 40, lineHeight: 1.06, margin: '0 0 14px' }}>Page not found</h1>
       <p style={{ color: 'var(--muted-ink-2)', margin: '0 0 24px' }}>
-        This route is being built from <code style={{ color: 'var(--sky-ink)' }}>{file}</code>.
+        That route doesn&rsquo;t exist.
       </p>
       <Link to="/" style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>
-        &larr; back
+        &larr; back to Latch
       </Link>
     </main>
   )
@@ -49,11 +49,11 @@ function Pending({ name, file }: { name: string; file: string }) {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Pending name="Landing" file="Latch Landing.dc.html" />} />
-      <Route path="/docs" element={<Pending name="Docs" file="Latch Docs.dc.html" />} />
-      <Route path="/app/*" element={<Pending name="Dapp" file="Latch Dapp.dc.html" />} />
-      <Route path="/brand" element={<Pending name="Brand kit" file="Latch Brand Kit.dc.html" />} />
-      <Route path="*" element={<Pending name="Not found" file="—" />} />
+      <Route path="/" element={<Landing />} />
+      <Route path="/docs" element={<Docs />} />
+      <Route path="/app/*" element={<Dapp />} />
+      <Route path="/brand" element={<Brand />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }

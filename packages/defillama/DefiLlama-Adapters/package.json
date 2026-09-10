@@ -1,0 +1,6 @@
+{
+  "_comment": "LOCAL HARNESS ONLY - not an upstream file. packages/defillama declares \"type\": \"module\", but DefiLlama-Adapters is a CommonJS repository and projects/latch/*.js must stay CommonJS to be submittable. This marker restores CommonJS resolution for everything under this directory.",
+  "name": "latch-defillama-adapters-staging",
+  "private": true,
+  "type": "commonjs"
+}

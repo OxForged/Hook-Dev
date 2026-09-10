@@ -67,8 +67,9 @@ export default function CodeBlock({ filename, dot, source, copyLabel }: Props) {
       <pre className="dk-code__pre" tabIndex={0}>
         <code>
           {tokenize(source).map((t, i) =>
+            // Index keys are safe here: the token list is derived from a
+            // constant snippet and never reorders.
             t.kind === 'plain' ? (
-              // eslint-disable-next-line react/no-array-index-key -- tokens are static
               <span key={i}>{t.text}</span>
             ) : (
               <span key={i} className={`dk-t dk-t--${t.kind}`}>

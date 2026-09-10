@@ -1,12 +1,30 @@
 /**
  * Landing-page content and figures.
  *
- * EVERYTHING NUMERIC IN THIS FILE IS A PLACEHOLDER. Latch Protocol is not
- * deployed, so none of these are live protocol metrics — the UI labels the
- * activity section accordingly. This module is the seam: replace the bodies
- * below with registry / subgraph reads and the components need no changes.
+ * EVERY FIGURE IN THIS FILE IS A PLACEHOLDER. Latch is deployed to Sepolia
+ * (chain 11155111) only, so none of these are live protocol metrics — the UI
+ * labels the stats strip and the activity section accordingly. This module is
+ * the seam: replace the bodies below with indexer / subgraph reads and the
+ * components need no changes.
  *
- * Copy and ordering follow "latch design/SCREENS.md" § A. Landing page.
+ * LAYOUT AND ORDERING follow "latch design/SCREENS.md" § A. Landing page.
+ *
+ * THE TECHNICAL COPY DOES NOT. SCREENS.md describes an `ILatch` / `@latch/core`
+ * protocol with a separate registry contract, per-call gas budgets, deterministic
+ * hook addresses and per-latch revert isolation. None of that exists. Every
+ * API name, bit value and behavioural claim below is instead taken from the
+ * contracts in this repo and kept consistent with the docs surface
+ * (src/routes/docs/content.ts, which was verified the same way):
+ *
+ *   packages/hooks/src/base/BaseCLHook.sol      base contract, permission masks
+ *   packages/core/src/libraries/Hooks.sol       validateHookConfig at initialize
+ *   packages/core/src/types/PoolKey.sol         one `IHooks hooks` field per key
+ *   packages/core/src/pool-cl/interfaces/ICLHooks.sol
+ *
+ * The Solidity in FEE_LATCH_SOL compiles under solc 0.8.26 / via_ir against
+ * those interfaces with no warnings, and each claim in LAYER_STEPS,
+ * INTERFACE_FACTS and FEATURES is asserted by a forge test against them. See
+ * the report accompanying this change.
  */
 
 /* ------------------------------------------------------------------ tones */
@@ -154,8 +172,14 @@ export interface HealthRow {
   readonly tone: Tone
 }
 
-export const REGISTRY_HEALTH: readonly HealthRow[] = [
-  { name: 'Verified latches', value: '1,612 / 1,840', tone: 'success' },
+/**
+ * SCREENS.md § A4 calls this card "REGISTRY HEALTH" with a "Verified latches"
+ * row. There is no registry contract, so the card is PROTOCOL HEALTH and the
+ * row is source verification — the thing that is actually verifiable on a block
+ * explorer. The figures remain placeholders.
+ */
+export const PROTOCOL_HEALTH: readonly HealthRow[] = [
+  { name: 'Source-verified hooks', value: '1,612 / 1,840', tone: 'success' },
   { name: 'Reverts (24h)', value: '0.021%', tone: 'primary' },
   { name: 'Audit coverage', value: '94% of TVL', tone: 'amber' },
 ]
@@ -199,29 +223,39 @@ export interface LayerStep {
   readonly desc: string
 }
 
+/**
+ * The real integration path: write → encode → initialize. There is no registry
+ * contract, no gas budget and nothing to "activate"; the only gate is
+ * Hooks.validateHookConfig comparing the pool key against the hook.
+ */
 export const LAYER_STEPS: readonly LayerStep[] = [
   {
     num: '01',
     name: 'Write the Latch',
-    desc: 'Implement ILatch, declare a permission bitmap for the callbacks you need.',
+    desc: 'Extend BaseCLHook and return the callbacks you want from getHooksRegistrationBitmap().',
   },
   {
     num: '02',
-    name: 'Register it',
-    desc: 'The registry validates the bitmap, deterministic address and gas budget before activation.',
+    name: 'Encode the bitmap',
+    desc: 'The same 16-bit value goes into poolKey.parameters — deploy from any address, no salt to mine.',
   },
   {
     num: '03',
-    name: 'Attach to pools',
-    desc: 'Pools opt in. Callbacks run in declared order with revert isolation per latch.',
+    name: 'Initialize the pool',
+    desc: 'The pool manager checks the two agree, then calls your hook on every swap that follows.',
   },
 ]
 
+/**
+ * Each line is asserted by the proof harness: bits 6 and 7 (0x0040 / 0x0080),
+ * bits 0–13 usable with 14–15 reserved, two hooks at different addresses both
+ * validating against the same key, and HookConfigValidationError on a mismatch.
+ */
 export const INTERFACE_FACTS: readonly string[] = [
-  '— beforeSwap / afterSwap callbacks',
-  '— deterministic latch addresses',
-  '— revert isolation per hook',
-  '— on-chain permission bitmap',
+  '— beforeSwap 0x0040 · afterSwap 0x0080',
+  '— 14 permission bits, held in the pool key',
+  '— any hook address · no salt mining',
+  '— bitmap checked at initialize',
 ]
 
 /* ----------------------------------------------------------------- feature */
@@ -231,29 +265,26 @@ export interface Feature {
   readonly desc: string
 }
 
+/**
+ * "Gas caps, revert isolation, audited registry" was all three false. The
+ * replacements are the three guards that do exist: the onlyPoolManager
+ * modifier, the returned-selector check (InvalidHookResponse) and
+ * Hooks.validateHookConfig.
+ */
 export const FEATURES: readonly Feature[] = [
-  { name: 'Plug & Play', desc: 'One interface, any integrating protocol.' },
-  { name: 'Secure', desc: 'Gas caps, revert isolation, audited registry.' },
+  { name: 'Plug & Play', desc: 'One base contract, fourteen optional callbacks.' },
+  { name: 'Secure', desc: 'Manager-only callbacks, checked selectors, bitmap verified on chain.' },
   { name: 'Modular', desc: 'Use only the callbacks you need.' },
-  { name: 'Open Ecosystem', desc: 'Permissionless publishing for developers.' },
+  { name: 'Open Ecosystem', desc: 'Deploy from any address. No allowlist, no salt mining.' },
 ]
 
 /* ------------------------------------------------------------------ chains */
 
-/** Chain marks are placeholders — the tiles render a plain circle until the
- *  official logos are licensed (README § Asset caveats 4). */
-export const CHAINS: readonly string[] = [
-  'Ethereum',
-  'BNB Chain',
-  'Arbitrum',
-  'Polygon',
-  'Optimism',
-  'Base',
-  'Avalanche',
-  'Solana',
-  'Sui',
-  'and more…',
-]
+/* The chain list moved to src/data/chains.ts, which derives it from the SDK's
+   `CHAIN_RPCS` (packages/sdk/src/chains/endpoints.ts) rather than restating it.
+   SCREENS.md § A8 listed Arbitrum / Polygon / Optimism / Avalanche / Solana /
+   Sui as illustrative placeholders; none of those were probed and Solana and
+   Sui are not EVM chains at all, so none of them are targets. */
 
 /* ----------------------------------------------------------------- roadmap */
 
@@ -263,12 +294,16 @@ export interface RoadmapItem {
   readonly desc: string
 }
 
-/** Placeholder dates. */
+/**
+ * Dates beyond the first row are indicative and the section says so. The first
+ * row is not a plan — it is what is deployed today, all five contracts verified
+ * on Sepolia (11155111); the addresses are listed on the docs page.
+ */
 export const ROADMAP: readonly RoadmapItem[] = [
   {
     when: 'Q3 2026',
-    name: 'Core registry mainnet',
-    desc: 'ILatch v1, registry and reference latches live on Ethereum and Base.',
+    name: 'Sepolia deployment',
+    desc: 'Vault, both pool managers, the fee controller and Create3Factory live and verified.',
   },
   {
     when: 'Q4 2026',
@@ -283,7 +318,7 @@ export const ROADMAP: readonly RoadmapItem[] = [
   {
     when: 'Q2 2027',
     name: 'Permissionless publishing',
-    desc: 'Open registry with staking-backed review and revenue share for authors.',
+    desc: 'Open publishing with staking-backed review and revenue share for hook authors.',
   },
 ]
 
@@ -319,3 +354,127 @@ export const FOOTER_LINKS: readonly FooterLink[] = [
 ]
 
 export const COPYRIGHT = '© 2026 LATCH PROTOCOL'
+
+/* --------------------------------------------------------------- code panel */
+
+/** Syntax roles, mapped to the README's code palette by the stylesheet. */
+export type CodeKind = 'txt' | 'kw' | 'type' | 'fn' | 'str' | 'num' | 'com'
+
+export interface CodeToken {
+  readonly k: CodeKind
+  readonly t: string
+}
+
+const t = (text: string): CodeToken => ({ k: 'txt', t: text })
+const kw = (text: string): CodeToken => ({ k: 'kw', t: text })
+const ty = (text: string): CodeToken => ({ k: 'type', t: text })
+const fn = (text: string): CodeToken => ({ k: 'fn', t: text })
+const str = (text: string): CodeToken => ({ k: 'str', t: text })
+const num = (text: string): CodeToken => ({ k: 'num', t: text })
+const com = (text: string): CodeToken => ({ k: 'com', t: text })
+
+/**
+ * `FeeLatch.sol` — a complete, compiling dynamic-fee hook.
+ *
+ * VERIFIED, not eyeballed: concatenating every `t` below reproduces a file that
+ * compiles under solc 0.8.26 with via_ir against packages/core and
+ * packages/hooks, with no warnings. Indentation is tabs, rendered at the
+ * specced 18px per level by `tab-size` on the <pre>.
+ *
+ * What the old sample got wrong: there is no `ILatch` and no `@latch/*`
+ * remapping; the declaring function is `getHooksRegistrationBitmap()`, not
+ * `permissions()`; beforeSwap is bit 6 (0x0040) and takes four parameters and
+ * returns three values, not one.
+ */
+export const FEE_LATCH_SOL: readonly CodeToken[] = [
+  com('// SPDX-License-Identifier: MIT'),
+  t('\n'),
+  kw('pragma solidity'),
+  t(' '),
+  num('0.8.26'),
+  t(';\n\n'),
+
+  kw('import'),
+  t(' {BaseCLHook} '),
+  kw('from'),
+  t(' '),
+  str('"latch-hooks/src/base/BaseCLHook.sol"'),
+  t(';\n'),
+  kw('import'),
+  t(' {ICLHooks} '),
+  kw('from'),
+  t(' '),
+  str('"infinity-core/src/pool-cl/interfaces/ICLHooks.sol"'),
+  t(';\n'),
+  kw('import'),
+  t(' {ICLPoolManager} '),
+  kw('from'),
+  t(' '),
+  str('"infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol"'),
+  t(';\n'),
+  kw('import'),
+  t(' {PoolKey} '),
+  kw('from'),
+  t(' '),
+  str('"infinity-core/src/types/PoolKey.sol"'),
+  t(';\n'),
+  kw('import'),
+  t(' {LPFeeLibrary} '),
+  kw('from'),
+  t(' '),
+  str('"infinity-core/src/libraries/LPFeeLibrary.sol"'),
+  t(';\n'),
+  kw('import'),
+  t(' {BeforeSwapDelta, BeforeSwapDeltaLibrary} '),
+  kw('from'),
+  t(' '),
+  str('"infinity-core/src/types/BeforeSwapDelta.sol"'),
+  t(';\n\n'),
+
+  kw('contract'),
+  t(' '),
+  ty('FeeLatch'),
+  t(' '),
+  kw('is'),
+  t(' '),
+  ty('BaseCLHook'),
+  t(' {\n\t'),
+  kw('constructor'),
+  t('(ICLPoolManager _pm) '),
+  ty('BaseCLHook'),
+  t('(_pm) {}\n\n\t'),
+
+  com('// bit 6: poolKey.parameters must carry exactly this value'),
+  t('\n\t'),
+  kw('function'),
+  t(' '),
+  fn('getHooksRegistrationBitmap'),
+  t('() '),
+  kw('public pure override returns'),
+  t(' (uint16) {\n\t\t'),
+  kw('return'),
+  t(' BEFORE_SWAP;\n\t}\n\n\t'),
+
+  kw('function'),
+  t(' '),
+  fn('_beforeSwap'),
+  t('(address, PoolKey '),
+  kw('calldata'),
+  t(', ICLPoolManager.SwapParams '),
+  kw('calldata'),
+  t(' p, bytes '),
+  kw('calldata'),
+  t(')\n\t\t'),
+  kw('internal pure override returns'),
+  t(' (bytes4, BeforeSwapDelta, uint24)\n\t{\n\t\tuint24 fee = p.amountSpecified <= '),
+  num('-10 ether'),
+  t(' ? '),
+  num('3000'),
+  t(' : '),
+  num('500'),
+  t(';\n\t\t'),
+  kw('return'),
+  t(
+    ' (ICLHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, fee | LPFeeLibrary.OVERRIDE_FEE_FLAG);\n\t}\n}',
+  ),
+]

@@ -52,3 +52,6 @@ Thumbs.db
 # Derived from "latch design/brand-kit" by scripts/sync-brand.mjs (runs on predev/prebuild).
 # Single source of truth is the handoff; this copy is generated so the two cannot drift.
 apps/web/public/brand/
+
+# agent scratch files
+*.tmp-*.mjs

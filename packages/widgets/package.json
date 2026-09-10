@@ -44,7 +44,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "test:fork": "vitest run --config vitest.fork.config.ts",
+    "test:all": "npm run test && npm run test:fork"
   },
   "keywords": [
     "latchprotocol",

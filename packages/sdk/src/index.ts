@@ -43,3 +43,7 @@ export type {
 
 // --- indexer model ---------------------------------------------------------
 export * as indexer from "./indexer/index.js";
+
+// Chain RPC endpoints and the auto-failover transport.
+export * from "./chains/endpoints.js"
+export * from "./chains/transport.js"

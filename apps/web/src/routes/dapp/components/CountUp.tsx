@@ -63,11 +63,16 @@ export function CountUp({ value, className }: { value: string; className?: strin
 
     setText(render(0, parsed))
     let frame = 0
+    let safety: ReturnType<typeof setTimeout> | undefined
     let done = false
 
     const run = () => {
-      const start = performance.now()
+      /* The first frame's own timestamp is the start, not performance.now():
+         a frame can carry a timestamp from before this call, which would make
+         the first eased value negative. */
+      let start: number | null = null
       const step = (now: number) => {
+        if (start === null) start = now
         const t = Math.min(1, (now - start) / DURATION)
         const eased = 1 - Math.pow(1 - t, 3)
         setText(render(parsed.target * eased, parsed))
@@ -75,6 +80,12 @@ export function CountUp({ value, className }: { value: string; className?: strin
         else setText(value)
       }
       frame = requestAnimationFrame(step)
+      /* rAF is suspended in a backgrounded or occluded tab, which would leave
+         the numeral parked at zero. Land on the real figure regardless. */
+      safety = setTimeout(() => {
+        cancelAnimationFrame(frame)
+        setText(value)
+      }, DURATION + 400)
     }
 
     const observer = new IntersectionObserver(
@@ -94,6 +105,7 @@ export function CountUp({ value, className }: { value: string; className?: strin
     return () => {
       observer.disconnect()
       cancelAnimationFrame(frame)
+      if (safety) clearTimeout(safety)
     }
   }, [value])
 

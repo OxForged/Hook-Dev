@@ -840,6 +840,19 @@
   }
 }
 
+/* Every *download* control on this page is already ≥44px at any pointer
+   (.bk-btn, .bk-dl, .bk-fav). Chrome links are 14px text, sized to the
+   reference; on touch they get the full target without changing the desktop
+   header height. */
+@media (pointer: coarse) {
+  .bk-nav a,
+  .bk-footer-links a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
 /* ------------------------------------------------------------- responsive -- */
 
 @media (max-width: 860px) {
@@ -849,6 +862,7 @@
     gap: 18px;
     overflow-x: auto;
     overscroll-behavior-x: contain;
+    scrollbar-width: thin;
     padding-bottom: 2px;
   }
 
@@ -872,14 +886,21 @@
     padding: 14px 20px;
   }
 
+  /* Stack the label above its download row rather than letting the buttons
+     tower up in a squeezed right-hand column. */
   .bk-tile-foot,
   .bk-banner-foot {
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
   }
 
   .bk-dl-row {
     margin-left: 0;
-    width: 100%;
+  }
+
+  .bk-pfp-card {
+    align-items: flex-start;
   }
 
   .bk-fav-row {

@@ -15,12 +15,15 @@ export function useScrollSpy(ids: readonly string[], offset = 110): string | nul
   const [active, setActive] = useState<string | null>(ids[0] ?? null)
 
   useEffect(() => {
-    let frame = 0
-
+    // Measured straight from the passive scroll handler rather than deferred to
+    // requestAnimationFrame: seven getBoundingClientRect reads is far cheaper
+    // than a frame, and rAF is throttled in backgrounded or unpainted tabs,
+    // which would leave the rail stuck on the first section.
     const measure = () => {
-      frame = 0
-      const scrollBottom = window.scrollY + window.innerHeight
-      const atBottom = scrollBottom >= document.documentElement.scrollHeight - 2
+      const doc = document.documentElement
+      const scrollable = doc.scrollHeight > window.innerHeight + 4
+      const atBottom =
+        scrollable && window.scrollY + window.innerHeight >= doc.scrollHeight - 2
 
       let current: string | null = ids[0] ?? null
       for (const id of ids) {
@@ -34,17 +37,12 @@ export function useScrollSpy(ids: readonly string[], offset = 110): string | nul
       setActive((prev) => (prev === current ? prev : current))
     }
 
-    const schedule = () => {
-      if (frame === 0) frame = window.requestAnimationFrame(measure)
-    }
-
     measure()
-    window.addEventListener('scroll', schedule, { passive: true })
-    window.addEventListener('resize', schedule)
+    window.addEventListener('scroll', measure, { passive: true })
+    window.addEventListener('resize', measure)
     return () => {
-      window.cancelAnimationFrame(frame)
-      window.removeEventListener('scroll', schedule)
-      window.removeEventListener('resize', schedule)
+      window.removeEventListener('scroll', measure)
+      window.removeEventListener('resize', measure)
     }
   }, [ids, offset])
 

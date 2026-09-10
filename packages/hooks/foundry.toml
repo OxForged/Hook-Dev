@@ -8,8 +8,15 @@ evm_version = "cancun"
 bytecode_hash = "none"
 allow_paths = ["../core"]
 allow_internal_expect_revert = true
+fs_permissions = [
+    # test/docs/DocsClaims.t.sol reads the published docs snippet to prove the
+    # committed fixture has not drifted from the page.
+    { access = "read", path = "./test" },
+    { access = "read", path = "../../apps/web/src/routes/docs" },
+]
 remappings = [
     "infinity-core/=../core/",
+    "latch-hooks/=./",
     "forge-std/=../core/lib/forge-std/src/",
     "ds-test/=../core/lib/forge-std/lib/ds-test/src/",
     "@openzeppelin/=../core/lib/openzeppelin-contracts/",
@@ -27,8 +34,15 @@ evm_version = "shanghai"
 bytecode_hash = "none"
 allow_paths = ["../core"]
 allow_internal_expect_revert = true
+fs_permissions = [
+    # test/docs/DocsClaims.t.sol reads the published docs snippet to prove the
+    # committed fixture has not drifted from the page.
+    { access = "read", path = "./test" },
+    { access = "read", path = "../../apps/web/src/routes/docs" },
+]
 remappings = [
     "infinity-core/=../core/",
+    "latch-hooks/=./",
     "forge-std/=../core/lib/forge-std/src/",
     "ds-test/=../core/lib/forge-std/lib/ds-test/src/",
     "@openzeppelin/=../core/lib/openzeppelin-contracts/",

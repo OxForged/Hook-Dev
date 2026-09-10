@@ -65,7 +65,7 @@ export function AreaChart({
           </linearGradient>
         </defs>
         {gridLines(AREA_H).map((y) => (
-          <line key={y} x1="0" x2={AREA_W} y1={y} y2={y} className="dapp-grid" />
+          <line key={y} x1="0" x2={AREA_W} y1={y} y2={y} className="dapp-grid-line" />
         ))}
         <path d={area} fill={`url(#${gradientId})`} />
         {/* keyed by the path so a range change replays the draw-on */}
@@ -105,7 +105,7 @@ export function FeeChart({
       aria-label={title}
     >
       {gridLines(AREA_H).map((y) => (
-        <line key={y} x1="0" x2={FEE_W} y1={y} y2={y} className="dapp-grid" />
+        <line key={y} x1="0" x2={FEE_W} y1={y} y2={y} className="dapp-grid-line" />
       ))}
       <path d={feePath.line} className="dapp-line dapp-line--fee dapp-line--draw" />
       <path d={volPath.line} className="dapp-line dapp-line--vol" />

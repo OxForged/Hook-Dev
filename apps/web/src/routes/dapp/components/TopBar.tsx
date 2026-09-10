@@ -4,24 +4,37 @@
    "BLOCK 21,904,118" chip that increments every 4s behind a pulsing green dot,
    and the primary "Deploy Latch" button with its sheen sweep.
 
-   Plus the sample-data chip: every figure in this dapp is a placeholder and the
-   protocol is not deployed on any chain, so the shell says so where a visitor
-   reading the block height and the KPIs will see it.
+   Plus two pieces of truth-telling. The sample-data chip: every figure in this
+   dapp is a placeholder, so the shell says so where a visitor reading the block
+   height and the KPIs will see it. And the network chip: the selected chain
+   with, next to it, whether Latch is actually deployed there. Ten of the eleven
+   target chains carry no contracts, and the shell must not imply otherwise.
    ============================================================================ */
 
 import { Link } from 'react-router-dom'
+import { ChainMark } from '../../../components/ChainMark.tsx'
+import type { ChainRow } from '../../../data/chains.ts'
 import type { ScreenMeta } from '../data/shell.ts'
 
 interface TopBarProps {
   meta: ScreenMeta
   block: number
+  net: ChainRow
   deployHref: string
   isDrawer: boolean
   navOpen: boolean
   onToggleNav: () => void
 }
 
-export function TopBar({ meta, block, deployHref, isDrawer, navOpen, onToggleNav }: TopBarProps) {
+export function TopBar({
+  meta,
+  block,
+  net,
+  deployHref,
+  isDrawer,
+  navOpen,
+  onToggleNav,
+}: TopBarProps) {
   return (
     <header className="dapp-header">
       {isDrawer ? (
@@ -45,12 +58,23 @@ export function TopBar({ meta, block, deployHref, isDrawer, navOpen, onToggleNav
       <div className="dapp-header__right">
         <p
           className="dapp-sample-chip"
-          title="Every figure in this app is placeholder data. Latch Protocol is not deployed on any chain."
+          title="Every figure in this app is placeholder data. Latch Protocol's only deployment is on Ethereum Sepolia."
         >
           <span aria-hidden="true">SAMPLE DATA</span>
           <span className="dapp-sr">
-            Sample data. Every figure in this app is a placeholder — Latch Protocol is not deployed
-            on any chain.
+            Sample data. Every figure in this app is a placeholder — Latch Protocol's only
+            deployment is on Ethereum Sepolia.
+          </span>
+        </p>
+
+        <p className="dapp-net-chip">
+          <ChainMark brand={net.brand} size={18} className="dapp-net-chip__mark" />
+          <span className="dapp-net-chip__name">{net.name}</span>
+          <span className="dapp-net-chip__id tabular">{net.chainId}</span>
+          <span
+            className={net.deployed ? 'dapp-badge dapp-badge--ok' : 'dapp-badge dapp-badge--mute'}
+          >
+            {net.deployed ? 'DEPLOYED' : 'NO DEPLOYMENT'}
           </span>
         </p>
 

@@ -42,10 +42,11 @@ const nav: NavItem[] = [
 
 /** SCREENS.md § C: header title + subtitle per screen. */
 const meta: Record<Screen, ScreenMeta> = {
-  dashboard: { title: 'Dashboard', subtitle: 'Your latches across 4 networks' },
+  dashboard: { title: 'Dashboard', subtitle: 'Sample data · Latch is live on Ethereum Sepolia' },
   explorer: { title: 'Latch Explorer', subtitle: '1,840 latches · 1,612 verified' },
   deploy: { title: 'Deploy a Latch', subtitle: 'Register a hook against the protocol registry' },
-  pool: { title: 'Pool detail', subtitle: 'ETH / USDC · 0.05% · Base' },
+  /* Sepolia, not Base: Base is a verified target with no Latch contracts on it. */
+  pool: { title: 'Pool detail', subtitle: 'ETH / USDC · 0.05% · Ethereum Sepolia' },
   portfolio: { title: 'Portfolio', subtitle: '5 positions with latches attached' },
   analytics: { title: 'Analytics', subtitle: 'Protocol-wide hook activity' },
   settings: { title: 'Settings', subtitle: 'Account, network and API access' },
