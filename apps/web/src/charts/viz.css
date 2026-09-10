@@ -32,6 +32,14 @@
      indistinguishable in a donut. */
   --s1: var(--latch-blue);
   --s2: var(--violet);
+
+  /* Chart furniture. GasChart and FeeChart have always painted their grid and
+     axis with these two names, and nothing defined them — an unresolvable var
+     in a `stroke` presentation attribute computes to `unset`, i.e. black, so
+     both lines were invisible against a near-black panel. Mapped onto the same
+     hairline tokens the cards' own borders use. */
+  --viz-grid: var(--hairline);
+  --viz-axis: var(--hairline-blue-2);
 }
 
 .viz-head {
@@ -77,9 +85,33 @@
 
 .viz-band { padding: 6px 0 12px; border-radius: 6px; }
 
-.viz-band:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+/* Sized for a plot dropped into a host card that already carries the heading
+   and the caption, so the bands do not also have to hold the figure apart. */
+.viz-plot--compact .viz-band { padding-block: 5px 9px; }
+.viz-plot--compact .viz-band-name { font-size: 12.5px; }
+
+.viz-band:hover,
+.viz-band[data-on='true'] { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 
 .viz-band:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 1px; }
+
+/* A band that is a real control rather than a focusable div: same box, button
+   chrome stripped, and inset padding so the hover wash has something to sit in.
+   The transition is CSS so tokens.css's global prefers-reduced-motion block
+   collapses it — nothing here animates from JS. */
+.viz-band--btn {
+  display: block;
+  width: 100%;
+  padding-inline: 6px;
+  margin-inline: -6px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.18s var(--ease);
+}
 
 .viz-band-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
 

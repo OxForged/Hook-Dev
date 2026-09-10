@@ -77,22 +77,44 @@ export function isDeployed(chainId: number): chainId is DeployedChainId {
 }
 
 /**
- * Public RPCs verified by probe. Sepolia has exactly ONE working public endpoint,
- * so there is no real failover here — see packages/sdk/src/chains/endpoints.ts.
- * `fallback` is still used so adding an endpoint is a one-line change.
+ * Public RPCs verified by probe, fastest-first.
+ *
+ * Five independent operators, all of which answered `eth_chainId` and served
+ * `eth_blockNumber` on 2026-09-10 — mirrors the Sepolia entry in
+ * `packages/sdk/src/chains/endpoints.ts`, which carries the methodology and the
+ * record of what was tried and failed. This used to be a single endpoint, so a
+ * rate-limited publicnode meant the whole dapp read nothing.
+ *
+ * None of these carries an API key. Keyed providers belong in the environment.
  */
 const RPCS: Record<DeployedChainId, readonly string[]> = {
-  [SEPOLIA_CHAIN_ID]: ['https://ethereum-sepolia-rpc.publicnode.com'],
+  [SEPOLIA_CHAIN_ID]: [
+    'https://11155111.rpc.thirdweb.com',
+    'https://gateway.tenderly.co/public/sepolia',
+    'https://ethereum-sepolia-rpc.publicnode.com',
+    'https://1rpc.io/sepolia',
+    'https://0xrpc.io/sep',
+  ],
 }
 
 let cached: PublicClient | undefined
 
+/**
+ * The dapp's read client.
+ *
+ * The retry shape is chosen for rate limits, not for flaky networks. `retryCount: 0`
+ * per endpoint means a 429 falls straight through to the next provider instead of
+ * being retried against the one that just refused; the retries sit on `fallback`, so
+ * one pass asks all five before any is asked twice. `rank: false` keeps the measured
+ * order and avoids viem's background re-ranking traffic, which would spend the same
+ * per-minute budget we are trying to conserve.
+ */
 export function client(chainId: DeployedChainId = SEPOLIA_CHAIN_ID): PublicClient {
   if (cached) return cached
   cached = createPublicClient({
     transport: fallback(
-      RPCS[chainId].map((u) => http(u, { timeout: 12_000, retryCount: 2 })),
-      { rank: false },
+      RPCS[chainId].map((u) => http(u, { timeout: 12_000, retryCount: 0 })),
+      { rank: false, retryCount: 2 },
     ),
   })
   return cached

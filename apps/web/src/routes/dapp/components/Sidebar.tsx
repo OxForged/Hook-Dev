@@ -15,7 +15,6 @@
 
 import { useRef } from 'react'
 import { Link, NavLink } from 'react-router-dom'
-import { LatchConnectButton } from '@latchprotocol/connect'
 import type { ShellData } from '../data/shell.ts'
 import { useFocusTrap } from '../lib/dom.ts'
 import { NavIcon } from '../../../components/NavIcon'
@@ -86,7 +85,9 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
           <p className="dapp-sample-note">
             Live on Sepolia · testnet only
           </p>
-          <LatchConnectButton variant="sidebar" showChain />
+          {/* The wallet control moved to the header (TopBar). It sat here, below
+              seven nav rows, where nobody looked for it — and a second copy would
+              be worse than one in the wrong place. */}
         </div>
       </aside>
     </>

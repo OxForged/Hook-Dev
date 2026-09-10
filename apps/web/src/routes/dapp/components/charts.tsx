@@ -225,6 +225,7 @@ export function BarList({
   valueLabel,
   shareLabel,
   series,
+  className,
 }: {
   items: LabelledBar[]
   /** Unit for `value`, when the name does not already carry it. */
@@ -234,12 +235,16 @@ export function BarList({
   /** What `pct` is a share OF. Stated, never implied. */
   shareLabel?: string
   series?: readonly BarSeries[]
+  /** Host-surface hook. The landing page mounts this same primitive outside the
+      dapp shell, where `--dapp-ease` is unset and the rhythm differs; one class
+      lets that surface supply both without a second bar list existing. */
+  className?: string
 }) {
   const tip = useChartTip()
   const [isolated, setIsolated] = useState<SeriesColor | null>(null)
 
   return (
-    <div className="dapp-barlist">
+    <div className={className ? `dapp-barlist ${className}` : 'dapp-barlist'}>
       {series && series.length > 1 ? (
         <ul className="dapp-serieskey">
           {series.map((s) => (

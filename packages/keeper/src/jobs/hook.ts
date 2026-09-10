@@ -20,10 +20,29 @@ import { REV_SHARE_HOOK_ABI } from '../abi.js'
 import type { PoolKeyConfig, WatchTarget } from '../config.js'
 import { type Job, type JobContext, type JobVerdict, failed, notDue } from './types.js'
 
+/* Viem revert-message shapes. Declared as constants so the helper below reads as intent. */
+const NAMED_ERROR = /^Error:\s*[A-Za-z_]\w*\s*\(/
+const ERROR_PREFIX = /^Error:\s*/
+const SIG_HEADER = /reverted with the following signature/i
+const SELECTOR = /^0x[0-9a-fA-F]{8}$/
+const EXEC_PREFIX = /^ContractFunctionExecutionError:\s*/
+
+/** See the note on the copy in `epochs.ts`: viem's first line is often not the useful one. */
 function revertReason(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
-  const first = msg.split('\n')[0] ?? msg
-  return first.replace(/^ContractFunctionExecutionError:\s*/, '').trim()
+  const lines = msg.split('\n').map((l) => l.trim()).filter(Boolean)
+
+  const named = lines.find((l) => NAMED_ERROR.test(l))
+  if (named) return named.replace(ERROR_PREFIX, '')
+
+  const sigIdx = lines.findIndex((l) => SIG_HEADER.test(l))
+  if (sigIdx >= 0) {
+    const sig = lines[sigIdx + 1]
+    if (sig && SELECTOR.test(sig)) return `reverted, undecoded selector ${sig}`
+  }
+
+  const first = lines[0] ?? msg
+  return first.replace(EXEC_PREFIX, '').trim()
 }
 
 /** viem wants the PoolKey struct as a positional tuple in this exact order. */

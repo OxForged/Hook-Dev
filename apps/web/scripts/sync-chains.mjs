@@ -32,9 +32,8 @@ if (!existsSync(sdkChains)) {
   process.exit(1)
 }
 
-const { CHAIN_RPCS, SINGLE_ENDPOINT_CHAINS, resolveEndpoints } = await import(
-  pathToFileURL(sdkChains).href
-)
+const { CHAIN_RPCS, SINGLE_ENDPOINT_CHAINS, THIN_ENDPOINT_CHAINS, ENDPOINT_TARGET, resolveEndpoints } =
+  await import(pathToFileURL(sdkChains).href)
 
 /**
  * Mainnet vs testnet is not a field in the SDK, so it is derived from the chain's
@@ -55,6 +54,7 @@ const entries = Object.entries(CHAIN_RPCS).map(([key, cfg]) => {
     supportsEip1153: cfg.supportsEip1153,
     endpointCount,
     singlePointOfFailure: endpointCount < 2 && SINGLE_ENDPOINT_CHAINS.includes(key),
+    belowTarget: endpointCount < ENDPOINT_TARGET && THIN_ENDPOINT_CHAINS.includes(key),
     fastestEndpoint: cfg.endpoints[0]?.url ?? '',
   }
 })
@@ -71,6 +71,7 @@ const body = entries
     supportsEip1153: ${c.supportsEip1153},
     endpointCount: ${c.endpointCount},
     singlePointOfFailure: ${c.singlePointOfFailure},
+    belowTarget: ${c.belowTarget},
     fastestEndpoint: ${q(c.fastestEndpoint)},
   },`,
   )
@@ -107,6 +108,12 @@ export interface SdkChain {
   readonly endpointCount: number
   /** Only one endpoint — a fallback transport cannot fail over. */
   readonly singlePointOfFailure: boolean
+  /**
+   * Fewer than the SDK's five-endpoint target. Still fails over, but with less
+   * headroom: this chain degrades first when public providers rate-limit. Not a
+   * probe failure — no fifth public endpoint was found for it.
+   */
+  readonly belowTarget: boolean
   readonly fastestEndpoint: string
 }
 

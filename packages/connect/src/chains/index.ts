@@ -1,9 +1,18 @@
 /* ============================================================================
    The Latch chain list.
 
-   Eleven chains, matching `packages/sdk/src/chains/endpoints.ts` exactly — the
-   same eleven the web app renders from `chains.generated.ts`. Four come from
-   wagmi's curated registry; seven are defined in `./definitions.ts`.
+   Fourteen chains, matching `packages/sdk/src/chains/endpoints.ts` exactly — the
+   same fourteen the web app renders from `chains.generated.ts`. All of them come
+   from wagmi's curated registry, re-exported through `./definitions.ts` with one
+   field replaced: `rpcUrls.default.http`, which carries the probed, ordered,
+   redundant endpoint list instead of wagmi's one-to-three defaults.
+
+   Ten mainnets: Ethereum, Base, BNB Smart Chain, Linea, Ink, X Layer, HyperEVM,
+   Monad, Plasma, Stable. Four testnets: Sepolia, Monad Testnet, Stable Testnet,
+   Arc Testnet.
+
+   Arc MAINNET (5042) is absent on purpose: wagmi ships it, but it has no public
+   RPC. See the header of `./definitions.ts`.
 
    IMPORTANT — presence here means "EIP-1153 verified target", NOT "Latch is
    live". Latch Protocol is deployed on Ethereum Sepolia and nowhere else.
@@ -11,37 +20,53 @@
    ============================================================================ */
 
 import type { Chain } from 'viem'
-import { base, bsc, mainnet, sepolia } from 'wagmi/chains'
 
 import {
   arcTestnet,
+  base,
+  bsc,
   hyperEvm,
+  ink,
+  linea,
+  mainnet,
   monad,
   monadTestnet,
   plasma,
+  sepolia,
   stable,
   stableTestnet,
+  xLayer,
 } from './definitions.js'
 
 export {
   arcTestnet,
+  base,
+  bsc,
   hyperEvm,
+  ink,
+  linea,
+  mainnet,
   monad,
   monadTestnet,
   plasma,
+  sepolia,
   stable,
   stableTestnet,
+  xLayer,
+  LATCH_PUBLIC_RPCS,
   SINGLE_ENDPOINT_CHAIN_IDS,
+  THIN_ENDPOINT_CHAIN_IDS,
   UNVERIFIED_CHAIN_METADATA,
 } from './definitions.js'
-
-export { base, bsc, mainnet, sepolia }
 
 /** Latch target chains that are mainnets. */
 export const LATCH_MAINNET_CHAINS = [
   mainnet,
   base,
   bsc,
+  linea,
+  ink,
+  xLayer,
   hyperEvm,
   monad,
   plasma,

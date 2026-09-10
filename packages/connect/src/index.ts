@@ -31,27 +31,32 @@ export { WALLETCONNECT_PROJECT_ID_ENV, walletConnectProjectId } from './config/e
 /* -------------------------------------------------------------------- chains */
 
 export {
-  /* wagmi-curated */
+  /* mainnets — wagmi-curated identity, probed RPC lists */
+  mainnet,
   base,
   bsc,
-  mainnet,
-  sepolia,
-  /* defined in this package */
-  arcTestnet,
+  linea,
+  ink,
+  xLayer,
   hyperEvm,
   monad,
-  monadTestnet,
   plasma,
   stable,
+  /* testnets */
+  sepolia,
+  monadTestnet,
   stableTestnet,
+  arcTestnet,
   /* lists */
   LATCH_CHAINS,
   LATCH_MAINNET_CHAINS,
   LATCH_TESTNET_CHAINS,
   LATCH_DEPLOYED_CHAIN_IDS,
   LATCH_DEFAULT_CHAIN,
+  LATCH_PUBLIC_RPCS,
   /* audit surface */
   SINGLE_ENDPOINT_CHAIN_IDS,
+  THIN_ENDPOINT_CHAIN_IDS,
   UNVERIFIED_CHAIN_METADATA,
   /* helpers */
   isLatchDeployedChain,

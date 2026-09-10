@@ -74,9 +74,12 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
 ]);
 
 /**
- * The epoch distributors. `SnapshotEpochDistributor` and
- * `MerkleEpochDistributor` share these signatures but have no common on-chain
- * interface, so a caller supplies the address and this ABI fits either.
+ * The epoch distributors. `SnapshotEpochDistributor` and `MerkleEpochDistributor`
+ * share THESE signatures but have no common on-chain interface, so a caller
+ * supplies the address and this ABI fits either.
+ *
+ * `getEpoch` is NOT here, because it is the one call whose return shape differs.
+ * See `SNAPSHOT_EPOCH_ABI` / `MERKLE_EPOCH_ABI` below.
  */
 export const DISTRIBUTOR_ABI = parseAbi([
   "function closeEpoch() returns (uint256 epochId)",
@@ -84,30 +87,72 @@ export const DISTRIBUTOR_ABI = parseAbi([
   "function epochCount() view returns (uint256)",
   "function lastCloseAt() view returns (uint64)",
   "function minEpochDuration() view returns (uint64)",
+  // Type probes, read-only. Exactly one of these answers on a given distributor.
+  "function token() view returns (address)",
+  "function challengeDelay() view returns (uint64)",
+]);
+
+/**
+ * Two `getEpoch` ABIs, because the two distributors return DIFFERENT structs
+ * that happen to share a shape.
+ *
+ * Both are nine all-static fields, so each occupies one 32-byte word and the
+ * positions align. That is what makes one shared ABI dangerous rather than
+ * merely wrong: the decode does not fail, it silently reinterprets.
+ *
+ *   idx  snapshot                     merkle
+ *   ---  ---------------------------  --------------------------
+ *    4   totalVotingSupply (uint256)  root (bytes32)
+ *    5   timepoint (uint48)           closedAt (uint64)
+ *    6   closedAt (uint64)            claimableAt (uint64)
+ *    7   expiresAt                    expiresAt
+ *    8   rolledOver                   rolledOver
+ *
+ * An agent reporting `closedAt` from a merkle epoch through the snapshot ABI
+ * would state a wrong timestamp confidently, which is the exact failure this
+ * package exists to avoid.
+ */
+export const SNAPSHOT_EPOCH_ABI = parseAbi([
   "function getEpoch(uint256 epochId) view returns ((uint256,uint256,uint256,uint256,uint256,uint48,uint64,uint64,bool))",
 ]);
 
-/** Field order of the `Epoch` tuple above, so index math stays readable. */
+export const MERKLE_EPOCH_ABI = parseAbi([
+  "function getEpoch(uint256 epochId) view returns ((uint256,uint256,uint256,uint256,bytes32,uint64,uint64,uint64,bool))",
+]);
+
+/** Which distributor an address is. `unknown` means the probe was inconclusive. */
+export type DistributorKind = "snapshot" | "merkle" | "unknown";
+
+/**
+ * Only the indices that mean the SAME thing on both distributors. Anything at
+ * index 4-6 is distributor-specific and must be read through the matching ABI,
+ * never looked up here.
+ */
 export const EPOCH_FIELD = {
   amount0: 0,
   amount1: 1,
   claimed0: 2,
   claimed1: 3,
-  totalVotingSupply: 4,
-  timepoint: 5,
-  closedAt: 6,
   expiresAt: 7,
   rolledOver: 8,
 } as const;
 
+/**
+ * Positions 4-6 are deliberately `unknown`: they hold different types AND
+ * different meanings on the two distributors (uint256/uint48/uint64 vs
+ * bytes32/uint64/uint64). Typing them as snapshot's shape would let a merkle
+ * read compile while returning a wrong value, which is the whole failure this
+ * split exists to prevent. Narrow them at the call site, against the ABI you
+ * actually used.
+ */
 export type EpochTuple = readonly [
   bigint,
   bigint,
   bigint,
   bigint,
-  bigint,
-  number,
-  bigint,
+  unknown,
+  unknown,
+  unknown,
   bigint,
   boolean,
 ];

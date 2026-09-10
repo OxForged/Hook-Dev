@@ -47,6 +47,20 @@ export const DISTRIBUTOR_ABI = parseAbi([
   // --- type probes, read-only, never sent ---
   'function token() view returns (address)',
   'function challengeDelay() view returns (uint64)',
+  // --- custom errors ---
+  // Present so viem DECODES a revert into a name instead of handing back a bare
+  // 4-byte selector. These are the keeper's normal output, not exceptions:
+  // `NothingToDistribute` every tick between epochs, `EpochTooSoon` every tick
+  // inside the minimum duration. An operator reading "0x01663f24" learns nothing;
+  // reading "NothingToDistribute()" learns the system is idle and healthy.
+  'error NothingToDistribute()',
+  'error EpochTooSoon(uint64 earliest)',
+  'error AlreadyRolledOver(uint256 epochId)',
+  'error ClaimWindowClosed(uint256 epochId, uint64 expiresAt)',
+  'error UnknownEpoch(uint256 epochId)',
+  'error NothingToClaim(uint256 epochId, address account)',
+  'error AlreadyClaimed(uint256 epochId, address account)',
+  'error RolloverTooSoon(uint256 epochId, uint64 expiresAt)',
 ])
 
 /**

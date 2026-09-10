@@ -46,6 +46,11 @@ export function hBarPath(x: number, y: number, w: number, h: number, r = 4): str
   ].join(' ')
 }
 
+/** How much more `value` is than `base`, as a percentage. 0 base -> 0. */
+export function pctMore(base: number, value: number): number {
+  return base === 0 ? 0 : ((value - base) / base) * 100
+}
+
 /** Whole-step ticks across a max, thinned out on narrow layouts. */
 export function ticksFor(max: number, step: number, plotWidth: number): number[] {
   const s = plotWidth >= 300 ? step : step * 2

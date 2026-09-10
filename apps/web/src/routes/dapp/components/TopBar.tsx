@@ -25,6 +25,7 @@
    ============================================================================ */
 
 import { Link } from 'react-router-dom'
+import { LatchChainSwitcher, LatchConnectButton } from '@latchprotocol/connect'
 import { ChainMark } from '../../../components/ChainMark.tsx'
 import { TickerStrip } from '../../../components/TickerStrip.tsx'
 import type { ChainRow } from '../../../data/chains.ts'
@@ -90,6 +91,11 @@ export function TopBar({
             </span>
           </p>
 
+          {/* Protocol state, NOT wallet state. This chip says where the CONTRACTS
+              are; the two controls after it say where the WALLET is. Keeping them
+              adjacent but distinct matters — this chip reading "Ethereum Sepolia"
+              while a wallet sits on another network is the normal case, not a
+              contradiction, and the pairing is what makes that legible. */}
           <p className="dapp-net-chip">
             <ChainMark brand={net.brand} size={18} className="dapp-net-chip__mark" />
             <span className="dapp-net-chip__name">{net.name}</span>
@@ -100,6 +106,13 @@ export function TopBar({
               {net.deployed ? 'DEPLOYED' : 'NO DEPLOYMENT'}
             </span>
           </p>
+
+          {/* The wallet lives HERE, in the header, because that is where every
+              other dapp puts it and where a user looks for it. It was previously
+              only at the foot of the sidebar — present, but past the seven nav
+              rows and effectively undiscoverable. */}
+          <LatchChainSwitcher className="dapp-header__chain" />
+          <LatchConnectButton variant="inline" />
 
           <p className="dapp-block">
             <span className="dapp-dot dapp-dot--success dapp-dot--pulse dapp-dot--sm" aria-hidden="true" />

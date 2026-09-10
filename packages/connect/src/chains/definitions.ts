@@ -1,172 +1,311 @@
 /* ============================================================================
-   Chain definitions for Latch Protocol target chains that wagmi does not ship.
-
-   wagmi/chains already carries Ethereum (1), Base (8453), BNB Smart Chain (56)
-   and Ethereum Sepolia (11155111). Those are re-exported from `./index.ts`
-   unchanged — redefining a chain wagmi already curates is how a wrong RPC or a
-   stale explorer URL gets shipped.
-
-   The seven below are defined here.
+   Chain definitions for Latch Protocol target chains.
 
    ---------------------------------------------------------------------------
-   PROVENANCE — read this before changing a number.
+   WHAT CHANGED, AND WHY THERE ARE NO HAND-WRITTEN CHAINS LEFT
    ---------------------------------------------------------------------------
 
-   `id` and every `rpcUrls.default.http` entry are copied verbatim from
-   `packages/sdk/src/chains/endpoints.ts` (`CHAIN_RPCS`), the repo's single
-   source of truth. Every endpoint there was probed live on 2026-09-09: it
-   answered `eth_chainId` with the expected id and served `eth_blockNumber`.
-   Endpoints are listed fastest-first, which is also the order a fallback
-   transport should try them in. Nothing here was invented, and nothing here
-   carries an API key — keyed providers belong in the environment.
+   This file used to `defineChain` seven networks from memory, because wagmi did
+   not ship them. As of wagmi 2.19.5 it ships ALL of them — HyperEVM, Monad,
+   Monad Testnet, Plasma, Stable, Stable Testnet and Arc Testnet — plus the three
+   added in this change (Linea, Ink, X Layer). Every `nativeCurrency` and
+   `blockExplorers` value below therefore now comes from wagmi's curated registry
+   instead of from this repository's memory, which is a strict improvement: the
+   old hand-written entries had Stable's gas token as "Tether USD" / USDT, and
+   both wagmi and ethereum-lists say it is USDT0.
 
-   `name` is copied from the same file.
+   That is the reason the old rule ("redefining a chain wagmi already curates is
+   how a wrong RPC or a stale explorer URL gets shipped") is now applied to every
+   chain rather than to four of them.
 
-   `nativeCurrency` and `blockExplorers` are NOT in that file, and are not
-   anywhere else in this repository either. They are handled as follows:
+   ---------------------------------------------------------------------------
+   THE ONE FIELD WE STILL OWN: rpcUrls
+   ---------------------------------------------------------------------------
 
-     * `blockExplorers` is OMITTED for all seven chains. viem makes the field
-       optional, and the repo has a verified explorer for exactly one network
-       (Sepolia -> sepolia.etherscan.io, see apps/web/src/lib/chain.ts). A
-       guessed explorer host is worse than no explorer link: it sends users to
-       a page that may not exist, or worse, to a lookalike. When an explorer is
-       verified for one of these chains, add it here and to
-       `apps/web/src/data/chains.ts`'s `explorerAddressUrl` in the same change.
+   wagmi curates a chain's IDENTITY. It does not curate its REACHABILITY: its
+   entries carry one to three RPC URLs, chosen for correctness rather than for
+   redundancy, and several of them are the single endpoint most likely to be
+   rate-limited precisely because everyone uses it.
 
-     * `nativeCurrency` CANNOT be omitted — viem's `Chain` type requires it,
-       and wallets read it when a chain is added via
-       `wallet_addEthereumChain`. The symbols below come from each network's
-       own public documentation, NOT from anything in this repo, so they are
-       listed in `UNVERIFIED_NATIVE_CURRENCY` at the bottom of this file and
-       must be confirmed against the live chain before this package is pointed
-       at a mainnet holding real funds. Consequence of a wrong value: the
-       wallet shows the wrong ticker on the gas line. It does not affect
-       calldata, value encoding or settlement.
+   So `withLatchRpcs` keeps every curated field and replaces only
+   `rpcUrls.default.http` with `LATCH_PUBLIC_RPCS` — the list in
+   `packages/sdk/src/chains/endpoints.ts`, where every URL was probed live on
+   2026-09-10: it answered `eth_chainId` with the expected id and served
+   `eth_blockNumber` three times, ordered fastest-first by the median of those.
+   Endpoints that 404'd, 403'd, rate-limited or returned the wrong chain were
+   dropped rather than kept as dead fallbacks.
 
-     * `decimals: 18` is a protocol fact, not a guess. An EVM account balance
-       is denominated in wei regardless of what the gas token is branded as,
-       so 18 is correct even on the chains that use a stablecoin for gas.
+   Nothing here carries an API key. Keyed providers belong in the environment.
+
+   ---------------------------------------------------------------------------
+   NOT HERE: Arc mainnet (5042)
+   ---------------------------------------------------------------------------
+
+   wagmi ships it, which makes it tempting. It has NO public RPC: Circle's own
+   mainnet hosts answer 401/403 and thirdweb's `5042.rpc.thirdweb.com` answers
+   `eth_chainId` from a config table while failing every `eth_blockNumber`. A
+   chain in this list that cannot be reached is a network the switcher offers and
+   the dapp cannot use. Arc TESTNET (5042002) is fully supported. See the header
+   of `packages/sdk/src/chains/endpoints.ts`.
    ============================================================================ */
 
-import { defineChain } from 'viem'
+import { defineChain, type Chain } from 'viem'
+import {
+  arcTestnet as wagmiArcTestnet,
+  base as wagmiBase,
+  bsc as wagmiBsc,
+  hyperEvm as wagmiHyperEvm,
+  ink as wagmiInk,
+  linea as wagmiLinea,
+  mainnet as wagmiMainnet,
+  monad as wagmiMonad,
+  monadTestnet as wagmiMonadTestnet,
+  plasma as wagmiPlasma,
+  sepolia as wagmiSepolia,
+  stable as wagmiStable,
+  stableTestnet as wagmiStableTestnet,
+  xLayer as wagmiXLayer,
+} from 'wagmi/chains'
+
+/* ------------------------------------------------------------ probed RPC list */
+
+/**
+ * Verified public RPCs per chain id, fastest-first.
+ *
+ * Copied verbatim from `CHAIN_RPCS` in `packages/sdk/src/chains/endpoints.ts`,
+ * which is the repo's single source of truth and carries the probe methodology,
+ * the per-endpoint EIP-1153 result and the record of what was tried and failed.
+ * This package cannot import it — connect is published standalone and must not
+ * take a dependency on the SDK — so the two are kept in step by hand. Change the
+ * SDK first, then mirror it here.
+ *
+ * Counts below five are real: no fifth public endpoint exists for those chains.
+ * The list is never padded with endpoints that failed the probe, because a
+ * fallback transport spends a retry on every dead entry before reaching a live one.
+ */
+export const LATCH_PUBLIC_RPCS: Readonly<Record<number, readonly string[]>> = {
+  // Ethereum — 5
+  1: [
+    'https://eth.drpc.org',
+    'https://1.rpc.thirdweb.com',
+    'https://eth.rpc.blxrbdn.com',
+    'https://rpc.flashbots.net',
+    'https://gateway.tenderly.co/public/mainnet',
+  ],
+  // BNB Smart Chain — 5
+  56: [
+    'https://56.rpc.thirdweb.com',
+    'https://bsc-dataseed1.ninicoin.io',
+    'https://bsc-dataseed.bnbchain.org',
+    'https://bsc-dataseed1.defibit.io',
+    'https://bsc-rpc.publicnode.com',
+  ],
+  // Monad — 5
+  143: [
+    'https://rpc.monad.xyz',
+    'https://143.rpc.thirdweb.com',
+    'https://rpc2.monad.xyz',
+    'https://monad.gateway.tenderly.co',
+    'https://api.zan.top/monad-mainnet',
+  ],
+  // X Layer — 4. Its canonical `rpc.xlayer.tech` could not be reached from the
+  // probing machine (TLS handshake refused, a local network filter), so it is
+  // unverified rather than dead and is not shipped. OKX's own `xlayerrpc.okx.com`
+  // does answer, so the operator is still represented.
+  196: [
+    'https://xlayer.drpc.org',
+    'https://xlayerrpc.okx.com',
+    'https://196.rpc.thirdweb.com',
+    'https://api.zan.top/xlayer-mainnet',
+  ],
+  // Stable — 4
+  988: [
+    'https://stable.drpc.org',
+    'https://stable.gateway.tenderly.co',
+    'https://rpc.stable.xyz',
+    'https://988.rpc.thirdweb.com',
+  ],
+  // HyperEVM — 5
+  999: [
+    'https://rpc.purroofgroup.com',
+    'https://hyperliquid.drpc.org',
+    'https://999.rpc.thirdweb.com',
+    'https://rpc.hyperliquid.xyz/evm',
+    'https://rpc.hypurrscan.io',
+  ],
+  // Stable Testnet — 3
+  2201: [
+    'https://stable-testnet.gateway.tenderly.co',
+    'https://rpc.testnet.stable.xyz',
+    'https://2201.rpc.thirdweb.com',
+  ],
+  // Base — 5
+  8453: [
+    'https://8453.rpc.thirdweb.com',
+    'https://base.drpc.org',
+    'https://base.gateway.tenderly.co',
+    'https://base-mainnet.public.blastapi.io',
+    'https://mainnet.base.org',
+  ],
+  // Plasma — 3
+  9745: [
+    'https://rpc.plasma.to',
+    'https://plasma.gateway.tenderly.co',
+    'https://9745.rpc.thirdweb.com',
+  ],
+  // Monad Testnet — 5
+  10143: [
+    'https://10143.rpc.thirdweb.com',
+    'https://monad-testnet.drpc.org',
+    'https://testnet-rpc.monad.xyz',
+    'https://monad-testnet.gateway.tenderly.co',
+    'https://api.zan.top/monad-testnet',
+  ],
+  // Ink — 5
+  57073: [
+    'https://ink.drpc.org',
+    'https://rpc-qnd.inkonchain.com',
+    'https://ink.gateway.tenderly.co',
+    'https://rpc-gel.inkonchain.com',
+    'https://57073.rpc.thirdweb.com',
+  ],
+  // Linea — 5
+  59144: [
+    'https://linea.drpc.org',
+    'https://59144.rpc.thirdweb.com',
+    'https://linea-rpc.publicnode.com',
+    'https://rpc.linea.build',
+    'https://1rpc.io/linea',
+  ],
+  // Ethereum Sepolia — 5
+  11155111: [
+    'https://11155111.rpc.thirdweb.com',
+    'https://gateway.tenderly.co/public/sepolia',
+    'https://ethereum-sepolia-rpc.publicnode.com',
+    'https://1rpc.io/sepolia',
+    'https://0xrpc.io/sep',
+  ],
+  // Arc Testnet — 5. Nine hostnames answer, but they front only five operators
+  // (Circle, dRPC, QuickNode, Blockdaemon, thirdweb), each published on both
+  // *.arc.io and *.arc.network. One hostname per operator is listed, because two
+  // names in front of one node is not failover — it is one outage counted twice.
+  5042002: [
+    'https://rpc.drpc.testnet.arc.io',
+    'https://rpc.quicknode.testnet.arc.io',
+    'https://5042002.rpc.thirdweb.com',
+    'https://rpc.testnet.arc.io',
+    'https://rpc.blockdaemon.testnet.arc.io',
+  ],
+}
+
+/**
+ * A wagmi chain with its RPC list replaced by the probed one.
+ *
+ * Every other curated field — name, nativeCurrency, blockExplorers, contracts,
+ * testnet — is passed through untouched. `rpcUrls.default.http` is the only thing
+ * this package claims to know better, and it knows it because it measured it.
+ *
+ * Throws rather than silently falling back when a chain has no probed list: an
+ * unprobed chain reaching this function means the two lists have drifted, and a
+ * quiet fallback to wagmi's single URL would hide exactly the rate-limit
+ * fragility this table exists to remove.
+ */
+function withLatchRpcs<const T extends Chain>(chain: T) {
+  const http = LATCH_PUBLIC_RPCS[chain.id]
+  if (!http || http.length === 0) {
+    throw new Error(
+      `No probed RPC list for chain ${chain.id} (${chain.name}). Probe it with ` +
+        `packages/sdk/scripts/probe-rpcs.mjs and add it to LATCH_PUBLIC_RPCS.`,
+    )
+  }
+  return defineChain({
+    ...chain,
+    rpcUrls: { ...chain.rpcUrls, default: { ...chain.rpcUrls.default, http } },
+  })
+}
 
 /* ------------------------------------------------------------------ mainnet */
 
-/** HyperEVM — the EVM execution layer of Hyperliquid. Five probed endpoints. */
-export const hyperEvm = /*#__PURE__*/ defineChain({
-  id: 999,
-  name: 'HyperEVM',
-  nativeCurrency: { name: 'Hype', symbol: 'HYPE', decimals: 18 },
-  rpcUrls: {
-    default: {
-      http: [
-        'https://hyperliquid.drpc.org',
-        'https://rpc.hyperliquid.xyz/evm',
-        'https://rpc.hyperlend.finance',
-        'https://hyperliquid-json-rpc.stakely.io',
-        'https://rpc.hypurrscan.io',
-      ],
-    },
-  },
-  testnet: false,
-})
+export const mainnet = /*#__PURE__*/ withLatchRpcs(wagmiMainnet)
+export const base = /*#__PURE__*/ withLatchRpcs(wagmiBase)
+export const bsc = /*#__PURE__*/ withLatchRpcs(wagmiBsc)
 
-/**
- * Monad mainnet.
- *
- * ONE verified public endpoint. There is no failover: if rpc.monad.xyz is down,
- * the chain is unreachable from this config. Treat a paid or self-hosted node as
- * a requirement here, not an optimisation.
- */
-export const monad = /*#__PURE__*/ defineChain({
-  id: 143,
-  name: 'Monad',
-  nativeCurrency: { name: 'Monad', symbol: 'MON', decimals: 18 },
-  rpcUrls: { default: { http: ['https://rpc.monad.xyz'] } },
-  testnet: false,
-})
+/** Linea — Consensys zkEVM L2. ETH for gas, lineascan.build for the explorer. */
+export const linea = /*#__PURE__*/ withLatchRpcs(wagmiLinea)
 
-/** Plasma — stablecoin-settlement L1. One verified public endpoint. */
-export const plasma = /*#__PURE__*/ defineChain({
-  id: 9745,
-  name: 'Plasma',
-  nativeCurrency: { name: 'Plasma', symbol: 'XPL', decimals: 18 },
-  rpcUrls: { default: { http: ['https://rpc.plasma.to'] } },
-  testnet: false,
-})
+/** Ink — Kraken's OP-Stack L2. ETH for gas. */
+export const ink = /*#__PURE__*/ withLatchRpcs(wagmiInk)
 
-/** Stable — stablecoin-gas L1. One verified public endpoint. */
-export const stable = /*#__PURE__*/ defineChain({
-  id: 988,
-  name: 'Stable',
-  nativeCurrency: { name: 'Tether USD', symbol: 'USDT', decimals: 18 },
-  rpcUrls: { default: { http: ['https://rpc.stable.xyz'] } },
-  testnet: false,
-})
+/** X Layer — OKX's Polygon-CDK zkEVM. OKB for gas. Four probed endpoints, not five. */
+export const xLayer = /*#__PURE__*/ withLatchRpcs(wagmiXLayer)
+
+/** HyperEVM — the EVM execution layer of Hyperliquid. */
+export const hyperEvm = /*#__PURE__*/ withLatchRpcs(wagmiHyperEvm)
+
+export const monad = /*#__PURE__*/ withLatchRpcs(wagmiMonad)
+
+/** Plasma — stablecoin-settlement L1. Three probed endpoints; no fourth is public. */
+export const plasma = /*#__PURE__*/ withLatchRpcs(wagmiPlasma)
+
+/** Stable — stablecoin-gas L1. Gas token is USDT0, per wagmi and ethereum-lists. */
+export const stable = /*#__PURE__*/ withLatchRpcs(wagmiStable)
 
 /* ------------------------------------------------------------------ testnet */
 
-export const monadTestnet = /*#__PURE__*/ defineChain({
-  id: 10143,
-  name: 'Monad Testnet',
-  nativeCurrency: { name: 'Monad', symbol: 'MON', decimals: 18 },
-  rpcUrls: { default: { http: ['https://testnet-rpc.monad.xyz'] } },
-  testnet: true,
-})
-
-export const stableTestnet = /*#__PURE__*/ defineChain({
-  id: 2201,
-  name: 'Stable Testnet',
-  nativeCurrency: { name: 'Tether USD', symbol: 'USDT', decimals: 18 },
-  rpcUrls: { default: { http: ['https://rpc.testnet.stable.xyz'] } },
-  testnet: true,
-})
+export const sepolia = /*#__PURE__*/ withLatchRpcs(wagmiSepolia)
+export const monadTestnet = /*#__PURE__*/ withLatchRpcs(wagmiMonadTestnet)
+export const stableTestnet = /*#__PURE__*/ withLatchRpcs(wagmiStableTestnet)
 
 /**
- * Arc Testnet.
+ * Arc Testnet — Circle's USDC-gas L1, testnet.
  *
- * Arc MAINNET (5042) is deliberately absent from this package, exactly as it is
- * absent from `apps/web/src/data/chains.ts`: it could not be probed, so it is
- * not claimed as a supported target. Do not add it from memory.
+ * Arc MAINNET (5042) is deliberately absent even though wagmi ships it: it has no
+ * public RPC. See the header of this file.
  */
-export const arcTestnet = /*#__PURE__*/ defineChain({
-  id: 5042002,
-  name: 'Arc Testnet',
-  nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
-  rpcUrls: { default: { http: ['https://rpc.testnet.arc.io'] } },
-  testnet: true,
-})
+export const arcTestnet = /*#__PURE__*/ withLatchRpcs(wagmiArcTestnet)
 
 /* ------------------------------------------------------------- audit surface */
 
 /**
- * Chain ids whose `nativeCurrency.symbol`/`name` are documentation-sourced
- * rather than repo-sourced, and whose `blockExplorers` are absent because no
- * explorer has been verified for them.
+ * Chain ids whose `nativeCurrency` or `blockExplorers` are unverified.
  *
- * This is exported rather than left as a comment so a deploy check can assert on
- * it: a mainnet release should either verify these or refuse to ship.
+ * EMPTY as of this change. Every chain in the list now takes both fields from
+ * wagmi's curated registry rather than from this repository, and each explorer
+ * was additionally checked to serve an EIP-3091 `/address/<addr>` page:
+ * lineascan.build, explorer.inkonchain.com, oklink.com/xlayer, hyperevmscan.io,
+ * monadscan.com, testnet.monadexplorer.com, plasmascan.to, testnet.arcscan.app,
+ * etherscan.io, basescan.org, bscscan.com and sepolia.etherscan.io all answered.
+ *
+ * ONE exception is recorded rather than hidden: `stablescan.xyz` and
+ * `testnet.stablescan.xyz` (Stable, 988 / 2201) did not resolve from the machine
+ * this was checked on. wagmi carries them and ethereum-lists agrees, so they are
+ * not listed as unverified metadata, but nobody here has seen either render.
+ *
+ * Exported rather than left as a comment so a deploy check can assert on it.
  */
-export const UNVERIFIED_CHAIN_METADATA: readonly number[] = [
-  hyperEvm.id,
-  monad.id,
-  plasma.id,
-  stable.id,
-  monadTestnet.id,
-  stableTestnet.id,
-  arcTestnet.id,
-]
+export const UNVERIFIED_CHAIN_METADATA: readonly number[] = []
 
 /**
- * Chains reachable through exactly ONE public RPC. A fallback transport cannot
- * fail over on these. Mirrors `SINGLE_ENDPOINT_CHAINS` in the SDK, restricted to
- * the chains defined in this file.
+ * Chains reachable through exactly ONE public RPC, where a fallback transport
+ * cannot fail over. Mirrors `SINGLE_ENDPOINT_CHAINS` in the SDK.
+ *
+ * EMPTY as of the 2026-09-10 probe: every chain now has at least three
+ * independent public endpoints. It was six chains long before that. Kept as an
+ * exported empty list rather than deleted, because it is the assertion a deploy
+ * check should make and it will stop being empty the moment a chain is added
+ * ahead of its provider ecosystem.
  */
-export const SINGLE_ENDPOINT_CHAIN_IDS: readonly number[] = [
-  monad.id,
-  monadTestnet.id,
+export const SINGLE_ENDPOINT_CHAIN_IDS: readonly number[] = []
+
+/**
+ * Chains carrying fewer than five public endpoints.
+ *
+ * They still fail over, but with less headroom, and they will degrade first on a
+ * rate-limited day. Not a probe failure — no fifth public endpoint was found.
+ */
+export const THIN_ENDPOINT_CHAIN_IDS: readonly number[] = [
+  xLayer.id,
   plasma.id,
   stable.id,
   stableTestnet.id,
-  arcTestnet.id,
 ]

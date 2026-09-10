@@ -138,7 +138,11 @@ export default function Settings() {
                 <dt>Verified public RPCs</dt>
                 <dd className="tabular">
                   {selected.endpointCount}
-                  {selected.singlePointOfFailure ? ' · no failover' : ''}
+                  {selected.singlePointOfFailure
+                    ? ' · no failover'
+                    : selected.belowTarget
+                      ? ' · below the 5-endpoint target'
+                      : ''}
                 </dd>
               </div>
             </dl>

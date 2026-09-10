@@ -4,11 +4,13 @@
    The LIST itself is not written here — it is generated into
    `./chains.generated.ts` from `packages/sdk/src/chains/endpoints.ts`
    (`CHAIN_RPCS`) by `scripts/sync-chains.mjs`, so the UI cannot drift from the
-   SDK. Eleven chains, each one verified by executing a live TSTORE probe.
+   SDK. Fourteen chains, each one verified by executing a live TSTORE probe.
 
-   Arc mainnet (5042) is deliberately absent: it launches 2026-09-16 and could
-   not be probed, so it is not claimed as a supported target. Only Arc Testnet
-   (5042002) is listed.
+   Arc mainnet (5042) is deliberately absent. It is live, but it has no public
+   RPC — Circle's own mainnet hosts answer 401/403, and thirdweb's gateway
+   answers `eth_chainId` from a config table while failing every
+   `eth_blockNumber`. It could not be probed, so it is not claimed as a supported
+   target. Only Arc Testnet (5042002) is listed.
 
    What IS written here is the part the SDK cannot know:
 
@@ -44,12 +46,33 @@ export interface ChainBrand {
  * Brand keys are deliberately coarser than chain keys: a testnet carries its
  * mainnet's mark, because that is the mark that network actually uses.
  */
-type BrandKey = 'ethereum' | 'base' | 'bnb' | 'hyperevm' | 'monad' | 'plasma' | 'stable' | 'arc'
+type BrandKey =
+  | 'ethereum'
+  | 'base'
+  | 'bnb'
+  | 'linea'
+  | 'ink'
+  | 'xlayer'
+  | 'hyperevm'
+  | 'monad'
+  | 'plasma'
+  | 'stable'
+  | 'arc'
 
+/**
+ * Every mark below is an official file, downloaded as-is from the network's own
+ * brand kit or its official GitHub org — never redrawn, recoloured or traced.
+ * Provenance for each one is recorded in `public/chains/SOURCES.md`. A chain with
+ * no sourceable official mark keeps `logo: null` and falls back to a monogram; an
+ * approximated one would be a fake — see the note on `ChainBrand.logo`.
+ */
 const BRANDS: Record<BrandKey, ChainBrand> = {
   ethereum: { name: 'Ethereum', logo: '/chains/ethereum.svg', monogram: 'Ξ' },
   base: { name: 'Base', logo: '/chains/base.svg', monogram: 'B' },
   bnb: { name: 'BNB Chain', logo: '/chains/bnb.svg', monogram: 'BNB' },
+  linea: { name: 'Linea', logo: '/chains/linea.svg', monogram: 'LIN' },
+  ink: { name: 'Ink', logo: '/chains/ink.svg', monogram: 'INK' },
+  xlayer: { name: 'X Layer', logo: '/chains/xlayer.svg', monogram: 'XL' },
   hyperevm: { name: 'Hyperliquid', logo: '/chains/hyperevm.svg', monogram: 'HL' },
   monad: { name: 'Monad', logo: '/chains/monad.svg', monogram: 'M' },
   plasma: { name: 'Plasma', logo: '/chains/plasma.svg', monogram: 'PL' },
@@ -62,6 +85,9 @@ const BRAND_OF: Record<ChainKey, BrandKey> = {
   ethereum: 'ethereum',
   base: 'base',
   bsc: 'bnb',
+  linea: 'linea',
+  ink: 'ink',
+  xlayer: 'xlayer',
   hyperevm: 'hyperevm',
   monad: 'monad',
   monadTestnet: 'monad',

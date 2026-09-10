@@ -66,17 +66,29 @@ export interface CreateLatchConfigOptions {
 /**
  * A `fallback` transport over a chain's verified public RPCs.
  *
- * `rank: false` keeps the SDK's measured fastest-first order rather than letting
- * viem re-rank by live latency: re-ranking issues background probe traffic to
- * every endpoint, and several Latch chains have exactly one endpoint that is
- * also rate-limited. Six of the eleven chains have no second endpoint at all,
- * so for those this is a single `http` in a trench coat — see
- * `SINGLE_ENDPOINT_CHAIN_IDS`.
+ * Every chain in `LATCH_CHAINS` now carries three to five probed endpoints (see
+ * `LATCH_PUBLIC_RPCS`), so this is real failover rather than one `http` in a
+ * trench coat, which is what it was when six of eleven chains had a single URL.
+ *
+ * Two choices here are about RATE LIMITS specifically, and both are deliberate:
+ *
+ *   * `retryCount: 0` per endpoint. A 429 is not a transient blip — retrying the
+ *     endpoint that just rate-limited you is the one thing guaranteed not to
+ *     help, and each retry burns wall-clock before the request reaches a provider
+ *     that would have answered. The retries live on the `fallback` instead, so one
+ *     pass asks all five providers before any of them is asked twice.
+ *
+ *   * `rank: false`. viem's ranking re-measures every endpoint on an interval,
+ *     which is continuous background traffic against exactly the shared keyless
+ *     gateways whose per-minute budget we are trying not to exhaust. The order in
+ *     `LATCH_PUBLIC_RPCS` is measured, not guessed, and `fallback` already routes
+ *     around an endpoint that errors.
  */
 function defaultTransport(chain: Chain): Transport {
   const urls = chain.rpcUrls.default.http
-  const transports = urls.map((url) => http(url, { timeout: 12_000, retryCount: 2 }))
-  return transports.length > 1 ? fallback(transports, { rank: false }) : (transports[0] ?? http())
+  const transports = urls.map((url) => http(url, { timeout: 12_000, retryCount: 0 }))
+  if (transports.length === 0) return http()
+  return fallback(transports, { rank: false, retryCount: 2 })
 }
 
 function defaultTransports(chains: readonly Chain[]): Record<number, Transport> {

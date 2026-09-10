@@ -343,8 +343,8 @@ describe("decodeLatchRecord", () => {
       name?: string;
       outputs?: readonly { components?: readonly { name: string; components?: readonly { name: string }[] }[] }[];
     }[];
-    const getHook = abi.find((item) => item.type === "function" && item.name === "getHook");
-    const components = getHook?.outputs?.[0]?.components;
+    const getLatch = abi.find((item) => item.type === "function" && item.name === "getLatch");
+    const components = getLatch?.outputs?.[0]?.components;
     expect(components).toBeDefined();
 
     const onChainFields = components!.map((c) => c.name);
@@ -493,9 +493,9 @@ describe("generated registry ABI", () => {
       "transferSteward",
       "setVerification",
       "setListing",
-      "getHook",
-      "listHooks",
-      "hookCount",
+      "getLatch",
+      "listLatches",
+      "latchCount",
       "isAudited",
       "riskClassOf",
       "statusOf",
@@ -508,19 +508,19 @@ describe("generated registry ABI", () => {
 
   it("carries the registry's errors so a revert can be decoded", () => {
     const errors = names(LATCH_HOOK_REGISTRY_ABI, "error");
-    expect(errors).toContain("HookNotRegistered");
+    expect(errors).toContain("LatchNotRegistered");
     expect(errors).toContain("PermissionsUnreadable");
     expect(errors).toContain("GuardianCannotRelist");
   });
 
   it("isolates the six registry events an indexer replays", () => {
     expect(names(LATCH_HOOK_REGISTRY_EVENTS_ABI, "event").sort()).toEqual([
-      "HookListingChanged",
-      "HookMetadataUpdated",
-      "HookPermissionsRefreshed",
-      "HookRegistered",
-      "HookStewardTransferred",
-      "HookVerificationChanged",
+      "LatchListingChanged",
+      "LatchMetadataUpdated",
+      "LatchPermissionsRefreshed",
+      "LatchRegistered",
+      "LatchStewardTransferred",
+      "LatchVerificationChanged",
     ]);
     // No inherited AccessControl noise in the log-filter constant.
     expect(names(LATCH_HOOK_REGISTRY_EVENTS_ABI, "event")).not.toContain("RoleGranted");

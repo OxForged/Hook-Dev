@@ -52,7 +52,48 @@
 
 import type { Address, Hex } from "viem";
 
-import { DISTRIBUTOR_ABI, EPOCH_FIELD, REV_SHARE_HOOK_ABI, type EpochTuple } from "../abi.js";
+import {
+  DISTRIBUTOR_ABI,
+  EPOCH_FIELD,
+  MERKLE_EPOCH_ABI,
+  REV_SHARE_HOOK_ABI,
+  SNAPSHOT_EPOCH_ABI,
+  type DistributorKind,
+  type EpochTuple,
+} from "../abi.js";
+
+/**
+ * Which distributor is this? There is no `kind()` on chain and the two share no
+ * interface, so each is asked a question only it can answer: `token()` exists
+ * only on the snapshot distributor, `challengeDelay()` only on the merkle one.
+ *
+ * Exactly one must answer. Both or neither returns `unknown`, and the caller
+ * must stop rather than guess — the wrong `getEpoch` ABI decodes cleanly into
+ * nonsense, so guessing produces a confident wrong answer, which for a tool an
+ * agent relies on is worse than no answer at all.
+ */
+async function probeDistributorKind(
+  ctx: { publicClient: { readContract: (a: never) => Promise<unknown> } },
+  distributor: Address,
+): Promise<DistributorKind> {
+  const [snap, merk] = await Promise.allSettled([
+    ctx.publicClient.readContract({
+      address: distributor,
+      abi: DISTRIBUTOR_ABI,
+      functionName: "token",
+    } as never),
+    ctx.publicClient.readContract({
+      address: distributor,
+      abi: DISTRIBUTOR_ABI,
+      functionName: "challengeDelay",
+    } as never),
+  ]);
+  const isSnap = snap.status === "fulfilled";
+  const isMerk = merk.status === "fulfilled";
+  if (isSnap && !isMerk) return "snapshot";
+  if (isMerk && !isSnap) return "merkle";
+  return "unknown";
+}
 import type { LatchContext } from "../context.js";
 import { toJson } from "../json.js";
 import { err, ok, type LatchTool, type ToolResult } from "../types.js";
@@ -397,9 +438,25 @@ async function rollover(
     };
   }
 
+  // Read the epoch through the ABI that matches THIS distributor. Using one
+  // shared shape would decode without error and silently reinterpret fields
+  // 4-6; see the table above SNAPSHOT_EPOCH_ABI in ../abi.ts.
+  const kind = await probeDistributorKind(ctx, distributor);
+  if (kind === "unknown") {
+    return {
+      action: "rollover",
+      target: distributor,
+      due: false,
+      wouldSucceed: false,
+      sent: false,
+      reason:
+        "could not determine whether this is a snapshot or merkle distributor - it answered both or neither of token() and challengeDelay(). Refusing to read the epoch, because the wrong ABI decodes into plausible nonsense rather than failing.",
+    };
+  }
+
   const epoch = (await ctx.publicClient.readContract({
     address: distributor,
-    abi: DISTRIBUTOR_ABI,
+    abi: kind === "snapshot" ? SNAPSHOT_EPOCH_ABI : MERKLE_EPOCH_ABI,
     functionName: "getEpoch",
     args: [epochId],
   })) as unknown as EpochTuple;

@@ -20,11 +20,39 @@ import {
 import type { WatchTarget } from '../config.js'
 import { type Job, type JobContext, type JobVerdict, failed, notDue } from './types.js'
 
-/** Short revert summary. Viem's messages are long; the first line is the useful part. */
+/* Viem revert-message shapes. Declared as constants so the helper below reads as intent. */
+const NAMED_ERROR = /^Error:\s*[A-Za-z_]\w*\s*\(/
+const ERROR_PREFIX = /^Error:\s*/
+const SIG_HEADER = /reverted with the following signature/i
+const SELECTOR = /^0x[0-9a-fA-F]{8}$/
+const EXEC_PREFIX = /^ContractFunctionExecutionError:\s*/
+
+/**
+ * A one-line revert summary an operator can act on.
+ *
+ * Viem's messages run to several paragraphs, and the FIRST line is often the least useful part:
+ * "reverted with the following signature:" with the signature itself on the NEXT line. A keeper
+ * that logs only line one prints a sentence that stops mid-thought, which is exactly what this
+ * did against the live pool.
+ *
+ * Prefer the decoded custom-error name; fall back to the raw 4-byte selector, which is still
+ * enough to look up; only then to the first line.
+ */
 function revertReason(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
-  const first = msg.split('\n')[0] ?? msg
-  return first.replace(/^ContractFunctionExecutionError:\s*/, '').trim()
+  const lines = msg.split('\n').map((l) => l.trim()).filter(Boolean)
+
+  const named = lines.find((l) => NAMED_ERROR.test(l))
+  if (named) return named.replace(ERROR_PREFIX, '')
+
+  const sigIdx = lines.findIndex((l) => SIG_HEADER.test(l))
+  if (sigIdx >= 0) {
+    const sig = lines[sigIdx + 1]
+    if (sig && SELECTOR.test(sig)) return `reverted, undecoded selector ${sig}`
+  }
+
+  const first = lines[0] ?? msg
+  return first.replace(EXEC_PREFIX, '').trim()
 }
 
 function fmtSeconds(s: bigint): string {

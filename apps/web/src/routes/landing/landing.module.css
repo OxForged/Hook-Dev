@@ -1044,6 +1044,65 @@
   color: var(--faint-ink);
 }
 
+/* ---------------------------------------------- charts hosted on this surface
+
+   Two of the Activity panels render primitives that were built for other
+   surfaces: the dapp's `BarList` (.dapp-bars*, styled in routes/dapp/dapp.css)
+   and the chart kit's plot (.viz-*, styled in charts/viz.css). Both are mounted
+   here rather than reimplemented, so this block only supplies what the host
+   surface owes them — vertical rhythm, and the one custom property that is
+   scoped to the `.dapp` shell they are no longer inside.
+   -------------------------------------------------------------------------- */
+
+.hostedBars {
+  /* dapp.css scopes --dapp-ease to `.dapp`; outside it the bar transitions
+     would compute to `unset` and snap. Same curve, from the global token. */
+  --dapp-ease: var(--ease);
+}
+
+.chartHost {
+  margin-top: 18px;
+}
+
+/* ------------------------------------------------------------- the fee meter
+
+   The one figure in LIVE PROTOCOL STATE that is a ratio rather than a standalone
+   scalar: what the protocol takes, against the ceiling the contract enforces.
+   The row above it still prints both numbers; the bar only shows how much of the
+   permitted range is used.
+   -------------------------------------------------------------------------- */
+
+.feeMeter {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.meterTrack {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--track);
+  overflow: hidden;
+}
+
+.meterFill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--latch-blue), var(--dapp-bar-tail));
+  /* A CSS transition, so tokens.css's prefers-reduced-motion block flattens it. */
+  transition: width 1s var(--ease);
+}
+
+.meterScale {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--faint-ink);
+}
+
 /* Visually hidden, still announced. */
 .srOnly {
   position: absolute;
