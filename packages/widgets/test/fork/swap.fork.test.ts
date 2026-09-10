@@ -25,8 +25,13 @@ import { validateIntegratorConfig, NO_INTEGRATOR_FEE } from "../../src/config/in
 import { UNIVERSAL_ROUTER_ABI } from "../../src/callpath/constants.js";
 import { setupFork, type ForkContext } from "./harness.js";
 import {
+  CANONICAL_PERMIT2,
+  LATCH_PERIPHERY_SEPOLIA,
   LATCH_SEPOLIA,
   LIVE_POOL_ID,
+  PERMIT2,
+  lpFeeFromSwapFee,
+  POOL_LP_FEE_PIPS,
   POOL_PROTOCOL_FEE_PIPS,
   POOL_SWAP_FEE_PIPS,
   PROTOCOL_FEES_ABI,
@@ -128,6 +133,17 @@ describe("fork: swap execution", () => {
       args: [LIVE_POOL_ID],
     });
     expect(liquidity).toBeGreaterThan(0n);
+
+    // Nothing of the protocol was deployed by the harness: these are the live
+    // addresses, and setupFork has already re-read their wiring off the chain.
+    expect(fork.chain.contracts.universalRouter).toBe(LATCH_PERIPHERY_SEPOLIA.universalRouter);
+    expect(fork.chain.contracts.clPositionManager).toBe(
+      LATCH_PERIPHERY_SEPOLIA.clPositionManager,
+    );
+    // Permit2 is PancakeSwap's fork, baked into the router's immutables. The
+    // canonical address would take approvals and never be read.
+    expect(fork.chain.contracts.permit2).toBe(PERMIT2);
+    expect(fork.chain.contracts.permit2).not.toBe(CANONICAL_PERMIT2);
   });
 
   it("executes calldata from buildSwapCall and fills at the quoted amount", async () => {
@@ -167,6 +183,10 @@ describe("fork: swap execution", () => {
     expect(swap.fee).toBe(POOL_SWAP_FEE_PIPS);
     expect(swap.fee).toBe(3_997);
     expect(swap.protocolFee).toBe(POOL_PROTOCOL_FEE_PIPS);
+    // And the composition inverts: 3997 and 1000 decompose to exactly the LP fee
+    // the pool key declares, not merely to some pair that sums the same way.
+    expect(lpFeeFromSwapFee(swap.fee, swap.protocolFee)).toBe(POOL_LP_FEE_PIPS);
+    expect(lpFeeFromSwapFee(swap.fee, swap.protocolFee)).toBe(3_000);
     // The event reports the *swapper's* deltas: negative is paid in, positive is
     // taken out. ltUSD is currency0, so a zero-for-one exact-in shows -amountIn.
     expect(swap.amount0).toBe(-AMOUNT_IN);

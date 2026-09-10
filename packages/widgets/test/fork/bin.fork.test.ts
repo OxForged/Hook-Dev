@@ -6,10 +6,11 @@
  * fields, four of them parallel arrays - and `buildSwapCall` has a whole second
  * swap action for bin pools. Neither had ever been sent to a chain.
  *
- * Latch's `BinPoolManager` is live on Sepolia but no bin pool is initialised
- * there, so this suite creates one on the fork and seeds it. The pool is
- * synthetic; the singleton, the bin math and the periphery decoder are the
- * deployed ones, and it is the decoder that has to accept the tuple.
+ * Latch's `BinPoolManager` and `BinPositionManager` are both live on Sepolia,
+ * but no bin pool is initialised there, so this suite creates one on the fork
+ * and seeds it. The pool is synthetic; the singleton, the bin math and the
+ * deployed periphery decoder are not, and it is the decoder that has to accept
+ * the tuple.
  *
  * Watch for the one thing an encoder gets wrong here: `deltaIds` is an offset
  * *added* to the active id (`id = activeId + deltaId`), even though the
@@ -29,7 +30,6 @@ import {
   BIN_POOL_MANAGER_INIT_ABI,
   BIN_SHARES_ABI,
   binShareTokenId,
-  deployBinPositionManager,
   setupFork,
   type ForkContext,
 } from "./harness.js";
@@ -50,7 +50,7 @@ let seededBinIds: number[] = [];
 
 beforeAll(async () => {
   fork = await setupFork();
-  binPositionManager = await deployBinPositionManager(fork);
+  binPositionManager = fork.deployments.binPositionManager;
 
   binPoolKey = createBinPoolKey({
     currency0: LT_USD,

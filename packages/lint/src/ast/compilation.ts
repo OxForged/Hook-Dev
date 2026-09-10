@@ -47,6 +47,8 @@ export interface Compilation {
   readonly artifactDir: string;
   /** True when the linter compiled the project itself into a scratch directory. */
   readonly generated: boolean;
+  /** True when the loaded compilation does not cover every requested source. */
+  readonly partial: boolean;
   readonly sources: ReadonlyMap<number, LoadedSource>;
   /** Every declaration node, by solc id. Powers `referencedDeclaration`. */
   readonly nodesById: ReadonlyMap<number, AstNode>;
@@ -190,6 +192,15 @@ export interface LoadOptions {
   readonly build?: boolean;
   /** Compile even when usable output already exists. */
   readonly rebuild?: boolean;
+  /**
+   * Absolute paths that must all appear in the loaded compilation.
+   *
+   * Foundry writes one build-info per compiler input set, so an incremental
+   * rebuild leaves a newest-but-partial file behind. Without this check the
+   * linter happily analyses whichever two of your four hooks happened to be
+   * recompiled last and reports the rest as clean, which is worse than failing.
+   */
+  readonly mustCover?: readonly string[];
 }
 
 interface Candidate {
@@ -209,10 +220,25 @@ function candidatesFor(project: FoundryProject, options: LoadOptions): Candidate
   return out;
 }
 
+interface Loaded {
+  readonly raw: RawSource[];
+  readonly origin: Compilation["origin"];
+  readonly originPath: string;
+  readonly outDir: string;
+}
+
+function covers(raw: readonly RawSource[], root: string, mustCover: readonly string[]): boolean {
+  if (mustCover.length === 0) return true;
+  const present = new Set(raw.map((item) => normalisePath(absolutise(root, item.unitPath)).toLowerCase()));
+  return mustCover.every((path) => present.has(normalisePath(resolve(path)).toLowerCase()));
+}
+
 function firstUsable(
   candidates: readonly Candidate[],
   root: string,
-): { raw: RawSource[]; origin: Compilation["origin"]; originPath: string; outDir: string } | undefined {
+  mustCover: readonly string[],
+): { covered: Loaded | undefined; any: Loaded | undefined } {
+  let any: Loaded | undefined;
   for (const candidate of candidates) {
     let raw: RawSource[] = [];
     try {
@@ -223,27 +249,40 @@ function firstUsable(
     } catch {
       raw = [];
     }
-    if (raw.length > 0) {
-      return {
-        raw,
-        origin: candidate.buildInfoPath === undefined ? "artifacts" : "build-info",
-        originPath: candidate.buildInfoPath ?? candidate.outDir,
-        outDir: candidate.outDir,
-      };
-    }
+    if (raw.length === 0) continue;
+    const loaded: Loaded = {
+      raw,
+      origin: candidate.buildInfoPath === undefined ? "artifacts" : "build-info",
+      originPath: candidate.buildInfoPath ?? candidate.outDir,
+      outDir: candidate.outDir,
+    };
+    any = any ?? loaded;
+    if (covers(raw, root, mustCover)) return { covered: loaded, any };
   }
-  return undefined;
+  return { covered: undefined, any };
 }
 
 /** Loads the compilation covering `project`, compiling one if necessary. */
 export function loadCompilation(project: FoundryProject, options: LoadOptions = {}): Compilation {
-  const existing = options.rebuild === true ? undefined : firstUsable(candidatesFor(project, options), project.root);
-  let found = existing;
+  const mustCover = options.mustCover ?? [];
+  const canBuild = options.build !== false && options.buildInfo === undefined;
+
+  let attempt =
+    options.rebuild === true
+      ? { covered: undefined, any: undefined }
+      : firstUsable(candidatesFor(project, options), project.root, mustCover);
+  let found = attempt.covered;
+  let fallback = attempt.any;
   let generated = false;
 
-  if (found === undefined && options.build !== false && options.buildInfo === undefined) {
-    const built = buildAstForProject(project.root);
+  for (const force of [false, true]) {
+    if (found !== undefined || !canBuild) break;
+    // The first pass lets Foundry's cache do its job; the second forces one
+    // whole-project compilation when the incremental result did not cover the
+    // files being linted.
+    const built = buildAstForProject(project.root, force);
     if (!built.ok) {
+      if (fallback !== undefined) break;
       throw new NoCompilerOutputError(
         `no solc AST found under ${project.outDir}, and compiling one failed.\n${built.message}\n\n` +
           `Foundry only writes ASTs when asked. Either run \`forge build --ast\` in ${project.root}, ` +
@@ -251,14 +290,20 @@ export function loadCompilation(project: FoundryProject, options: LoadOptions = 
       );
     }
     generated = true;
-    const scratch: Candidate[] = [
-      ...findBuildInfos(built.buildInfoDir).map((path) => ({ buildInfoPath: path, outDir: built.outDir })),
-      { buildInfoPath: undefined, outDir: built.outDir },
-    ];
-    found = firstUsable(scratch, project.root);
+    attempt = firstUsable(
+      [
+        ...findBuildInfos(built.buildInfoDir).map((path) => ({ buildInfoPath: path, outDir: built.outDir })),
+        { buildInfoPath: undefined, outDir: built.outDir },
+      ],
+      project.root,
+      mustCover,
+    );
+    found = attempt.covered;
+    fallback = attempt.any ?? fallback;
   }
 
-  if (found === undefined) {
+  const resolved = found ?? fallback;
+  if (resolved === undefined) {
     throw new NoCompilerOutputError(
       `no solc AST found under ${project.outDir}.\n` +
         `latch-lint reads the AST Foundry emits with \`forge build --ast\`; run that in ${project.root}, ` +
@@ -266,7 +311,8 @@ export function loadCompilation(project: FoundryProject, options: LoadOptions = 
     );
   }
 
-  const { raw, origin, originPath, outDir } = found;
+  const { raw, origin, originPath, outDir } = resolved;
+  const partial = found === undefined && mustCover.length > 0;
   const sources = new Map<number, LoadedSource>();
   for (const item of raw) {
     sources.set(item.sourceIndex, {
@@ -308,6 +354,7 @@ export function loadCompilation(project: FoundryProject, options: LoadOptions = 
     originPath,
     artifactDir: outDir,
     generated,
+    partial,
     sources,
     nodesById,
     sourceIndexByNodeId,

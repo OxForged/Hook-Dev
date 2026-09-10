@@ -15,19 +15,11 @@ export interface Kpi {
   spark: number[]
 }
 
-export interface FeedEvent {
-  latch: string
-  callback: string
-  ago: string
-  /** false → amber dot: the call reverted. */
-  ok: boolean
-}
 
 export interface DashboardData {
   kpis: Kpi[]
   volume: Record<Range, Series>
   callMix: LabelledBar[]
-  feed: FeedEvent[]
 }
 
 /* Sparkline heights, transcribed from the reference's generator
@@ -58,14 +50,6 @@ export function loadDashboard(): DashboardData {
       { name: 'afterSwap', value: '6.4M', pct: 78, color: 'signal' },
       { name: 'beforeAddLiquidity', value: '1.9M', pct: 24, color: 'violet' },
       { name: 'afterRemoveLiquidity', value: '0.7M', pct: 9, color: 'success' },
-    ],
-    feed: [
-      { latch: 'DynamicFeeLatch', callback: 'beforeSwap', ago: '2s', ok: true },
-      { latch: 'JITLatch', callback: 'afterSwap', ago: '6s', ok: true },
-      { latch: 'KYCGateLatch', callback: 'beforeAddLiquidity', ago: '14s', ok: true },
-      { latch: 'RewardLatch', callback: 'afterDonate', ago: '31s', ok: true },
-      { latch: 'OracleLatch', callback: 'beforeSwap', ago: '48s', ok: false },
-      { latch: 'DynamicFeeLatch', callback: 'afterSwap', ago: '1m', ok: true },
     ],
   }
 }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 /** The rule set. */
 
+import { binCompositionFeeBypassRule } from "./binCompositionFeeBypass.js";
+import { binFeeCeilingRule } from "./binFeeCeiling.js";
 import { bitmapDependenciesRule } from "./bitmapDependencies.js";
 import { bitmapMatchesImplementationRule } from "./bitmapMatchesImplementation.js";
 import { hotPathRevertRule } from "./hotPathRevert.js";
@@ -25,6 +27,8 @@ export const ALL_RULES: readonly Rule[] = [
   selectorReturnRule,
   unguardedStateRule,
   managerReentrancyRule,
+  binCompositionFeeBypassRule,
+  binFeeCeilingRule,
 ];
 
 export { type Rule, type RuleContext, type FindingDraft, materialise } from "./rule.js";

@@ -8,6 +8,7 @@ import { loadDashboard } from '../data/dashboard.ts'
 import { useDapp } from '../state.tsx'
 import { LiveChainPanel } from '../components/LiveChainPanel'
 import { useProtocolMetrics, fmtToken } from '../../../lib/useMetrics'
+import { LiveActivityFeed } from '../components/LiveActivityFeed'
 
 /**
  * Real KPI tiles, read from the deployed Sepolia contracts.
@@ -96,34 +97,7 @@ export default function Dashboard() {
             <BarList items={data.callMix} />
           </section>
 
-          <section className="dapp-card" style={{ animationDelay: '0.16s' }}>
-            <div className="dapp-card__bar">
-              <h2 className="dapp-microlabel">LIVE HOOK FEED</h2>
-              <span className="dapp-dot dapp-dot--primary dapp-dot--pulse dapp-dot--sm dapp-dot--end" aria-hidden="true" />
-            </div>
-            <ul className="dapp-feed">
-              {data.feed.map((e, i) => (
-                <li
-                  key={`${e.latch}-${e.callback}-${e.ago}`}
-                  className="dapp-feed__row"
-                  style={{ animationDelay: `${(i * 0.07).toFixed(2)}s` }}
-                >
-                  <span
-                    className={
-                      e.ok
-                        ? `dapp-dot dapp-dot--success${i < 2 ? ' dapp-dot--pulse' : ''}`
-                        : 'dapp-dot dapp-dot--warning'
-                    }
-                    aria-hidden="true"
-                  />
-                  <span className="dapp-feed__name">
-                    {e.latch} · {e.callback}
-                  </span>
-                  <span className="dapp-feed__ago">{e.ago}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <LiveActivityFeed />
         </div>
       </div>
     </>

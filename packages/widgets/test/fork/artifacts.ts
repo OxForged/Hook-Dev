@@ -2,18 +2,18 @@
 /**
  * Foundry artifact loading for the fork harness.
  *
- * The router and periphery are **not deployed on Sepolia** - only Latch's core
- * singleton is. To execute anything this package encodes we therefore have to
- * put a router and a position manager on the fork ourselves.
+ * The whole Latch stack - core, periphery and router - is deployed on Sepolia,
+ * so the harness deploys none of it. The one thing it does put on the fork is a
+ * third `MockERC20`, because a multi-hop route needs a third token and Sepolia
+ * carries exactly one pool over exactly two.
  *
- * Their bytecode is read out of the sibling packages' `foundry-out` directories
- * at run time rather than vendored into this package. That keeps GPL-2.0
- * artefacts out of an MIT tree, and it guarantees the harness tests whatever the
- * repo currently compiles instead of a snapshot that can silently rot.
+ * That bytecode is read out of the sibling package's `foundry-out` at run time
+ * rather than vendored here: it keeps GPL-2.0 artefacts out of an MIT tree, and
+ * the harness tests whatever the repo currently compiles rather than a snapshot
+ * that can silently rot.
  *
- * If the artefacts are missing (a fresh clone that has not run `forge build`),
- * {@link loadArtifact} throws with the exact command to run, and the fork suites
- * skip rather than pretending to pass.
+ * If the artefact is missing (a fresh clone that has not run `forge build`),
+ * {@link loadArtifact} throws with the exact command to run.
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -70,13 +70,12 @@ export function loadArtifact(
   return { abi: parsed.abi, bytecode: object as Hex };
 }
 
-/** `true` when every artefact the fork harness deploys is present. */
+/**
+ * `true` when the one artefact the fork harness deploys is present.
+ *
+ * Only the multi-hop suite needs it; the swap, liquidity and bin suites run
+ * entirely against deployed contracts.
+ */
 export function forkArtifactsAvailable(): boolean {
-  const required: readonly [ArtifactPackage, string, string][] = [
-    ["router", "UniversalRouter.sol", "UniversalRouter"],
-    ["periphery", "CLPositionManager.sol", "CLPositionManager"],
-    ["periphery", "CLQuoter.sol", "CLQuoter"],
-    ["periphery", "CLPositionDescriptorOffChain.sol", "CLPositionDescriptorOffChain"],
-  ];
-  return required.every(([pkg, file, contract]) => existsSync(artifactPath(pkg, file, contract)));
+  return existsSync(artifactPath("core", "mocks/MockERC20.sol", "MockERC20"));
 }

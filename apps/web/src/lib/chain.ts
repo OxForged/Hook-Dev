@@ -547,3 +547,87 @@ export async function readRegisteredHooks(
     }),
   )
 }
+
+/* ---------------------------------------------------------------------------
+   Activity feed — real protocol events.
+   --------------------------------------------------------------------------- */
+
+const CL_MODIFY_EVENT = parseAbi([
+  'event ModifyLiquidity(bytes32 indexed id, address indexed sender, int24 tickLower, int24 tickUpper, int256 liquidityDelta, bytes32 salt)',
+])
+const CL_DONATE_EVENT = parseAbi([
+  'event Donate(bytes32 indexed id, address indexed sender, uint256 amount0, uint256 amount1, int24 tick)',
+])
+
+export interface ActivityEvent {
+  kind: 'Initialize' | 'Swap' | 'Add liquidity' | 'Remove liquidity' | 'Donate'
+  blockNumber: bigint
+  txHash: Hex
+  detail: string
+}
+
+/**
+ * Recent protocol activity, newest first.
+ *
+ * The design spec's feed listed hook callbacks (beforeSwap, afterDonate…). None have
+ * ever fired: the only live pool has no hook attached, so a callback feed would be
+ * entirely fabricated. These are the events that genuinely occurred instead.
+ *
+ * Every query is scoped by emitting address — Latch has 34 event declarations but
+ * only 22 unique signatures, so a topic0-only filter merges CL and Bin activity.
+ */
+export async function readActivity(
+  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  limit = 12,
+): Promise<ActivityEvent[]> {
+  const d = DEPLOYMENTS[chainId]
+  const c = client(chainId)
+  const range = { fromBlock: d.deployedAtBlock, toBlock: 'latest' } as const
+
+  const [inits, swaps, mods, donates] = await Promise.all([
+    c.getLogs({ address: d.clPoolManager, event: CL_INITIALIZE_EVENT[0], ...range }),
+    c.getLogs({ address: d.clPoolManager, event: CL_SWAP_EVENT[0], ...range }),
+    c.getLogs({ address: d.clPoolManager, event: CL_MODIFY_EVENT[0], ...range }),
+    c.getLogs({ address: d.clPoolManager, event: CL_DONATE_EVENT[0], ...range }),
+  ])
+
+  const out: ActivityEvent[] = []
+
+  for (const l of inits) {
+    const hooks = l.args.hooks as Address
+    const hooked = hooks !== '0x0000000000000000000000000000000000000000'
+    out.push({
+      kind: 'Initialize',
+      blockNumber: l.blockNumber,
+      txHash: l.transactionHash,
+      detail: `pool created · fee ${Number(l.args.fee)} pips · ${hooked ? 'hook attached' : 'no hook'}`,
+    })
+  }
+  for (const l of swaps) {
+    out.push({
+      kind: 'Swap',
+      blockNumber: l.blockNumber,
+      txHash: l.transactionHash,
+      detail: `${Number(l.args.fee)} pips total · ${Number(l.args.protocolFee)} to protocol`,
+    })
+  }
+  for (const l of mods) {
+    const delta = l.args.liquidityDelta as bigint
+    out.push({
+      kind: delta >= 0n ? 'Add liquidity' : 'Remove liquidity',
+      blockNumber: l.blockNumber,
+      txHash: l.transactionHash,
+      detail: `ticks ${Number(l.args.tickLower)} to ${Number(l.args.tickUpper)}`,
+    })
+  }
+  for (const l of donates) {
+    out.push({
+      kind: 'Donate',
+      blockNumber: l.blockNumber,
+      txHash: l.transactionHash,
+      detail: 'donated to in-range liquidity',
+    })
+  }
+
+  return out.sort((a, b) => Number(b.blockNumber - a.blockNumber)).slice(0, limit)
+}

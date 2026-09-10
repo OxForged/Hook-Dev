@@ -90,6 +90,24 @@ export const V4_PERMISSION_FIELD_BITS: Readonly<Record<string, number>> = {
   afterRemoveLiquidityReturnDelta: 13,
 };
 
+/**
+ * Where the LP-fee override sits in a callback's return tuple.
+ *
+ * This is not uniform, and getting it wrong is how a linter false-positives on
+ * every bin hook: `beforeSwap` returns `(bytes4, BeforeSwapDelta, uint24)` so
+ * the fee is component 2, while bin's `beforeMint` returns `(bytes4, uint24)`
+ * and the fee is component 1. A callback absent from this table returns no fee.
+ */
+export const FEE_RETURN_INDEX: Readonly<Record<string, number>> = {
+  beforeSwap: 2,
+  beforeMint: 1,
+};
+
+/** Callbacks through which a hook can override the LP fee, per pool type. */
+export function feeBearingCallbacks(poolType: PoolType): readonly string[] {
+  return poolType === "BIN" ? ["beforeSwap", "beforeMint"] : ["beforeSwap"];
+}
+
 /** Name of the view a hook uses to declare its permissions, per dialect. */
 export const LATCH_BITMAP_FUNCTION = "getHooksRegistrationBitmap";
 export const V4_PERMISSIONS_FUNCTION = "getHookPermissions";

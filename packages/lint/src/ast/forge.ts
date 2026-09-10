@@ -49,7 +49,7 @@ function invoke(args: readonly string[], useShell: boolean): ReturnType<typeof s
  * Returns `ok: false` with a printable reason rather than throwing, so the
  * caller can fall back to whatever output already exists.
  */
-export function buildAstForProject(root: string): ForgeBuildResult {
+export function buildAstForProject(root: string, force = false): ForgeBuildResult {
   const scratch = scratchDirFor(root);
   const outDir = join(scratch, "out");
   const buildInfoDir = join(scratch, "build-info");
@@ -77,6 +77,12 @@ export function buildAstForProject(root: string): ForgeBuildResult {
     "--cache-path",
     join(scratch, "cache"),
   ];
+  // An incremental rebuild writes a build-info covering only the sources it
+  // recompiled. When that does not cover the files being linted, the caller
+  // asks for a forced build so one compilation holds the whole picture -
+  // mixing two compilations would make solc node ids resolve to the wrong
+  // declarations.
+  if (force) args.push("--force");
 
   let result = invoke(args, false);
   if (result.error !== undefined && (result.error as NodeJS.ErrnoException).code === "ENOENT") {

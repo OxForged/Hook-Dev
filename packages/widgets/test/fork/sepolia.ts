@@ -23,8 +23,40 @@ export const LATCH_SEPOLIA = {
   protocolFeeController: "0xc1b7A4e61A4B6ceBA3e308425dc2390c2CE57ea9",
 } as const satisfies Record<string, Address>;
 
-/** Canonical Permit2, deployed at the same address on every chain. */
-export const PERMIT2: Address = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+/**
+ * Latch periphery and router, live on Sepolia and wired to the core above.
+ *
+ * `universalRouter` is the owner-accepted deployment, not the CREATE3 proxy
+ * child. Its `vault()`, `clPoolManager()` and `binPoolManager()` are asserted
+ * against {@link LATCH_SEPOLIA} at harness start-up, because a router pointed at
+ * a *different* singleton is exactly the failure this suite exists to catch -
+ * PancakeSwap has its own `UniversalRouter` on Sepolia at `0x19Dbcfc8…` whose
+ * vault is `0x4670F769…`, and calldata sent there would fail in a way that looks
+ * like an encoding bug.
+ */
+export const LATCH_PERIPHERY_SEPOLIA = {
+  universalRouter: "0xB647CEbd5b8d6bE38C198634828187F482f4874B",
+  clPositionManager: "0xb3505d48A84651c104a02D41B2b9D8CB84dFEC33",
+  binPositionManager: "0x965b1D98BB0cd4E0125D78AD17ea4d2D1d62AE6f",
+  clQuoter: "0x4471e61fE697204908CA97CdF4810EeAf406e9C1",
+  binQuoter: "0x3544C594f12F7c89aa1D8C596d793b661206Ab17",
+  clPositionDescriptor: "0xFe386132bE4A3D85267488A1C64061ba691cfc7a",
+} as const satisfies Record<string, Address>;
+
+/**
+ * Permit2 - **PancakeSwap's fork, not the canonical deployment.**
+ *
+ * The router's and position managers' Permit2 address is an immutable baked in
+ * at construction. Latch's deployment uses the PCS fork, so approving the
+ * canonical `0x000000000022D473…` would leave the real spender with no
+ * allowance and the settle step would revert with a transfer failure that says
+ * nothing about which contract was short. The harness asserts the deployed
+ * `permit2()` equals this before approving anything.
+ */
+export const PERMIT2: Address = "0x31c2F6fcFf4F8759b3Bd5Bf0e1084A055615c768";
+
+/** The canonical Permit2, named only so the harness can say "not this one". */
+export const CANONICAL_PERMIT2: Address = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 
 /** Canonical Sepolia WETH9. Only the router/position-manager constructors want it. */
 export const WETH9_SEPOLIA: Address = "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9";
@@ -55,6 +87,20 @@ export const POOL_SWAP_FEE_PIPS =
   POOL_PROTOCOL_FEE_PIPS +
   POOL_LP_FEE_PIPS -
   Math.floor((POOL_PROTOCOL_FEE_PIPS * POOL_LP_FEE_PIPS) / 1_000_000);
+
+/**
+ * Recovers the LP fee from an emitted `(swapFee, protocolFee)` pair.
+ *
+ * The inverse of `ProtocolFeeLibrary.calculateSwapFee`. Inverting it is the only
+ * way to check that the fee a swap *actually charged* decomposes into the two
+ * the pool is configured with, rather than into some other pair that happens to
+ * compose to the same total.
+ */
+export function lpFeeFromSwapFee(swapFeePips: number, protocolFeePips: number): number {
+  const numerator = (swapFeePips - protocolFeePips) * 1_000_000;
+  const denominator = 1_000_000 - protocolFeePips;
+  return Math.round(numerator / denominator);
+}
 
 /** The live pool's key, reconstructed from its six fields. */
 export const LIVE_POOL_KEY: PoolKey = createCLPoolKey({
