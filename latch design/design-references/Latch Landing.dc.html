@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="icon" type="image/png" href="assets/brand/favicon-512.png" />
+<meta property="og:title" content="Latch Protocol — Hooks for a bigger ecosystem" />
+<meta property="og:description" content="Infrastructure for custom hooks. Attach programmable logic to pools, markets and assets without forking a protocol." />
+<meta property="og:image" content="assets/brand/og-1200x630.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<style>
+  body { margin: 0; background: #04060c; color: #e4ecf9; font-family: "IBM Plex Sans", system-ui, sans-serif; }
+  a { color: #4a9bff; text-decoration: none; }
+  a:hover { color: #8fc2ff; }
+  ::selection { background: #1a7fff; color: #fff; }
+  @keyframes latchpulse { 0%,100% { opacity: .45; } 50% { opacity: 1; } }
+  @keyframes latchfloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+  @keyframes latchdraw { from { stroke-dashoffset: 2400; } to { stroke-dashoffset: 0; } }
+  @keyframes latchrise { from { transform: scaleY(.06); } to { transform: scaleY(1); } }
+  @keyframes latchmarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @keyframes latchfade { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
+  @keyframes latchspin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes latchsheen { 0% { transform: translateX(-120%); } 60%,100% { transform: translateX(220%); } }
+  @keyframes latchreveal { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: .001s !important; } }
+</style>
+</helmet>
+
+<div style="background:#04060c;color:#e4ecf9;overflow-x:hidden">
+
+  <header style="position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px 28px;background:rgba(4,6,12,.82);backdrop-filter:blur(14px);border-bottom:1px solid #131c2e">
+    <div style="display:flex;align-items:center;gap:11px">
+      <img src="assets/latch-mark-alpha.png" alt="Latch Protocol" style="height:30px;width:auto" />
+      <div style="display:flex;flex-direction:column;gap:2px;line-height:1">
+        <span style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:19px;letter-spacing:.14em;color:#fff">LATCH</span>
+        <span style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:9.5px;letter-spacing:.3em;color:#2b8bff">PROTOCOL</span>
+      </div>
+    </div>
+    <nav style="display:flex;align-items:center;gap:26px;font-size:14px;color:#93a3bd">
+      <a href="#home" style="color:#4a9bff;font-weight:500">Home</a>
+      <a href="#developers" style="color:#93a3bd">Developers</a>
+      <a href="Latch Docs.dc.html" style="color:#93a3bd">Docs</a>
+      <a href="#ecosystem" style="color:#93a3bd">Ecosystem</a>
+      <a href="#about" style="color:#93a3bd">About</a>
+      <a href="Latch Brand Kit.dc.html" style="color:#93a3bd">Brand Kit</a>
+      <a href="Latch Dapp.dc.html" style="padding:9px 20px;border-radius:999px;background:linear-gradient(180deg,#2b8bff,#0a63e0);color:#fff;font-weight:600;font-size:13px;box-shadow:0 6px 22px rgba(26,127,255,.38)">Launch App</a>
+    </nav>
+  </header>
+
+    <section style="position:relative;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:56px;align-items:center;max-width:1280px;margin:0 auto;padding:76px 40px 96px">
+      <div style="position:absolute;inset:0;background:radial-gradient(680px 420px at 78% 42%, rgba(26,127,255,.20), transparent 70%);pointer-events:none"></div>
+      <div style="position:relative;animation:latchreveal .85s cubic-bezier(.22,.61,.36,1) both">
+        <div style="display:inline-block;padding:7px 16px;border:1px solid #1e4f96;border-radius:999px;background:rgba(16,50,102,.35);color:#6fb2ff;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.16em">DEVELOPER INFRASTRUCTURE</div>
+        <h1 style="margin:24px 0 0;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(38px,4.6vw,64px);line-height:1.04;letter-spacing:-.01em;text-wrap:balance">Powerful Hooks.<br />Limitless <span style="color:#2b8bff">Possibilities.</span></h1>
+        <p style="max-width:520px;margin:22px 0 0;font-size:17px;line-height:1.62;color:#96a6c0;text-wrap:pretty">Latch Protocol is the infrastructure layer for custom hooks — we call them Latches. Attach programmable logic to pools, markets and assets without forking a protocol or redeploying it.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:32px">
+          <a href="#start" style="position:relative;overflow:hidden;padding:14px 26px;border-radius:999px;background:linear-gradient(180deg,#2b8bff,#0a63e0);color:#fff;font-weight:600;font-size:15px;box-shadow:0 10px 30px rgba(26,127,255,.32);transition:transform .25s cubic-bezier(.22,.61,.36,1),box-shadow .25s" style-hover="transform:translateY(-2px);box-shadow:0 16px 42px rgba(26,127,255,.5)">Get Started →<span style="position:absolute;top:0;left:0;width:38%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);animation:latchsheen 3.6s ease-in-out infinite;pointer-events:none"></span></a>
+          <a href="Latch Docs.dc.html" style="padding:14px 26px;border-radius:999px;border:1px solid #24314c;color:#cfdcf0;font-weight:600;font-size:15px;transition:border-color .25s,transform .25s" style-hover="border-color:#3a5f96;transform:translateY(-2px)">Read Docs</a>
+        </div>
+      </div>
+
+      <div style="position:relative;height:520px">
+        <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:200px;height:200px">
+          <div style="width:100%;height:100%;border:1px solid #1f66c4;border-radius:26px;background:linear-gradient(160deg,rgba(20,60,120,.55),rgba(8,16,32,.9));box-shadow:0 0 70px rgba(26,127,255,.35),inset 0 0 40px rgba(26,127,255,.14);display:grid;place-items:center;animation:latchfloat 7s ease-in-out infinite">
+            <img src="assets/latch-mark-alpha.png" alt="" style="width:104px" />
+          </div>
+        </div>
+        <sc-for list="{{ nodes }}" as="node" hint-placeholder-count="6">
+          <div style="{{ node.style }}">
+            <div style="width:52px;height:52px;border:1px solid #23446f;border-radius:14px;background:linear-gradient(160deg,rgba(18,44,84,.7),rgba(7,12,24,.9));display:grid;place-items:center;box-shadow:0 0 26px rgba(26,127,255,.2)">
+              <div style="width:16px;height:16px;border:1.5px solid #4a9bff;border-radius:4px;transform:rotate(45deg)"></div>
+            </div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;color:#7f96b8">{{ node.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  <sc-if value="{{ showStats }}" hint-placeholder-val="{{ true }}">
+  <section style="border-top:1px solid #101a2c;border-bottom:1px solid #101a2c;background:#060a14">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));max-width:1280px;margin:0 auto">
+      <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+        <div style="padding:30px 28px;border-right:1px solid #101a2c">
+          <div data-count="{{ s.value }}" style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:34px;color:#fff">{{ s.value }}</div>
+          <div style="margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;color:#6d80a0">{{ s.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+  </sc-if>
+
+  <section id="activity" style="max-width:1280px;margin:0 auto;padding:96px 40px 0;animation:latchreveal .85s cubic-bezier(.22,.61,.36,1) both;animation-delay:.1s">
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:20px">
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">PROTOCOL ACTIVITY</div>
+        <h2 style="margin:16px 0 0;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(28px,3.2vw,42px);line-height:1.1">Measured at the hook layer.</h2>
+      </div>
+      <div style="display:flex;gap:6px;padding:4px;border:1px solid #1b2438;border-radius:10px;background:#080d18;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em">
+        <sc-for list="{{ ranges }}" as="r" hint-placeholder-count="3">
+          <button onClick="{{ r.go }}" style="{{ r.style }}">{{ r.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:18px;margin-top:30px">
+      <div style="padding:26px 26px 18px;border:1px solid #16223a;border-radius:18px;background:linear-gradient(180deg,#080e1a,#05080f)">
+        <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:14px">
+          <div style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:32px;color:#fff">{{ tvlNow }}</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#5fd39a">{{ tvlDelta }}</div>
+          <div style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:#61789c">VALUE ROUTED THROUGH LATCHES</div>
+        </div>
+        <svg viewBox="0 0 720 240" preserveAspectRatio="none" style="display:block;width:100%;height:240px;margin-top:22px;overflow:visible">
+          <defs>
+            <linearGradient id="tvlFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#2b8bff" stop-opacity="0.42"></stop>
+              <stop offset="100%" stop-color="#2b8bff" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
+          <sc-for list="{{ gridLines }}" as="gl" hint-placeholder-count="4">
+            <line x1="0" x2="720" y1="{{ gl.y }}" y2="{{ gl.y }}" stroke="#131f34" stroke-width="1"></line>
+          </sc-for>
+          <path d="{{ tvlArea }}" fill="url(#tvlFill)"></path>
+          <path d="{{ tvlLine }}" fill="none" stroke="#2b8bff" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" style="stroke-dasharray:2400;animation:latchdraw 1.5s cubic-bezier(.22,.61,.36,1) forwards"></path>
+          <sc-for list="{{ tvlDots }}" as="d" hint-placeholder-count="12">
+            <circle cx="{{ d.x }}" cy="{{ d.y }}" r="3" fill="#04060c" stroke="#2b8bff" stroke-width="2" style="{{ d.style }}"></circle>
+          </sc-for>
+        </svg>
+        <div style="display:flex;justify-content:space-between;margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#4c5f7d">
+          <sc-for list="{{ tvlLabels }}" as="l" hint-placeholder-count="6">
+            <span>{{ l }}</span>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:18px">
+        <div style="padding:24px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:#61789c">HOOK CALLS BY CATEGORY</div>
+          <div style="display:flex;flex-direction:column;gap:14px;margin-top:20px">
+            <sc-for list="{{ callBars }}" as="b" hint-placeholder-count="4">
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:#a9b9d1">
+                  <span>{{ b.name }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#7f92ad">{{ b.value }}</span>
+                </div>
+                <div style="margin-top:7px;height:6px;border-radius:99px;background:#111c2f;overflow:hidden">
+                  <div style="{{ b.fill }}"></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="padding:24px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:#61789c">GAS OVERHEAD PER CALL (µ, GAS)</div>
+          <div style="display:flex;align-items:flex-end;gap:7px;height:118px;margin-top:20px">
+            <sc-for list="{{ gasCols }}" as="c" hint-placeholder-count="14">
+              <div style="{{ c.style }}"></div>
+            </sc-for>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#4c5f7d">
+            <span>2k</span>
+            <span>median 8.4k</span>
+            <span>40k</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:18px">
+      <div style="display:flex;align-items:center;gap:22px;padding:24px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <svg viewBox="0 0 120 120" style="width:104px;height:104px;flex:0 0 auto">
+          <circle cx="60" cy="60" r="46" fill="none" stroke="#111c2f" stroke-width="14"></circle>
+          <sc-for list="{{ donut }}" as="d" hint-placeholder-count="4">
+            <circle cx="60" cy="60" r="46" fill="none" stroke="{{ d.color }}" stroke-width="14" stroke-dasharray="{{ d.dash }}" stroke-dashoffset="{{ d.offset }}" transform="rotate(-90 60 60)" stroke-linecap="butt"></circle>
+          </sc-for>
+        </svg>
+        <div style="min-width:0">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:#61789c">TVL BY NETWORK</div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+            <sc-for list="{{ donut }}" as="d" hint-placeholder-count="4">
+              <div style="display:flex;align-items:center;gap:9px;font-size:13px;color:#a9b9d1">
+                <span style="{{ d.swatch }}"></span>
+                <span>{{ d.name }}</span>
+                <span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#7f92ad">{{ d.pct }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:24px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:#61789c">LATCHES DEPLOYED · WEEKLY</div>
+        <div style="display:flex;align-items:flex-end;gap:5px;height:104px;margin-top:20px">
+          <sc-for list="{{ deployCols }}" as="c" hint-placeholder-count="20">
+            <div style="{{ c.style }}"></div>
+          </sc-for>
+        </div>
+        <div style="margin-top:12px;font-size:13px;color:#8a9bb6">1,840 total · 96 added this week</div>
+      </div>
+
+      <div style="padding:24px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:#61789c">REGISTRY HEALTH</div>
+        <div style="display:flex;flex-direction:column;gap:16px;margin-top:20px">
+          <sc-for list="{{ health }}" as="h" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="{{ h.dot }}"></span>
+              <span style="font-size:13.5px;color:#a9b9d1">{{ h.name }}</span>
+              <span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#e4ecf9">{{ h.value }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ecosystem" style="max-width:1280px;margin:0 auto;padding:96px 40px 0;animation:latchreveal .85s cubic-bezier(.22,.61,.36,1) both;animation-delay:.15s">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">USE CASES</div>
+    <h2 style="margin:16px 0 0;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(30px,3.4vw,44px);line-height:1.1">One Infrastructure.<br /><span style="color:#2b8bff">Every Ecosystem.</span></h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;margin-top:38px">
+      <sc-for list="{{ useCases }}" as="uc" hint-placeholder-count="4">
+        <div style="position:relative;padding:26px 24px 28px;border:1px solid #16223a;border-radius:18px;background:linear-gradient(180deg,rgba(10,18,34,.9),rgba(5,8,16,.9));transition:transform .3s cubic-bezier(.22,.61,.36,1),border-color .3s,box-shadow .3s" style-hover="border-color:#25528f;transform:translateY(-4px);box-shadow:0 18px 48px rgba(4,10,24,.8)">
+          <div style="width:44px;height:44px;border:1px solid #23446f;border-radius:12px;display:grid;place-items:center;background:rgba(16,42,82,.5)">
+            <div style="width:14px;height:14px;border:1.5px solid #4a9bff;border-radius:3px;transform:rotate(45deg)"></div>
+          </div>
+          <div style="margin-top:20px;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:20px">{{ uc.name }}</div>
+          <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:#8a9bb6;text-wrap:pretty">{{ uc.long }}</div>
+          <div style="margin-top:18px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;color:#4a9bff">{{ uc.tag }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="developers" style="max-width:1280px;margin:0 auto;padding:96px 40px 0;animation:latchreveal .85s cubic-bezier(.22,.61,.36,1) both;animation-delay:.2s">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">HOW IT WORKS</div>
+    <h2 style="margin:16px 0 34px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(30px,3.4vw,44px);line-height:1.1">Three layers, one integration path.</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">
+      <sc-for list="{{ steps }}" as="st" hint-placeholder-count="3">
+        <div style="padding:26px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#2b8bff">{{ st.num }}</div>
+          <div style="margin-top:14px;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:19px">{{ st.name }}</div>
+          <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:#8a9bb6">{{ st.desc }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:28px;align-items:start;margin-top:26px">
+      <div style="padding:30px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:21px">Integrate in one interface</div>
+        <p style="margin:12px 0 0;font-size:14.5px;line-height:1.65;color:#8a9bb6;text-wrap:pretty">A Latch implements a single interface and registers against a pool. The registry enforces permissions, gas caps and lifecycle order, so the host protocol never has to trust your bytecode.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:22px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#93a3bd">
+          <div>— beforeSwap / afterSwap callbacks</div>
+          <div>— deterministic latch addresses</div>
+          <div>— revert isolation per hook</div>
+          <div>— on-chain permission bitmap</div>
+        </div>
+      </div>
+      <div style="border:1px solid #16223a;border-radius:18px;background:#05080f;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #16223a;background:#070c17">
+          <div style="width:9px;height:9px;border-radius:50%;background:#2b8bff"></div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#6d80a0">FeeLatch.sol</div>
+        </div>
+        <pre style="margin:0;padding:22px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;line-height:1.85;color:#c3d3ea;white-space:pre-wrap;word-break:break-word"><div style="padding-left:0px"><span style="color:#6d80a0">// dynamic fee latch</span></div><div style="height:.9em"></div><div style="padding-left:0px"><span style="color:#c56bff">import</span> <span>{ILatch}</span> <span style="color:#c56bff">from</span> <span style="color:#5fd39a">"@latch/core/ILatch.sol"</span><span>;</span></div><div style="height:.9em"></div><div style="padding-left:0px"><span style="color:#c56bff">contract</span> <span style="color:#ffd166">FeeLatch</span> <span style="color:#c56bff">is</span> <span style="color:#ffd166">ILatch</span> <span>{</span></div><div style="padding-left:18px"><span style="color:#c56bff">function</span> <span style="color:#4a9bff">permissions</span><span>() </span><span style="color:#c56bff">external pure returns</span> <span>(uint16) {</span></div><div style="padding-left:36px"><span style="color:#c56bff">return</span> <span>BEFORE_SWAP | AFTER_SWAP;</span></div><div style="padding-left:18px"><span>}</span></div><div style="height:.9em"></div><div style="padding-left:18px"><span style="color:#c56bff">function</span> <span style="color:#4a9bff">beforeSwap</span><span>(PoolKey </span><span style="color:#c56bff">calldata</span> <span>key, SwapParams </span><span style="color:#c56bff">calldata</span> <span>p)</span></div><div style="padding-left:36px"><span style="color:#c56bff">external override returns</span> <span>(uint24 fee)</span></div><div style="padding-left:18px"><span>{</span></div><div style="padding-left:36px"><span>fee = volatility(key) &gt; THRESHOLD ? </span><span style="color:#5fd39a">3000</span> <span>: </span><span style="color:#5fd39a">500</span><span>;</span></div><div style="padding-left:18px"><span>}</span></div><div style="padding-left:0px"><span>}</span></div></pre>
+      </div>
+    </div>
+  </section>
+
+  <section style="max-width:1280px;margin:0 auto;padding:96px 40px 0">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:22px">
+      <sc-for list="{{ features }}" as="f" hint-placeholder-count="4">
+        <div>
+          <div style="width:38px;height:38px;border-radius:10px;border:1px solid #23446f;background:rgba(16,42,82,.45);display:grid;place-items:center">
+            <div style="width:12px;height:12px;border:1.5px solid #4a9bff;border-radius:3px"></div>
+          </div>
+          <div style="margin-top:16px;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:18px">{{ f.name }}</div>
+          <div style="margin-top:8px;font-size:14px;line-height:1.6;color:#8a9bb6">{{ f.desc }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section style="max-width:1280px;margin:0 auto;padding:96px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">BUILT FOR EVERY CHAIN</div>
+    <h2 style="margin:16px 0 30px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(28px,3.2vw,40px);line-height:1.1">Chain agnostic by design.</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+      <sc-for list="{{ chains }}" as="c" hint-placeholder-count="10">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:22px 12px;border:1px solid #131f34;border-radius:14px;background:#070c17;transition:transform .28s cubic-bezier(.22,.61,.36,1),border-color .28s" style-hover="border-color:#25528f;transform:translateY(-3px)">
+          <div style="width:40px;height:40px;border-radius:50%;border:1px solid #23446f;background:rgba(16,42,82,.45)"></div>
+          <div style="font-size:13px;color:#a9b9d1">{{ c }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <sc-if value="{{ showRoadmap }}" hint-placeholder-val="{{ true }}">
+  <section style="max-width:1280px;margin:0 auto;padding:96px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">ROADMAP</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0;margin-top:30px">
+      <sc-for list="{{ roadmap }}" as="r" hint-placeholder-count="4">
+        <div style="position:relative;padding:26px 24px 30px;border-right:1px solid #131f34;border-top:1px solid #1a2740">
+          <div style="position:absolute;top:-5px;left:24px;width:9px;height:9px;border-radius:50%;background:#2b8bff;box-shadow:0 0 14px rgba(43,139,255,.9)"></div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.14em;color:#4a9bff">{{ r.when }}</div>
+          <div style="margin-top:12px;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:18px">{{ r.name }}</div>
+          <div style="margin-top:8px;font-size:14px;line-height:1.6;color:#8a9bb6">{{ r.desc }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+  </sc-if>
+
+  <section id="about" style="max-width:1280px;margin:0 auto;padding:96px 40px 0;animation:latchreveal .85s cubic-bezier(.22,.61,.36,1) both">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">TEAM</div>
+    <h2 style="margin:16px 0 30px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(28px,3.2vw,40px)">Built by protocol engineers.</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:18px">
+      <sc-for list="{{ team }}" as="t" hint-placeholder-count="4">
+        <div style="border:1px solid #131f34;border-radius:16px;background:#070c17;overflow:hidden">
+          <div style="height:150px;background:repeating-linear-gradient(135deg,#0c1526 0 9px,#0a1120 9px 18px);display:grid;place-items:center">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.1em;color:#4c5f7d;white-space:nowrap">DROP HEADSHOT</div>
+          </div>
+          <div style="padding:18px">
+            <div style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:16px">{{ t.name }}</div>
+            <div style="margin-top:4px;font-size:13px;color:#7f92ad">{{ t.role }}</div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="launch" style="max-width:1280px;margin:96px auto 0;padding:0 40px;animation:latchreveal .85s cubic-bezier(.22,.61,.36,1) both">
+    <div style="position:relative;overflow:hidden;padding:64px 44px;border:1px solid #1c3a68;border-radius:24px;background:linear-gradient(120deg,#061229,#04070f 70%);text-align:center">
+      <div style="position:absolute;left:50%;top:-40%;width:620px;height:620px;transform:translateX(-50%);background:radial-gradient(closest-side,rgba(43,139,255,.22),transparent 70%);pointer-events:none"></div>
+      <h2 style="position:relative;margin:0;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(28px,3.4vw,44px)">Ship your first Latch this week.</h2>
+      <p style="position:relative;max-width:560px;margin:16px auto 0;font-size:16px;line-height:1.6;color:#96a6c0">Read the integration guide, clone the starter latch, and deploy to testnet in a single afternoon.</p>
+      <div style="position:relative;display:flex;justify-content:center;flex-wrap:wrap;gap:14px;margin-top:30px">
+        <a href="Latch Docs.dc.html" style="padding:14px 28px;border-radius:999px;background:linear-gradient(180deg,#2b8bff,#0a63e0);color:#fff;font-weight:600;font-size:15px;box-shadow:0 10px 30px rgba(26,127,255,.32)">Read the Docs</a>
+        <a href="#github" style="padding:14px 28px;border-radius:999px;border:1px solid #24314c;color:#cfdcf0;font-weight:600;font-size:15px">View on GitHub</a>
+      </div>
+    </div>
+  </section>
+
+  <footer style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;max-width:1280px;margin:0 auto;padding:56px 40px 64px">
+    <div style="display:flex;align-items:center;gap:13px">
+      <img src="assets/latch-mark-alpha.png" alt="Latch Protocol" style="height:38px;width:auto" />
+      <div style="display:flex;flex-direction:column;gap:3px;line-height:1">
+        <span style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:22px;letter-spacing:.14em;color:#fff">LATCH</span>
+        <span style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:11px;letter-spacing:.3em;color:#2b8bff">PROTOCOL</span>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:24px;font-size:13.5px;color:#7f92ad">
+      <a href="Latch Docs.dc.html" style="color:#7f92ad">Docs</a>
+      <a href="#github" style="color:#7f92ad">GitHub</a>
+      <a href="#audit" style="color:#7f92ad">Audits</a>
+      <a href="Latch Brand Kit.dc.html" style="color:#7f92ad">Brand Kit</a>
+      <a href="Latch Dapp.dc.html" style="color:#7f92ad">Launch App</a>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#4c5f7d;white-space:nowrap">© 2026 LATCH PROTOCOL</span>
+    </div>
+  </footer>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showStats&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sections&quot;},&quot;showRoadmap&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sections&quot;}}">
+class Component extends DCLogic {
+  state = { range: "1Y" };
+
+  componentDidMount() {
+    this._reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    this._counted = new WeakSet();
+    this._cio = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (!e.isIntersecting || this._counted.has(e.target)) return;
+        this._counted.add(e.target);
+        this.countUp(e.target, this._reduce);
+        this._cio.unobserve(e.target);
+      });
+    }, { threshold: 0.55 });
+    this.scanCounters();
+    this._mo = new MutationObserver(() => this.scanCounters());
+    this._mo.observe(document.body, { childList: true, subtree: true });
+    this._stop = setTimeout(() => { if (this._mo) { this._mo.disconnect(); this._mo = null; } }, 12000);
+  }
+
+  componentDidUpdate() { this.scanCounters(); }
+
+  scanCounters() {
+    if (!this._cio) return;
+    document.querySelectorAll("[data-count]").forEach(el => {
+      if (this._counted.has(el)) return;
+      this._cio.observe(el);
+    });
+  }
+
+  componentWillUnmount() {
+    if (this._cio) this._cio.disconnect();
+    if (this._mo) this._mo.disconnect();
+    if (this._stop) clearTimeout(this._stop);
+  }
+
+  countUp(el, reduce) {
+    const raw = el.getAttribute("data-count") || "";
+    const m = raw.match(/([^0-9.,-]*)([\d.,]+)(.*)/);
+    if (!m || reduce) return;
+    const pre = m[1], post = m[3];
+    const clean = m[2].replace(/,/g, "");
+    const target = parseFloat(clean);
+    const decimals = (clean.split(".")[1] || "").length;
+    const grouped = m[2].indexOf(",") > -1;
+    const t0 = performance.now(), dur = 1100;
+    const fmt = v => {
+      let s = decimals ? v.toFixed(decimals) : String(Math.round(v));
+      if (grouped) s = Number(s).toLocaleString("en-US");
+      return pre + s + post;
+    };
+    const step = now => {
+      const p = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - p, 3);
+      el.textContent = fmt(target * e);
+      if (p < 1) requestAnimationFrame(step);
+      else el.textContent = raw;
+    };
+    requestAnimationFrame(step);
+  }
+
+  series(range) {
+    const data = {
+      "30D": { labels: ["W1","W2","W3","W4"], pts: [352,368,381,412], now: "$412M", delta: "+17.0% / 30d" },
+      "90D": { labels: ["Apr","May","Jun"], pts: [268,301,344,362,381,412], now: "$412M", delta: "+53.7% / 90d" },
+      "1Y":  { labels: ["Oct","Dec","Feb","Apr","Jun","Sep"], pts: [64,88,102,141,168,205,248,262,301,344,381,412], now: "$412M", delta: "+544% / 1y" }
+    };
+    return data[range] || data["1Y"];
+  }
+
+  renderVals() {
+    const ring = [
+      { label: "LENDING", x: 20, y: 4 },
+      { label: "NFTs", x: 74, y: 10 },
+      { label: "GAMING", x: 80, y: 46 },
+      { label: "DeFi", x: 70, y: 84 },
+      { label: "RWA", x: 8, y: 78 },
+      { label: "AMM", x: 0, y: 40 }
+    ];
+    const W = 720, H = 240, PAD = 14;
+    const s = this.series(this.state.range);
+    const max = Math.max.apply(null, s.pts) * 1.08;
+    const min = Math.min.apply(null, s.pts) * 0.7;
+    const px = i => (s.pts.length === 1 ? 0 : (i / (s.pts.length - 1)) * W);
+    const py = v => PAD + (1 - (v - min) / (max - min)) * (H - PAD * 2);
+    const pts = s.pts.map((v, i) => [px(i), py(v)]);
+    const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+    const area = line + " L" + W + " " + H + " L0 " + H + " Z";
+
+    const calls = [
+      { name: "AMM / swap hooks", value: "18.4M", pct: 100, color: "#2b8bff" },
+      { name: "Lending markets", value: "7.1M", pct: 39, color: "#4a9bff" },
+      { name: "NFT / assets", value: "3.6M", pct: 20, color: "#6c5cff" },
+      { name: "Gaming", value: "2.2M", pct: 12, color: "#5fd39a" }
+    ];
+    const gas = [8, 17, 34, 58, 92, 100, 84, 61, 44, 31, 22, 15, 10, 6];
+    const deploys = [12, 18, 15, 24, 31, 27, 38, 44, 36, 52, 48, 61, 57, 70, 66, 74, 81, 77, 88, 96];
+    const nets = [
+      { name: "Ethereum", pct: 41, color: "#2b8bff" },
+      { name: "Base", pct: 27, color: "#4a9bff" },
+      { name: "Arbitrum", pct: 19, color: "#6c5cff" },
+      { name: "Others", pct: 13, color: "#5fd39a" }
+    ];
+    const C = 2 * Math.PI * 46;
+    let acc = 0;
+    const donut = nets.map(n => {
+      const dash = (n.pct / 100) * C;
+      const seg = {
+        name: n.name,
+        pct: n.pct + "%",
+        color: n.color,
+        dash: dash.toFixed(2) + " " + (C - dash).toFixed(2),
+        offset: (-acc).toFixed(2),
+        swatch: { width: 9, height: 9, borderRadius: 3, background: n.color, flex: "0 0 auto" }
+      };
+      acc += dash;
+      return seg;
+    });
+
+    return {
+      ranges: ["30D", "90D", "1Y"].map(r => ({
+        label: r,
+        go: () => this.setState({ range: r }),
+        style: {
+          padding: "7px 14px", borderRadius: 7, border: "none", cursor: "pointer",
+          fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: ".08em",
+          background: this.state.range === r ? "#173768" : "transparent",
+          color: this.state.range === r ? "#8fc2ff" : "#7f92ad"
+        }
+      })),
+      tvlNow: s.now,
+      tvlDelta: s.delta,
+      tvlLabels: s.labels,
+      tvlLine: line,
+      tvlArea: area,
+      tvlDots: pts.map((p, i) => ({
+        x: p[0].toFixed(1),
+        y: p[1].toFixed(1),
+        style: { opacity: 0, animation: "latchfade .4s cubic-bezier(.22,.61,.36,1) forwards", animationDelay: (0.25 + i * 0.09).toFixed(2) + "s" }
+      })),
+      gridLines: [0.08, 0.34, 0.6, 0.86].map(f => ({ y: (f * H).toFixed(0) })),
+      callBars: calls.map(c => ({
+        name: c.name, value: c.value,
+        fill: { width: c.pct + "%", height: "100%", borderRadius: 99, background: "linear-gradient(90deg," + c.color + ",rgba(43,139,255,.35))", transition: "width 1s cubic-bezier(.22,.61,.36,1)" }
+      })),
+      gasCols: gas.map((v, i) => ({
+        style: {
+          flex: 1, height: v + "%", minWidth: 4, borderRadius: "3px 3px 1px 1px",
+          background: v > 80 ? "#2b8bff" : "rgba(43,139,255,.42)",
+          transformOrigin: "bottom", animation: "latchrise .7s cubic-bezier(.22,.61,.36,1) both", animationDelay: (i * 0.045).toFixed(2) + "s"
+        }
+      })),
+      deployCols: deploys.map((v, i) => ({
+        style: {
+          flex: 1, height: Math.round((v / 96) * 100) + "%", minWidth: 3, borderRadius: "2px 2px 0 0",
+          background: "linear-gradient(180deg,#2b8bff,rgba(43,139,255,.18))",
+          transformOrigin: "bottom", animation: "latchrise .8s cubic-bezier(.22,.61,.36,1) both", animationDelay: (i * 0.035).toFixed(2) + "s"
+        }
+      })),
+      donut: donut,
+      health: [
+        { name: "Verified latches", value: "1,612 / 1,840", dot: { width: 8, height: 8, borderRadius: 99, background: "#5fd39a", boxShadow: "0 0 10px rgba(95,211,154,.8)" } },
+        { name: "Reverts (24h)", value: "0.021%", dot: { width: 8, height: 8, borderRadius: 99, background: "#2b8bff", boxShadow: "0 0 10px rgba(43,139,255,.8)" } },
+        { name: "Audit coverage", value: "94% of TVL", dot: { width: 8, height: 8, borderRadius: 99, background: "#ffd166", boxShadow: "0 0 10px rgba(255,209,102,.7)" } }
+      ],
+      showStats: this.props.showStats ?? true,
+      showRoadmap: this.props.showRoadmap ?? true,
+      nodes: ring.map(n => ({
+        label: n.label,
+        style: {
+          position: "absolute",
+          left: n.x + "%",
+          top: n.y + "%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 8,
+          animation: "latchfloat 6.5s ease-in-out infinite",
+          animationDelay: (ring.indexOf(n) * 0.55).toFixed(2) + "s"
+        }
+      })),
+      stats: [
+        { value: "$412M", label: "VALUE ROUTED THROUGH LATCHES" },
+        { value: "1,840", label: "LATCHES DEPLOYED" },
+        { value: "9", label: "NETWORKS LIVE" },
+        { value: "27ms", label: "MEDIAN HOOK OVERHEAD" }
+      ],
+      useCases: [
+        { name: "DeFi", tag: "AMM · LENDING", desc: "Advanced hooks for AMMs, yield and more.", long: "Dynamic fees, custom curves, JIT liquidity and yield routing attached directly to pool lifecycle events." },
+        { name: "Gaming", tag: "ONCHAIN GAMES", desc: "Power interactive economies and rewards.", long: "Mint, burn and reward logic that reacts to in-game state without a custom AMM deployment per title." },
+        { name: "NFTs", tag: "PROGRAMMABLE ASSETS", desc: "Dynamic NFTs and programmable assets.", long: "Latches let collections mutate metadata, royalties and access rules from onchain conditions." },
+        { name: "RWA", tag: "COMPLIANCE", desc: "Bring real-world assets onchain.", long: "Transfer restrictions, KYC gating and oracle-driven settlement enforced at the hook layer." }
+      ],
+      steps: [
+        { num: "01", name: "Write the Latch", desc: "Implement ILatch, declare a permission bitmap for the callbacks you need." },
+        { num: "02", name: "Register it", desc: "The registry validates the bitmap, deterministic address and gas budget before activation." },
+        { num: "03", name: "Attach to pools", desc: "Pools opt in. Callbacks run in declared order with revert isolation per latch." }
+      ],
+      features: [
+        { name: "Plug & Play", desc: "One interface, any integrating protocol." },
+        { name: "Secure", desc: "Gas caps, revert isolation, audited registry." },
+        { name: "Modular", desc: "Use only the callbacks you need." },
+        { name: "Open Ecosystem", desc: "Permissionless publishing for developers." }
+      ],
+      chains: ["Ethereum", "BNB Chain", "Arbitrum", "Polygon", "Optimism", "Base", "Avalanche", "Solana", "Sui", "and more…"],
+      roadmap: [
+        { when: "Q3 2026", name: "Core registry mainnet", desc: "ILatch v1, registry and reference latches live on Ethereum and Base." },
+        { when: "Q4 2026", name: "Latch explorer", desc: "Public catalogue with verified source, gas profiles and usage stats." },
+        { when: "Q1 2027", name: "Cross-chain latches", desc: "Message-passing latches with shared state across supported networks." },
+        { when: "Q2 2027", name: "Permissionless publishing", desc: "Open registry with staking-backed review and revenue share for authors." }
+      ],
+      team: [
+        { name: "Name Placeholder", role: "Protocol Engineering" },
+        { name: "Name Placeholder", role: "Smart Contracts" },
+        { name: "Name Placeholder", role: "Security" },
+        { name: "Name Placeholder", role: "Developer Relations" }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

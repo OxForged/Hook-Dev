@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # packages/sdk is consumed by widgets and api through `file:../../packages/sdk`,
+      # which resolves against its BUILT dist/. It must be built before anything that
+      # imports it, or those packages typecheck against a stale or missing dist.
+      - name: sdk · install
+        working-directory: packages/sdk
+        run: npm install
+
+      - name: sdk · generated types are not stale
+        working-directory: packages/sdk
+        run: node scripts/generate-events.mjs --check
+        # Non-fatal: the generator reads packages/core/foundry-out, which is not in
+        # this repo yet (see the `solidity` job below). Once core is a submodule and
+        # artifacts are built in CI, drop continue-on-error so drift fails the build.
+        continue-on-error: true
+
+      - name: sdk · typecheck, test, build
+        working-directory: packages/sdk
+        run: |
+          npx tsc --noEmit
+          npx vitest run
+          npm run build
+
+      - name: widgets · install, typecheck, test, build
+        working-directory: packages/widgets
+        run: |
+          npm install
+          npx tsc --noEmit
+          npm test
+          npm run build
+
+      - name: cli · install, typecheck, test, build
+        working-directory: packages/cli
+        run: |
+          npm install
+          npx tsc --noEmit
+          npm test
+          npm run build
+
+      - name: api · install, generate client, typecheck, test, build
+        working-directory: apps/api
+        run: |
+          npm install
+          npx prisma generate
+          npx prisma validate
+          npx tsc --noEmit
+          npm test
+          npm run build
+
+      - name: web · install, build
+        working-directory: apps/web
+        run: |
+          npm install
+          npm run build
+
+  # ---------------------------------------------------------------------------
+  # Solidity is NOT yet runnable in CI, and this job records exactly why rather
+  # than leaving a silently missing check.
+  #
+  # packages/fees and packages/hooks are tracked here, but both resolve the core
+  # contracts through an `infinity-core/=../core/` remapping. packages/core is a
+  # FORK carrying its own git history and an `upstream` remote (used to rebase
+  # PancakeSwap security patches), so it is .gitignored from this repo — a fresh
+  # clone has no ../core and neither package can compile.
+  #
+  # To turn this on:
+  #   1. push packages/core, packages/periphery and packages/router to their own
+  #      remotes, preserving their `upstream` remotes
+  #   2. add them back here as real submodules
+  #   3. add `submodules: recursive` to the checkout step below
+  #   4. delete the `if: false` guard
+  #
+  # Note the two known core failures are Windows-only: TickMath differential
+  # tests shell out through `npx ts-node`, which forge's vm.ffi cannot spawn on
+  # Windows. They pass on this runner, which is a reason to want this job.
+  # ---------------------------------------------------------------------------
+  solidity:
+    name: Solidity (blocked — see comment)
+    runs-on: ubuntu-latest
+    if: false
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: core · js-scripts for the ffi differential tests
+        working-directory: packages/core
+        run: npm install
+
+      # Every package ships two profiles: default (Cancun / EIP-1153 transient
+      # storage) and legacy (Shanghai / persistent storage). The settlement layer
+      # differs between them, so both must build and both must be tested.
+      - name: core · build both backends
+        working-directory: packages/core
+        run: |
+          forge build --skip test --skip script
+          FOUNDRY_PROFILE=legacy forge build --skip test --skip script
+
+      - name: core · test both backends
+        working-directory: packages/core
+        run: |
+          forge test
+          FOUNDRY_PROFILE=legacy forge test --match-path "test/transient/*"
+
+      - name: periphery · build and test
+        working-directory: packages/periphery
+        run: |
+          forge build --skip test --skip script
+          FOUNDRY_PROFILE=legacy forge build --skip test --skip script
+          forge test
+
+      - name: router · build
+        working-directory: packages/router
+        run: |
+          forge build --skip test --skip script
+          FOUNDRY_PROFILE=legacy forge build --skip test --skip script
+
+      - name: fees · test
+        working-directory: packages/fees
+        run: forge test
+
+      - name: hooks · build both backends and test
+        working-directory: packages/hooks
+        run: |
+          forge build
+          FOUNDRY_PROFILE=legacy forge build
+          forge test

@@ -1,0 +1,389 @@
+/* ============================================================================
+   Latch Protocol — design tokens
+   Transcribed verbatim from "latch design/README.md" § Design tokens.
+   The README is authoritative: where a reference HTML disagrees, this file
+   follows the README. Do not invent values here; add them to the spec first.
+
+   This design commits to a single dark visual world (Void ground). There is
+   deliberately no light theme — the spec defines none. Every color is declared
+   explicitly so the page never borrows a host ground.
+   ============================================================================ */
+
+:root {
+  /* ---- brand ---- */
+  --latch-blue: #2b8bff;      /* primary: CTAs, active states, chart lines */
+  --deep-blue: #0a63e0;       /* gradient end, pressed */
+  --signal-blue: #4a9bff;     /* links, secondary series, icon strokes */
+  --sky-ink: #8fc2ff;         /* active nav text, inline code */
+  --eyebrow-blue: #3f8ff0;    /* section eyebrows */
+
+  /* ---- grounds ---- */
+  --void: #04060c;            /* page background */
+  --panel: #070c17;           /* cards, surfaces */
+  --panel-alt: #080e1a;       /* inputs, sidebar cards, feed rows */
+  --code-ground: #05080f;     /* code block interiors */
+  --deep-panel: #061024;      /* gradient mid-tone */
+  --light-surface: #eef2f8;   /* light-ink badge preview */
+
+  /* ---- lines ---- */
+  --hairline: #16223a;        /* card borders, dividers */
+  --hairline-soft: #131f34;   /* inner dividers, chart gridlines */
+  --hairline-blue: #1b2942;   /* input borders */
+  --hairline-blue-2: #24314c; /* secondary button borders */
+  --cta-border: #1c3a68;      /* CTA panel */
+  --border-hover: #25528f;
+  --active-nav: #173768;      /* selected pill/tab ground */
+
+  /* ---- ink ---- */
+  --ink: #e4ecf9;             /* primary text */
+  --ink-bright: #ffffff;      /* headlines, numerals */
+  --muted-ink: #8a9bb6;       /* body */
+  --muted-ink-2: #96a6c0;     /* long-form paragraphs */
+  --label-ink: #657ca0;       /* mono micro-labels - spec #61789C, lifted for AA */
+  --faint-ink: #697c9a;       /* table headers, axis labels - spec #4C5F7D, lifted for AA */
+
+  /* ---- ACCESSIBILITY DIVERGENCE FROM THE SPEC - deliberate, measured ----
+     The README mandates --label-ink #61789C and --faint-ink #4C5F7D. Both fail WCAG AA
+     for normal-size text against the surfaces they are actually used on:
+
+                        on --panel   on --panel-alt   on --void
+       #61789C            4.35:1        4.30:1          4.51:1
+       #4C5F7D            3.02:1        2.98:1          3.13:1
+
+     Both are specified for SMALL text (mono micro-labels, table headers, axis labels), so
+     the 4.5:1 threshold applies - the 3:1 allowance covers large text and non-text UI only.
+     3.02:1 on chart axis labels is a real legibility failure, not a technicality.
+
+     Lifted along the same hue to the minimum that clears 4.5:1 on the worst ground:
+       --label-ink  #61789C -> #657CA0   (4.60 / 4.54 / 4.77)  ~invisible, 4 steps
+       --faint-ink  #4C5F7D -> #697C9A   (4.61 / 4.55 / 4.78)  visibly lighter
+
+     The second is a real visual change and the designer may want to push back. Revert by
+     restoring the two originals above - everything else is driven from these tokens. ---- */
+
+  /* ---- status ---- */
+  --success: #5fd39a;
+  --warning: #e0c05f;
+  --warning-alt: #e0a95f;
+  --error: #e06a6a;
+  --violet: #6c5cff;          /* third data series */
+  --amber: #ffd166;           /* code type names, audit dot */
+
+  /* ---- syntax ---- */
+  --code-keyword: #c56bff;
+  --code-comment: #6d80a0;
+
+  /* ---- gradients (verbatim) ---- */
+  --grad-primary: linear-gradient(180deg, #2b8bff, #0a63e0);
+  --grad-success: linear-gradient(180deg, #37c98d, #159463);
+  --grad-hero: linear-gradient(115deg, #04060c 0%, #061024 48%, #04070f 100%);
+  --grad-bar: linear-gradient(180deg, #2b8bff, rgba(43, 139, 255, 0.16));
+  --grad-progress: linear-gradient(90deg, #2b8bff, #5fd39a);
+  --grad-sidebar-active: linear-gradient(90deg, rgba(23, 55, 104, 0.75), rgba(8, 14, 26, 0.2));
+  --glow-hero: radial-gradient(680px 420px at 78% 42%, rgba(26, 127, 255, 0.2), transparent 70%);
+
+  /* ---- type ---- */
+  --font-display: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- radii ---- */
+  --r-pill: 999px;
+  --r-hero: 24px;   /* hero CTA panel */
+  --r-card-lg: 18px; /* landing cards */
+  --r-card: 16px;    /* dapp cards */
+  --r-sm: 14px;      /* small cards, inputs, code blocks */
+  --r-btn: 12px;
+  --r-chip: 10px;
+  --r-badge: 8px;
+  --r-micro: 7px;
+
+  /* ---- shadows ---- */
+  --sh-btn: 0 10px 30px rgba(26, 127, 255, 0.32);
+  --sh-btn-hover: 0 16px 42px rgba(26, 127, 255, 0.5);
+  --sh-card-hover: 0 18px 48px rgba(4, 10, 24, 0.8);
+  --glow-ring: inset 0 0 40px rgba(26, 127, 255, 0.14), 0 0 70px rgba(26, 127, 255, 0.35);
+
+  /* ---- easing (README § Interactions & behavior — every timing uses it) ---- */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* ---- landing-page values ------------------------------------------------
+     Used by the landing surface and absent from the README token table.
+     Each line cites where the value comes from; README § numbering refers to
+     "latch design/README.md", "ref" to design-references/Latch Landing.dc.html
+     (the reference is only consulted where the README is silent).
+     ------------------------------------------------------------------------ */
+  --header-bg: rgba(4, 6, 12, 0.82); /* README § Screens 1 Layout: sticky header ground */
+  --header-border: #131c2e;          /* README § Screens 1 Layout: header bottom border */
+  --stats-ground: #060a14;           /* README § Screens 1.3: stats strip ground */
+  --hairline-dark: #101a2c;          /* README § Screens 3 sidebar border; ref: stats-strip rules */
+  --roadmap-rule: #1a2740;           /* ref: per-item roadmap top rule */
+  --selection: #1a7fff;              /* ref: ::selection ground */
+
+  --pill-border: #1e4f96;             /* README § Screens 1.2: eyebrow pill border */
+  --pill-bg: rgba(16, 50, 102, 0.35); /* README § Screens 1.2: eyebrow pill ground */
+  --pill-ink: #6fb2ff;                /* README § Screens 1.2: eyebrow pill text */
+
+  /* --nav-ink (#93A3BD) and --code-ink (#C3D3EA) are declared in the shared
+     block at the foot of this file; the landing surface consumes those. */
+  --btn2-ink: #cfdcf0;          /* ref: secondary button label */
+  --btn2-border-hover: #3a5f96; /* ref: secondary button hover border */
+
+  --tile-border: #23446f;              /* ref: icon / satellite / chain tiles */
+  --tile-bg: rgba(16, 42, 82, 0.45);   /* ref: feature + chain tile ground */
+  --tile-bg-strong: rgba(16, 42, 82, 0.5); /* ref: use-case icon tile ground */
+  --node-rim: #1f66c4;                 /* README § Screens 1.2: hero centre tile blue rim */
+  --node-label-ink: #7f96b8;           /* ref: hero satellite labels */
+
+  --mono-data-ink: #a9b9d1;  /* README § Typography: mono data 11–13 */
+  --mono-data-dim: #7f92ad;  /* README § Screens 3: subtitle ink; ref: data values, team role */
+  --stat-label-ink: #6d80a0; /* ref: stats-strip caption */
+
+  --track: #111c2f;         /* ref: progress-bar and donut track */
+  --switch-border: #1b2438; /* ref: range switcher frame */
+  --switch-ground: #080d18; /* ref: range switcher ground */
+
+  --bar-fade: rgba(43, 139, 255, 0.35);    /* ref: horizontal bar gradient end */
+  --gas-col-dim: rgba(43, 139, 255, 0.42); /* ref: non-peak gas column */
+
+  --grad-node-core: linear-gradient(160deg, rgba(20, 60, 120, 0.55), rgba(8, 16, 32, 0.9)); /* ref */
+  --grad-node-tile: linear-gradient(160deg, rgba(18, 44, 84, 0.7), rgba(7, 12, 24, 0.9));   /* ref */
+  --grad-card: linear-gradient(180deg, rgba(10, 18, 34, 0.9), rgba(5, 8, 16, 0.9));         /* ref: use-case card */
+  --grad-panel-deep: linear-gradient(180deg, #080e1a, #05080f);                             /* ref: activity main card */
+  --grad-cta: linear-gradient(120deg, #061229, #04070f 70%);                                /* ref: CTA panel */
+  --glow-cta: radial-gradient(closest-side, rgba(43, 139, 255, 0.22), transparent 70%);     /* ref: CTA panel glow */
+  --stripes: repeating-linear-gradient(135deg, #0c1526 0 9px, #0a1120 9px 18px);            /* ref: headshot placeholder */
+
+  /* README § Interactions: button sheen is a white gradient sweeping across. */
+  --grad-sheen: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+
+  --sh-nav-pill: 0 6px 22px rgba(26, 127, 255, 0.38); /* ref: Launch App pill */
+  --sh-node: 0 0 26px rgba(26, 127, 255, 0.2);        /* ref: hero satellite tile */
+  --glow-dot: 0 0 14px rgba(43, 139, 255, 0.9);       /* ref: roadmap dot */
+
+  /* ---- layout ---- */
+  --gutter-landing: 40px;
+  --gutter-docs: 32px;
+  --gutter-dapp: 26px;
+  --max-landing: 1280px;
+  --max-docs: 1400px;
+  --max-brand: 1180px;
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  color: var(--ink-bright);
+  text-wrap: balance;
+  margin: 0;
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+}
+
+a {
+  color: var(--signal-blue);
+}
+
+img {
+  max-width: 100%;
+}
+
+/* Numerals must never reflow in columns */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus is always visible, always Latch Blue (spec: Accessibility) */
+:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Hit targets stay >= 44px on touch (spec: Responsive) */
+@media (pointer: coarse) {
+  button,
+  a[role="button"],
+  [data-hit] {
+    min-height: 44px;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Dapp surface tokens.
+
+   The README's token table covers the palette; these are the dapp-only
+   compounds its § 3. Dapp section describes in prose and the reference
+   (design-references/Latch Dapp.dc.html) pins down exactly — sidebar ground,
+   translucent header, status badge grounds, series tails. Namespaced --dapp-*
+   so the four surfaces never collide.
+   -------------------------------------------------------------------------- */
+:root {
+  --dapp-sidebar-bg: #060a12;          /* aside ground */
+  --dapp-sidebar-line: #101a2c;        /* sidebar right border + header rule */
+  --dapp-header-bg: rgba(4, 6, 12, 0.88); /* sticky header over blur(14px) */
+
+  --dapp-ink-soft: #cfdcf0;            /* wallet + readout text */
+  --dapp-ink-data: #a9b9d1;            /* README: mono data #A9B9D1–#E4ECF9 */
+  --dapp-ink-sub: #7f92ad;             /* README: header subtitle 12.5px */
+
+  --dapp-track: #111c2f;               /* progress + column track */
+  --dapp-switcher-border: #1b2438;     /* range switcher shell */
+  --dapp-switcher-bg: #080d18;
+  --dapp-tile-border: #23446f;         /* latch card icon tile */
+  --dapp-tile-bg: rgba(16, 42, 82, 0.5);
+  --dapp-chip-active-bg: rgba(23, 55, 104, 0.55);
+  --dapp-step-active-bg: rgba(12, 24, 46, 0.7);
+  --dapp-step-num-bg: rgba(43, 139, 255, 0.14);
+  --dapp-search-ring: #4a6b96;
+
+  --dapp-badge-ok-border: #1f5f45;
+  --dapp-badge-ok-bg: rgba(31, 95, 69, 0.3);
+  --dapp-badge-info-border: #1f4f96;
+  --dapp-badge-info-bg: rgba(31, 79, 150, 0.3);
+  --dapp-badge-warn-border: #4f4321;
+  --dapp-badge-warn-bg: rgba(79, 67, 33, 0.3);
+  --dapp-badge-mute-border: #2a3448;
+  --dapp-badge-mute-bg: rgba(42, 52, 72, 0.3);
+
+  --dapp-grad-panel: linear-gradient(180deg, #080e1a, #05080f);
+  --dapp-grad-pool: linear-gradient(120deg, #081227, #05080f);
+  --dapp-grad-avatar: linear-gradient(140deg, #2b8bff, #5fd39a);
+  --dapp-grad-token: linear-gradient(140deg, #2b8bff, #0a63e0);
+  --dapp-grad-token-alt: linear-gradient(140deg, #5fd39a, #2b8bff);
+  --dapp-grad-bar-green: linear-gradient(180deg, #5fd39a, rgba(95, 211, 154, 0.2));
+  --dapp-bar-tail: rgba(43, 139, 255, 0.3);
+  --dapp-spark-idle: rgba(43, 139, 255, 0.34);
+
+  --dapp-sh-btn: 0 8px 24px rgba(26, 127, 255, 0.32);
+  --dapp-sh-btn-hover: 0 14px 34px rgba(26, 127, 255, 0.48);
+  --dapp-sh-deploy: 0 10px 28px rgba(26, 127, 255, 0.3);
+  --dapp-knob-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+
+  /* README: "status dot glow 0 0 10px of its own color at 75-80%" */
+  --dapp-glow-success: 0 0 10px rgba(95, 211, 154, 0.78);
+  --dapp-glow-warning: 0 0 10px rgba(224, 169, 95, 0.78);
+  --dapp-glow-error: 0 0 10px rgba(224, 106, 106, 0.78);
+  --dapp-glow-primary: 0 0 10px rgba(43, 139, 255, 0.78);
+}
+
+/* Every animation in this design must be disabled here (spec: Motion) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Values used by the surfaces that the README's token table does not name.
+   Each is cited to where the spec states it. Added, not invented.
+   ---------------------------------------------------------------------------- */
+:root {
+  /* Inactive header nav link. Verbatim from every reference header; the README
+     names only the *active* colour (#4A9BFF). */
+  --nav-ink: #93a3bd;
+
+  /* Body ink inside code blocks. Verbatim from the Brand Kit and Docs
+     references; the README's syntax palette covers only keyword and comment. */
+  --code-ink: #c3d3ea;
+
+  /* README § Screens 1 Layout: sticky header is `blur(14px)`. Ground and border
+     for the same header are --header-bg / --header-border above. */
+  --header-blur: 14px;
+
+  /* Brand kit § Usage: the dashed rule around the clear-space diagram.
+     Verbatim from design-references/Latch Brand Kit.dc.html. */
+  --dashed-rule: #24406b;
+
+  /* Brand kit § Logo: ground behind the "Mark" tile — the one asset tile that
+     sits on a gradient rather than flat Void. Verbatim from the reference. */
+  --grad-mark-tile: linear-gradient(140deg, #061024, #04070f);
+}
+
+/* ----------------------------------------------------------------------------
+   Docs surface tokens.
+
+   Only the four compounds the docs page needs that no other surface defines.
+   Everything else it uses is already above: --header-bg / --header-border /
+   --header-blur, --pill-*, --nav-ink, --code-ink, --mono-data-ink (#A9B9D1),
+   --mono-data-dim (#7F92AD), --btn2-ink (#CFDCF0), --hairline-dark (#101A2C).
+   Namespaced --docs-* so the four surfaces never collide.
+   -------------------------------------------------------------------------- */
+:root {
+  /* README § Screens 2: "active link gets rgba(23,55,104,.5) background". */
+  --docs-rail-active-bg: rgba(23, 55, 104, 0.5);
+
+  /* Info callout under "2 · Write the latch". Verbatim from
+     design-references/Latch Docs.dc.html; README describes it only in prose
+     ("an info callout with a pulsing dot"). */
+  --docs-callout-border: #1e3f6f;
+  --docs-callout-bg: rgba(12, 32, 62, 0.5);
+
+  /* "Next: attach it to a pool" panel. The README's radii scale does not
+     enumerate the docs CTA panel; the reference sets 20px, its ground and its
+     glow, all verbatim below. Distinct from the landing --grad-cta / --glow-cta
+     (70% stop, .22 alpha). */
+  --docs-r-panel: 20px;
+  --docs-grad-next: linear-gradient(120deg, #061229, #04070f 72%);
+  --docs-glow-next: radial-gradient(closest-side, rgba(43, 139, 255, 0.26), transparent 70%);
+
+  /* Scrim behind the rail drawer below 1024px. Void at 72% — no spec value
+     exists because the reference prototype has no responsive drawer. */
+  --docs-scrim: rgba(4, 6, 12, 0.72);
+}
+
+/* ----------------------------------------------------------------------------
+   Chain status badges — "DEPLOYED" vs "TARGET".
+
+   Latch is live on Ethereum Sepolia and on no other chain, so both the landing
+   page's chain grid and the dapp's network chips have to draw that distinction.
+   The dapp already defines exactly these two badge treatments as
+   --dapp-badge-ok-* (success) and --dapp-badge-mute-* (neutral); rather than
+   introduce a second set of near-identical values, these are aliases so the
+   landing surface can carry the identical badge without borrowing a --dapp-*
+   name. No new colours are introduced here.
+   ---------------------------------------------------------------------------- */
+:root {
+  --badge-live-border: var(--dapp-badge-ok-border);
+  --badge-live-bg: var(--dapp-badge-ok-bg);
+  --badge-live-ink: var(--success);
+
+  --badge-target-border: var(--dapp-badge-mute-border);
+  --badge-target-bg: var(--dapp-badge-mute-bg);
+  --badge-target-ink: var(--muted-ink);
+}

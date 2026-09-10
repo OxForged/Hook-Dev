@@ -1,0 +1,982 @@
+/* ============================================================================
+   Docs / developer quickstart
+   Built to  latch design/README.md § "2. Docs / developer quickstart"
+        and  latch design/SCREENS.md § B
+   Diffed against design-references/Latch Docs.dc.html.
+
+   The README is authoritative. Where the reference HTML disagrees it is called
+   out inline below. Every colour, radius, shadow and family comes from
+   src/styles/tokens.css — there is no literal hex, radius or shadow in here.
+   ========================================================================== */
+
+.dk {
+  background: var(--void);
+  color: var(--ink);
+  /* The spec assigns a line-height per type role (lead 1.65, body 1.55-1.65,
+     code 1.85-1.9, H1 1.06) and none at all to the mono micro-labels, step
+     headings and UI labels. Reset to `normal` here so those land where the
+     reference puts them instead of inheriting the 1.6 body default. */
+  line-height: normal;
+
+  /* README § Interactions - Button sheen: a white gradient sweeping the pill.
+     Surface-local, like the dapp's --dapp-sheen. */
+  --docs-sheen: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+}
+
+/* --------------------------------------------------------------- skip link */
+
+.dk-skip {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+}
+.dk-skip:focus {
+  left: 16px;
+  top: 10px;
+  padding: 10px 16px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-chip);
+  background: var(--panel);
+  color: var(--sky-ink);
+  font-size: 13.5px;
+  text-decoration: none;
+}
+
+/* ------------------------------------------------------------ B1. header */
+
+.dk-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  /* README §1: rgba(4,6,12,.82) + blur(14px). The reference uses .86 — README wins. */
+  background: var(--header-bg);
+  backdrop-filter: blur(var(--header-blur));
+  border-bottom: 1px solid var(--header-border);
+}
+
+.dk-header__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  /* README § Spacing: docs gutter is 32px. The reference header uses 28px and
+     so sits 4px out of line with its own content column — README wins. */
+  padding: 14px var(--gutter-docs);
+}
+
+.dk-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.dk-brand__mark {
+  height: 28px;
+  width: auto;
+}
+
+.dk-lockup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1;
+}
+.dk-lockup__name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.14em;
+  color: var(--ink-bright);
+}
+.dk-lockup__sub {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 8.5px;
+  letter-spacing: 0.3em;
+  color: var(--latch-blue);
+}
+
+.dk-badge {
+  margin-left: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--pill-border);
+  border-radius: var(--r-micro);
+  background: var(--pill-bg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--pill-ink);
+  white-space: nowrap;
+}
+
+.dk-nav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  font-size: 14px;
+}
+.dk-nav__link {
+  color: var(--nav-ink);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.dk-nav__link:hover {
+  color: var(--sky-ink);
+}
+.dk-nav__link--active {
+  color: var(--signal-blue);
+  font-weight: 500;
+}
+
+.dk-pill {
+  position: relative;
+  overflow: hidden;
+  padding: 9px 18px;
+  border-radius: var(--r-pill);
+  background: var(--grad-primary);
+  color: var(--ink-bright);
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+  /* README § Shadows: primary button 0 10px 30px rgba(26,127,255,.32).
+     The reference uses a lighter 0 6px 20px on this pill — README wins. */
+  box-shadow: var(--sh-btn);
+  transition:
+    transform 0.22s var(--ease),
+    box-shadow 0.22s var(--ease);
+}
+.dk-pill:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--sh-btn-hover);
+  color: var(--ink-bright);
+}
+
+/* README § Interactions: 38–40% wide white sweep, -140% → 260%, 3.6–4.6s */
+.dk-sheen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  background: var(--docs-sheen);
+  animation: dk-sheen 4.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes dk-sheen {
+  0% {
+    transform: translateX(-140%);
+  }
+  60%,
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+/* Drawer trigger row — only below the 1024px breakpoint. */
+.dk-railbar {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 0 var(--gutter-docs) 10px;
+}
+.dk-railbar__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-chip);
+  background: var(--panel-alt);
+  color: var(--btn2-ink);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+.dk-railbar__btn:hover {
+  border-color: var(--border-hover);
+  color: var(--ink-bright);
+}
+.dk-railbar__here {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--faint-ink);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* -------------------------------------------------------------- the shell */
+
+/* README § Docs layout: flex-wrap shell, max-width 1400, 34px gap,
+   left rail flex 0 0 220px, main flex 1 1 540px. */
+.dk-shell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 34px;
+  max-width: var(--max-docs);
+  margin: 0 auto;
+  padding: 34px var(--gutter-docs) 90px;
+}
+
+/* ---------------------------------------------------------- B2. left rail */
+
+.dk-rail {
+  position: sticky;
+  top: 86px;
+  flex: 0 0 220px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+.dk-rail__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.dk-rail__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dk-rail__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -10px -10px -10px 0;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--muted-ink);
+  font-size: 15px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.dk-rail__close:hover {
+  color: var(--ink-bright);
+}
+
+.dk-rail__title {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--faint-ink);
+}
+
+.dk-rail__items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.dk-rail__link {
+  display: block;
+  padding: 7px 10px;
+  border-radius: var(--r-badge);
+  background: transparent;
+  color: var(--muted-ink);
+  font-size: 13.5px;
+  text-decoration: none;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+.dk-rail__link:hover {
+  color: var(--sky-ink);
+}
+.dk-rail__link--active {
+  background: var(--docs-rail-active-bg);
+  color: var(--sky-ink);
+}
+
+.dk-rail__toc {
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline-soft);
+}
+.dk-rail__tocitems {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.dk-rail__toclink {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--mono-data-dim);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.dk-rail__toclink:hover {
+  color: var(--sky-ink);
+}
+.dk-rail__toclink--active {
+  color: var(--sky-ink);
+}
+
+.dk-scrim {
+  display: none;
+}
+
+/* ------------------------------------------------------------------- main */
+
+.dk-main {
+  flex: 1 1 540px;
+  min-width: 0;
+}
+.dk-main > section {
+  scroll-margin-top: 86px;
+}
+
+/* README § Interactions — Section reveal: opacity 0→1, translateY(26px)→0,
+   0.85s cubic-bezier(.22,.61,.36,1), per-section delays 0–0.2s. The reference
+   uses 18px / .6s and delays out to .30s — README wins.
+   Implemented as a CSS animation with `both`, so content is never hidden if JS
+   fails. */
+.dk-reveal {
+  animation: dk-reveal 0.85s var(--ease) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes dk-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Row-level stagger — README § Docs: "Rows fade in on a 0.05s stagger". */
+.dk-stagger {
+  animation: dk-fade 0.45s ease both;
+  animation-delay: calc(var(--i, 0) * 0.05s);
+}
+.dk-stagger--slow {
+  animation-duration: 0.5s;
+  animation-delay: calc(var(--i, 0) * 0.06s);
+}
+@keyframes dk-fade {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------------- B3. intro */
+
+.dk-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--eyebrow-blue);
+}
+
+.dk-h1 {
+  margin: 16px 0 0;
+  font-weight: 700;
+  font-size: clamp(32px, 3.8vw, 50px);
+  line-height: 1.06;
+}
+
+.dk-lead {
+  max-width: 660px;
+  margin: 18px 0 0;
+  font-size: 16.5px;
+  line-height: 1.65;
+  color: var(--muted-ink-2);
+  text-wrap: pretty;
+}
+
+.dk-icode {
+  font-family: var(--font-mono);
+  font-size: 14.5px;
+  color: var(--sky-ink);
+}
+.dk-icode--sm {
+  font-size: 13px;
+}
+
+.dk-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px;
+  margin: 26px 0 0;
+  padding: 18px 22px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+}
+.dk-facts__label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  color: var(--faint-ink);
+  white-space: nowrap;
+}
+.dk-facts__value {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- step sections */
+
+/* README § Spacing: 52px between docs sections. */
+.dk-section {
+  margin-top: 52px;
+}
+
+.dk-h2 {
+  margin: 0;
+  font-weight: 600;
+  font-size: 26px;
+}
+
+.dk-body {
+  margin: 12px 0 18px;
+  font-size: 15.5px;
+  line-height: 1.65;
+  color: var(--muted-ink-2);
+}
+.dk-body--wide {
+  margin-bottom: 20px;
+}
+/* A paragraph sitting between two code blocks needs the top margin a heading
+   would otherwise have given it. */
+.dk-body--after {
+  margin-top: 18px;
+}
+
+/* ------------------------------------------------------------ code blocks */
+
+/* README § Type scale: code 12–12.5px / line-height 1.85–1.9.
+   README § Radii: 14px code blocks (--r-sm), code-ground interior. */
+.dk-code {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--code-ground);
+  overflow: hidden;
+}
+.dk-code__bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--panel);
+}
+.dk-code__dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+}
+.dk-code__dot--shell {
+  background: var(--success);
+}
+.dk-code__dot--source {
+  background: var(--latch-blue);
+}
+.dk-code__name {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--code-comment);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Absolutely positioned so the copy affordance cannot change the height of the
+   window bar, which the reference fixes at 11px + 16px type + 11px. On coarse
+   pointers the global 44px min-height grows the (transparent) hit area past the
+   bar without moving anything. */
+.dk-code__copy {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-micro);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--code-comment);
+  cursor: pointer;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
+}
+.dk-code__copy:hover {
+  color: var(--sky-ink);
+  border-color: var(--hairline-blue);
+}
+
+/* The snippet scrolls in its own container rather than wrapping, so a narrow
+   viewport never breaks a Solidity token across lines and never pushes the
+   page into horizontal scroll. */
+.dk-code__pre {
+  margin: 0;
+  padding: 18px 20px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--code-ink);
+  white-space: pre;
+  tab-size: 4;
+}
+
+/* Palette fixed by README § Design tokens — Color. */
+.dk-t--kw {
+  color: var(--code-keyword);
+}
+.dk-t--type {
+  color: var(--amber);
+}
+.dk-t--fn {
+  color: var(--signal-blue);
+}
+.dk-t--str,
+.dk-t--num,
+.dk-t--cmd {
+  color: var(--success);
+}
+.dk-t--com {
+  color: var(--code-comment);
+}
+
+/* ---------------------------------------------------------------- callout */
+
+.dk-callout {
+  display: flex;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--docs-callout-border);
+  border-radius: var(--r-btn);
+  background: var(--docs-callout-bg);
+}
+/* README § Interactions — Status dots: opacity .3 → 1 → .3, 1.6–2.4s infinite */
+.dk-callout__dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: 7px;
+  border-radius: var(--r-pill);
+  background: var(--latch-blue);
+  animation: dk-blip 2.4s ease-in-out infinite;
+}
+@keyframes dk-blip {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.dk-callout__text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--mono-data-ink);
+}
+.dk-callout__text strong,
+.dk-body strong {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* ----------------------------------------------- B7. callback reference */
+
+.dk-tablewrap {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  /* x scrolls on narrow viewports; y is pinned so a sub-pixel rounding of the
+     table height can never raise a vertical scrollbar and shave the columns. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.dk-table {
+  width: 100%;
+  /* Sized so the longest cell in each column - afterRemoveLiquidityReturnsDelta
+     and "bytes4, BeforeSwapDelta, uint24" - fits without clipping. Narrower
+     viewports scroll the wrapper. */
+  min-width: 680px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+/* The reference lays the row out as grid 1.5fr / .7fr / 1.4fr with a 14px gap
+   inside 20px padding. Reproduced on a real table by splitting the full width
+   in the same 1.5 : 0.7 : 1.4 ratio and carrying the 20px outer padding and
+   the 14px inter-column gutter (7px + 7px) on the cells. Chrome ignores a
+   calc() containing a percentage on <col>, so these are plain percentages —
+   they land within ~1.5px of the reference's grid track edges. */
+.dk-table__c1 {
+  width: 41.667%;
+}
+.dk-table__c2 {
+  width: 19.444%;
+}
+.dk-table__c3 {
+  width: 38.889%;
+}
+.dk-table th,
+.dk-table td {
+  padding: 13px 7px;
+  text-align: left;
+  font-weight: 400;
+  vertical-align: middle;
+}
+.dk-table tr > *:first-child {
+  padding-left: 20px;
+}
+.dk-table tr > *:last-child {
+  padding-right: 20px;
+}
+.dk-table thead th {
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  color: var(--faint-ink);
+}
+.dk-table tbody tr {
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.dk-table tbody tr:last-child {
+  border-bottom: none;
+}
+.dk-table tbody th,
+.dk-table tbody td {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.dk-table__name {
+  color: var(--sky-ink);
+}
+.dk-table__bit {
+  color: var(--mono-data-dim);
+}
+.dk-table__ret {
+  color: var(--mono-data-ink);
+}
+
+/* ------------------------------------------------- B8. execution order */
+
+.dk-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dk-step {
+  padding: 18px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+}
+.dk-step__num {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--eyebrow-blue);
+}
+.dk-step__name {
+  display: block;
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--btn2-ink);
+}
+.dk-step__note {
+  display: block;
+  margin-top: 7px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--mono-data-dim);
+}
+
+/* --------------------------------------------------- B9. common errors */
+
+.dk-errors {
+  margin: 18px 0 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  overflow: hidden;
+}
+.dk-errors__row {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.dk-errors__row:last-child {
+  border-bottom: none;
+}
+.dk-errors__code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--warning-alt);
+  overflow-wrap: anywhere;
+}
+.dk-errors__fix {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--mono-data-ink);
+}
+
+/* ------------------------------------------------------ B10. next panel */
+
+.dk-next {
+  position: relative;
+  overflow: hidden;
+  padding: 38px 34px;
+  border: 1px solid var(--cta-border);
+  border-radius: var(--docs-r-panel);
+  background: var(--docs-grad-next);
+}
+.dk-next__glow {
+  position: absolute;
+  right: -10%;
+  top: -60%;
+  width: 420px;
+  height: 420px;
+  max-width: 100%;
+  background: var(--docs-glow-next);
+  pointer-events: none;
+}
+.dk-next__title {
+  position: relative;
+  margin: 0;
+  font-weight: 700;
+  font-size: 26px;
+}
+.dk-next__body {
+  position: relative;
+  max-width: 520px;
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--muted-ink-2);
+}
+.dk-next__actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.dk-btn {
+  display: inline-block;
+  padding: 13px 24px;
+  border-radius: var(--r-pill);
+  font-weight: 600;
+  font-size: 14.5px;
+  white-space: nowrap;
+  text-decoration: none;
+  transition:
+    transform 0.22s var(--ease),
+    box-shadow 0.22s var(--ease),
+    border-color 0.22s var(--ease),
+    color 0.22s var(--ease);
+}
+.dk-btn--primary {
+  background: var(--grad-primary);
+  color: var(--ink-bright);
+  box-shadow: var(--sh-btn);
+}
+.dk-btn--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--sh-btn-hover);
+  color: var(--ink-bright);
+}
+.dk-btn--ghost {
+  border: 1px solid var(--hairline-blue-2);
+  color: var(--btn2-ink);
+}
+.dk-btn--ghost:hover {
+  border-color: var(--border-hover);
+  color: var(--ink-bright);
+}
+
+/* ----------------------------------------------------------------- footer */
+
+.dk-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  max-width: var(--max-docs);
+  margin: 0 auto;
+  padding: 34px var(--gutter-docs) 64px;
+  border-top: 1px solid var(--hairline-dark);
+}
+.dk-footer__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dk-footer__mark {
+  height: 32px;
+  width: auto;
+}
+.dk-footer__copy {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--faint-ink);
+  white-space: nowrap;
+}
+.dk-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+}
+.dk-footer__links a {
+  color: var(--mono-data-dim);
+  font-size: 13.5px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+.dk-footer__links a:hover {
+  color: var(--sky-ink);
+}
+
+/* ============================================================ responsive ==
+   Below 1024px the rail becomes a drawer and the header's text links move
+   into it, so the header keeps a single row and a constant sticky offset.
+   ========================================================================= */
+
+@media (max-width: 1023.98px) {
+  .dk-nav__link {
+    display: none;
+  }
+  .dk-railbar {
+    display: flex;
+  }
+
+  .dk-rail {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 80;
+    flex: 0 0 auto;
+    width: min(300px, 86vw);
+    max-height: none;
+    padding: 20px;
+    border-right: 1px solid var(--hairline);
+    background: var(--panel);
+    transform: translateX(-102%);
+    transition: transform 0.28s var(--ease);
+    overscroll-behavior: contain;
+  }
+  .dk-rail[data-open='true'] {
+    transform: none;
+  }
+
+  .dk-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: var(--docs-scrim);
+    cursor: pointer;
+  }
+
+  .dk-main {
+    flex: 1 1 100%;
+  }
+  .dk-main > section {
+    scroll-margin-top: 130px;
+  }
+}
+
+@media (max-width: 560px) {
+  .dk-next {
+    padding: 28px 22px;
+  }
+  .dk-btn {
+    display: block;
+    text-align: center;
+    width: 100%;
+  }
+  .dk-facts {
+    gap: 18px;
+  }
+}
+
+/* ================================================== reduced motion ========
+   README § Interactions: "@media (prefers-reduced-motion: reduce) collapses
+   all animation — honor this." tokens.css already zeroes every duration
+   globally; this block removes the animations outright so nothing depends on
+   a fill mode landing correctly.
+   ========================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .dk-reveal,
+  .dk-stagger {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .dk-sheen {
+    display: none;
+  }
+  .dk-callout__dot {
+    animation: none;
+    opacity: 1;
+  }
+  .dk-rail,
+  .dk-btn,
+  .dk-pill,
+  .dk-rail__link,
+  .dk-nav__link,
+  .dk-code__copy,
+  .dk-railbar__btn {
+    transition: none;
+  }
+  .dk-btn--primary:hover,
+  .dk-pill:hover {
+    transform: none;
+  }
+}

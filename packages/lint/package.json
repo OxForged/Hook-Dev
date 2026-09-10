@@ -1,0 +1,55 @@
+{
+  "name": "@latchprotocol/lint",
+  "version": "0.1.0",
+  "description": "Static analysis for AMM hooks. Catches the mistakes that are specific to writing a hook: missing pool-manager access control, bitmap/implementation mismatch, silently-discarded fee overrides, treating `sender` as the end user, and the rest of the hook-shaped bug classes.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "latch-lint": "./dist/bin/latch-lint.js"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/chmod-bin.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "fixtures": "node scripts/build-fixtures.mjs",
+    "test": "npm run fixtures && vitest run",
+    "test:watch": "vitest",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "keywords": [
+    "latchprotocol",
+    "uniswap-v4",
+    "amm",
+    "hooks",
+    "solidity",
+    "static-analysis",
+    "linter",
+    "security"
+  ],
+  "dependencies": {
+    "@latchprotocol/sdk": "file:../sdk"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,170 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2026 LatchProtocol
+pragma solidity 0.8.26;
+
+/// @notice Well-behaved hook. Answers with whatever bitmap it was constructed with.
+contract HonestHook {
+    uint16 private immutable _bitmap;
+
+    constructor(uint16 bitmap) {
+        _bitmap = bitmap;
+    }
+
+    function getHooksRegistrationBitmap() external view returns (uint16) {
+        return _bitmap;
+    }
+}
+
+/// @notice Answers from storage and can be repointed. Stands in for a proxy whose implementation
+/// is swapped, or a hook that decides its own permissions at runtime.
+contract MutableHook {
+    uint16 public bitmap;
+
+    constructor(uint16 initial) {
+        bitmap = initial;
+    }
+
+    function set(uint16 next) external {
+        bitmap = next;
+    }
+
+    function getHooksRegistrationBitmap() external view returns (uint16) {
+        return bitmap;
+    }
+}
+
+/// @notice Reverts with a custom error.
+contract RevertingHook {
+    error Nope();
+
+    function getHooksRegistrationBitmap() external pure returns (uint16) {
+        revert Nope();
+    }
+}
+
+/// @notice Reverts with no data at all.
+contract SilentRevertHook {
+    function getHooksRegistrationBitmap() external pure returns (uint16) {
+        assembly {
+            revert(0, 0)
+        }
+    }
+}
+
+/// @notice Never returns. Consumes every unit of gas it is given.
+/// @dev Reads storage inside the loop so the optimizer cannot fold it away.
+contract GasBurnerHook {
+    uint256 public seed = 1;
+
+    function getHooksRegistrationBitmap() external view returns (uint16) {
+        uint256 acc = seed;
+        for (uint256 i = 0; i < type(uint256).max; ++i) {
+            acc = uint256(keccak256(abi.encode(acc, i)));
+        }
+        return uint16(acc);
+    }
+}
+
+/// @notice Burns gas and then reverts, so the failure looks ordinary while the cost is not.
+contract GasBurnThenRevertHook {
+    uint256 public seed = 1;
+
+    function getHooksRegistrationBitmap() external view returns (uint16) {
+        uint256 acc = seed;
+        for (uint256 i = 0; i < type(uint256).max; ++i) {
+            acc = uint256(keccak256(abi.encode(acc, i)));
+        }
+        revert();
+    }
+}
+
+/// @notice Returns 32 bytes whose high bits are dirty. The low 16 bits look like a harmless
+/// bitmap; solc's decoder would reject the word outright.
+contract DirtyWordHook {
+    uint256 public immutable word;
+
+    constructor(uint256 word_) {
+        word = word_;
+    }
+
+    fallback() external {
+        uint256 w = word;
+        assembly {
+            mstore(0, w)
+            return(0, 32)
+        }
+    }
+}
+
+/// @notice Returns fewer than 32 bytes.
+contract ShortReturnHook {
+    fallback() external {
+        assembly {
+            mstore(0, 0x0040)
+            return(0, 4)
+        }
+    }
+}
+
+/// @notice Returns nothing.
+contract EmptyReturnHook {
+    fallback() external {
+        assembly {
+            return(0, 0)
+        }
+    }
+}
+
+/// @notice Return bomb: hands back a very large buffer to make the caller pay for the copy.
+contract ReturnBombHook {
+    fallback() external {
+        assembly {
+            // Touch 32KB of memory, then hand all of it back. Cheap for the callee, expensive for
+            // any caller that copies the whole return buffer instead of capping it.
+            let size := 0x8000
+            mstore(add(size, 0x20), 1)
+            return(0, size)
+        }
+    }
+}
+
+/// @notice Returns exactly 32 bytes, but the value is a valid bitmap. Used to prove the probe
+/// accepts a raw-assembly responder that behaves correctly.
+contract RawButHonestHook {
+    uint16 private immutable _bitmap;
+
+    constructor(uint16 bitmap) {
+        _bitmap = bitmap;
+    }
+
+    fallback() external {
+        uint256 b = _bitmap;
+        assembly {
+            mstore(0, b)
+            return(0, 32)
+        }
+    }
+}
+
+/// @notice Has code, but no matching function and no fallback: the call reverts.
+contract NoBitmapHook {
+    uint256 public unrelated = 7;
+}
+
+/// @notice Reenters the registry from inside the probe. Must fail, because the probe is a
+/// staticcall and every registry entry point writes storage.
+contract ReentrantHook {
+    address public registry;
+    bytes public payload;
+
+    function arm(address registry_, bytes calldata payload_) external {
+        registry = registry_;
+        payload = payload_;
+    }
+
+    function getHooksRegistrationBitmap() external view returns (uint16) {
+        (bool ok,) = registry.staticcall(payload);
+        ok; // a state-changing call is impossible from a static frame; this is here to prove it
+        return 0x0040;
+    }
+}

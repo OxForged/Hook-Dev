@@ -1,0 +1,18 @@
+[profile.default]
+src = "src"
+out = "foundry-out"
+solc_version = "0.8.26"
+optimizer_runs = 25_666
+via_ir = true
+evm_version = "cancun"
+bytecode_hash = "none"
+allow_paths = ["../core", "../fees"]
+allow_internal_expect_revert = true
+remappings = [
+    "infinity-core/=../core/",
+    "forge-std/=../core/lib/forge-std/src/",
+    "ds-test/=../core/lib/forge-std/lib/ds-test/src/",
+    "@openzeppelin/=../core/lib/openzeppelin-contracts/",
+    "latch-fees/=../fees/",
+    "hp-transient/=../core/src/libraries/transient/eip1153/",
+]

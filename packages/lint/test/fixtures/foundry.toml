@@ -1,0 +1,10 @@
+[profile.default]
+src = "src"
+out = "foundry-out"
+solc_version = "0.8.26"
+optimizer = false
+evm_version = "cancun"
+bytecode_hash = "none"
+# The linter reads solc's AST. Emitting it here keeps the test suite from
+# having to shell out to forge on every run.
+ast = true

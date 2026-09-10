@@ -1,0 +1,862 @@
+// LatchProtocol analytics + registry datastore.
+//
+// The event-derived half of this model mirrors `packages/sdk/schema.graphql`,
+// which is the canonical indexer entity model for the protocol. Deviations from
+// it are deliberate and noted inline:
+//
+//   * Everything is scoped by `Chain`. The subgraph schema assumes one
+//     deployment per store; this API serves many chains from one database, so
+//     every entity carries a `chainId` and natural keys are composite.
+//   * There is no `Transaction` entity. Tx hash, block number and block
+//     timestamp are denormalised onto each event row. An analytics API reads
+//     event rows by time and pool far more often than it reads "everything in
+//     transaction X", and the denormalisation removes a write and a join from
+//     the hot ingestion path.
+//   * `HookRegistryEntry` has no subgraph equivalent. It is the marketplace
+//     listing — human-curated metadata that does not come from a log.
+//
+// Wide on-chain integers (int128 / uint128 / uint160 amounts and prices) do not
+// fit in a 64-bit BIGINT, so they are `Decimal @db.Decimal(78, 0)`: 78 digits
+// covers uint256, scale 0 keeps them exact integers. Block numbers and unix
+// timestamps do fit and use BigInt.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// Which pool manager owns a pool, and therefore which maths and events apply.
+enum PoolType {
+  CL
+  BIN
+}
+
+/// Direction of a liquidity change.
+enum LiquidityChangeType {
+  ADD
+  REMOVE
+}
+
+/// Which settlement backend a chain's deployment was compiled against.
+/// EIP1153 = tstore/tload (Cancun). STORAGE = SSTORE/SLOAD (pre-Cancun).
+/// See `TransientSlot.IS_EIP1153` in packages/core.
+enum TransientBackend {
+  EIP1153
+  STORAGE
+}
+
+/// Where a row's data came from. Present on every table an ingestion job
+/// writes, so a fixture row can never be mistaken for an observed one.
+enum DataSource {
+  /// Produced by the fixture chain-log provider. Not observed on any chain.
+  FIXTURE
+  /// Decoded from logs returned by a real RPC endpoint.
+  ONCHAIN
+  /// Hand-curated metadata (registry listings, token symbols).
+  CURATED
+}
+
+/// Review state of a hook listed in the registry.
+enum AuditStatus {
+  UNAUDITED
+  IN_REVIEW
+  AUDITED
+  FORMALLY_VERIFIED
+}
+
+/// Trust level of a registry listing. EXAMPLE means "written to demonstrate the
+/// registry shape"; it is not a real project.
+enum RegistryListingKind {
+  EXAMPLE
+  COMMUNITY
+  VERIFIED
+}
+
+/// Which contract and event a protocol-fee change came from.
+enum ProtocolFeeChangeSource {
+  /// core: ProtocolFees.ProtocolFeeUpdated(PoolId indexed id, uint24 protocolFee)
+  POOL_MANAGER_PROTOCOL_FEE_UPDATED
+  /// core: ProtocolFees.ProtocolFeeControllerUpdated(address indexed controller)
+  POOL_MANAGER_CONTROLLER_UPDATED
+  /// fees: LatchProtocolFeeController.DefaultFeeUpdated(uint16,uint16)
+  CONTROLLER_DEFAULT_FEE_UPDATED
+  /// fees: LatchProtocolFeeController.PoolFeeUpdated(PoolId indexed,bool,uint16,uint16)
+  CONTROLLER_POOL_FEE_UPDATED
+  /// fees: LatchProtocolFeeController.TierFeeUpdated(uint24 indexed,bool,uint16,uint16)
+  CONTROLLER_TIER_FEE_UPDATED
+  /// fees: LatchProtocolFeeController.DynamicFeeUpdated(bool,uint16,uint16)
+  CONTROLLER_DYNAMIC_FEE_UPDATED
+  /// fees: LatchProtocolFeeController.FeesDisabledSet(bool)
+  CONTROLLER_FEES_DISABLED_SET
+}
+
+/// Vault claim-token (ERC-6909-style) event kinds.
+enum VaultTokenEventKind {
+  TRANSFER
+  APPROVAL
+  OPERATOR_SET
+}
+
+/// Lifecycle of one ingestion job.
+enum IngestionRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// Chain and deployment topology
+// ---------------------------------------------------------------------------
+
+/// An EVM chain LatchProtocol is (or would be) deployed on. Every other entity
+/// hangs off exactly one of these.
+model Chain {
+  /// EVM chain id. Natural primary key.
+  id                    Int              @id
+  slug                  String           @unique
+  name                  String
+  shortName             String?
+  nativeCurrencySymbol  String           @default("ETH")
+  nativeCurrencyDecimals Int             @default(18)
+  explorerUrl           String?
+  isTestnet             Boolean          @default(false)
+  /// True when the chain supports EIP-1153 transient storage. Decides which
+  /// build profile of the settlement layer this chain gets.
+  supportsEip1153       Boolean
+  transientBackend      TransientBackend
+  /// Name of the env var holding this chain's RPC URL, e.g. RPC_URL_8453.
+  rpcUrlEnvKey          String?
+  /// Block to start a cold backfill from — usually the Vault deployment block.
+  startBlock            BigInt           @default(0)
+  /// FIXTURE for the local devnet placeholder; ONCHAIN for real networks.
+  dataSource            DataSource       @default(FIXTURE)
+  enabled               Boolean          @default(true)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  vaults               Vault[]
+  poolManagers         PoolManager[]
+  tokens               Token[]
+  hooks                Hook[]
+  pools                Pool[]
+  swaps                Swap[]
+  liquidityChanges     LiquidityChange[]
+  liquidityPositions   LiquidityPosition[]
+  donates              Donate[]
+  protocolFeeChanges   ProtocolFeeChange[]
+  dynamicFeeUpdates    DynamicLpFeeUpdate[]
+  appRegistrations     AppRegistration[]
+  vaultTokenEvents     VaultTokenEvent[]
+  ingestionCursors     IngestionCursor[]
+  ingestionRuns        IngestionRun[]
+  registryDeployments  HookRegistryDeployment[]
+
+  @@index([enabled])
+  @@map("chains")
+}
+
+/// The singleton that custodies every pool's tokens and settles deltas.
+model Vault {
+  id                 String   @id
+  chainId            Int
+  address            String
+  owner              String?
+  pendingOwner       String?
+  registeredAppCount Int      @default(0)
+  deployedAtBlock    BigInt?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  chain            Chain             @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  poolManagers     PoolManager[]
+  appRegistrations AppRegistration[]
+
+  @@unique([chainId, address])
+  @@index([chainId])
+  @@map("vaults")
+}
+
+/// A pool manager ("app" in Vault terminology). Holds pool state and emits the
+/// Initialize / Swap / liquidity events, but custodies no tokens.
+model PoolManager {
+  id                    String   @id
+  chainId               Int
+  address               String
+  poolType              PoolType
+  vaultId               String?
+  owner                 String?
+  protocolFeeController String?
+  paused                Boolean  @default(false)
+  poolCount             Int      @default(0)
+  /// Bin manager only.
+  maxBinStep            Int?
+  /// Bin manager only.
+  minBinSharesForDonate Decimal? @db.Decimal(78, 0)
+  deployedAtBlock       BigInt?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  chain              Chain               @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  vault              Vault?              @relation(fields: [vaultId], references: [id], onDelete: SetNull)
+  pools              Pool[]
+  protocolFeeChanges ProtocolFeeChange[]
+
+  @@unique([chainId, address])
+  @@index([chainId, poolType])
+  @@map("pool_managers")
+}
+
+// ---------------------------------------------------------------------------
+// Reference data
+// ---------------------------------------------------------------------------
+
+/// An ERC-20, or the native asset at the zero address.
+model Token {
+  id         String     @id
+  chainId    Int
+  address    String
+  symbol     String?
+  name       String?
+  decimals   Int?
+  isNative   Boolean    @default(false)
+  poolCount  Int        @default(0)
+  dataSource DataSource @default(FIXTURE)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  chain      Chain  @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  poolsAs0   Pool[] @relation("PoolToken0")
+  poolsAs1   Pool[] @relation("PoolToken1")
+
+  @@unique([chainId, address])
+  @@index([chainId, symbol])
+  @@map("tokens")
+}
+
+/// A deployed hook contract, as observed in pool keys.
+///
+/// Because permissions are NOT encoded in the address, one hook address can
+/// back pools with different registration bitmaps — hence `observedBitmaps`
+/// alongside the single `registrationBitmap` the contract itself reports.
+model Hook {
+  id                 String     @id
+  chainId            Int
+  address            String
+  /// Value returned by the hook's own getHooksRegistrationBitmap(), when read.
+  registrationBitmap Int?
+  /// Distinct bitmaps seen across this hook's pools.
+  observedBitmaps    Int[]      @default([])
+  poolCount          Int        @default(0)
+  swapCount          BigInt     @default(0)
+  firstSeenBlock     BigInt?
+  firstSeenAt        DateTime?
+  dataSource         DataSource @default(FIXTURE)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  chain             Chain                @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  pools             Pool[]
+  swaps             Swap[]
+  liquidityChanges  LiquidityChange[]
+  donates           Donate[]
+  dynamicFeeUpdates DynamicLpFeeUpdate[]
+  registryEntries   HookRegistryDeployment[]
+
+  @@unique([chainId, address])
+  @@index([chainId])
+  @@map("hooks")
+}
+
+// ---------------------------------------------------------------------------
+// Hook registry (the marketplace surface)
+// ---------------------------------------------------------------------------
+
+/// A curated listing in the hook marketplace.
+///
+/// This is metadata about a hook project, not a chain observation: it exists
+/// whether or not the hook is deployed anywhere. `kind = EXAMPLE` marks the
+/// illustrative entries shipped with the seed.
+model HookRegistryEntry {
+  id              String              @id @default(cuid())
+  slug            String              @unique
+  name            String
+  /// Display name of the author or team.
+  author          String
+  authorUrl       String?
+  /// One-line summary for list views.
+  summary         String
+  /// Long-form markdown for the detail view.
+  description     String
+  poolType        PoolType
+  /// The registration bitmap the hook declares. Decoded to human-readable
+  /// flags by the API rather than stored expanded.
+  declaredBitmap  Int
+  auditStatus     AuditStatus         @default(UNAUDITED)
+  auditor         String?
+  auditReportUrl  String?
+  /// Whether the listing's source and bitmap have been checked by a maintainer.
+  verified        Boolean             @default(false)
+  kind            RegistryListingKind @default(EXAMPLE)
+  repoUrl         String?
+  docsUrl         String?
+  licenseId       String?
+  tags            String[]            @default([])
+  /// Optional: what the hook charges through the hookDelta path, in pips.
+  hookFeePips     Int?
+  listedAt        DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  deployments HookRegistryDeployment[]
+
+  @@index([poolType])
+  @@index([verified])
+  @@index([auditStatus])
+  @@map("hook_registry_entries")
+}
+
+/// Join between a registry listing and the chains it is deployed on.
+model HookRegistryDeployment {
+  id      String  @id @default(cuid())
+  entryId String
+  chainId Int
+  /// Deployed address, when the listing has one on this chain.
+  address String?
+  /// Resolved link to the observed Hook row, when ingestion has seen it.
+  hookId  String?
+  notes   String?
+
+  entry HookRegistryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  chain Chain             @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  hook  Hook?             @relation(fields: [hookId], references: [id], onDelete: SetNull)
+
+  @@unique([entryId, chainId])
+  @@index([chainId])
+  @@index([hookId])
+  @@map("hook_registry_deployments")
+}
+
+// ---------------------------------------------------------------------------
+// Pools
+// ---------------------------------------------------------------------------
+
+/// One pool inside the singleton.
+///
+/// `poolId` is keccak256 of the six pool-key words; `id` is
+/// `${chainId}-${poolId}` so the same pool id on two chains stays distinct.
+/// The pool key is stored verbatim so the id can be recomputed and audited.
+model Pool {
+  id            String   @id
+  chainId       Int
+  /// keccak256(PoolKey), 0x-prefixed 32 bytes.
+  poolId        String
+  poolType      PoolType
+  poolManagerId String
+
+  // --- pool key, verbatim ---
+  token0Id   String
+  token1Id   String
+  currency0  String
+  currency1  String
+  hookId     String?
+  hooksAddress String
+  /// Raw `fee` field of the pool key.
+  feeRaw     Int
+  /// Static LP fee in pips; null when the pool uses a dynamic fee.
+  staticLpFee Int?
+  /// True when feeRaw == LPFeeLibrary.DYNAMIC_FEE_FLAG (0x800000).
+  isDynamicFee Boolean @default(false)
+  /// Packed `parameters` word, 0x-prefixed 32 bytes.
+  parameters String
+
+  // --- decoded parameters ---
+  hooksRegistrationBitmap Int
+  /// CL only: bits 16-39 of parameters.
+  tickSpacing             Int?
+  /// Bin only: bits 16-31 of parameters.
+  binStep                 Int?
+
+  // --- mutable state ---
+  currentLpFee          Int?
+  protocolFee           Int      @default(0)
+  protocolFeeZeroForOne Int      @default(0)
+  protocolFeeOneForZero Int      @default(0)
+  /// CL only.
+  sqrtPriceX96          Decimal? @db.Decimal(78, 0)
+  /// CL only.
+  tick                  Int?
+  /// CL only.
+  liquidity             Decimal? @db.Decimal(78, 0)
+  /// Bin only.
+  activeId              Int?
+
+  // --- cumulative counters, maintained by ingestion ---
+  swapCount            BigInt  @default(0)
+  liquidityChangeCount BigInt  @default(0)
+  donateCount          BigInt  @default(0)
+  /// Absolute volume, summed over swaps, in token base units.
+  volumeToken0         Decimal @default(0) @db.Decimal(78, 0)
+  volumeToken1         Decimal @default(0) @db.Decimal(78, 0)
+
+  // --- provenance ---
+  createdAtBlock     BigInt
+  createdAtTimestamp DateTime
+  createdAtTx        String
+  lastEventAt        DateTime?
+  dataSource         DataSource @default(FIXTURE)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  chain              Chain                @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  poolManager        PoolManager          @relation(fields: [poolManagerId], references: [id], onDelete: Cascade)
+  token0             Token                @relation("PoolToken0", fields: [token0Id], references: [id])
+  token1             Token                @relation("PoolToken1", fields: [token1Id], references: [id])
+  hook               Hook?                @relation(fields: [hookId], references: [id], onDelete: SetNull)
+  swaps              Swap[]
+  liquidityChanges   LiquidityChange[]
+  liquidityPositions LiquidityPosition[]
+  donates            Donate[]
+  protocolFeeChanges ProtocolFeeChange[]
+  dynamicFeeUpdates  DynamicLpFeeUpdate[]
+
+  @@unique([chainId, poolId])
+  @@index([chainId, poolType])
+  @@index([hookId])
+  @@index([poolManagerId])
+  @@index([chainId, createdAtTimestamp])
+  @@index([token0Id])
+  @@index([token1Id])
+  @@map("pools")
+}
+
+// ---------------------------------------------------------------------------
+// Event-derived facts
+// ---------------------------------------------------------------------------
+
+/// One swap, from `CLPoolManager.Swap` or `BinPoolManager.Swap`.
+///
+/// Amounts are signed from the pool's point of view: negative left the pool.
+model Swap {
+  /// `${chainId}-${txHash}-${logIndex}`
+  id       String   @id
+  chainId  Int
+  poolId   String
+  poolType PoolType
+  hookId   String?
+
+  txHash         String
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  logIndex       Int
+  /// Emitting contract address, lowercased. Load-bearing: topic0 alone does NOT
+  /// identify an event here (both pool managers inherit ProtocolFees, so
+  /// ProtocolFeeUpdated / Paused / OwnershipTransferred collide across
+  /// contracts). Decoding and lookups key on (chainId, contract, topic0).
+  contract       String
+  /// topic0 of the source log, kept so a row can be traced back to its ABI.
+  topic0         String
+
+  /// Caller recorded by the pool manager — usually a router, not the end user.
+  sender      String
+  amount0     Decimal @db.Decimal(78, 0)
+  amount1     Decimal @db.Decimal(78, 0)
+  /// Derived: true when currency0 was the input (amount0 > 0 from the pool's view).
+  zeroForOne  Boolean
+  /// LP fee actually charged, in pips (hundredths of a bip).
+  fee         Int
+  /// Packed protocol fee in force for this swap.
+  protocolFee Int
+
+  /// CL only.
+  sqrtPriceX96 Decimal? @db.Decimal(78, 0)
+  /// CL only.
+  tick         Int?
+  /// CL only.
+  liquidity    Decimal? @db.Decimal(78, 0)
+  /// Bin only.
+  activeId     Int?
+
+  dataSource DataSource @default(FIXTURE)
+  createdAt  DateTime   @default(now())
+
+  chain Chain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  pool  Pool  @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  hook  Hook? @relation(fields: [hookId], references: [id], onDelete: SetNull)
+
+  @@index([poolId, blockTimestamp(sort: Desc)])
+  @@index([chainId, blockTimestamp(sort: Desc)])
+  @@index([hookId, blockTimestamp(sort: Desc)])
+  @@index([sender])
+  @@index([blockNumber])
+  @@index([chainId, contract])
+    @@map("swaps")
+}
+
+/// A liquidity change. Unifies `CLPoolManager.ModifyLiquidity` with the bin
+/// manager's `Mint` and `Burn` so both pool types chart together.
+model LiquidityChange {
+  /// `${chainId}-${txHash}-${logIndex}`
+  id       String              @id
+  chainId  Int
+  poolId   String
+  poolType PoolType
+  hookId   String?
+
+  txHash         String
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  logIndex       Int
+  /// Emitting contract address, lowercased. Load-bearing: topic0 alone does NOT
+  /// identify an event here (both pool managers inherit ProtocolFees, so
+  /// ProtocolFeeUpdated / Paused / OwnershipTransferred collide across
+  /// contracts). Decoding and lookups key on (chainId, contract, topic0).
+  contract       String
+  /// topic0 of the source log, kept so a row can be traced back to its ABI.
+  topic0         String
+
+  changeType LiquidityChangeType
+  sender     String
+  /// Sub-account discriminator supplied by the caller.
+  salt       String
+
+  /// CL only.
+  tickLower      Int?
+  /// CL only.
+  tickUpper      Int?
+  /// CL only: signed change in liquidity.
+  liquidityDelta Decimal? @db.Decimal(78, 0)
+  positionId     String?
+
+  /// Bin only: bin ids touched.
+  binIds              BigInt[] @default([])
+  /// Bin only: packed per-bin amounts, one 32-byte word per bin id.
+  binAmounts          String[] @default([])
+  /// Bin only, mint: packed composition fee.
+  compositionFeeAmount String?
+  /// Bin only, mint: packed protocol fee taken.
+  feeAmountToProtocol  String?
+
+  dataSource DataSource @default(FIXTURE)
+  createdAt  DateTime   @default(now())
+
+  chain    Chain              @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  pool     Pool               @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  hook     Hook?              @relation(fields: [hookId], references: [id], onDelete: SetNull)
+  position LiquidityPosition? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+
+  @@index([poolId, blockTimestamp(sort: Desc)])
+  @@index([chainId, blockTimestamp(sort: Desc)])
+  @@index([sender])
+  @@index([chainId, contract])
+    @@map("liquidity_changes")
+}
+
+/// Aggregated position state. Covers both pool types:
+///   CL  — id `${poolRowId}-${owner}-${tickLower}-${tickUpper}-${salt}`
+///   Bin — id `${poolRowId}-${owner}-${binId}-${salt}`
+model LiquidityPosition {
+  id       String   @id
+  chainId  Int
+  poolId   String
+  poolType PoolType
+
+  owner String
+  salt  String
+
+  /// CL only.
+  tickLower Int?
+  /// CL only.
+  tickUpper Int?
+  /// CL only: current liquidity.
+  liquidity Decimal? @db.Decimal(78, 0)
+
+  /// Bin only.
+  binId  BigInt?
+  /// Bin only: shares held in the bin.
+  shares Decimal? @db.Decimal(78, 0)
+
+  createdAtBlock   BigInt
+  createdAt        DateTime @default(now())
+  lastUpdatedBlock BigInt
+  updatedAt        DateTime @updatedAt
+
+  dataSource DataSource @default(FIXTURE)
+
+  chain   Chain             @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  pool    Pool              @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  changes LiquidityChange[]
+
+  @@index([poolId])
+  @@index([owner])
+  @@index([chainId, owner])
+  @@map("liquidity_positions")
+}
+
+/// A donation straight to liquidity providers, bypassing a swap.
+model Donate {
+  id       String   @id
+  chainId  Int
+  poolId   String
+  poolType PoolType
+  hookId   String?
+
+  txHash         String
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  logIndex       Int
+  /// Emitting contract address, lowercased. Load-bearing: topic0 alone does NOT
+  /// identify an event here (both pool managers inherit ProtocolFees, so
+  /// ProtocolFeeUpdated / Paused / OwnershipTransferred collide across
+  /// contracts). Decoding and lookups key on (chainId, contract, topic0).
+  contract       String
+  /// topic0 of the source log, kept so a row can be traced back to its ABI.
+  topic0         String
+
+  sender  String
+  amount0 Decimal @db.Decimal(78, 0)
+  amount1 Decimal @db.Decimal(78, 0)
+  /// CL only.
+  tick    Int?
+  /// Bin only.
+  binId   Int?
+
+  dataSource DataSource @default(FIXTURE)
+  createdAt  DateTime   @default(now())
+
+  chain Chain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  pool  Pool  @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  hook  Hook? @relation(fields: [hookId], references: [id], onDelete: SetNull)
+
+  @@index([poolId, blockTimestamp(sort: Desc)])
+  @@index([chainId, blockTimestamp(sort: Desc)])
+  @@index([chainId, contract])
+    @@map("donates")
+}
+
+/// Any change to protocol-fee configuration, from either the pool managers or
+/// the LatchProtocolFeeController. `source` says which event produced the row;
+/// the nullable columns are the union of those events' payloads.
+model ProtocolFeeChange {
+  id            String                  @id
+  chainId       Int
+  source        ProtocolFeeChangeSource
+  /// Set when the change targets one pool.
+  poolId        String?
+  /// Set when the change came from a pool manager contract.
+  poolManagerId String?
+  txHash         String
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  logIndex       Int
+  /// Emitting contract address, lowercased. Load-bearing: topic0 alone does NOT
+  /// identify an event here (both pool managers inherit ProtocolFees, so
+  /// ProtocolFeeUpdated / Paused / OwnershipTransferred collide across
+  /// contracts). Decoding and lookups key on (chainId, contract, topic0).
+  contract       String
+  /// topic0 of the source log, kept so a row can be traced back to its ABI.
+  topic0         String
+
+  /// Packed uint24 protocol fee (core ProtocolFeeUpdated).
+  protocolFeeRaw        Int?
+  protocolFeeZeroForOne Int?
+  protocolFeeOneForZero Int?
+  previousProtocolFeeRaw Int?
+  /// Controller events: whether the override is being set or cleared.
+  isSet                 Boolean?
+  /// TierFeeUpdated: the LP fee tier the override applies to.
+  lpFeeTier             Int?
+  /// FeesDisabledSet.
+  disabled              Boolean?
+  /// ProtocolFeeControllerUpdated.
+  controller            String?
+
+  dataSource DataSource @default(FIXTURE)
+  createdAt  DateTime   @default(now())
+
+  chain       Chain        @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  pool        Pool?        @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  poolManager PoolManager? @relation(fields: [poolManagerId], references: [id], onDelete: SetNull)
+
+  @@index([chainId, blockTimestamp(sort: Desc)])
+  @@index([poolId, blockTimestamp(sort: Desc)])
+  @@index([source])
+  @@index([chainId, contract])
+    @@map("protocol_fee_changes")
+}
+
+/// A dynamic LP fee update pushed by a hook (`DynamicLPFeeUpdated`).
+model DynamicLpFeeUpdate {
+  id      String @id
+  chainId Int
+  poolId  String
+  hookId  String?
+
+  txHash         String
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  logIndex       Int
+  /// Emitting contract address, lowercased. Load-bearing: topic0 alone does NOT
+  /// identify an event here (both pool managers inherit ProtocolFees, so
+  /// ProtocolFeeUpdated / Paused / OwnershipTransferred collide across
+  /// contracts). Decoding and lookups key on (chainId, contract, topic0).
+  contract       String
+  /// topic0 of the source log, kept so a row can be traced back to its ABI.
+  topic0         String
+
+  previousLpFee Int?
+  dynamicLpFee  Int
+
+  dataSource DataSource @default(FIXTURE)
+  createdAt  DateTime   @default(now())
+
+  chain Chain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  pool  Pool  @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  hook  Hook? @relation(fields: [hookId], references: [id], onDelete: SetNull)
+
+  @@index([poolId, blockTimestamp(sort: Desc)])
+  @@index([chainId, blockTimestamp(sort: Desc)])
+  @@index([chainId, contract])
+    @@map("dynamic_lp_fee_updates")
+}
+
+/// `Vault.AppRegistered(address indexed app)` — irreversible in the contract,
+/// so this table is append-only history of who may move funds.
+model AppRegistration {
+  id      String @id
+  chainId Int
+  vaultId String
+  app     String
+
+  txHash         String
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  logIndex       Int
+  /// Emitting contract address, lowercased. Load-bearing: topic0 alone does NOT
+  /// identify an event here (both pool managers inherit ProtocolFees, so
+  /// ProtocolFeeUpdated / Paused / OwnershipTransferred collide across
+  /// contracts). Decoding and lookups key on (chainId, contract, topic0).
+  contract       String
+  /// topic0 of the source log, kept so a row can be traced back to its ABI.
+  topic0         String
+
+  dataSource DataSource @default(FIXTURE)
+  createdAt  DateTime   @default(now())
+
+  chain Chain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  vault Vault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+
+  @@index([chainId, blockTimestamp(sort: Desc)])
+  @@index([app])
+  @@index([chainId, contract])
+    @@map("app_registrations")
+}
+
+/// Vault claim-token events: Transfer, Approval, OperatorSet. One table with a
+/// discriminator rather than three near-identical ones; the nullable columns
+/// are the union of the three payloads.
+model VaultTokenEvent {
+  id      String              @id
+  chainId Int
+  kind    VaultTokenEventKind
+
+  txHash         String
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  logIndex       Int
+  /// Emitting contract address, lowercased. Load-bearing: topic0 alone does NOT
+  /// identify an event here (both pool managers inherit ProtocolFees, so
+  /// ProtocolFeeUpdated / Paused / OwnershipTransferred collide across
+  /// contracts). Decoding and lookups key on (chainId, contract, topic0).
+  contract       String
+  /// topic0 of the source log, kept so a row can be traced back to its ABI.
+  topic0         String
+
+  /// TRANSFER
+  caller   String?
+  from     String?
+  to       String?
+  /// APPROVAL
+  owner    String?
+  spender  String?
+  /// OPERATOR_SET
+  operator String?
+  approved Boolean?
+  /// TRANSFER, APPROVAL
+  currency String?
+  amount   Decimal? @db.Decimal(78, 0)
+
+  dataSource DataSource @default(FIXTURE)
+  createdAt  DateTime   @default(now())
+
+  chain Chain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+
+  @@index([chainId, blockTimestamp(sort: Desc)])
+  @@index([kind])
+  @@index([currency])
+  @@index([chainId, contract])
+    @@map("vault_token_events")
+}
+
+// ---------------------------------------------------------------------------
+// Ingestion bookkeeping
+// ---------------------------------------------------------------------------
+
+/// How far ingestion has read for one (chain, contract) pair. The unit of
+/// resumability: a crashed backfill restarts from here, not from startBlock.
+model IngestionCursor {
+  id       String @id
+  chainId  Int
+  /// Contract address the cursor tracks, lowercased.
+  contract String
+  /// Human label, e.g. "CLPoolManager".
+  label    String
+
+  lastProcessedBlock BigInt   @default(0)
+  lastRunAt          DateTime?
+  /// Provider kind that last advanced this cursor: "fixture" or "rpc".
+  providerKind       String   @default("fixture")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chain Chain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+
+  @@unique([chainId, contract])
+  @@index([chainId])
+  @@map("ingestion_cursors")
+}
+
+/// Audit record for one ingestion job. Makes the fixture/live boundary visible
+/// in the data: `providerKind` says which chain-data provider produced the rows.
+model IngestionRun {
+  id           String             @id @default(cuid())
+  chainId      Int
+  jobId        String?
+  jobName      String
+  providerKind String
+  status       IngestionRunStatus @default(RUNNING)
+
+  fromBlock     BigInt
+  toBlock       BigInt
+  logsSeen      Int      @default(0)
+  logsDecoded   Int      @default(0)
+  logsSkipped   Int      @default(0)
+  entitiesWritten Int    @default(0)
+  error         String?
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  chain Chain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+
+  @@index([chainId, startedAt(sort: Desc)])
+  @@index([status])
+  @@map("ingestion_runs")
+}
