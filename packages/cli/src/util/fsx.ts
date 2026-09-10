@@ -33,12 +33,6 @@ export function posixRelative(from: string, to: string): string {
   return posix.length === 0 ? "." : posix;
 }
 
-/** `posixRelative` with a trailing slash, which is what a remapping target needs. */
-export function posixRelativeDir(from: string, to: string): string {
-  const rel = posixRelative(from, to);
-  return rel.endsWith("/") ? rel : `${rel}/`;
-}
-
 /** How many `..` segments a relative path may have before an absolute one is clearer. */
 const MAX_PARENT_HOPS = 6;
 

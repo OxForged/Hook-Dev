@@ -73,17 +73,34 @@ contract LatchProtocolFeeController is IProtocolFeeController, Ownable2Step {
     /// each pool individually. Does not touch already-accrued fees.
     bool public feesDisabled;
 
+    /// @notice Address that may switch fees OFF immediately, and do nothing else.
+    /// @dev Delay belongs on privilege escalation, never on privilege reduction. If the only
+    /// route to disabling fees runs through the governance timelock, the protocol keeps charging
+    /// throughout an incident. The guardian closes that gap without widening the attack surface:
+    /// it can only ever make the protocol take LESS. Re-enabling, changing any fee, and moving
+    /// the guardian itself all remain owner-only and therefore timelocked.
+    address public guardian;
+
     event DefaultFeeUpdated(uint16 zeroForOne, uint16 oneForZero);
     event PoolFeeUpdated(PoolId indexed poolId, bool isSet, uint16 zeroForOne, uint16 oneForZero);
     event TierFeeUpdated(uint24 indexed lpFeeTier, bool isSet, uint16 zeroForOne, uint16 oneForZero);
     event DynamicFeeUpdated(bool isSet, uint16 zeroForOne, uint16 oneForZero);
     event FeesDisabledSet(bool disabled);
+    event GuardianUpdated(address indexed previousGuardian, address indexed newGuardian);
+    event EmergencyFeesDisabled(address indexed caller);
 
     /// @notice A configured fee exceeds the 0.4% cap enforced by core
     error FeeExceedsMaximum(uint16 fee, uint16 maximum);
 
-    /// @param owner_ Should be the governance multisig/timelock, never an EOA on a live chain.
-    constructor(address owner_) Ownable(owner_) {
+    /// @notice Caller is neither the guardian nor the owner
+    error NotGuardianOrOwner();
+
+    /// @param owner_ Should be the governance timelock, never an EOA on a live chain.
+    /// @param guardian_ May disable fees instantly during an incident. May be address(0) to
+    /// start with no guardian; the owner can appoint one later.
+    constructor(address owner_, address guardian_) Ownable(owner_) {
+        guardian = guardian_;
+        emit GuardianUpdated(address(0), guardian_);
         _defaultFee = FeeConfig({isSet: true, zeroForOne: DEFAULT_FEE_PIPS, oneForZero: DEFAULT_FEE_PIPS});
         emit DefaultFeeUpdated(DEFAULT_FEE_PIPS, DEFAULT_FEE_PIPS);
     }
@@ -160,6 +177,25 @@ contract LatchProtocolFeeController is IProtocolFeeController, Ownable2Step {
     function setFeesDisabled(bool disabled) external onlyOwner {
         feesDisabled = disabled;
         emit FeesDisabledSet(disabled);
+    }
+
+    /// @notice Switch every pool to a zero protocol fee immediately. One-way.
+    /// @dev Callable by the guardian or the owner. There is deliberately no guardian path back:
+    /// re-enabling fees is an escalation and goes through `setFeesDisabled(false)`, which is
+    /// owner-only and therefore timelocked. A compromised guardian can cost the protocol revenue
+    /// and nothing else — it cannot raise a fee, retarget one, or change who controls this
+    /// contract.
+    function emergencyDisableFees() external {
+        if (msg.sender != guardian && msg.sender != owner()) revert NotGuardianOrOwner();
+        feesDisabled = true;
+        emit FeesDisabledSet(true);
+        emit EmergencyFeesDisabled(msg.sender);
+    }
+
+    /// @notice Appoint or remove the guardian. Owner-only, so timelocked.
+    function setGuardian(address newGuardian) external onlyOwner {
+        emit GuardianUpdated(guardian, newGuardian);
+        guardian = newGuardian;
     }
 
     function _validate(uint16 fee) private pure {

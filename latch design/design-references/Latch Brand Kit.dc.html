@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="icon" type="image/png" href="assets/brand/favicon-512.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #04060c; color: #e4ecf9; font-family: "IBM Plex Sans", system-ui, sans-serif; }
+  a { color: #4a9bff; text-decoration: none; }
+  a:hover { color: #8fc2ff; }
+  ::selection { background: #1a7fff; color: #fff; }
+</style>
+</helmet>
+
+<div style="background:#04060c;color:#e4ecf9;overflow-x:hidden">
+
+  <header style="position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px 28px;background:rgba(4,6,12,.85);backdrop-filter:blur(14px);border-bottom:1px solid #131c2e">
+    <div style="display:flex;align-items:center;gap:11px">
+      <img src="assets/brand/latch-mark-transparent.png" alt="Latch Protocol" style="height:30px;width:auto" />
+      <div style="display:flex;flex-direction:column;gap:2px;line-height:1">
+        <span style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:19px;letter-spacing:.14em;color:#fff">LATCH</span>
+        <span style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:9.5px;letter-spacing:.3em;color:#2b8bff">PROTOCOL</span>
+      </div>
+    </div>
+    <nav style="display:flex;align-items:center;gap:26px;font-size:14px;color:#93a3bd">
+      <a href="Latch Landing.dc.html" style="color:#93a3bd">Home</a>
+      <a href="#logo" style="color:#4a9bff;font-weight:500">Brand Kit</a>
+      <a href="#color" style="color:#93a3bd">Color</a>
+      <a href="#type" style="color:#93a3bd">Type</a>
+      <a href="#embed" style="color:#93a3bd">Embed</a>
+      <a href="Latch Docs.dc.html" style="color:#93a3bd">Docs</a>
+      <a href="Latch Dapp.dc.html" style="color:#93a3bd">Launch App</a>
+    </nav>
+  </header>
+
+  <section style="max-width:1180px;margin:0 auto;padding:72px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">BRAND KIT · V1</div>
+    <h1 style="margin:18px 0 0;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(34px,4.2vw,58px);line-height:1.05">Latch Protocol<br /><span style="color:#2b8bff">assets and usage.</span></h1>
+    <p style="max-width:620px;margin:20px 0 0;font-size:16.5px;line-height:1.62;color:#96a6c0;text-wrap:pretty">Logo, icon, favicon, social art and the Powered By badge — every file in transparent PNG and SVG. Use these as shipped; do not redraw, recolor or stretch the mark.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:26px">
+      <a href="assets/brand/latch-lockup-transparent.png" download="" style="padding:13px 24px;border-radius:999px;background:linear-gradient(180deg,#2b8bff,#0a63e0);color:#fff;font-weight:600;font-size:14.5px;box-shadow:0 10px 30px rgba(26,127,255,.3)">Download primary logo</a>
+      <a href="#usage" style="padding:13px 24px;border-radius:999px;border:1px solid #24314c;color:#cfdcf0;font-weight:600;font-size:14.5px">Usage rules</a>
+    </div>
+  </section>
+
+  <section id="logo" style="max-width:1180px;margin:0 auto;padding:76px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">LOGO</div>
+    <h2 style="margin:14px 0 26px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(26px,3vw,38px)">Primary lockup, mark and wordmark.</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px">
+      <sc-for list="{{ logos }}" as="a" hint-placeholder-count="6">
+        <div style="display:flex;flex-direction:column;border:1px solid #16223a;border-radius:18px;background:#070c17;overflow:hidden">
+          <div style="{{ a.tile }}">
+            <img src="{{ a.src }}" alt="{{ a.name }}" style="{{ a.imgStyle }}" />
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-top:1px solid #16223a">
+            <div style="min-width:0">
+              <div style="font-size:14.5px;font-weight:500">{{ a.name }}</div>
+              <div style="margin-top:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#61789c">{{ a.meta }}</div>
+            </div>
+            <div style="display:flex;gap:8px;margin-left:auto">
+              <a href="{{ a.png }}" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">PNG</a>
+              <a href="{{ a.svg }}" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">SVG</a>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section style="max-width:1180px;margin:0 auto;padding:76px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">ICON &amp; FAVICON</div>
+    <h2 style="margin:14px 0 26px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(26px,3vw,38px)">App icon and favicon set.</h2>
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:18px">
+      <div style="display:flex;flex-direction:column;gap:14px;padding:26px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <img src="assets/brand/app-icon-1024.png" alt="Latch app icon" style="width:168px;height:168px;border-radius:38px" />
+        <div style="font-size:14.5px;font-weight:500">App icon</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#61789c">1024×1024 PNG · rounded square, blue rim</div>
+        <a href="assets/brand/app-icon-1024.png" download="" style="align-self:flex-start;padding:8px 14px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">Download PNG</a>
+      </div>
+      <div style="padding:26px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:#61789c">TRANSPARENT FAVICONS</div>
+        <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:24px;margin-top:24px">
+          <sc-for list="{{ favicons }}" as="f" hint-placeholder-count="5">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+              <div style="{{ f.box }}">
+                <img src="{{ f.src }}" alt="{{ f.label }}" style="{{ f.img }}" />
+              </div>
+              <a href="{{ f.src }}" download="" style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#7f92ad">{{ f.label }}</a>
+            </div>
+          </sc-for>
+        </div>
+        <div style="margin-top:26px;padding-top:22px;border-top:1px solid #16223a;font-size:14px;line-height:1.6;color:#8a9bb6">Scalable <a href="assets/brand/favicon.svg" download="">favicon.svg</a> ships alongside the raster set. Serve the SVG first and 180×180 as the Apple touch icon.</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="max-width:1180px;margin:0 auto;padding:76px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">SOCIAL</div>
+    <h2 style="margin:14px 0 26px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(26px,3vw,38px)">X banner and profile picture.</h2>
+    <div style="border:1px solid #16223a;border-radius:18px;background:#070c17;overflow:hidden">
+      <img src="assets/brand/x-banner-1500x500-dark.png" alt="Latch Protocol X banner" style="display:block;width:100%;height:auto" />
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:16px 20px;border-top:1px solid #16223a">
+        <div style="font-size:14.5px;font-weight:500">X / Twitter banner</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#61789c">1500×500 @2x · dark and transparent</div>
+        <div style="display:flex;gap:8px;margin-left:auto">
+          <a href="assets/brand/x-banner-1500x500-dark.png" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">DARK PNG</a>
+          <a href="assets/brand/x-banner-1500x500-transparent.png" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">TRANSPARENT PNG</a>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:18px;border:1px solid #16223a;border-radius:18px;background:#070c17;overflow:hidden">
+      <img src="assets/brand/og-1200x630.png" alt="Latch Protocol share image" style="display:block;width:100%;height:auto" />
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:16px 20px;border-top:1px solid #16223a">
+        <div style="font-size:14.5px;font-weight:500">OG / share image</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#61789c">1200×630 @2x · link previews, Twitter card</div>
+        <div style="display:flex;gap:8px;margin-left:auto">
+          <a href="assets/brand/og-1200x630.png" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">DARK PNG</a>
+          <a href="assets/brand/og-1200x630-transparent.png" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">TRANSPARENT PNG</a>
+        </div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:18px">
+      <div style="display:flex;align-items:center;gap:20px;padding:22px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <img src="assets/brand/pfp-800-dark.png" alt="Latch profile picture" style="width:104px;height:104px;border-radius:50%" />
+        <div style="min-width:0">
+          <div style="font-size:14.5px;font-weight:500">Profile picture</div>
+          <div style="margin-top:4px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#61789c">800×800 · crops safely to a circle</div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <a href="assets/brand/pfp-800-dark.png" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">DARK</a>
+            <a href="assets/brand/pfp-800-transparent.png" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">TRANSPARENT</a>
+          </div>
+        </div>
+      </div>
+      <div style="padding:22px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:#61789c">SAFE AREA</div>
+        <div style="margin-top:14px;font-size:14px;line-height:1.65;color:#8a9bb6;text-wrap:pretty">Keep the mark inside the centre 60% of the banner's height. Profile-picture overlap on X sits at the lower left of the banner, so nothing critical goes there.</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="max-width:1180px;margin:0 auto;padding:76px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">PARTNER BADGE</div>
+    <h2 style="margin:14px 0 8px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(26px,3vw,38px)">Powered By Latch Protocol.</h2>
+    <p style="max-width:620px;margin:0 0 26px;font-size:15.5px;line-height:1.62;color:#96a6c0">For any protocol running a Latch. Two inks, both on transparent grounds — pick the one that contrasts with your surface.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">
+      <div style="border:1px solid #16223a;border-radius:18px;overflow:hidden;background:#070c17">
+        <div style="display:grid;place-items:center;padding:46px 26px;background:#04060c">
+          <img src="assets/brand/powered-by-latch-light.png" alt="Powered by Latch Protocol" style="width:min(320px,84%);height:auto" />
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-top:1px solid #16223a">
+          <div style="font-size:14px">Light ink · for dark surfaces</div>
+          <div style="display:flex;gap:8px;margin-left:auto">
+            <a href="assets/brand/powered-by-latch-light.png" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">PNG</a>
+            <a href="assets/brand/powered-by-latch-light.svg" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">SVG</a>
+          </div>
+        </div>
+      </div>
+      <div style="border:1px solid #16223a;border-radius:18px;overflow:hidden;background:#070c17">
+        <div style="display:grid;place-items:center;padding:46px 26px;background:#eef2f8">
+          <img src="assets/brand/powered-by-latch-dark.png" alt="Powered by Latch Protocol" style="width:min(320px,84%);height:auto" />
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:16px 18px;border-top:1px solid #16223a">
+          <div style="font-size:14px">Dark ink · for light surfaces</div>
+          <div style="display:flex;gap:8px;margin-left:auto">
+            <a href="assets/brand/powered-by-latch-dark.png" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">PNG</a>
+            <a href="assets/brand/powered-by-latch-dark.svg" download="" style="padding:7px 12px;border:1px solid #24314c;border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cfdcf0">SVG</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="color" style="max-width:1180px;margin:0 auto;padding:76px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">COLOR</div>
+    <h2 style="margin:14px 0 26px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(26px,3vw,38px)">Palette.</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px">
+      <sc-for list="{{ palette }}" as="c" hint-placeholder-count="7">
+        <div style="border:1px solid #16223a;border-radius:16px;overflow:hidden;background:#070c17">
+          <div style="{{ c.swatch }}"></div>
+          <div style="padding:14px 16px">
+            <div style="font-size:14px;font-weight:500">{{ c.name }}</div>
+            <div style="margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#7f92ad">{{ c.hex }}</div>
+            <div style="margin-top:3px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#4c5f7d">{{ c.role }}</div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="type" style="max-width:1180px;margin:0 auto;padding:76px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">TYPOGRAPHY</div>
+    <h2 style="margin:14px 0 26px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(26px,3vw,38px)">Two families, one mono.</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px">
+      <div style="padding:26px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:44px;line-height:1">Aa</div>
+        <div style="margin-top:18px;font-size:14.5px;font-weight:500">Chakra Petch</div>
+        <div style="margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#61789c">600 / 700 · headlines, wordmark support</div>
+      </div>
+      <div style="padding:26px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="font-family:'IBM Plex Sans',sans-serif;font-weight:400;font-size:44px;line-height:1">Aa</div>
+        <div style="margin-top:18px;font-size:14.5px;font-weight:500">IBM Plex Sans</div>
+        <div style="margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#61789c">400 / 500 · body, UI</div>
+      </div>
+      <div style="padding:26px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:44px;line-height:1">Aa</div>
+        <div style="margin-top:18px;font-size:14.5px;font-weight:500">IBM Plex Mono</div>
+        <div style="margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#61789c">400 / 500 · labels, code, addresses</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="usage" style="max-width:1180px;margin:0 auto;padding:76px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">USAGE</div>
+    <h2 style="margin:14px 0 26px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(26px,3vw,38px)">Clear space and limits.</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">
+      <div style="padding:26px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="position:relative;padding:26px;border:1px dashed #24406b;border-radius:12px">
+          <img src="assets/brand/latch-lockup-transparent.png" alt="Clear space" style="display:block;width:100%;height:auto" />
+        </div>
+        <div style="margin-top:16px;font-size:14px;line-height:1.6;color:#8a9bb6">Clear space equals the height of the hook's eye on all four sides.</div>
+      </div>
+      <div style="padding:26px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:#61789c">MINIMUM SIZES</div>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:18px;font-size:14px;color:#a9b9d1">
+          <div style="display:flex;justify-content:space-between;gap:12px">Full lockup<span style="font-family:'IBM Plex Mono',monospace;color:#7f92ad">120px wide</span></div>
+          <div style="display:flex;justify-content:space-between;gap:12px">Mark only<span style="font-family:'IBM Plex Mono',monospace;color:#7f92ad">24px wide</span></div>
+          <div style="display:flex;justify-content:space-between;gap:12px">Powered By badge<span style="font-family:'IBM Plex Mono',monospace;color:#7f92ad">160px wide</span></div>
+        </div>
+      </div>
+      <div style="padding:26px;border:1px solid #16223a;border-radius:18px;background:#070c17">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:#e06a6a">DON'T</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px;font-size:14px;line-height:1.5;color:#a9b9d1">
+          <div>Recolor the mark outside blue and white</div>
+          <div>Stretch, rotate or outline it</div>
+          <div>Add glow, bevel or drop shadow to the lockup</div>
+          <div>Place the mark on a busy photo without a solid plate</div>
+          <div>Rebuild the wordmark in another typeface</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="embed" style="max-width:1180px;margin:0 auto;padding:76px 40px 0">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">WEB EMBED</div>
+    <h2 style="margin:14px 0 26px;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(26px,3vw,38px)">Drop-in snippets.</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px">
+      <div style="border:1px solid #16223a;border-radius:18px;background:#05080f;overflow:hidden">
+        <div style="padding:12px 18px;border-bottom:1px solid #16223a;background:#070c17;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#6d80a0">favicon · head</div>
+        <pre style="margin:0;padding:20px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.9;color:#c3d3ea;white-space:pre-wrap;word-break:break-word"><div><span style="color:#c56bff">&lt;link</span> rel=<span style="color:#5fd39a">"icon"</span> href=<span style="color:#5fd39a">"/favicon.svg"</span> type=<span style="color:#5fd39a">"image/svg+xml"</span><span style="color:#c56bff">&gt;</span></div><div><span style="color:#c56bff">&lt;link</span> rel=<span style="color:#5fd39a">"apple-touch-icon"</span> href=<span style="color:#5fd39a">"/favicon-180.png"</span><span style="color:#c56bff">&gt;</span></div></pre>
+      </div>
+      <div style="border:1px solid #16223a;border-radius:18px;background:#05080f;overflow:hidden">
+        <div style="padding:12px 18px;border-bottom:1px solid #16223a;background:#070c17;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#6d80a0">og image · head</div>
+        <pre style="margin:0;padding:20px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.9;color:#c3d3ea;white-space:pre-wrap;word-break:break-word"><div><span style="color:#c56bff">&lt;meta</span> property=<span style="color:#5fd39a">"og:image"</span> content=<span style="color:#5fd39a">"/og.png"</span><span style="color:#c56bff">&gt;</span></div><div><span style="color:#c56bff">&lt;meta</span> name=<span style="color:#5fd39a">"twitter:card"</span></div><div style="padding-left:18px">content=<span style="color:#5fd39a">"summary_large_image"</span><span style="color:#c56bff">&gt;</span></div></pre>
+      </div>
+    </div>
+  </section>
+
+  <footer style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;max-width:1180px;margin:76px auto 0;padding:36px 40px 64px;border-top:1px solid #101a2c">
+    <div style="display:flex;align-items:center;gap:13px">
+      <img src="assets/brand/latch-mark-transparent.png" alt="Latch Protocol" style="height:34px;width:auto" />
+      <div style="display:flex;flex-direction:column;gap:3px;line-height:1">
+        <span style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:20px;letter-spacing:.14em;color:#fff">LATCH</span>
+        <span style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:10px;letter-spacing:.3em;color:#2b8bff">PROTOCOL</span>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:24px;font-size:13.5px;color:#7f92ad">
+      <a href="Latch Landing.dc.html" style="color:#7f92ad">Home</a>
+      <a href="#logo" style="color:#7f92ad">Assets</a>
+      <a href="#usage" style="color:#7f92ad">Usage</a>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#4c5f7d;white-space:nowrap">© 2026 LATCH PROTOCOL</span>
+    </div>
+  </footer>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1180}}">
+class Component extends DCLogic {
+  renderVals() {
+    const dark = { display: "grid", placeItems: "center", padding: "42px 26px", background: "#04060c", minHeight: 150 };
+    const glow = { display: "grid", placeItems: "center", padding: "42px 26px", background: "linear-gradient(140deg,#061024,#04070f)", minHeight: 150 };
+    const light = { display: "grid", placeItems: "center", padding: "42px 26px", background: "#eef2f8", minHeight: 150 };
+    return {
+      logos: [
+        { name: "Primary lockup", meta: "transparent · mark + wordmark", src: "assets/brand/latch-lockup-transparent.png", png: "assets/brand/latch-lockup-transparent.png", svg: "assets/brand/latch-lockup.svg", tile: dark, imgStyle: { width: "min(300px,90%)", height: "auto" } },
+        { name: "Lockup on light", meta: "dark ink for light surfaces", src: "assets/brand/latch-lockup-onlight.png", png: "assets/brand/latch-lockup-onlight.png", svg: "assets/brand/latch-lockup.svg", tile: light, imgStyle: { width: "min(300px,90%)", height: "auto" } },
+        { name: "Mark", meta: "white + blue · transparent", src: "assets/brand/latch-mark-transparent.png", png: "assets/brand/latch-mark-transparent.png", svg: "assets/brand/latch-mark.svg", tile: glow, imgStyle: { height: 108, width: "auto" } },
+        { name: "Mark · single blue", meta: "one-color applications", src: "assets/brand/latch-mark-blue.png", png: "assets/brand/latch-mark-blue.png", svg: "assets/brand/latch-mark.svg", tile: dark, imgStyle: { height: 108, width: "auto" } },
+        { name: "Wordmark", meta: "no mark · wide placements", src: "assets/brand/latch-wordmark-transparent.png", png: "assets/brand/latch-wordmark-transparent.png", svg: "assets/brand/latch-wordmark.svg", tile: dark, imgStyle: { width: "min(260px,86%)", height: "auto" } },
+        { name: "App icon", meta: "1024 · rounded square", src: "assets/brand/app-icon-1024.png", png: "assets/brand/app-icon-1024.png", svg: "assets/brand/favicon.svg", tile: dark, imgStyle: { width: 132, height: 132, borderRadius: 30 } }
+      ],
+      favicons: [16, 32, 64, 180, 512].map(s => ({
+        label: s + "px",
+        src: "assets/brand/favicon-" + s + ".png",
+        box: { display: "grid", placeItems: "center", width: Math.min(s, 72) + 22, height: Math.min(s, 72) + 22, border: "1px solid #1b2942", borderRadius: 10, background: "#04060c" },
+        img: { width: Math.min(s, 72), height: Math.min(s, 72) }
+      })),
+      palette: [
+        { name: "Latch Blue", hex: "#2B8BFF", role: "primary · CTA, accents", swatch: { height: 92, background: "#2b8bff" } },
+        { name: "Deep Blue", hex: "#0A63E0", role: "gradient end, pressed", swatch: { height: 92, background: "#0a63e0" } },
+        { name: "Signal Blue", hex: "#4A9BFF", role: "links, secondary data", swatch: { height: 92, background: "#4a9bff" } },
+        { name: "Void", hex: "#04060C", role: "page background", swatch: { height: 92, background: "#04060c", borderBottom: "1px solid #16223a" } },
+        { name: "Panel", hex: "#070C17", role: "cards, surfaces", swatch: { height: 92, background: "#070c17", borderBottom: "1px solid #16223a" } },
+        { name: "Hairline", hex: "#16223A", role: "borders, dividers", swatch: { height: 92, background: "#16223a" } },
+        { name: "Ink", hex: "#E4ECF9", role: "primary text", swatch: { height: 92, background: "#e4ecf9" } },
+        { name: "Muted Ink", hex: "#8A9BB6", role: "body text, labels", swatch: { height: 92, background: "#8a9bb6" } }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

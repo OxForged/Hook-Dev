@@ -13,15 +13,6 @@ export function isInteractive(): boolean {
   return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
-export function assertInteractive(what: string, flag: string): void {
-  if (!isInteractive()) {
-    throw new UserError(
-      `cannot prompt for ${what}: stdin is not a terminal`,
-      `pass ${flag} (or --yes to accept every default) when running non-interactively`,
-    );
-  }
-}
-
 async function withReadline<T>(fn: (rl: ReturnType<typeof createInterface>) => Promise<T>): Promise<T> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -84,6 +75,47 @@ export async function askChoice<T>(
 }
 
 /**
+ * Parses a multi-select answer into zero-based indices.
+ *
+ * Accepts `1,3,5`, ranges (`1-4`), `all`, `none`, or an empty line meaning
+ * "keep what is pre-selected". Returns `undefined` when the answer cannot be
+ * read, so the caller can re-ask instead of guessing.
+ *
+ * Split out from the prompt so it can be tested without a terminal.
+ */
+export function parseSelection(
+  raw: string,
+  count: number,
+  preselected: ReadonlySet<number>,
+): number[] | undefined {
+  const answer = raw.trim().toLowerCase();
+
+  if (answer.length === 0) return [...preselected].filter((i) => i >= 0 && i < count).sort((a, b) => a - b);
+  if (answer === "none") return [];
+  if (answer === "all") return Array.from({ length: count }, (_, i) => i);
+
+  const picked = new Set<number>();
+  for (const part of answer
+    .split(",")
+    .map((piece) => piece.trim())
+    .filter((piece) => piece.length > 0)) {
+    const range = /^(\d+)\s*-\s*(\d+)$/.exec(part);
+    if (range !== null) {
+      const from = Number.parseInt(range[1] as string, 10);
+      const to = Number.parseInt(range[2] as string, 10);
+      if (from < 1 || to > count || from > to) return undefined;
+      for (let i = from; i <= to; i++) picked.add(i - 1);
+      continue;
+    }
+    const index = Number.parseInt(part, 10);
+    if (!Number.isInteger(index) || String(index) !== part || index < 1 || index > count) return undefined;
+    picked.add(index - 1);
+  }
+
+  return [...picked].sort((a, b) => a - b);
+}
+
+/**
  * Numbered multi-select. Accepts `1,3,5`, ranges (`1-4`), `all`, `none`, or an
  * empty line to keep the pre-selected set.
  */
@@ -104,38 +136,11 @@ export async function askMultiSelect<T>(
 
   return withReadline(async (rl) => {
     for (;;) {
-      const raw = (await rl.question(`${style.dim("select")} `)).trim().toLowerCase();
-
-      if (raw.length === 0) {
-        return choices.filter((_, index) => preselected.has(index)).map((choice) => choice.value);
-      }
-      if (raw === "none") return [];
-      if (raw === "all") return choices.map((choice) => choice.value);
-
-      const picked = new Set<number>();
-      let valid = true;
-      for (const part of raw.split(",").map((piece) => piece.trim()).filter((piece) => piece.length > 0)) {
-        const range = /^(\d+)\s*-\s*(\d+)$/.exec(part);
-        if (range !== null) {
-          const from = Number.parseInt(range[1] as string, 10);
-          const to = Number.parseInt(range[2] as string, 10);
-          if (from < 1 || to > choices.length || from > to) {
-            valid = false;
-            break;
-          }
-          for (let i = from; i <= to; i++) picked.add(i - 1);
-          continue;
-        }
-        const index = Number.parseInt(part, 10);
-        if (!Number.isInteger(index) || index < 1 || index > choices.length) {
-          valid = false;
-          break;
-        }
-        picked.add(index - 1);
-      }
-
-      if (valid) {
-        return choices.filter((_, index) => picked.has(index)).map((choice) => choice.value);
+      const raw = await rl.question(`${style.dim("select")} `);
+      const picked = parseSelection(raw, choices.length, preselected);
+      if (picked !== undefined) {
+        const indices = new Set(picked);
+        return choices.filter((_, index) => indices.has(index)).map((choice) => choice.value);
       }
       process.stdout.write(`${style.yellow("!")} could not read that; use numbers 1-${choices.length}\n`);
     }

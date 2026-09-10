@@ -99,7 +99,7 @@ export const CALLBACKS: Readonly<Partial<Record<PermissionName, CallbackSpec>>> 
     params: [SENDER, KEY, { type: "ICLPoolManager.SwapParams calldata", name: "params" }, HOOK_DATA],
     returns: "(bytes4, BeforeSwapDelta, uint24)",
     passthroughBody: "return _passthroughSwap();",
-    types: ["PoolKey", "ICLPoolManager", "BeforeSwapDelta", "ICLHooks"],
+    types: ["PoolKey", "ICLPoolManager", "BeforeSwapDelta", "BeforeSwapDeltaLibrary", "ICLHooks"],
   },
   afterSwap: {
     fn: "_afterSwap",
@@ -193,23 +193,63 @@ export function renderCallback(spec: CallbackSpec, impl: CallbackImpl | undefine
   return `${doc.length > 0 ? `${doc}\n` : ""}${header}\n${body}\n    }`;
 }
 
-/** Import statements for a set of Solidity type names. */
-const IMPORT_LINES: Readonly<Record<string, string>> = {
-  PoolKey: 'import {PoolKey} from "infinity-core/src/types/PoolKey.sol";',
-  ICLPoolManager: 'import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";',
-  ICLHooks: 'import {ICLHooks} from "infinity-core/src/pool-cl/interfaces/ICLHooks.sol";',
-  BalanceDelta: 'import {BalanceDelta} from "infinity-core/src/types/BalanceDelta.sol";',
-  BeforeSwapDelta:
-    'import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "infinity-core/src/types/BeforeSwapDelta.sol";',
-  LPFeeLibrary: 'import {LPFeeLibrary} from "infinity-core/src/libraries/LPFeeLibrary.sol";',
-  PoolId: 'import {PoolId, PoolIdLibrary} from "infinity-core/src/types/PoolId.sol";',
-  Currency: 'import {Currency} from "infinity-core/src/types/Currency.sol";',
+/**
+ * Where each Solidity symbol comes from.
+ *
+ * Symbols, not modules: `forge lint` flags an import that pulls in a name the
+ * file never uses, so `BeforeSwapDeltaLibrary` has to be requestable
+ * independently of `BeforeSwapDelta`.
+ */
+const IMPORT_SYMBOLS: Readonly<Record<string, string>> = {
+  PoolKey: "infinity-core/src/types/PoolKey.sol",
+  Currency: "infinity-core/src/types/Currency.sol",
+  PoolId: "infinity-core/src/types/PoolId.sol",
+  PoolIdLibrary: "infinity-core/src/types/PoolId.sol",
+  BalanceDelta: "infinity-core/src/types/BalanceDelta.sol",
+  BeforeSwapDelta: "infinity-core/src/types/BeforeSwapDelta.sol",
+  BeforeSwapDeltaLibrary: "infinity-core/src/types/BeforeSwapDelta.sol",
+  ICLPoolManager: "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol",
+  ICLHooks: "infinity-core/src/pool-cl/interfaces/ICLHooks.sol",
+  LPFeeLibrary: "infinity-core/src/libraries/LPFeeLibrary.sol",
+  BaseCLHook: "latch-hooks/src/base/BaseCLHook.sol",
 };
 
-/** Deterministic import block for the given type names. */
-export function renderImports(types: Iterable<string>): string {
-  const order = Object.keys(IMPORT_LINES);
-  const unique = [...new Set(types)].filter((type) => IMPORT_LINES[type] !== undefined);
-  unique.sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  return unique.map((type) => IMPORT_LINES[type] as string).join("\n");
+const SYMBOL_ORDER = Object.keys(IMPORT_SYMBOLS);
+
+/** True when `symbol` is a symbol this module knows how to import. */
+export function isKnownImport(symbol: string): boolean {
+  return IMPORT_SYMBOLS[symbol] !== undefined;
+}
+
+/**
+ * A deterministic import block for a set of symbols, one statement per module.
+ */
+export function renderImports(symbols: Iterable<string>): string {
+  const wanted = [...new Set(symbols)].filter(isKnownImport);
+  wanted.sort((a, b) => SYMBOL_ORDER.indexOf(a) - SYMBOL_ORDER.indexOf(b));
+
+  const byModule = new Map<string, string[]>();
+  for (const symbol of wanted) {
+    const module = IMPORT_SYMBOLS[symbol] as string;
+    const existing = byModule.get(module);
+    if (existing === undefined) byModule.set(module, [symbol]);
+    else existing.push(symbol);
+  }
+
+  return [...byModule.entries()]
+    .map(([module, names]) => `import {${names.join(", ")}} from "${module}";`)
+    .join("\n");
+}
+
+/**
+ * Drops symbols the generated source never mentions.
+ *
+ * The callback table lists the types each signature *can* need; whether a
+ * particular rendering actually uses one depends on the body a template
+ * supplied. Filtering on the finished text is both simpler and more accurate
+ * than tracking it through the generator - and keeps `forge lint` quiet about
+ * unused imports.
+ */
+export function usedSymbols(candidates: Iterable<string>, source: string): string[] {
+  return [...new Set(candidates)].filter((symbol) => new RegExp(`\\b${symbol}\\b`).test(source));
 }

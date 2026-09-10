@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="icon" type="image/png" href="assets/brand/favicon-512.png" />
+<meta property="og:image" content="assets/brand/og-1200x630.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #04060c; color: #e4ecf9; font-family: "IBM Plex Sans", system-ui, sans-serif; }
+  a { color: #4a9bff; text-decoration: none; }
+  a:hover { color: #8fc2ff; }
+  ::selection { background: #1a7fff; color: #fff; }
+  @keyframes dkfade { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+  @keyframes dkblip { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+  @keyframes dksheen { 0% { transform: translateX(-140%); } 60%,100% { transform: translateX(260%); } }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: .001s !important; } }
+</style>
+</helmet>
+
+<div style="background:#04060c;color:#e4ecf9">
+
+  <header style="position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px 28px;background:rgba(4,6,12,.86);backdrop-filter:blur(14px);border-bottom:1px solid #131c2e">
+    <div style="display:flex;align-items:center;gap:11px">
+      <img src="assets/brand/latch-mark-transparent.png" alt="Latch Protocol" style="height:28px;width:auto" />
+      <div style="display:flex;flex-direction:column;gap:2px;line-height:1">
+        <span style="font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:17px;letter-spacing:.14em;color:#fff">LATCH</span>
+        <span style="font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:8.5px;letter-spacing:.3em;color:#2b8bff">PROTOCOL</span>
+      </div>
+      <span style="margin-left:8px;padding:5px 10px;border:1px solid #1e4f96;border-radius:7px;background:rgba(16,50,102,.35);font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;color:#6fb2ff">DOCS</span>
+    </div>
+    <nav style="display:flex;align-items:center;gap:24px;font-size:14px;color:#93a3bd">
+      <a href="Latch Landing.dc.html" style="color:#93a3bd">Home</a>
+      <a href="#quickstart" style="color:#4a9bff;font-weight:500">Quickstart</a>
+      <a href="#interface" style="color:#93a3bd">Reference</a>
+      <a href="Latch Brand Kit.dc.html" style="color:#93a3bd">Brand Kit</a>
+      <a href="Latch Dapp.dc.html" style="position:relative;overflow:hidden;padding:9px 18px;border-radius:999px;background:linear-gradient(180deg,#2b8bff,#0a63e0);color:#fff;font-weight:600;font-size:13px;box-shadow:0 6px 20px rgba(26,127,255,.34)">Launch App<span style="position:absolute;top:0;left:0;width:40%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent);animation:dksheen 4.6s ease-in-out infinite;pointer-events:none"></span></a>
+    </nav>
+  </header>
+
+  <div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:34px;max-width:1400px;margin:0 auto;padding:34px 32px 90px">
+
+    <aside style="position:sticky;top:86px;flex:0 0 220px;display:flex;flex-direction:column;gap:22px;max-height:calc(100vh - 120px);overflow-y:auto">
+      <sc-for list="{{ docNav }}" as="group" hint-placeholder-count="4">
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;color:#4c5f7d">{{ group.title }}</div>
+          <div style="display:flex;flex-direction:column;gap:1px;margin-top:11px">
+            <sc-for list="{{ group.items }}" as="item" hint-placeholder-count="4">
+              <a href="{{ item.href }}" style="{{ item.style }}">{{ item.label }}</a>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <div style="padding-top:18px;border-top:1px solid #131f34">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;color:#4c5f7d">ON THIS PAGE</div>
+        <div style="display:flex;flex-direction:column;gap:9px;margin-top:11px">
+          <sc-for list="{{ toc }}" as="t" hint-placeholder-count="7">
+            <a href="{{ t.href }}" style="font-size:12.5px;line-height:1.45;color:#7f92ad">{{ t.label }}</a>
+          </sc-for>
+        </div>
+      </div>
+    </aside>
+
+    <main style="flex:1 1 540px;min-width:0">
+      <div style="animation:dkfade .6s cubic-bezier(.22,.61,.36,1) both">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:#3f8ff0">DEVELOPER QUICKSTART</div>
+        <h1 style="margin:16px 0 0;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:clamp(32px,3.8vw,50px);line-height:1.06">Ship your first Latch.</h1>
+        <p style="max-width:660px;margin:18px 0 0;font-size:16.5px;line-height:1.65;color:#96a6c0;text-wrap:pretty">A Latch is a contract that implements <code style="font-family:'IBM Plex Mono',monospace;font-size:14.5px;color:#8fc2ff">ILatch</code>, declares which callbacks it wants, and registers against the protocol registry. Pools then opt in. This page takes you from an empty repo to a registered latch on Base Sepolia.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:26px;margin-top:26px;padding:18px 22px;border:1px solid #16223a;border-radius:14px;background:#070c17">
+          <sc-for list="{{ facts }}" as="f" hint-placeholder-count="3">
+            <div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.16em;color:#4c5f7d;white-space:nowrap">{{ f.label }}</div>
+              <div style="margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e4ecf9;white-space:nowrap">{{ f.value }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <section id="install" style="margin-top:52px;animation:dkfade .6s cubic-bezier(.22,.61,.36,1) .06s both">
+        <h2 style="margin:0;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:26px">1 · Install</h2>
+        <p style="margin:12px 0 18px;font-size:15.5px;line-height:1.65;color:#96a6c0">The core interfaces and test helpers ship as one package. Foundry is the supported toolchain; Hardhat works with the same artifacts.</p>
+        <div style="border:1px solid #16223a;border-radius:14px;background:#05080f;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:9px;padding:11px 16px;border-bottom:1px solid #16223a;background:#070c17">
+            <span style="width:7px;height:7px;border-radius:99px;background:#5fd39a"></span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#6d80a0">shell</span>
+          </div>
+          <pre style="margin:0;padding:18px 20px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;line-height:1.9;color:#c3d3ea;white-space:pre-wrap;word-break:break-word"><div><span style="color:#5fd39a">forge</span> install latch-protocol/core</div><div><span style="color:#5fd39a">forge</span> remappings &gt; remappings.txt</div></pre>
+        </div>
+      </section>
+
+      <section id="quickstart" style="margin-top:52px;animation:dkfade .6s cubic-bezier(.22,.61,.36,1) .1s both">
+        <h2 style="margin:0;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:26px">2 · Write the latch</h2>
+        <p style="margin:12px 0 18px;font-size:15.5px;line-height:1.65;color:#96a6c0">Implement <code style="font-family:'IBM Plex Mono',monospace;font-size:14.5px;color:#8fc2ff">permissions()</code> to declare the callbacks you want, then implement only those callbacks. Anything you leave out is never called, so it costs no gas.</p>
+        <div style="border:1px solid #16223a;border-radius:14px;background:#05080f;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:9px;padding:11px 16px;border-bottom:1px solid #16223a;background:#070c17">
+            <span style="width:7px;height:7px;border-radius:99px;background:#2b8bff"></span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#6d80a0">src/FeeLatch.sol</span>
+          </div>
+          <pre style="margin:0;padding:18px 20px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;line-height:1.9;color:#c3d3ea;white-space:pre-wrap;word-break:break-word"><div><span style="color:#6d80a0">// SPDX-License-Identifier: MIT</span></div><div><span style="color:#c56bff">pragma solidity</span> ^0.8.26;</div><div style="height:.9em"></div><div><span style="color:#c56bff">import</span> {ILatch, PoolKey, SwapParams} <span style="color:#c56bff">from</span> <span style="color:#5fd39a">"@latch/core/ILatch.sol"</span>;</div><div><span style="color:#c56bff">import</span> {BEFORE_SWAP, AFTER_SWAP} <span style="color:#c56bff">from</span> <span style="color:#5fd39a">"@latch/core/Permissions.sol"</span>;</div><div style="height:.9em"></div><div><span style="color:#c56bff">contract</span> <span style="color:#ffd166">FeeLatch</span> <span style="color:#c56bff">is</span> <span style="color:#ffd166">ILatch</span> {</div><div style="padding-left:18px"><span style="color:#c56bff">uint24 constant</span> LOW = <span style="color:#5fd39a">500</span>;</div><div style="padding-left:18px"><span style="color:#c56bff">uint24 constant</span> HIGH = <span style="color:#5fd39a">3000</span>;</div><div style="height:.9em"></div><div style="padding-left:18px"><span style="color:#c56bff">function</span> <span style="color:#4a9bff">permissions</span>() <span style="color:#c56bff">external pure returns</span> (uint16) {</div><div style="padding-left:36px"><span style="color:#c56bff">return</span> BEFORE_SWAP | AFTER_SWAP;</div><div style="padding-left:18px">}</div><div style="height:.9em"></div><div style="padding-left:18px"><span style="color:#c56bff">function</span> <span style="color:#4a9bff">beforeSwap</span>(PoolKey <span style="color:#c56bff">calldata</span> key, SwapParams <span style="color:#c56bff">calldata</span> p)</div><div style="padding-left:36px"><span style="color:#c56bff">external override returns</span> (uint24 fee)</div><div style="padding-left:18px">{</div><div style="padding-left:36px">fee = volatility(key) &gt; p.threshold ? HIGH : LOW;</div><div style="padding-left:18px">}</div><div>}</div></pre>
+        </div>
+        <div style="display:flex;gap:14px;margin-top:16px;padding:16px 18px;border:1px solid #1e3f6f;border-radius:12px;background:rgba(12,32,62,.5)">
+          <span style="width:7px;height:7px;margin-top:7px;border-radius:99px;background:#2b8bff;flex:0 0 auto;animation:dkblip 2.4s ease-in-out infinite"></span>
+          <div style="font-size:14px;line-height:1.6;color:#a9b9d1">The registry reverts registration if <code style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#8fc2ff">permissions()</code> declares a callback the contract does not implement. Keep the bitmap and the implementation in sync.</div>
+        </div>
+      </section>
+
+      <section id="register" style="margin-top:52px;animation:dkfade .6s cubic-bezier(.22,.61,.36,1) .14s both">
+        <h2 style="margin:0;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:26px">3 · Simulate and register</h2>
+        <p style="margin:12px 0 18px;font-size:15.5px;line-height:1.65;color:#96a6c0">Simulation replays recent mainnet swaps against your latch and reports gas overhead and reverts. Registration is a single transaction.</p>
+        <div style="border:1px solid #16223a;border-radius:14px;background:#05080f;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:9px;padding:11px 16px;border-bottom:1px solid #16223a;background:#070c17">
+            <span style="width:7px;height:7px;border-radius:99px;background:#5fd39a"></span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#6d80a0">shell</span>
+          </div>
+          <pre style="margin:0;padding:18px 20px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;line-height:1.9;color:#c3d3ea;white-space:pre-wrap;word-break:break-word"><div><span style="color:#5fd39a">latch</span> simulate --contract FeeLatch --pool ETH/USDC --runs 1000</div><div><span style="color:#6d80a0">median overhead 8,412 gas · 0 reverts · bitmap 0x0003 ok</span></div><div style="height:.9em"></div><div><span style="color:#5fd39a">latch</span> register --network base-sepolia --budget 24000</div></pre>
+        </div>
+      </section>
+
+      <section id="interface" style="margin-top:52px;animation:dkfade .6s cubic-bezier(.22,.61,.36,1) .18s both">
+        <h2 style="margin:0;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:26px">Callback reference</h2>
+        <p style="margin:12px 0 18px;font-size:15.5px;line-height:1.65;color:#96a6c0">Six callbacks, each with a bit in the permission bitmap. Return values marked — are ignored.</p>
+        <div style="border:1px solid #16223a;border-radius:14px;background:#070c17;overflow:hidden">
+          <div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,.7fr) minmax(0,1.4fr);gap:14px;padding:13px 20px;border-bottom:1px solid #16223a;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.16em;color:#4c5f7d">
+            <span>CALLBACK</span>
+            <span>BIT</span>
+            <span>RETURNS</span>
+          </div>
+          <sc-for list="{{ callbacks }}" as="c" hint-placeholder-count="6">
+            <div style="{{ c.row }}">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#8fc2ff">{{ c.name }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#7f92ad">{{ c.bit }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#a9b9d1">{{ c.returns }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <section id="lifecycle" style="margin-top:52px;animation:dkfade .6s cubic-bezier(.22,.61,.36,1) .22s both">
+        <h2 style="margin:0;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:26px">Execution order</h2>
+        <p style="margin:12px 0 20px;font-size:15.5px;line-height:1.65;color:#96a6c0">Latches on one pool run in registration order. A revert isolates to the failing latch: it is skipped for that call and flagged in the registry.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+          <sc-for list="{{ lifecycle }}" as="l" hint-placeholder-count="5">
+            <div style="{{ l.card }}">
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;color:#3f8ff0">{{ l.step }}</div>
+              <div style="margin-top:10px;font-size:14px;line-height:1.5;color:#cfdcf0">{{ l.name }}</div>
+              <div style="margin-top:7px;font-size:12.5px;line-height:1.55;color:#7f92ad">{{ l.note }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <section id="errors" style="margin-top:52px;animation:dkfade .6s cubic-bezier(.22,.61,.36,1) .26s both">
+        <h2 style="margin:0;font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:26px">Common errors</h2>
+        <div style="display:flex;flex-direction:column;gap:0;margin-top:18px;border:1px solid #16223a;border-radius:14px;background:#070c17;overflow:hidden">
+          <sc-for list="{{ errors }}" as="e" hint-placeholder-count="4">
+            <div style="{{ e.row }}">
+              <div style="min-width:0">
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#e0a95f">{{ e.code }}</div>
+                <div style="margin-top:6px;font-size:13.5px;line-height:1.55;color:#a9b9d1">{{ e.fix }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <section id="next" style="margin-top:52px;animation:dkfade .6s cubic-bezier(.22,.61,.36,1) .3s both">
+        <div style="position:relative;overflow:hidden;padding:38px 34px;border:1px solid #1c3a68;border-radius:20px;background:linear-gradient(120deg,#061229,#04070f 72%)">
+          <div style="position:absolute;right:-10%;top:-60%;width:420px;height:420px;background:radial-gradient(closest-side,rgba(43,139,255,.26),transparent 70%);pointer-events:none"></div>
+          <h2 style="position:relative;margin:0;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:26px">Next: attach it to a pool</h2>
+          <p style="position:relative;max-width:520px;margin:12px 0 0;font-size:15px;line-height:1.6;color:#96a6c0">Open the app, find your registered latch in the explorer, and attach it to a pool you control. Simulation runs again before the pool accepts it.</p>
+          <div style="position:relative;display:flex;flex-wrap:wrap;gap:12px;margin-top:24px">
+            <a href="Latch Dapp.dc.html" style="padding:13px 24px;border-radius:999px;background:linear-gradient(180deg,#2b8bff,#0a63e0);color:#fff;font-weight:600;font-size:14.5px;white-space:nowrap;box-shadow:0 10px 28px rgba(26,127,255,.3)">Open the app →</a>
+            <a href="#quickstart" style="padding:13px 24px;border-radius:999px;border:1px solid #24314c;color:#cfdcf0;font-weight:600;font-size:14.5px;white-space:nowrap">Back to quickstart</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+  </div>
+
+  <footer style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;max-width:1400px;margin:0 auto;padding:34px 32px 64px;border-top:1px solid #101a2c">
+    <div style="display:flex;align-items:center;gap:12px">
+      <img src="assets/brand/latch-mark-transparent.png" alt="Latch Protocol" style="height:32px;width:auto" />
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#4c5f7d;white-space:nowrap">© 2026 LATCH PROTOCOL</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:22px;font-size:13.5px;color:#7f92ad">
+      <a href="Latch Landing.dc.html" style="color:#7f92ad;white-space:nowrap">Home</a>
+      <a href="Latch Brand Kit.dc.html" style="color:#7f92ad;white-space:nowrap">Brand Kit</a>
+      <a href="Latch Dapp.dc.html" style="color:#7f92ad;white-space:nowrap">App</a>
+      <a href="#github" style="color:#7f92ad;white-space:nowrap">GitHub</a>
+    </div>
+  </footer>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1400}}">
+class Component extends DCLogic {
+  renderVals() {
+    const link = active => ({
+      padding: "7px 10px",
+      borderRadius: 8,
+      fontSize: 13.5,
+      color: active ? "#8fc2ff" : "#8a9bb6",
+      background: active ? "rgba(23,55,104,.5)" : "transparent",
+      transition: "background .2s, color .2s"
+    });
+    const rowBase = (last, i) => ({
+      display: "grid",
+      gridTemplateColumns: "minmax(0,1.5fr) minmax(0,.7fr) minmax(0,1.4fr)",
+      gap: 14,
+      alignItems: "center",
+      padding: "13px 20px",
+      borderBottom: last ? "none" : "1px solid #131f34",
+      animation: "dkfade .45s ease both",
+      animationDelay: (i * 0.05).toFixed(2) + "s"
+    });
+    const cbs = [
+      { name: "beforeSwap", bit: "0x0001", returns: "uint24 fee" },
+      { name: "afterSwap", bit: "0x0002", returns: "—" },
+      { name: "beforeAddLiquidity", bit: "0x0004", returns: "bool allow" },
+      { name: "afterAddLiquidity", bit: "0x0008", returns: "—" },
+      { name: "beforeRemoveLiquidity", bit: "0x0010", returns: "bool allow" },
+      { name: "afterDonate", bit: "0x0020", returns: "—" }
+    ];
+    return {
+      docNav: [
+        { title: "GET STARTED", items: [["Quickstart", "#quickstart", true], ["Install", "#install", false], ["Simulate & register", "#register", false]] },
+        { title: "REFERENCE", items: [["Callbacks", "#interface", false], ["Execution order", "#lifecycle", false], ["Errors", "#errors", false]] },
+        { title: "GUIDES", items: [["Dynamic fees", "#quickstart", false], ["JIT liquidity", "#quickstart", false], ["Compliance gating", "#quickstart", false]] },
+        { title: "OPERATIONS", items: [["Gas sponsorship", "#register", false], ["Verification", "#errors", false], ["Audits", "#errors", false]] }
+      ].map(g => ({
+        title: g.title,
+        items: g.items.map(i => ({ label: i[0], href: i[1], style: link(i[2]) }))
+      })),
+      facts: [
+        { label: "TOOLCHAIN", value: "Foundry ≥ 0.2" },
+        { label: "SOLIDITY", value: "^0.8.26" },
+        { label: "TIME TO FIRST LATCH", value: "~20 min" }
+      ],
+      callbacks: cbs.map((c, i) => ({
+        name: c.name, bit: c.bit, returns: c.returns,
+        row: rowBase(i === cbs.length - 1, i)
+      })),
+      lifecycle: [
+        { step: "01", name: "Pool receives a swap", note: "Router calls the pool as usual." },
+        { step: "02", name: "beforeSwap latches run", note: "In registration order, each within its gas budget." },
+        { step: "03", name: "Swap executes", note: "Using the fee returned by the last latch." },
+        { step: "04", name: "afterSwap latches run", note: "Side effects only; return values ignored." },
+        { step: "05", name: "Registry records the call", note: "Gas used, reverts and fee applied." }
+      ].map((l, i) => ({
+        step: l.step, name: l.name, note: l.note,
+        card: { padding: 18, border: "1px solid #16223a", borderRadius: 14, background: "#070c17", animation: "dkfade .5s ease both", animationDelay: (i * 0.06).toFixed(2) + "s" }
+      })),
+      errors: [
+        { code: "LatchBitmapMismatch()", fix: "permissions() declares a callback the contract does not implement. Align the bitmap with your functions." },
+        { code: "GasBudgetExceeded(uint256 used)", fix: "The callback used more gas than the registered budget. Raise the budget or trim state writes." },
+        { code: "LatchNotVerified()", fix: "The pool requires verified latches. Submit source for verification, or attach to a permissionless pool." },
+        { code: "ReentrantLatchCall()", fix: "The latch re-entered the pool. Route external calls through afterSwap instead." }
+      ].map((e, i) => ({
+        code: e.code, fix: e.fix,
+        row: { display: "flex", gap: 14, padding: "16px 20px", borderBottom: i < 3 ? "1px solid #131f34" : "none", animation: "dkfade .45s ease both", animationDelay: (i * 0.05).toFixed(2) + "s" }
+      })),
+      toc: [
+        { label: "Quickstart", href: "#quickstart" },
+        { label: "1 · Install", href: "#install" },
+        { label: "2 · Write the latch", href: "#quickstart" },
+        { label: "3 · Simulate and register", href: "#register" },
+        { label: "Callback reference", href: "#interface" },
+        { label: "Execution order", href: "#lifecycle" },
+        { label: "Common errors", href: "#errors" }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -272,6 +272,13 @@ npm run build        # tsc + copy the Foundry assets into dist/
   rather than a `forge install` dependency.
 - `latch devnet` assumes anvil's deterministic accounts. If you pass a custom
   `--mnemonic` through `--`, pass the matching `--deployer-key` too.
+- The devnet script constructs `LatchProtocolFeeController` directly, so a change
+  to that contract's constructor in `packages/fees` breaks `latch devnet` until
+  `assets/devnet/script/LatchDevnet.s.sol` is updated to match. The failure is a
+  compile error naming the constructor, not a silent misdeployment.
+- The devnet refuses to start when something is already serving JSON-RPC on the
+  chosen port, rather than quietly deploying onto a stranger's node. Use
+  `--port`, or `--rpc-url` if attaching was the intent.
 
 ## Licence
 

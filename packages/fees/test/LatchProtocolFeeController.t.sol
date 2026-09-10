@@ -19,12 +19,13 @@ contract LatchProtocolFeeControllerTest is Test {
 
     LatchProtocolFeeController internal controller;
     address internal governance = address(0x6011);
+    address internal guardian = address(0x69A2D);
 
     /// 0.1% in both directions, packed as core expects
     uint24 internal constant EXPECTED_DEFAULT = uint24(1000) | (uint24(1000) << 12);
 
     function setUp() public {
-        controller = new LatchProtocolFeeController(governance);
+        controller = new LatchProtocolFeeController(governance, guardian);
     }
 
     function _key(uint24 fee) internal pure returns (PoolKey memory) {
@@ -215,5 +216,76 @@ contract LatchProtocolFeeControllerTest is Test {
         vm.prank(multisig);
         controller.acceptOwnership();
         assertEq(controller.owner(), multisig);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        GUARDIAN - ONE-WAY ONLY
+    //////////////////////////////////////////////////////////////*/
+
+    function test_guardian_canDisableFeesImmediately() public {
+        vm.prank(guardian);
+        controller.emergencyDisableFees();
+        assertTrue(controller.feesDisabled());
+        assertEq(controller.protocolFeeForPool(_key(3000)), 0);
+    }
+
+    function test_owner_canAlsoUseEmergencyPath() public {
+        vm.prank(governance);
+        controller.emergencyDisableFees();
+        assertTrue(controller.feesDisabled());
+    }
+
+    /// @notice The guardian must have no route back. Re-enabling fees is an escalation and
+    /// belongs behind the timelock; a compromised guardian may only cost revenue.
+    function test_guardian_cannotReEnableFees() public {
+        vm.prank(guardian);
+        controller.emergencyDisableFees();
+
+        vm.prank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, guardian));
+        controller.setFeesDisabled(false);
+
+        assertTrue(controller.feesDisabled(), "guardian must not be able to switch fees back on");
+    }
+
+    function test_guardian_cannotChangeAnyFee() public {
+        vm.startPrank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, guardian));
+        controller.setDefaultFee(4000, 4000);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, guardian));
+        controller.setTierFee(3000, true, 4000, 4000);
+        vm.stopPrank();
+    }
+
+    function test_guardian_cannotAppointANewGuardian() public {
+        vm.prank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, guardian));
+        controller.setGuardian(address(0xBAD));
+    }
+
+    function test_strangerCannotUseEmergencyPath() public {
+        vm.prank(address(0xBAD));
+        vm.expectRevert(LatchProtocolFeeController.NotGuardianOrOwner.selector);
+        controller.emergencyDisableFees();
+    }
+
+    function test_ownerCanRotateGuardian() public {
+        address next = address(0xC0FFEE);
+        vm.prank(governance);
+        controller.setGuardian(next);
+        assertEq(controller.guardian(), next);
+
+        vm.prank(guardian);
+        vm.expectRevert(LatchProtocolFeeController.NotGuardianOrOwner.selector);
+        controller.emergencyDisableFees();
+    }
+
+    /// @notice Only the owner reopens the tap, and on a live chain that owner is the timelock.
+    function test_ownerCanReEnableAfterEmergency() public {
+        vm.prank(guardian);
+        controller.emergencyDisableFees();
+        vm.prank(governance);
+        controller.setFeesDisabled(false);
+        assertEq(controller.protocolFeeForPool(_key(3000)), EXPECTED_DEFAULT);
     }
 }

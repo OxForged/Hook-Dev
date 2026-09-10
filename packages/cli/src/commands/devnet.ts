@@ -182,6 +182,22 @@ async function rpc(url: string, method: string, params: unknown[] = []): Promise
   return body.result;
 }
 
+/**
+ * True when something is already answering JSON-RPC at `url`.
+ *
+ * Without this check a devnet started on a busy port silently attaches to
+ * whatever is already there: anvil fails to bind, the readiness probe succeeds
+ * against the stranger, and the deployment lands somewhere nobody asked for.
+ */
+async function nodeAlreadyListening(url: string): Promise<boolean> {
+  try {
+    await rpc(url, "eth_chainId");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function waitForNode(url: string, timeoutMs: number): Promise<number> {
   const deadline = Date.now() + timeoutMs;
   let lastError = "";
@@ -266,6 +282,13 @@ export async function runDevnet(argv: readonly string[]): Promise<number> {
   let stopping = false;
 
   if (externalRpc === undefined) {
+    if (await nodeAlreadyListening(rpcUrl)) {
+      throw new UserError(
+        `something is already serving JSON-RPC at ${rpcUrl}`,
+        "stop it, choose another port with --port, or point at it with --rpc-url to deploy onto it",
+      );
+    }
+
     const anvilArgs = [
       "--host",
       host,

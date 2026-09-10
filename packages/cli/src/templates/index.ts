@@ -15,7 +15,10 @@ import type { PermissionName } from "../permissions.js";
 /** An extra constructor argument a template needs. */
 export interface ExtraConstructorArg {
   readonly type: string;
+  /** Name of the state variable the argument is assigned to. */
   readonly name: string;
+  /** Constructor parameter name. */
+  readonly param: string;
   /** NatSpec `@param` text. */
   readonly doc: string;
   /** Literal used by the generated tests. */
@@ -100,7 +103,7 @@ const DYNAMIC_FEE: HookTemplate = {
     "dynamic-fee pool starts at ZERO. That is the quiet failure mode of fee hooks:",
     "no revert, no event, just free swaps.",
   ],
-  types: ["LPFeeLibrary", "BeforeSwapDelta"],
+  types: ["LPFeeLibrary", "BeforeSwapDelta", "BeforeSwapDeltaLibrary"],
   members: `    /// @notice LP fee charged below the threshold: 0.30%, in hundredths of a bip
     uint24 public constant BASE_FEE = 3000;
 
@@ -110,11 +113,12 @@ const DYNAMIC_FEE: HookTemplate = {
     /// @notice Swap size, in the swap's specified currency, at which LARGE_SWAP_FEE starts to apply
     /// @dev Immutable so the fee schedule cannot be changed after deployment. If you make it
     /// mutable, gate the setter: a hook that can raise the fee mid-block can sandwich its own users.
-    uint256 public immutable largeSwapThreshold;`,
+    uint256 public immutable LARGE_SWAP_THRESHOLD;`,
   constructorArgs: [
     {
       type: "uint256",
-      name: "largeSwapThreshold",
+      name: "LARGE_SWAP_THRESHOLD",
+      param: "largeSwapThreshold_",
       doc: "Swap size at or above which LARGE_SWAP_FEE applies",
       testValue: "1 ether",
       deployExpr: 'vm.envOr("LARGE_SWAP_THRESHOLD", uint256(1 ether))',
@@ -129,10 +133,13 @@ const DYNAMIC_FEE: HookTemplate = {
         "ignores the value entirely (see `CLPool.swap`).",
       ],
       body: `int256 specified = params.amountSpecified;
-// Negate without overflowing on type(int256).min.
+
+// Both casts are safe: each branch has already established the sign, and the
+// negation is written as -(x + 1) + 1 so it cannot overflow on type(int256).min.
+// forge-lint: disable-next-line(unsafe-typecast)
 uint256 size = specified < 0 ? uint256(-(specified + 1)) + 1 : uint256(specified);
 
-uint24 fee = size >= largeSwapThreshold ? LARGE_SWAP_FEE : BASE_FEE;
+uint24 fee = size >= LARGE_SWAP_THRESHOLD ? LARGE_SWAP_FEE : BASE_FEE;
 
 return (ICLHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, fee | LPFeeLibrary.OVERRIDE_FEE_FLAG);`,
     },
@@ -148,13 +155,13 @@ return (ICLHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, fee | L
         PoolKey memory cheapKey = _keyWithHook(address(cheapHook));
         PoolKey memory pricyKey = _keyWithHook(address(pricyHook));
 
-        poolManager.initialize(cheapKey, SQRT_PRICE_1_1);
-        poolManager.initialize(pricyKey, SQRT_PRICE_1_1);
+        _initialize(cheapKey);
+        _initialize(pricyKey);
         _addLiquidity(cheapKey);
         _addLiquidity(pricyKey);
 
-        int128 cheapOut = _swap(cheapKey, true, -1 ether).amount1();
-        int128 pricyOut = _swap(pricyKey, true, -1 ether).amount1();
+        int128 cheapOut = _swap(cheapKey, true, SWAP_AMOUNT).amount1();
+        int128 pricyOut = _swap(pricyKey, true, SWAP_AMOUNT).amount1();
 
         assertGt(cheapOut, 0, "cheap pool returned nothing");
         assertLt(pricyOut, cheapOut, "higher fee did not reduce the swap output");
@@ -214,9 +221,9 @@ return (ICLHooks.afterSwap.selector, int128(0));`,
         PoolId poolId = key.toId();
         assertEq(hook.swapCount(poolId), 0, "counter should start at zero");
 
-        _swap(key, true, -0.1 ether);
-        _swap(key, false, -0.1 ether);
-        _swap(key, true, -0.1 ether);
+        _swap(key, true, SMALL_SWAP_AMOUNT);
+        _swap(key, false, SMALL_SWAP_AMOUNT);
+        _swap(key, true, SMALL_SWAP_AMOUNT);
 
         assertEq(hook.swapCount(poolId), 3, "counter did not follow the swaps");
     }
@@ -225,15 +232,17 @@ return (ICLHooks.afterSwap.selector, int128(0));`,
     /// @dev Without this guard anyone could call afterSwap directly and desynchronise
     /// the counter from reality - cheap here, fatal for a hook that moves funds.
     function test_afterSwapRejectsDirectCalls() public {
+        ICLPoolManager.SwapParams memory params = ICLPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: SMALL_SWAP_AMOUNT,
+            sqrtPriceLimitX96: 0
+        });
+
         vm.expectRevert(BaseCLHook.NotPoolManager.selector);
-        hook.afterSwap(
-            address(this),
-            key,
-            ICLPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1, sqrtPriceLimitX96: 0}),
-            BalanceDelta.wrap(0),
-            ""
-        );
+        // forge-lint: disable-next-line(unused-return)
+        hook.afterSwap(address(this), key, params, BalanceDelta.wrap(0), "");
     }`,
+  testImports: ["PoolId", "BaseCLHook"],
   readmeNotes: [
     "`swapCount` is keyed by `PoolId`, so one deployment can serve many pools.",
     "The counter is written from `afterSwap`, which runs after the swap is settled - it can observe, not veto.",

@@ -99,7 +99,10 @@ contract LatchDevnet is Script, BackendGuard {
         // 4. Protocol fee controller. `protocolFeeForPool` is staticcalled during pool
         //    initialization, so a broken controller bricks pool creation - which is why
         //    it is wired up here and exercised by the pool below.
-        LatchProtocolFeeController feeController = new LatchProtocolFeeController(deployer);
+        // Owner and guardian are both the devnet deployer. On a real deployment these
+        // are different keys: the owner is the multisig+timelock that sets fees, the
+        // guardian is the faster key that can only switch them off.
+        LatchProtocolFeeController feeController = new LatchProtocolFeeController(deployer, deployer);
         IProtocolFees(clPoolManager).setProtocolFeeController(IProtocolFeeController(address(feeController)));
         IProtocolFees(binPoolManager).setProtocolFeeController(IProtocolFeeController(address(feeController)));
 
