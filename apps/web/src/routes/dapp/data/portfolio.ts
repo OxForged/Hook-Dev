@@ -300,6 +300,9 @@ async function readWalletBalances(
 ): Promise<WalletBalance[]> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
+  /* Same reason as readVaultHoldings: the demo pool is the only source of
+     "which tokens to check". No pool, no known tokens, empty list. */
+  if (d.demoPool === null) return []
   const tokens = [d.demoPool.token0, d.demoPool.token1] as const
   return Promise.all(
     tokens.map(async (address) => {

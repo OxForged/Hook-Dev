@@ -21,6 +21,7 @@ import {
  */
 
 export const SEPOLIA_CHAIN_ID = 11155111
+export const ROBINHOOD_CHAIN_ID = 4663
 
 /** Verified on Etherscan. See packages/core/script/config/latch-sepolia.json. */
 export const DEPLOYMENTS = {
@@ -68,6 +69,53 @@ export const DEPLOYMENTS = {
     /** Block the protocol was deployed at — log scans start here, not from genesis. */
     deployedAtBlock: 11672600n,
   },
+
+  /* Robinhood Chain — the FIRST MAINNET. Deployed 2026-09-11; see
+     ops/safe/robinhood-deployment.md for the full record and
+     packages/core/script/config/latch-robinhood.json for the source config.
+     All eighteen contracts are verified on Sourcify.
+
+     Two differences from Sepolia that matter to anything reading this table:
+
+     · GOVERNANCE IS REAL HERE. On Sepolia the deployer EOA still owns
+       everything and the timelocks own nothing, so they can be shown as
+       deployed-but-inert. Here every contract answers to the 2-of-3 Safe, and
+       the handover to these timelocks is queued. A screen that says "owned by
+       a timelock" must read owner() rather than assume it from this file.
+
+     · THERE IS NO demoPool. Nothing has been initialised on mainnet yet, so
+       any surface that reaches for one has to handle its absence rather than
+       fall back to Sepolia's — showing a testnet pool under a mainnet chain
+       header would be the worst kind of wrong. */
+  [ROBINHOOD_CHAIN_ID]: {
+    name: 'Robinhood Chain',
+    explorer: 'https://robinhoodchain.blockscout.com',
+    vault: '0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c',
+    clPoolManager: '0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66',
+    binPoolManager: '0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979',
+    feeController: '0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c',
+    create3Factory: '0x6ffdf9a3df7e9dd55bad2e60c7405cd181005633',
+    registry: '0xE4395085De89365440A6Ee25cE24BE2bAD66AC86',
+    /** 48h tier. Vault + both pool manager owners. */
+    timelockCustody: '0x63F08A697Cc003d5eA61787712C34438559a7428',
+    /** 6h tier. Fee controllers, descriptor, router. */
+    timelockPolicy: '0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A',
+
+    universalRouter: '0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c',
+    clPositionManager: '0x957cc13b24a563cc92253213d9d5e6954c8db6a7',
+    binPositionManager: '0x990f395003c35a0ab390e10b003972407f882399',
+    clQuoter: '0xdfd14247f87d1e4fc82f0f441fb43bc8aa466114',
+    binQuoter: '0xbee22c7edf206b3f24fa0e86ccdd2f35738eb28c',
+    clPositionDescriptor: '0x0af03bee134ce66ee12425ee05a50f32c72644eb',
+    /** Canonical Permit2, confirmed by reading code at the address. */
+    permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+    /** Canonical per docs.robinhood.com/chain/contracts. The usual predeploys
+        0x4200..06 and 0xC02aaA.. have NO CODE on this chain. */
+    weth: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
+    demoPool: null,
+    /** Block the first Latch contract landed — the two timelocks. */
+    deployedAtBlock: 60111836n,
+  },
 } as const
 
 export type DeployedChainId = keyof typeof DEPLOYMENTS
@@ -88,6 +136,15 @@ export function isDeployed(chainId: number): chainId is DeployedChainId {
  * None of these carries an API key. Keyed providers belong in the environment.
  */
 const RPCS: Record<DeployedChainId, readonly string[]> = {
+  /* Ordered fastest-first from the SDK's live probe (packages/sdk/src/chains/
+     endpoints.ts), not hand-picked. All five answer EIP-1153. */
+  [ROBINHOOD_CHAIN_ID]: [
+    'https://rpc.nodeflare.app/robinhood/public',
+    'https://robinhood.rpc.blxrbdn.com',
+    'https://rpc-robinhood.blockmachine.io',
+    'https://rpc.ordofi.network',
+    'https://rpc.mainnet.chain.robinhood.com',
+  ],
   [SEPOLIA_CHAIN_ID]: [
     'https://11155111.rpc.thirdweb.com',
     'https://gateway.tenderly.co/public/sepolia',
@@ -275,6 +332,11 @@ export async function readVaultHoldings(
 ): Promise<VaultHolding[]> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
+  /* The demo pool is how this function knows WHICH tokens to ask about; there
+     is no on-chain enumeration of "tokens the vault holds". A chain without one
+     therefore has no known tokens, and an empty list is the truthful answer —
+     not zero balances, which would assert the vault holds nothing. */
+  if (d.demoPool === null) return []
   const tokens = [d.demoPool.token0, d.demoPool.token1] as const
 
   return Promise.all(

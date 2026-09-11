@@ -383,11 +383,22 @@ function NoPositions({ p }: { p: PortfolioData }) {
         </a>{' '}
         when liquidity is added to a pool. This address holds none as of block{' '}
         {p.checkedAtBlock.toLocaleString('en-US')} — checked by scanning every position NFT ever
-        transferred to it and confirming current ownership on chain. The one live pool is{' '}
-        <a href={dappPath('pool')}>
-          {d.demoPool.symbol0} / {d.demoPool.symbol1} {(d.demoPool.lpFee / 10_000).toFixed(2)}%
-        </a>
-        ; adding liquidity to it would put a row here with its holdings and uncollected fees.
+        transferred to it and confirming current ownership on chain.
+        {d.demoPool === null ? (
+          /* No pool has been initialised on this chain yet, so there is nothing
+             to point at. Saying so beats naming a pool from a different chain,
+             which is the mistake this branch exists to prevent. */
+          <> No pool has been initialised on {d.name} yet, so there is nothing here to hold.</>
+        ) : (
+          <>
+            {' '}The one live pool is{' '}
+            <a href={dappPath('pool')}>
+              {d.demoPool.symbol0} / {d.demoPool.symbol1}{' '}
+              {(d.demoPool.lpFee / 10_000).toFixed(2)}%
+            </a>
+            ; adding liquidity to it would put a row here with its holdings and uncollected fees.
+          </>
+        )}
       </p>
       <p className="live-note" style={{ marginTop: 8 }}>
         Not shown: Bin (ERC-1155) positions, and fees already collected — the protocol does not

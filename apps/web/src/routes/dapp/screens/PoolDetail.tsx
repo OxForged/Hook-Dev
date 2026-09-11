@@ -69,10 +69,15 @@ export default function PoolDetail() {
     ])
       .then(([pools, holdings, metrics]) => {
         if (off) return
-        const target = DEPLOYMENTS[browsingChain].demoPool.id.toLowerCase()
         // Prefer the deployment's named pool; fall back to the first one that
         // exists, so this screen is not empty on a chain configured differently.
-        const pool = pools.find((p) => p.id.toLowerCase() === target) ?? pools[0]
+        // A chain with no named pool (mainnet, until one is initialised) just
+        // takes whatever the chain actually has — which may be nothing.
+        const named = DEPLOYMENTS[browsingChain].demoPool
+        const target = named === null ? null : named.id.toLowerCase()
+        const pool =
+          (target === null ? undefined : pools.find((p) => p.id.toLowerCase() === target)) ??
+          pools[0]
         setState({ k: 'ready', d: { pool, holdings, metrics } })
       })
       .catch((e) =>
@@ -126,7 +131,13 @@ export default function PoolDetail() {
   }
 
   const hooked = pool.hooks !== ZERO
-  const pair = `${d.demoPool.symbol0} / ${d.demoPool.symbol1}`
+  /* Symbols come from the deployment record, which only has them for a named
+     pool. Falling back to the chain's own pool id is honest: it says "this is
+     the pool" without inventing a ticker for tokens nobody has named here. */
+  const pair =
+    d.demoPool === null
+      ? `Pool ${pool.id.slice(0, 10)}…`
+      : `${d.demoPool.symbol0} / ${d.demoPool.symbol1}`
 
   return (
     <>
@@ -234,7 +245,10 @@ export default function PoolDetail() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {d.demoPool.symbol0} ↗
+                  {d.demoPool === null
+                    ? `${pool.currency0.slice(0, 10)}…`
+                    : d.demoPool.symbol0}{' '}
+                  ↗
                 </a>
               </dd>
             </div>
@@ -246,7 +260,10 @@ export default function PoolDetail() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {d.demoPool.symbol1} ↗
+                  {d.demoPool === null
+                    ? `${pool.currency1.slice(0, 10)}…`
+                    : d.demoPool.symbol1}{' '}
+                  ↗
                 </a>
               </dd>
             </div>

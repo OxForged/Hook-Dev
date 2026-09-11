@@ -6,22 +6,24 @@
    double-invoke, an HMR boundary or a route remount would then drop a live
    wallet session and re-prompt the user. Built once here, imported everywhere.
 
-   CHAINS: Sepolia only, deliberately, even though `LATCH_CHAINS` lists eleven.
-   `DEPLOYMENTS` in `lib/chain.ts` has exactly one entry, so every other chain
-   in that list is somewhere the dapp can read nothing and write nothing. A
-   network switcher that offers ten dead networks is the same class of lie as a
-   chart of invented numbers: it looks like a capability and isn't one. When a
-   second deployment lands, add it to `DEPLOYMENTS` and to `WALLET_CHAINS`
-   together — never one without the other.
+   CHAINS: exactly the ones `DEPLOYMENTS` covers, and no more. Robinhood Chain
+   (the first mainnet) and Ethereum Sepolia. `LATCH_CHAINS` lists fifteen
+   TARGETS; the other thirteen are places the dapp can read nothing and write
+   nothing, and a switcher offering thirteen dead networks is the same class of
+   lie as a chart of invented numbers — it looks like a capability and isn't
+   one. Add to `DEPLOYMENTS` and to `WALLET_CHAINS` together, never one without
+   the other; the DEV guard below exists because that is easy to forget.
    ============================================================================ */
 
-import { createLatchConfig, hasWalletConnect, sepolia } from '@latchprotocol/connect'
+import { createLatchConfig, hasWalletConnect, robinhood, sepolia } from '@latchprotocol/connect'
 import type { Chain } from 'viem'
 
 import { DEPLOYMENTS, SEPOLIA_CHAIN_ID } from './chain'
 
-/** Chains the wallet may connect to. Must stay in step with `DEPLOYMENTS`. */
-export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = [sepolia]
+/** Chains the wallet may connect to. Must stay in step with `DEPLOYMENTS`.
+    Robinhood first: it is the mainnet, and the list order is what the switcher
+    shows. Sepolia stays because the protocol is still exercised there. */
+export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = [robinhood, sepolia]
 
 /**
  * Guard against the two lists drifting apart. Cheap, runs once at module load,
