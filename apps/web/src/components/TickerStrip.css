@@ -23,6 +23,24 @@
      a blurred ground, and a second opaque layer would kill that blur. */
   background: transparent;
   border-top: 1px solid var(--hairline-soft);
+
+  /* GRID BLOWOUT GUARD — this rail broke the dapp's navigation once.
+     `.ltk-track` is `width: max-content` and reaches ~2500px with a full set of
+     quotes. `.ltk-viewport` clips it, but the clip only helps if THIS element
+     can be narrower than its own content, and a grid or flex item defaults to
+     `min-width: auto` — meaning "at least max-content". So the rail widened its
+     ancestor track, the document became horizontally scrollable, and because
+     `.dapp-sidebar` is `position: static` it scrolled off-screen: the nav
+     labels appeared cut in half.
+
+     The failure was intermittent in the worst way — it needed the quotes to
+     have ARRIVED, so it reproduced only at widths where the fetch happened to
+     land before the measurement.
+
+     `min-width: 0` is the actual fix; `overflow: hidden` is the belt to its
+     braces, so a future child that forgets to clip cannot resurrect this. */
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* ---- the fixed left label ------------------------------------------------ */

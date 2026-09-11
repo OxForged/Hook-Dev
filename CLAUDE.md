@@ -565,6 +565,34 @@ protocol cannot be paid. Two separate paths exist and neither is affected by tha
 `RevShareHook.redeem` is neither. It is permissionless plumbing that converts the hook's ERC-6909
 vault claims into real tokens; it pays nobody.
 
+### The governance Safe
+
+```
+0x715a6176946aDbD22c1B2021d321Fb3767ca3432   Safe v1.4.1 · 2 of 3
+  0x1BfB63Db0cA9a647D9538715ce9aE36e16f4eA73
+  0xc1a30b55030864175194148A5Ed5fF3D6AB9f3C4
+  0x784DD1B4f2F20BbF98acB0242C190D19B626E5E7
+```
+
+This is the **Safe** row in the table above: sole `PROPOSER_ROLE` on both timelocks,
+and the direct owner of anything the table marks Safe rather than a tier.
+
+Two facts about it that change the plan:
+
+- **It exists on Robinhood Chain (4663) only.** `cast code` returns nothing at that
+  address on Sepolia. The Sepolia rehearsal in step 5 below therefore cannot use it as
+  written — deploy a Safe there with the same owners first (the canonical factory is
+  live on Sepolia, so the address can be reproduced with the same salt), or rehearse
+  against a throwaway Safe and accept that the mainnet run is the first time these
+  three keys drive the real one. Prefer the former: an untested signer set is the same
+  class of risk as an untested timelock.
+- **2 of 3 governs an irreversible power.** Any two of those keys can queue
+  `registerApp`, wait out 48h, and grant an app permanent authority to move Vault
+  funds. That is a deliberate, reasonable choice for an active protocol — 3 of 3 has
+  no recovery if a key is lost — but it should be a decision on record rather than a
+  default, and it is the single most valuable key in the system. Two keys held by the
+  same person, or in the same place, would collapse it to 1 of 1 in practice.
+
 ### Deployment order
 
 1. Create the Safe. Threshold and signers are a human decision — everything else below is scripted.
