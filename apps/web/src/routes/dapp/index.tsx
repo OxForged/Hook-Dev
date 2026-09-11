@@ -9,6 +9,8 @@
      /app                        Dashboard
      /app/marketplace            Latch Marketplace
      /app/marketplace/:address   Latch Detail — one Latch, in full
+     /app/ecosystem              Ecosystem — third-party projects building on Latch
+                                 (a curated file, not a chain read; see data/ecosystem.ts)
      /app/deploy                 Deploy a Latch
      /app/pool                   Pool Detail
      /app/portfolio              Portfolio
@@ -45,6 +47,7 @@ import Analytics from './screens/Analytics.tsx'
 import Claim from './screens/Claim.tsx'
 import Dashboard from './screens/Dashboard.tsx'
 import Deploy from './screens/Deploy.tsx'
+import Ecosystem from './screens/Ecosystem.tsx'
 import Explorer from './screens/Explorer.tsx'
 import LatchDetail from './screens/LatchDetail.tsx'
 import PoolDetail from './screens/PoolDetail.tsx'
@@ -66,6 +69,7 @@ const SCREEN_BY_SEGMENT: Record<string, Screen> = {
      /app/explorer link still resolves the header and highlights the right nav
      row while the route below redirects it. */
   explorer: 'marketplace',
+  ecosystem: 'ecosystem',
   deploy: 'deploy',
   pool: 'pool',
   portfolio: 'portfolio',
@@ -146,6 +150,7 @@ function Shell() {
             {/* Old path. Redirect rather than delete: the previous nav shipped
                 /app/explorer, and a dead link is worse than a hop. */}
             <Route path="explorer" element={<Navigate to={dappPath('marketplace')} replace />} />
+            <Route path="ecosystem" element={<Ecosystem />} />
             <Route path="deploy" element={<Deploy />} />
             <Route path="pool" element={<PoolDetail />} />
             <Route path="portfolio" element={<Portfolio />} />

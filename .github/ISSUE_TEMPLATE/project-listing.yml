@@ -1,0 +1,114 @@
+# Ecosystem directory listing.
+#
+# This form is the submission path for apps/web's /app/ecosystem directory.
+# The dapp opens it prefilled via `listingIssueUrl()` in
+# apps/web/src/routes/dapp/data/ecosystem.ts. Field `id`s below are URL query
+# parameters that function sets (`project_name`, `url`) — keep them in step.
+#
+# A merged listing is added to `ECOSYSTEM_PROJECTS` exactly as written. It is
+# rendered as "submitted by the project, not verified by Latch Protocol" on
+# every card; that is the status of the whole directory and nothing here
+# changes it.
+
+name: Ecosystem project listing
+description: List a project that builds on Latch in the dapp's ecosystem directory.
+title: "Ecosystem listing: "
+labels: ["ecosystem"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for building on Latch. Fill this in and a maintainer will merge the listing
+        **as written**. Listing is free, there is no review of your product, and every entry
+        is shown as *submitted by the project, not verified by Latch Protocol*.
+
+        This directory lists **teams and products**. If you want a **Latch (hook contract)**
+        itself listed, that is the on-chain registry — use *Deploy a Latch* in the dapp.
+
+  - type: input
+    id: project_name
+    attributes:
+      label: Project name
+      description: As you want it shown. 80 characters or fewer.
+      placeholder: Acme Swap
+    validations:
+      required: true
+
+  - type: input
+    id: tagline
+    attributes:
+      label: Tagline
+      description: One line, 120 characters or fewer. Shown under the name as your words.
+      placeholder: Time-boxed token launches with sniper protection built in.
+    validations:
+      required: true
+
+  - type: input
+    id: url
+    attributes:
+      label: Website
+      description: Must be https. This is where the card links.
+      placeholder: https://
+    validations:
+      required: true
+
+  - type: input
+    id: source
+    attributes:
+      label: Public source repository (optional)
+      placeholder: https://github.com/
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: uses
+    attributes:
+      label: Which Latches does the project use?
+      description: Tick every family that applies. Names in code are the contract names.
+      options:
+        - label: "Launch guard (`LaunchGuardHook` / `BinLaunchGuardHook`)"
+        - label: "Revenue share (`RevShareHook`)"
+        - label: "Permissioned pool (`PermissionedPoolHook`)"
+        - label: "Market hours (`MarketHoursHook`)"
+        - label: "Stock pair (`StockPairHook`)"
+        - label: "Our own Latch (give the address or Marketplace link below)"
+    validations:
+      required: true
+
+  - type: input
+    id: own_latch
+    attributes:
+      label: Your own Latch, if ticked above
+      description: Contract address, or the Marketplace link once it is registered.
+      placeholder: 0x…
+    validations:
+      required: false
+
+  - type: input
+    id: chains
+    attributes:
+      label: Chains
+      description: EIP-155 chain ids the integration is live on, comma-separated. Sepolia is 11155111.
+      placeholder: "11155111"
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything a maintainer should know (optional)
+      description: Not rendered. Contact handle, launch timing, a link to the integration in your code.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I represent this project and am authorised to list it.
+          required: true
+        - label: I understand the listing is rendered as self-submitted and not verified by Latch Protocol, and that a maintainer may decline or remove it.
+          required: true
+        - label: I understand no logo is shown unless we later supply our own official asset with its source. The card will show a typographic monogram of the name.
+          required: true

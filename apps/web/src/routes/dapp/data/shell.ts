@@ -39,6 +39,7 @@ export interface ShellData {
 const nav: NavItem[] = [
   { screen: 'dashboard', label: 'Dashboard', path: '', icon: 'dashboard' },
   { screen: 'marketplace', label: 'Latch Marketplace', path: 'marketplace', icon: 'explorer' },
+  { screen: 'ecosystem', label: 'Ecosystem', path: 'ecosystem', icon: 'ecosystem' },
   { screen: 'deploy', label: 'Deploy a Latch', path: 'deploy', icon: 'deploy' },
   { screen: 'pool', label: 'Pool Detail', path: 'pool', icon: 'pool' },
   { screen: 'portfolio', label: 'Portfolio', path: 'portfolio', icon: 'portfolio' },
@@ -52,6 +53,9 @@ const nav: NavItem[] = [
 const meta: Record<Screen, ScreenMeta> = {
   dashboard: { title: 'Dashboard', subtitle: 'Live from Ethereum Sepolia · testnet only' },
   marketplace: { title: 'Latch Marketplace', subtitle: 'On-chain registry · Sepolia' },
+  /* Not a chain read and the subtitle says so — the one screen in the dapp whose
+     data is a curated file, submitted by the projects themselves. */
+  ecosystem: { title: 'Ecosystem', subtitle: 'Projects building on Latch · self-submitted, not verified' },
   deploy: { title: 'Deploy a Latch', subtitle: 'List a Latch in the on-chain registry' },
   /* No pair or fee here any more. This meta is static, and the screen reads the
      real pair, fee and vault balances off chain — a hardcoded "ETH / USDC · 0.05%"

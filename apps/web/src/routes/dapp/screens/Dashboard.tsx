@@ -46,9 +46,13 @@ function liveKpis(m: import('../../../lib/chain').ProtocolMetrics): { label: str
 export default function Dashboard() {
   const metrics = useProtocolMetrics()
 
+  /* ORDER. Tiles, then charts, then the raw chain reads.
+     It used to open on `LiveChainPanel` — four unrelated readings in one flat
+     card, so the first thing on the dashboard was a debug dump and the actual
+     summary sat below the fold. A dashboard should answer "how is it going" in
+     the first screen and "show me the rows" in the second. */
   return (
     <>
-      <LiveChainPanel />
       <div className="dapp-kpis">
         {metrics.k === 'ready' ? (
           liveKpis(metrics.m).map((k, i) => (
@@ -86,6 +90,8 @@ export default function Dashboard() {
           <LiveActivityFeed />
         </div>
       </div>
+
+      <LiveChainPanel />
     </>
   )
 }

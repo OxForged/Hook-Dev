@@ -1458,9 +1458,6 @@ span.dapp-net-chip__mark {
 }
 
 /* ---- LiveChainPanel: the only surface reading real chain state ---- */
-.live-panel { display: grid; gap: 10px; }
-.live-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.live-title { font-size: 15px; font-weight: 600; margin: 0; }
 .live-badge {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .14em;
@@ -2538,4 +2535,395 @@ span.dapp-net-chip__mark {
   border-radius: 50%;
   border: 1px dashed var(--hairline);
   background: var(--dapp-tile-bg);
+}
+
+/* ---- Ecosystem directory -----------------------------------------------------
+   Third-party projects building on Latch. Reuses the Marketplace's frame — the
+   `lx-layout` / `lx-rail` / `lx-toolbar` / `lx-grid` / `lx-count` classes —
+   so the two pages are one product. What is NOT reused is the Latch card: its
+   trust strip and capability ledger are on-chain facts, and this page has
+   none. The `eco-card` is a plain listing card whose one constant fixture is
+   the provenance line in its footer.
+
+   The mark is a typographic monogram (the chain list's own fallback) until a
+   project supplies its own official asset. Never an approximated logo. */
+
+/* The header badge is long enough that, beside a wrapping title on a phone,
+   the row has to be allowed to wrap; at desktop widths it never does. */
+.eco-head .dapp-card__head { flex-wrap: wrap; }
+
+/* the card */
+.eco-card {
+  --eco-pad: 18px;
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding: var(--eco-pad);
+  overflow: hidden;
+  transition:
+    border-color 0.22s var(--dapp-ease),
+    box-shadow 0.22s var(--dapp-ease),
+    transform 0.22s var(--dapp-ease);
+}
+.eco-card:hover,
+.eco-card:focus-within {
+  border-color: var(--border-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--sh-card-hover);
+}
+
+.eco-card__top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.eco-card__id { min-width: 0; display: grid; gap: 3px; }
+.eco-card__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.25;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.eco-card__go { color: var(--ink); text-decoration: none; }
+.eco-card__go:hover { color: var(--sky-ink); }
+/* The stretched hit target; the footer's source link is lifted above it. */
+.eco-card__go::after { position: absolute; inset: 0; z-index: 0; content: ""; border-radius: var(--r-card); }
+.eco-card__go:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 3px; border-radius: 4px; }
+.eco-card a:not(.eco-card__go) { position: relative; z-index: 1; }
+
+.eco-card__sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--dapp-ink-sub);
+  overflow-wrap: anywhere;
+}
+.eco-card__dot { color: var(--faint-ink); }
+
+.eco-card__cta {
+  align-self: start;
+  padding: 7px 14px;
+  border: 1px solid var(--hairline-blue-2);
+  border-radius: var(--r-pill);
+  background: var(--panel-alt);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--sky-ink);
+  white-space: nowrap;
+  transition:
+    background 0.22s var(--dapp-ease),
+    border-color 0.22s var(--dapp-ease),
+    color 0.22s var(--dapp-ease);
+}
+.eco-card:hover .eco-card__cta,
+.eco-card:focus-within .eco-card__cta {
+  background: var(--active-nav);
+  border-color: var(--border-hover);
+  color: var(--ink-bright);
+}
+
+/* the mark: 48px tile, letters in the display face. Fewer letters, larger. */
+.eco-mark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  border: 1px solid var(--dapp-tile-border);
+  border-radius: var(--r-btn);
+  background: var(--dapp-tile-bg);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: var(--sky-ink);
+  user-select: none;
+}
+.eco-mark[data-len="1"] { font-size: 20px; }
+.eco-mark[data-len="3"] { font-size: 12.5px; letter-spacing: 0.02em; }
+.eco-mark--img { object-fit: contain; padding: 6px; }
+
+/* their words */
+.eco-card__tag {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted-ink);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+/* uses + chains: two labelled rows, hairlines above and below like the strip */
+.eco-facts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--hairline-soft);
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.eco-facts__row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.eco-facts__row dd { margin: 0; min-width: 0; }
+.eco-uses,
+.eco-chains {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.eco-uses .dapp-badge { display: inline-block; white-space: normal; line-height: 1.35; }
+.eco-chains li {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px 4px 6px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-micro);
+}
+.eco-chains .chain-tag { font-size: 11.5px; }
+
+.eco-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--hairline-soft);
+}
+/* The provenance line is the card's one fixture. Same face and size as the
+   Marketplace byline so the two read as the same statement. */
+.eco-card__by { font-size: 11.5px; line-height: 1.5; color: var(--faint-ink); }
+
+/* chain filter chips carry a mark; the hidden name inside ChainTag is the
+   accessible label, the chip's aria-label repeats it for the button itself. */
+.eco-chip { display: inline-flex; align-items: center; gap: 2px; }
+.eco-chip__tag { color: inherit; font-size: 11.5px; }
+
+/* the empty state — with zero entries it IS the page, so it is a card, not a
+   line. Tile on the left like a card identity row, prose on the right. */
+.eco-empty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 22px;
+}
+.eco-empty__tile { width: 48px; height: 48px; border-radius: var(--r-btn); }
+.eco-empty__body { display: grid; gap: 10px; min-width: 0; }
+.eco-empty__body p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--muted-ink); }
+.eco-empty__body a:not(.dapp-btn) { color: var(--signal-blue); }
+.eco-empty__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--ink);
+}
+.eco-empty__aside { color: var(--faint-ink); }
+.eco-empty__cta { justify-self: start; margin-top: 4px; }
+
+/* the submission panel — two inputs that only shape a URL */
+.eco-submit .live-note { margin: 0; }
+.eco-field { display: grid; gap: 6px; min-width: 0; }
+.eco-field label { cursor: text; }
+.eco-input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-chip);
+  background: var(--code-ground);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.eco-input::placeholder { color: var(--faint-ink); }
+.eco-input:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 1px;
+  border-color: var(--latch-blue);
+}
+.eco-submit__go { justify-self: start; margin-top: 4px; }
+.eco-submit__note { font-size: 11.5px; line-height: 1.5; color: var(--faint-ink); }
+
+/* rail legend + how-it-works */
+.eco-legend__code {
+  display: block;
+  margin-bottom: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--dapp-ink-sub);
+}
+.eco-how dd { font-size: 12.5px; line-height: 1.5; color: var(--muted-ink); }
+.eco-how dd code { font-family: var(--font-mono); font-size: 11.5px; color: var(--dapp-ink-sub); }
+.eco-how dd a { color: var(--signal-blue); text-decoration: none; }
+.eco-how dd a:hover { text-decoration: underline; }
+.lx-rail__note a { color: var(--signal-blue); }
+
+@media (max-width: 640px) {
+  .eco-card { padding: 16px; --eco-pad: 16px; }
+  .eco-card__top { grid-template-columns: auto minmax(0, 1fr); }
+  .eco-card__cta { display: none; }
+  .eco-empty { grid-template-columns: minmax(0, 1fr); padding: 18px; }
+  .eco-empty__tile { display: none; }
+  .eco-facts__row { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+}
+
+/* ===========================================================================
+   lc-* · Live chain cards (dashboard footer grid)
+
+   Replaces the single flat `live-panel` that stacked four unrelated readings
+   under <h3> rules with values pushed to the far edge of a 1250px column.
+
+   THE SCALE IS NOT NEW. Every number below is one the dapp already uses, so
+   these cards line up with `.dapp-kpis` and `.dapp-row--dashboard` above them
+   rather than merely looking similar:
+     grid gap        14px   — same as .dapp-row / .dapp-kpis / .dapp-stack
+     top margin      14px   — same as .dapp-row--dashboard
+     card padding    22px   — inherited from .dapp-card, never overridden
+     label           10px mono / .16em — .dapp-microlabel, reused not copied
+   Introducing a 16px gap or a 20px padding here would be invisible in a
+   screenshot and obvious in a diff. It stays on the scale.
+   =========================================================================== */
+
+.lc-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.lc-card { display: grid; align-content: start; gap: 14px; }
+
+/* The badge sits on the card head's baseline, so it uses the head's own
+   alignment rather than a nudge. */
+.lc-live {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--success);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ stats */
+
+/* auto-fit, not a fixed 2. When `.lc-grid` collapses to one column below
+   1100px the cards go full width, and a hard two-column stat grid then
+   stretches each cell to ~550px — leaving a label and its value at opposite
+   ends of the card, which is the exact defect this component replaced. Letting
+   the tracks fill means four across on a wide card and two on a narrow one,
+   with the pair always adjacent. */
+.lc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 18px 20px;
+  margin: 0;
+}
+
+/* Label ABOVE value. The pair stays within a couple of characters of each
+   other, which is the only reason a scan works; side-by-side across a wide
+   card is what made the old panel unreadable. */
+.lc-stat { display: grid; gap: 6px; min-width: 0; }
+
+.lc-stat__v {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 7px;
+  align-items: baseline;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.lc-stat__sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--faint-ink);
+}
+
+/* ------------------------------------------------------------------- rows */
+
+.lc-rows {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One hairline per boundary: a bottom border on every row except the last,
+   so adjacent rows never stack two 1px lines into a 2px one. */
+.lc-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 16px;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.lc-row:first-child { padding-top: 0; }
+.lc-row:last-child { padding-bottom: 0; border-bottom: none; }
+
+.lc-row__name {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--signal-blue);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lc-row__name:hover { text-decoration: underline; }
+
+.lc-row__v {
+  font-size: 12.5px;
+  color: var(--dapp-ink-data);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.lc-link { color: var(--signal-blue); text-decoration: none; font-size: 14px; }
+.lc-link:hover { text-decoration: underline; }
+
+/* The card owns the gap; a note adding its own margin would double it. */
+.lc-note { margin: 0; }
+
+/* 860, not 1100. At 1100 the grid collapsed while the content column was still
+   ~1116px wide, so each card became full width and every row inside it stretched
+   a name and its figure to opposite ends — the defect these cards exist to fix,
+   reintroduced by the breakpoint. Two ~550px cards read better than one wide one
+   right down to the point where 550 stops fitting. */
+@media (max-width: 860px) {
+  .lc-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .lc-stats { grid-template-columns: minmax(0, 1fr); }
+  .lc-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .lc-row__v { text-align: left; }
 }

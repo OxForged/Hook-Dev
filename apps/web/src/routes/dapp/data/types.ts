@@ -19,6 +19,9 @@ import type { ChainKey } from '../../../data/chains.ts'
 export type Screen =
   | 'dashboard'
   | 'marketplace'
+  /* Third-party projects building on Latch: /app/ecosystem. A curated file,
+     not a chain read — see data/ecosystem.ts. */
+  | 'ecosystem'
   | 'deploy'
   | 'pool'
   | 'portfolio'
