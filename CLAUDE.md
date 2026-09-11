@@ -263,6 +263,8 @@ Removing either mitigation must make it fail — verify with a mutation test, no
   app can move funds against the Vault permanently. Vault ownership is the highest-value key in the system.
 - Governance: Safe multisig + timelock on `registerApp`, so an app can be inspected before it gains
   permanent access. Never an EOA on a chain holding real funds.
+- **Every privileged role and its assigned owner is tabulated in `## Ownership: decided here, not at
+  deploy time`.** Do not decide ownership in a deploy script.
 
 ## Monorepo wiring — packages depend on OUR core, not upstream
 
@@ -491,6 +493,92 @@ LIVE and named two screens as sample data for a while after both had become real
 The chip now reads **LIVE · TESTNET** — both halves load-bearing. Every figure is read
 from the deployed contracts, and there is no mainnet deployment.
 
+
+---
+
+## Ownership: decided here, not at deploy time
+
+Every privileged role in the system, and what it must be assigned to. This table exists because
+ownership was previously decided per-script at deploy time, which is how a Vault ends up owned by
+an EOA on a chain holding real funds.
+
+**Tiers.** `Custody` = the 48h `LatchTimelock`. `Policy` = the 6h `LatchTimelock`. `Safe` = the
+governance multisig directly, no delay. `Ops` = a hot operational key or small ops multisig,
+deliberately NOT timelocked.
+
+The rule that decides the column: **delay scales with how hard the action is to undo, and delay
+never sits on privilege REDUCTION.** Anything whose only power is to make the protocol take less,
+pause, or flag danger is an Ops key — a queue on "this Latch is draining people" makes the flag
+useless.
+
+### Protocol-level — governance owns these
+
+| Contract | Role | Assign to | Why |
+|---|---|---|---|
+| `Vault` | `owner` | **Custody** | `registerApp` is irreversible and grants permanent fund access. Highest-value key in the system. |
+| `CLPoolManager` / `BinPoolManager` | `owner` | **Custody** | Held via the `*PoolManagerOwner` wrappers. Fee and pause authority over every live pool. |
+| `CLPoolManagerOwner` / `BinPoolManagerOwner` | `owner` | **Custody** | The wrapper is the real authority; owning it is owning the manager. |
+| `PausableRole.hasPausableRole` | pausable role | **Ops** | Can only pause. A delay here means the pause arrives after the incident. |
+| `LatchProtocolFeeController` | `owner` | **Policy** | Fee changes are reversible and occasionally need to answer market conditions. |
+| `LatchProtocolFeeController` | guardian | **Ops** | May only disable fees. Can never enable, raise, or reconfigure. Do not add powers to it. |
+| `LatchRegistry` | `DEFAULT_ADMIN_ROLE` | **Policy** | Grants/revokes curator and guardian. Escalation, but reversible and custodies nothing. Judgement call, not derived — revisit if the registry ever gates funds. |
+| `LatchRegistry` | `CURATOR_ROLE` | **Ops** | Listing throughput. A timelock on curation stalls the marketplace. |
+| `LatchRegistry` | `GUARDIAN_ROLE` | **Ops** | Flagging a malicious Latch must be immediate. |
+| `ManualPriceBandOracle` | `owner` | **Custody** | The owner is EXEMPT from `maxPublisherDeviationBps` and can move the reference — and therefore the band — arbitrarily. This is a price-manipulation key, not a config key. |
+| `ManualPriceBandOracle` | `isPublisher` | **Ops (bounded)** | Bounded per-update by `maxPublisherDeviationBps`. **Set `minPublisherInterval` non-zero on any live deployment** or the bound can be walked over many txs. |
+| `PythPriceBandAdapter` | `owner` | **Policy** | `refresh()` is permissionless; the owner only configures. |
+| `AllowlistComplianceOracle` | `owner` | **Policy** | Allowlist edits are reversible. |
+| `MarketHoursHook` | `owner` | **Policy** | Calendar config is reversible. |
+| `PermissionedPoolHook` | `owner` | **Policy** | Reversible. |
+| `RevShareHook` (protocol instance) | `owner` | **Policy** | Global pause and guardian appointment only. Cannot reach user funds. |
+| `RevShareHook` | guardian | **Ops** | May only pause, never unpause. |
+| `MerkleEpochDistributor` | `owner` | **Policy or Safe — NEVER Custody** | `postRoot` gates holder claims: `claim` reverts `RootNotPosted` until it lands. On the 48h tier every epoch's payout waits two days behind a governance queue. Posting a root is operational, and `cancelRoot` is its undo. |
+| `MerkleEpochDistributor` | guardian | **Ops** | `cancelRoot` during the challenge window only. |
+| `CLPositionDescriptorOffChain` | `owner` | **Policy** | Metadata URI. Cosmetic. |
+| Both `LatchTimelock`s | `PROPOSER_ROLE` | **Safe** | The multisig is what makes the delay mean anything. A timelock whose sole proposer is one EOA delays that EOA and stops nobody else. |
+| Both `LatchTimelock`s | `EXECUTOR_ROLE` | **`address(0)`** | Permissionless execution. Once an operation has survived its delay in public, anyone executing it is harmless, and the Safe stops being a liveness dependency. |
+| Both `LatchTimelock`s | OZ optional admin | **`address(0)`, hardcoded** | Not a constructor parameter, on purpose. An admin can grant roles directly, which is a permanent backdoor around every delay. |
+
+### Pool-level — NOT ours, never assign these
+
+| Role | Held by |
+|---|---|
+| `RevShareHook.poolOwner(poolId)` | whoever created the pool — a third-party Latch deployer |
+| `MarketHoursModule` per-pool `issuer` | the pool's own issuer |
+
+These are set by pool creators through `configure` / `transferPoolOwnership`. Protocol governance
+has no claim on them and the deployment runbook must not touch them.
+
+### The protocol CAN collect its own revenue
+
+"No admin withdrawal" is a statement about the epoch distributors only: no function moves an
+epoch's balance to the owner, because that balance is holder money. It does **not** mean the
+protocol cannot be paid. Two separate paths exist and neither is affected by that rule:
+
+- **Protocol fees** — `ProtocolFees.collectProtocolFees(recipient, currency, amount)`, callable
+  only by the `protocolFeeController`. The controller sits behind Policy, so collection is a 6h
+  queued call to any recipient.
+- **Revenue share** — the treasury is paid by being an entry on a pool's `Beneficiary[]` roster,
+  credited to `claimable[recipient][currency]` and withdrawn with `claim`. An entitlement, not an
+  admin power, and it needs the pool owner to have put the treasury on the roster.
+
+`RevShareHook.redeem` is neither. It is permissionless plumbing that converts the hook's ERC-6909
+vault claims into real tokens; it pays nobody.
+
+### Deployment order
+
+1. Create the Safe. Threshold and signers are a human decision — everything else below is scripted.
+2. **Redeploy both timelocks** with the Safe as sole proposer and `address(0)` as executor. The
+   ones live on Sepolia have the deployer EOA as both, which is a delay on one key, not governance.
+3. Transfer per the table. `Ownable2Step` everywhere — each needs the recipient to accept.
+4. Verify by reading `owner()` back on every row. A transfer that was proposed and never accepted
+   leaves the EOA in place and looks fine on a block explorer.
+5. **Rehearse a full queue → wait → execute cycle on Sepolia before mainnet.** A timelock you have
+   never executed against is a timelock you do not know works.
+
+Safe is already deployed on Robinhood Chain — factory and singleton at the canonical addresses for
+both 1.3.0 and 1.4.1, plus Multicall3 at `0xcA11bde05977b3631167028862bE2a173976CA11`. No Safe
+infrastructure needs deploying.
 
 ---
 

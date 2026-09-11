@@ -1727,14 +1727,24 @@ span.dapp-net-chip__mark {
 .dapp-console__line.is-err { color: var(--error); }
 
 /* ---- Latch Marketplace, store layout --------------------------------------
-   An app store's grammar — listing grid, trust row, product page behind each
-   card — over registry content. The one thing deliberately NOT borrowed is the
-   store habit of leading with the vendor's own copy: the submitter's prose sits
-   below the decoded bytecode on every card.
+   An app store's grammar over registry content: a listing grid, an info strip
+   under each name, a "nutrition label" of what the thing can do, a product
+   page behind each card. The one thing deliberately NOT borrowed is the store
+   habit of leading with the vendor's own copy: the submitter's prose sits below
+   the decoded bytecode on every card and on the product page.
 
    `data-tone` is the card's own risk colour and is set from listing state and
-   capability class ONLY. Verification never styles the card, so an audited
-   value-extracting Latch cannot buy its way out of looking dangerous.
+   capability class ONLY. Verification never styles a card, so an audited
+   value-extracting Latch cannot buy its way out of looking dangerous. The
+   tones, from loud to quiet:
+
+     danger      ribbon across the top, red left rule, red wash, red icon tile
+     caution     amber left rule; the ledger's CAN row carries the amber
+     deprecated  muted ribbon, card dimmed
+     plain       nothing added — the absence is the signal
+
+   Everything is a transition on a data attribute, so tokens.css's
+   reduced-motion collapse applies without any per-rule opt-out.
    -------------------------------------------------------------------------- */
 
 .lx-layout {
@@ -1746,7 +1756,10 @@ span.dapp-net-chip__mark {
 .lx-main { min-width: 0; }
 
 .lx-rail { display: grid; gap: 14px; position: sticky; top: 132px; }
-.lx-rail__card { padding: 18px; display: grid; gap: 10px; }
+/* align-content: start — below 1180px the two rail cards sit side by side and
+   stretch to one height; without this the shorter card's rows spread out to
+   fill it. */
+.lx-rail__card { padding: 18px; display: grid; gap: 10px; align-content: start; }
 .lx-rail__card .live-note { margin: 0; }
 .lx-rail__note { line-height: 1.55; }
 .lx-rail__note code { font-family: var(--font-mono); font-size: 11.5px; color: var(--dapp-ink-sub); }
@@ -1774,6 +1787,10 @@ span.dapp-net-chip__mark {
 .lx-toolbar .hx-filters { margin-top: 0; }
 
 .lx-count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
   margin: 18px 0 10px;
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -1781,98 +1798,353 @@ span.dapp-net-chip__mark {
   text-transform: uppercase;
   color: var(--label-ink);
 }
+/* The caption that makes a one-card grid read as the whole registry rather
+   than as a broken one. Body face, no tracking: it is a sentence, not a label. */
+.lx-count__note {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--faint-ink);
+}
 
-/* auto-fill, not auto-fit: with one listing the track keeps its width instead
-   of stretching a lone card across the whole column, which reads as a layout
-   bug rather than as a marketplace with one thing in it. */
+/* auto-fill, not auto-fit: with two listings the tracks keep their width. The
+   grid is a container so the solo layout below can key off the column the
+   grid actually has, not the viewport. */
 .lx-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
   gap: 14px;
   align-items: start;
+  container-type: inline-size;
 }
 
 /* ---- card ------------------------------------------------------------------ */
 
 .lx-card {
+  --lx-pad: 18px;
   position: relative;
   display: grid;
   gap: 12px;
-  padding: 18px;
+  padding: var(--lx-pad);
+  overflow: hidden;
   transition:
     border-color 0.22s var(--dapp-ease),
     background 0.22s var(--dapp-ease),
+    box-shadow 0.22s var(--dapp-ease),
     transform 0.22s var(--dapp-ease);
 }
 .lx-card:hover,
-.lx-card:focus-within { border-color: var(--border-hover); transform: translateY(-2px); }
-
-.lx-card[data-tone="caution"] { border-color: var(--dapp-badge-warn-border); }
-.lx-card[data-tone="caution"]:hover { border-color: var(--warning); }
-.lx-card[data-tone="danger"] {
-  border-color: var(--dapp-badge-danger-border);
-  background: linear-gradient(180deg, var(--dapp-badge-danger-bg), transparent 42%), var(--panel);
+.lx-card:focus-within {
+  border-color: var(--border-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--sh-card-hover);
 }
-.lx-card[data-tone="danger"]:hover { border-color: var(--error); }
-.lx-card[data-tone="deprecated"] { opacity: 0.9; }
 
-.lx-card__top { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.lx-icon { width: 44px; height: 44px; flex: 0 0 auto; }
-.lx-card[data-tone="danger"] .lx-icon {
+/* In the grid the two wrappers dissolve so DOM order is visual order:
+   identity, strip, alerts, ledger, prose, foot. */
+.lx-card__main,
+.lx-card__tail { display: contents; }
+
+/* tones */
+.lx-card[data-tone="caution"] {
+  border-color: var(--dapp-badge-warn-border);
+  box-shadow: inset 3px 0 0 0 var(--warning-alt);
+}
+.lx-card[data-tone="caution"]:hover,
+.lx-card[data-tone="caution"]:focus-within {
+  border-color: var(--warning);
+  box-shadow: inset 3px 0 0 0 var(--warning-alt), var(--sh-card-hover);
+}
+.lx-card[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--error) 55%, var(--hairline));
+  background: linear-gradient(180deg, var(--dapp-badge-danger-bg), transparent 46%), var(--panel);
+  box-shadow: inset 3px 0 0 0 var(--error);
+}
+.lx-card[data-tone="danger"]:hover,
+.lx-card[data-tone="danger"]:focus-within {
+  border-color: var(--error);
+  box-shadow: inset 3px 0 0 0 var(--error), var(--sh-card-hover);
+}
+.lx-card[data-tone="deprecated"] { opacity: 0.86; }
+.lx-card[data-tone="deprecated"]:hover,
+.lx-card[data-tone="deprecated"]:focus-within { opacity: 1; }
+
+/* ---- ribbon ---------------------------------------------------------------- */
+
+/* Bleeds to the card edge: it is a property of the whole card, not a line in
+   it. `--lx-pad` is the card's own padding so the same rule fits the hero. */
+.lx-ribbon {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: calc(-1 * var(--lx-pad)) calc(-1 * var(--lx-pad)) 0;
+  padding: 8px var(--lx-pad);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.lx-ribbon[data-level="danger"] {
+  background: color-mix(in srgb, var(--error) 20%, var(--panel));
+  border-bottom: 1px solid var(--dapp-badge-danger-border);
+  color: var(--error);
+}
+.lx-ribbon[data-level="mute"] {
+  background: var(--panel-alt);
+  border-bottom: 1px solid var(--hairline-soft);
+  color: var(--muted-ink);
+}
+.lx-ribbon__glyph {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  background: currentColor;
+}
+.lx-ribbon[data-level="danger"] .lx-ribbon__glyph { box-shadow: var(--dapp-glow-error); }
+
+/* ---- identity row ---------------------------------------------------------- */
+
+.lx-card__top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.lx-icon { width: 48px; height: 48px; border-radius: var(--r-btn); }
+.lx-card[data-tone="danger"] .lx-icon,
+.lx-detail[data-tone="danger"] .lx-hero__icon {
   border-color: var(--dapp-badge-danger-border);
   background: var(--dapp-badge-danger-bg);
 }
-.lx-card[data-tone="danger"] .dapp-tile__diamond { border-color: var(--error); }
+.lx-card[data-tone="danger"] .dapp-tile__diamond,
+.lx-detail[data-tone="danger"] .lx-hero__icon .dapp-tile__diamond { border-color: var(--error); }
+.lx-card[data-tone="caution"] .dapp-tile__diamond,
+.lx-detail[data-tone="caution"] .lx-hero__icon .dapp-tile__diamond { border-color: var(--warning); }
 
-.lx-card__id { min-width: 0; display: grid; gap: 2px; }
-.lx-card__name { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 17px; line-height: 1.25; }
+.lx-card__id { min-width: 0; display: grid; gap: 3px; }
+.lx-card__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
 .lx-card__go { color: var(--ink); text-decoration: none; }
 .lx-card__go:hover { color: var(--sky-ink); }
 /* The stretched hit target. Every other anchor in the card is lifted above it. */
 .lx-card__go::after { position: absolute; inset: 0; z-index: 0; content: ""; border-radius: var(--r-card); }
 .lx-card__go:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 3px; border-radius: 4px; }
 .lx-card a:not(.lx-card__go),
-.lx-card button { position: relative; z-index: 1; }
+.lx-card button,
+.lx-card .lx-bits { position: relative; z-index: 1; }
 
-.lx-card__addr { font-family: var(--font-mono); font-size: 11px; color: var(--label-ink); text-decoration: none; }
-.lx-card__addr:hover { color: var(--signal-blue); text-decoration: underline; }
-
-/* ---- the trust row --------------------------------------------------------- */
-
-.lx-trust {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
-  gap: 10px;
+/* The line under the name is on-chain: capability class, callback count,
+   chain. It takes the class's colour so a Restrictive or Value-extracting
+   Latch is named as such in the first two lines of the card. */
+.lx-card__sub,
+.lx-hero__sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
   margin: 0;
-  padding: 11px 12px;
-  border: 1px solid var(--hairline-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--dapp-ink-sub);
+}
+.lx-card__sub[data-risk="1"] > span:first-child,
+.lx-hero__sub[data-risk="1"] { color: var(--warning); }
+.lx-card__sub[data-risk="2"] > span:first-child,
+.lx-hero__sub[data-risk="2"] { color: var(--error); }
+.lx-card__chain { font-size: 11px; }
+
+.lx-card__cta {
+  align-self: start;
+  padding: 7px 14px;
+  border: 1px solid var(--hairline-blue-2);
+  border-radius: var(--r-pill);
+  background: var(--panel-alt);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--sky-ink);
+  white-space: nowrap;
+  transition:
+    background 0.22s var(--dapp-ease),
+    border-color 0.22s var(--dapp-ease),
+    color 0.22s var(--dapp-ease);
+}
+.lx-card:hover .lx-card__cta,
+.lx-card:focus-within .lx-card__cta {
+  background: var(--active-nav);
+  border-color: var(--border-hover);
+  color: var(--ink-bright);
+}
+
+/* ---- the info strip -------------------------------------------------------- */
+
+/* Card size: three cells in a row, divided by hairlines, no box around them —
+   the store's own device. Falls to a 2 + 1 wrap on the narrowest cards. */
+.lx-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 96px), 1fr));
+  gap: 8px 0;
+  margin: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--hairline-soft);
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.lx-strip__cell {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+  padding: 0 12px;
+  border-left: 1px solid var(--hairline-soft);
+}
+.lx-strip__cell:first-child { padding-left: 0; border-left: 0; }
+.lx-strip__cell dd { margin: 0; min-width: 0; }
+/* A badge that wraps beats one that truncates: "Source verif…" is not a value. */
+.lx-strip__cell .dapp-badge { display: inline-block; max-width: 100%; white-space: normal; line-height: 1.35; }
+.lx-strip__cap { font-size: 11.5px; line-height: 1.45; color: var(--faint-ink); }
+.lx-strip__val { font-family: var(--font-mono); font-size: 15px; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; }
+.lx-strip__of { color: var(--faint-ink); font-size: 12px; }
+.lx-strip__cap code { font-family: var(--font-mono); font-size: 10.5px; color: var(--dapp-ink-sub); }
+
+/* Product-page size: a scroll-snapping row of centred cells with a caption
+   under each — the App Store's strip, cell for cell. */
+.lx-strip--lg {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 16px 0 12px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-blue-2) transparent;
+}
+.lx-strip--lg .lx-strip__cell {
+  flex: 1 0 150px;
+  max-width: 236px;
+  padding: 2px 16px;
+  justify-items: center;
+  text-align: center;
+  scroll-snap-align: start;
+}
+.lx-strip--lg .lx-strip__cell:first-child { padding-left: 4px; }
+.lx-strip--lg .lx-strip__cell dd:nth-child(2) { display: flex; align-items: center; min-height: 26px; }
+.lx-strip--lg .lx-strip__cap { padding-top: 2px; text-wrap: balance; }
+
+/* ---- the capability ledger ------------------------------------------------- */
+
+.lx-ledger {
+  display: grid;
+  align-content: start;
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
   border-radius: var(--r-sm);
   background: var(--panel-alt);
 }
-.lx-trust__cell { display: grid; gap: 5px; min-width: 0; }
-.lx-trust__cell dd { margin: 0; }
-.lx-trust__cell .dapp-badge { display: inline-block; }
-.lx-trust--lg { padding: 14px 16px; gap: 14px; }
-.lx-card[data-tone="danger"] .lx-trust { border-color: var(--dapp-badge-danger-border); }
+.lx-ledger[data-tone="danger"] { border-color: var(--dapp-badge-danger-border); }
+.lx-ledger[data-tone="caution"] { border-color: var(--dapp-badge-warn-border); }
+.lx-ledger__head { padding: 10px 0 8px; }
 
-/* ---- capability block ------------------------------------------------------ */
+.lx-ledger__rows { list-style: none; margin: 0; padding: 0; }
+.lx-ledger__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--hairline-soft);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted-ink);
+}
+.lx-ledger__row[data-can="yes"] { color: var(--ink); }
+.lx-ledger__ask { display: grid; gap: 2px; min-width: 0; }
+.lx-ledger__why { font-size: 11.5px; line-height: 1.45; color: var(--faint-ink); }
 
-.lx-caps__meter {
+/* The verdict pill. A NO is deliberately quiet — the reassurance is that it
+   is there at all, not that it is loud. A YES is coloured by what it costs. */
+.lx-ledger__verdict {
+  padding: 3px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-micro);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  color: var(--faint-ink);
+  white-space: nowrap;
+}
+.lx-ledger__row[data-can="yes"][data-kind="value"] .lx-ledger__verdict {
+  border-color: var(--dapp-badge-danger-border);
+  background: var(--dapp-badge-danger-bg);
+  color: var(--error);
+}
+.lx-ledger__row[data-can="yes"][data-kind="veto"] .lx-ledger__verdict {
+  border-color: var(--dapp-badge-warn-border);
+  background: var(--dapp-badge-warn-bg);
+  color: var(--warning);
+}
+.lx-ledger__none {
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--hairline-soft);
+  font-size: 12.5px;
+  color: var(--muted-ink);
+}
+
+.lx-ledger__foot {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
-  margin: 9px 0 0;
-  padding-top: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding: 10px 0 11px;
+  margin-top: 8px;
   border-top: 1px solid var(--hairline-soft);
-  font-family: var(--font-mono);
-  font-size: 11px;
 }
-.lx-caps__bitmap { color: var(--dapp-ink-data); }
-.lx-caps__count { color: var(--faint-ink); }
+.lx-ledger__meter { font-family: var(--font-mono); font-size: 11px; }
+.lx-ledger__hex { color: var(--dapp-ink-data); }
+.lx-ledger__count { color: var(--faint-ink); }
+
+/* ---- the bit strip --------------------------------------------------------- */
+
+/* Fourteen cells, bit 0 on the left. Fill colour is the callback's kind, so a
+   red cell is a returns-delta bit and can be read from across the grid. */
+.lx-bits {
+  display: inline-grid;
+  grid-template-columns: repeat(14, auto);
+  gap: 3px;
+  vertical-align: middle;
+}
+.lx-bits i {
+  display: block;
+  width: 9px;
+  height: 15px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.22s var(--dapp-ease), border-color 0.22s var(--dapp-ease);
+}
+.lx-bits i[data-held="yes"][data-kind="observe"] { background: var(--signal-blue); border-color: var(--signal-blue); }
+.lx-bits i[data-held="yes"][data-kind="veto"] { background: var(--warning); border-color: var(--warning); }
+.lx-bits i[data-held="yes"][data-kind="delta"] { background: var(--error); border-color: var(--error); box-shadow: var(--dapp-glow-error); }
+.lx-bits--lg { gap: 4px; }
+.lx-bits--lg i { width: 16px; height: 24px; border-radius: 3px; }
 
 /* ---- submitter prose ------------------------------------------------------- */
 
+.lx-card__prose { display: grid; gap: 6px; }
 .lx-card__desc {
   margin: 0;
   font-size: 13.5px;
@@ -1884,7 +2156,9 @@ span.dapp-net-chip__mark {
   line-clamp: 3;
   overflow: hidden;
 }
-.lx-card__byline { margin: -4px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--faint-ink); }
+.lx-card__byline { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--faint-ink); }
+.lx-card__byline a { color: var(--dapp-ink-sub); text-decoration: none; }
+.lx-card__byline a:hover { color: var(--signal-blue); text-decoration: underline; }
 
 .lx-card__foot {
   display: flex;
@@ -1901,35 +2175,131 @@ span.dapp-net-chip__mark {
 .lx-card__more { font-family: var(--font-mono); font-size: 11px; color: var(--label-ink); transition: color 0.22s var(--dapp-ease); }
 .lx-card:hover .lx-card__more { color: var(--signal-blue); }
 
+/* ---- the solo layout ------------------------------------------------------- */
+
+/* One listing, no filters: the card takes the whole column and splits into
+   identity on the left and the ledger on the right, so it reads as a finished
+   panel rather than a lone tile with an empty track beside it. Keyed to the
+   grid's own width so it holds inside the rail layout and on a tablet alike. */
+/* Outside the query on purpose: a container query styles a container's
+   descendants, never the container itself, so the grid's own column rule has
+   to live here. A solo grid is one column at every width. */
+.lx-grid[data-solo="true"] { grid-template-columns: minmax(0, 1fr); }
+
+@container (min-width: 700px) {
+  .lx-grid[data-solo="true"] .lx-card {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    column-gap: 22px;
+    padding: 22px;
+    --lx-pad: 22px;
+  }
+  .lx-grid[data-solo="true"] .lx-card__main,
+  .lx-grid[data-solo="true"] .lx-card__tail {
+    display: grid;
+    gap: 12px;
+    grid-column: 1;
+    align-content: start;
+  }
+  .lx-grid[data-solo="true"] .lx-card__caps { grid-column: 2; grid-row: span 2; }
+  .lx-grid[data-solo="true"] .lx-card__desc { -webkit-line-clamp: 6; line-clamp: 6; }
+  .lx-grid[data-solo="true"] .lx-icon { width: 56px; height: 56px; }
+  .lx-grid[data-solo="true"] .lx-card__name { font-size: 20px; }
+}
+
 /* ---- Latch detail: the product page ---------------------------------------- */
 
 .lx-detail { display: grid; gap: 14px; }
-.lx-hero { display: grid; gap: 14px; }
-.lx-hero__top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.lx-hero__icon { width: 58px; height: 58px; flex: 0 0 auto; }
-.lx-hero__id { min-width: 0; display: grid; gap: 4px; flex: 1 1 240px; }
-.lx-hero__name { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 25px; line-height: 1.2; }
-.lx-hero__addr { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; font-family: var(--font-mono); font-size: 12px; color: var(--label-ink); }
-.lx-hero__addr a { color: var(--signal-blue); text-decoration: none; }
-.lx-hero__addr a:hover { text-decoration: underline; }
-.lx-hero__chain { display: inline-flex; align-items: center; gap: 6px; }
-.lx-hero__mark { width: 14px; height: 14px; object-fit: contain; }
+.lx-hero { --lx-pad: 22px; display: grid; gap: 16px; overflow: hidden; }
+.lx-hero__top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+}
+.lx-hero__icon { width: 64px; height: 64px; border-radius: 16px; }
+.lx-hero__icon .dapp-tile__diamond { width: 18px; height: 18px; }
+.lx-hero__id { min-width: 0; display: grid; gap: 5px; }
+.lx-hero__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.lx-hero__sub { font-size: 12px; }
+.lx-hero__by {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted-ink);
+}
+.lx-hero__by a { color: var(--signal-blue); text-decoration: none; font-family: var(--font-mono); font-size: 12px; }
+.lx-hero__by a:hover { text-decoration: underline; }
+.lx-hero__dot { color: var(--faint-ink); }
+.lx-hero__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-self: start; }
+.lx-hero__actions .dapp-btn { text-decoration: none; }
+.lx-hero__alerts { display: grid; gap: 8px; }
 
 .lx-detail[data-tone="danger"] .lx-hero {
-  border-color: var(--dapp-badge-danger-border);
-  background: linear-gradient(180deg, var(--dapp-badge-danger-bg), transparent 38%), var(--panel);
+  border-color: color-mix(in srgb, var(--error) 55%, var(--hairline));
+  background: linear-gradient(180deg, var(--dapp-badge-danger-bg), transparent 40%), var(--panel);
+  box-shadow: inset 3px 0 0 0 var(--error);
 }
-.lx-detail[data-tone="caution"] .lx-hero { border-color: var(--dapp-badge-warn-border); }
+.lx-detail[data-tone="caution"] .lx-hero {
+  border-color: var(--dapp-badge-warn-border);
+  box-shadow: inset 3px 0 0 0 var(--warning-alt);
+}
+.lx-detail[data-tone="deprecated"] .lx-hero { opacity: 0.9; }
 
-/* The permission matrix — all fourteen callbacks, held and not held. The rows a
-   Latch does NOT hold are the reassuring half of the page, so they are rendered
-   rather than omitted: an absent row reads as "unknown", not as "no". */
+.lx-section { display: grid; gap: 12px; }
+.lx-section .live-note { margin: 0; }
+.lx-section__note { margin: 0; }
+
+/* The permission matrix — all fourteen callbacks, held and not held, grouped
+   by what a held bit is able to do. The rows a Latch does NOT hold are the
+   reassuring half of the page, so they are rendered rather than omitted: an
+   absent row reads as "unknown", not as "no". */
+.lx-matrix { display: grid; gap: 14px; padding-top: 4px; }
+.lx-matrix__group {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--r-sm);
+  background: var(--panel-alt);
+}
+.lx-matrix__group[data-kind="delta"][data-any="yes"] { border-color: var(--dapp-badge-danger-border); }
+.lx-matrix__group[data-kind="veto"][data-any="yes"] { border-color: var(--dapp-badge-warn-border); }
+.lx-matrix__h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.lx-matrix__swatch { width: 9px; height: 15px; border-radius: 2px; border: 1px solid var(--hairline-blue); }
+.lx-matrix__group[data-kind="delta"] .lx-matrix__swatch { background: var(--error); border-color: var(--error); }
+.lx-matrix__group[data-kind="veto"] .lx-matrix__swatch { background: var(--warning); border-color: var(--warning); }
+.lx-matrix__group[data-kind="observe"] .lx-matrix__swatch { background: var(--signal-blue); border-color: var(--signal-blue); }
+.lx-matrix__n { margin-left: auto; font-family: var(--font-mono); font-weight: 400; font-size: 11px; color: var(--faint-ink); }
+.lx-matrix__group[data-kind="delta"][data-any="yes"] .lx-matrix__n { color: var(--error); }
+.lx-matrix__group[data-kind="veto"][data-any="yes"] .lx-matrix__n { color: var(--warning); }
+.lx-matrix__why { margin: 0 0 4px; font-size: 12px; line-height: 1.5; color: var(--muted-ink); }
+
 .lx-perms {
   list-style: none;
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
   gap: 0 18px;
 }
 .lx-perms li {
@@ -1937,7 +2307,7 @@ span.dapp-net-chip__mark {
   align-items: center;
   gap: 9px;
   padding: 6px 0;
-  border-bottom: 1px solid var(--hairline-soft);
+  border-top: 1px solid var(--hairline-soft);
   font-family: var(--font-mono);
   font-size: 12px;
 }
@@ -1948,26 +2318,47 @@ span.dapp-net-chip__mark {
   font-size: 11px;
   color: var(--faint-ink);
 }
-.lx-perms li[data-held="yes"] { color: var(--ink); }
-.lx-perms li[data-held="yes"] .lx-perm__mark { color: var(--success); }
 .lx-perms li[data-held="no"] { color: var(--faint-ink); }
-.lx-perms li[data-held="yes"][data-danger="yes"] { color: var(--warning); }
-.lx-perms li[data-held="yes"][data-danger="yes"] .lx-perm__mark { color: var(--error); }
+.lx-perms li[data-held="yes"] { color: var(--ink); }
+.lx-perms li[data-held="yes"] .lx-perm__mark { color: var(--signal-blue); }
+.lx-perms li[data-held="yes"][data-kind="veto"] { color: var(--warning); }
+.lx-perms li[data-held="yes"][data-kind="veto"] .lx-perm__mark { color: var(--warning); }
+.lx-perms li[data-held="yes"][data-kind="delta"] { color: var(--error); }
+.lx-perms li[data-held="yes"][data-kind="delta"] .lx-perm__mark { color: var(--error); }
 .lx-perm__bit { margin-left: auto; font-size: 10px; color: var(--faint-ink); }
 
-.lx-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 12px; margin: 0; }
-.lx-kv dt {
+/* The information table. Each label carries where the value came from. */
+.lx-info { display: grid; margin: 0; }
+.lx-info__row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.32fr) minmax(0, 1fr);
+  gap: 6px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--hairline-soft);
+  align-items: baseline;
+}
+.lx-info__row:first-child { border-top: 0; padding-top: 4px; }
+.lx-info dt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 13px;
+  color: var(--muted-ink);
+}
+.lx-info__src {
   font-family: var(--font-mono);
   font-size: 9.5px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--label-ink);
-  margin-bottom: 4px;
+  color: var(--success);
 }
-.lx-kv dd { margin: 0; font-size: 13px; color: var(--ink); overflow-wrap: anywhere; }
-.lx-kv dd a { color: var(--signal-blue); text-decoration: none; }
-.lx-kv dd a:hover { text-decoration: underline; }
-.lx-kv__mono { font-family: var(--font-mono); font-size: 12px; }
+.lx-info__src--claim { color: var(--warning); }
+.lx-info dd { margin: 0; font-size: 13px; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+.lx-info dd a { color: var(--signal-blue); text-decoration: none; }
+.lx-info dd a:hover { text-decoration: underline; }
+.lx-info__mono { font-family: var(--font-mono); font-size: 12px; }
+.lx-info__aside { font-family: var(--font-body); font-size: 12.5px; color: var(--faint-ink); }
 
 .lx-quote {
   margin: 0;
@@ -1980,6 +2371,8 @@ span.dapp-net-chip__mark {
   color: var(--muted-ink);
 }
 .lx-quote__by { display: block; margin-top: 8px; font-size: 11.5px; color: var(--faint-ink); }
+.lx-quote__by a { color: var(--signal-blue); text-decoration: none; }
+.lx-quote__by a:hover { text-decoration: underline; }
 
 .lx-back { margin: 4px 0 0; font-size: 12.5px; }
 .lx-back a { color: var(--signal-blue); }
@@ -1989,11 +2382,21 @@ span.dapp-net-chip__mark {
   .lx-rail { position: static; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
 }
 
+@media (max-width: 720px) {
+  .lx-hero__top { grid-template-columns: auto minmax(0, 1fr); }
+  .lx-hero__actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
 @media (max-width: 640px) {
   .lx-grid { grid-template-columns: minmax(0, 1fr); }
+  .lx-card { padding: 16px; --lx-pad: 16px; }
+  .lx-card__top { grid-template-columns: auto minmax(0, 1fr); }
+  .lx-card__cta { display: none; }
+  .lx-hero { --lx-pad: 18px; padding: 18px; }
   .lx-hero__name { font-size: 21px; }
-  .lx-hero__icon { width: 46px; height: 46px; }
-  .lx-card { padding: 16px; }
+  .lx-hero__icon { width: 50px; height: 50px; border-radius: 13px; }
+  .lx-strip--lg .lx-strip__cell { flex-basis: 150px; }
+  .lx-info__row { grid-template-columns: minmax(0, 1fr); gap: 3px; }
 }
 
 /* ---- Chain tag ------------------------------------------------------------

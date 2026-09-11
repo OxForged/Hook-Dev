@@ -14,12 +14,14 @@
    the chain, and the user would have no way to know which one lied.
 
    STORE SHAPE, SAFETY CONTENT. The layout borrows the grammar of an app store —
-   a listing grid, a trust row, a product page behind each card — because that is
-   the grammar people already read when deciding whether to install something.
+   a listing grid, an info strip under each name, a "nutrition label" of what
+   the thing can do, a product page behind each card — because that is the
+   grammar people already read when deciding whether to install something.
    What it does NOT borrow is the app-store habit of leading with the vendor's
-   own marketing. The three signals in the trust row are all on-chain enums, and
-   the capability block under them is decoded from the Latch's own bytecode. The
-   submitter's name and description sit BELOW both, marked as their words.
+   own marketing. The line under the name is the capability class, not a
+   tagline. The strip is three on-chain enums. The ledger is decoded from the
+   Latch's own bytecode. The submitter's name and description sit BELOW all of
+   it, marked as their words. (See components/LatchSignals for the pieces.)
 
    Three rules the layout enforces:
 
@@ -31,32 +33,47 @@
      3. A dangerous Latch must not be able to look premium. Verification level
         styles the badge only — it never styles the card. The card's own tone is
         driven by listing state and capability class, so an audited
-        value-extracting Latch still reads as dangerous.
+        value-extracting Latch still reads as dangerous — ribbon and all.
 
    READ ONLY. There is deliberately no wallet, no signing and no write path here.
    ============================================================================ */
 
-import { ChainTag } from '../../../components/ChainTag.tsx'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { ChainMark } from '../../../components/ChainMark.tsx'
+import { ChainTag } from '../../../components/ChainTag.tsx'
 import { chainByKey } from '../../../data/chains.ts'
-import { HOOK_CALLBACKS } from '../../../data/registry.generated.ts'
 import {
   DEPLOYMENTS,
   LISTING_LABEL,
   RISK_LABEL,
   SEPOLIA_CHAIN_ID,
   VERIFICATION_LABEL,
-  capabilityClaims,
   explorerAddress,
   readRegisteredLatches,
-  type ListingState,
   type RegisteredLatch,
   type RiskClass,
   type VerificationLevel,
 } from '../../../lib/chain'
+import { CapabilityLedger, LatchAlerts, Ribbon, TrustStrip } from '../components/LatchSignals.tsx'
+import {
+  LISTING_BADGE,
+  LISTING_MALICIOUS,
+  LISTING_MEANING,
+  LISTING_VALUES,
+  RISK_BADGE,
+  RISK_MEANING,
+  RISK_VALUES,
+  VERIFICATION_BADGE,
+  VERIFICATION_MEANING,
+  VERIFICATION_VALUES,
+  hasAlerts,
+  latchTone,
+  onChainSubline,
+  safeHttpUrl,
+  shortAddress as short,
+} from '../components/latchModel.ts'
 import { dappPath } from '../paths.ts'
 
 type State =
@@ -65,74 +82,6 @@ type State =
   | { k: 'ready'; hooks: RegisteredLatch[] }
 
 const NO_HOOKS: RegisteredLatch[] = []
-
-const LISTING_DEPRECATED = 1 satisfies ListingState
-const LISTING_MALICIOUS = 2 satisfies ListingState
-const RISK_VALUE_EXTRACTING = 2 satisfies RiskClass
-
-/** An unverified Latch must never borrow the visual language of an audited one. */
-const VERIFICATION_BADGE: Record<VerificationLevel, string> = {
-  0: 'dapp-badge dapp-badge--mute',
-  1: 'dapp-badge dapp-badge--info',
-  2: 'dapp-badge dapp-badge--ok',
-}
-
-const RISK_BADGE: Record<RiskClass, string> = {
-  0: 'dapp-badge dapp-badge--mute',
-  1: 'dapp-badge dapp-badge--warn',
-  2: 'dapp-badge dapp-badge--danger',
-}
-
-const LISTING_BADGE: Record<ListingState, string> = {
-  0: 'dapp-badge dapp-badge--ok',
-  1: 'dapp-badge dapp-badge--mute',
-  2: 'dapp-badge dapp-badge--danger',
-}
-
-/* One sentence per enum value, for the legend rail. These describe what the
-   registry means by the word — not what any particular Latch does. */
-const VERIFICATION_MEANING: Record<VerificationLevel, string> = {
-  0: 'Nobody has checked the source against the deployed bytecode.',
-  1: 'Someone matched published source to what is on chain. It says the code is what it claims — not that the code is safe.',
-  2: 'An audit was recorded against this listing. Read the report; an audit is a document, not a guarantee.',
-}
-
-const RISK_MEANING: Record<RiskClass, string> = {
-  0: 'Holds no permission that can move funds or stop a trade. It can watch and record.',
-  1: 'Holds a before-callback, so it can reject a swap, a deposit or a withdrawal outright.',
-  2: 'Holds a returns-delta permission: it can take a share of swaps, or refuse liquidity withdrawal.',
-}
-
-const LISTING_MEANING: Record<ListingState, string> = {
-  0: 'Listed and not marked by a guardian.',
-  1: 'Superseded or abandoned by its steward. Not an accusation.',
-  2: 'A guardian has marked it as known to harm users. Its verification is reset.',
-}
-
-const VERIFICATION_FILTERS = [0, 1, 2] as const
-const RISK_FILTERS = [0, 1, 2] as const
-
-const TOTAL_CALLBACKS = HOOK_CALLBACKS.length
-
-/** `0x1234…abcd`. */
-function short(address: string): string {
-  return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
-}
-
-/**
- * sourceURI and auditURI are submitter-supplied strings straight out of contract
- * storage. Anything that is not plain http(s) — `javascript:`, `data:` — is shown
- * as inert text rather than turned into a link the user can click.
- */
-function safeHttpUrl(uri: string): string | null {
-  if (!uri) return null
-  try {
-    const u = new URL(uri)
-    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null
-  } catch {
-    return null
-  }
-}
 
 /**
  * What the live region says. The singular is spelled out rather than pluralised
@@ -171,108 +120,19 @@ function matchesQuery(hook: RegisteredLatch, q: string): boolean {
 }
 
 /**
- * The card's tone — what colour the whole card reads as.
+ * One listing.
  *
- * Deliberately NOT a function of verification. An audited Latch that can take a
- * cut of every swap is still a Latch that can take a cut of every swap, and the
- * card must say so before it says anyone vouched for it.
+ * DOM order is decision order: identity and the three signals, any warning,
+ * the ledger decoded from bytecode, and only then the submitter's prose. The
+ * `__main` / `__tail` wrappers are `display: contents` in the grid, so that
+ * order is also the visual order; when the card is the only one on the page
+ * they become the left column and the ledger becomes the right (see the
+ * container query on `.lx-grid[data-solo]`).
  */
-function cardTone(hook: RegisteredLatch): 'danger' | 'caution' | 'deprecated' | 'plain' {
-  if (hook.listing === LISTING_MALICIOUS) return 'danger'
-  if (hook.risk === RISK_VALUE_EXTRACTING || !hook.permissionsReadable) return 'danger'
-  if (hook.listing === LISTING_DEPRECATED) return 'deprecated'
-  if (hook.risk === 1 || !hook.permissionsValid) return 'caution'
-  return 'plain'
-}
-
-/** The alert lines a Latch earns. Shared by the card and the detail page's hero. */
-export function LatchAlerts({ hook }: { hook: RegisteredLatch }) {
-  return (
-    <>
-      {/* Malicious listings get the loudest line, above everything the submitter
-          wrote about themselves. */}
-      {hook.listing === LISTING_MALICIOUS && (
-        <p className="hx-alert hx-alert--danger">
-          A guardian has flagged this Latch as known to harm users. Its verification has been
-          reset. Do not route funds through a pool that uses it.
-        </p>
-      )}
-
-      {hook.risk === RISK_VALUE_EXTRACTING && (
-        <p className="hx-alert hx-alert--danger">
-          Value-extracting. This Latch holds a permission that lets it take a cut of swaps or
-          refuse liquidity withdrawals. Value routed through its pools moves at its discretion.
-        </p>
-      )}
-
-      {!hook.permissionsReadable && (
-        <p className="hx-alert hx-alert--danger">
-          STALE — the registry can no longer read this contract&rsquo;s bitmap. The capabilities
-          shown are the last values that were successfully read and may no longer be true.
-        </p>
-      )}
-
-      {!hook.permissionsValid && (
-        <p className="hx-alert">
-          Malformed bitmap — it carries reserved bits, or a returns-delta bit without the
-          callback that bit depends on. It cannot be attested to in this state.
-        </p>
-      )}
-
-      {/* Deprecated is a status, not an accusation — marked, not alarmed. */}
-      {hook.listing === LISTING_DEPRECATED && (
-        <p className="hx-note">
-          Deprecated — superseded or abandoned by its steward. Not an accusation; any
-          verification it earned still stands.
-        </p>
-      )}
-    </>
-  )
-}
-
-/**
- * The three on-chain signals, always in the same order, always all three present.
- *
- * A missing cell would be read as "not applicable" when what it really means is
- * "we did not say", so every Latch renders every row even when the answer is the
- * boring one.
- */
-export function TrustRow({ hook, size }: { hook: RegisteredLatch; size?: 'lg' }) {
-  return (
-    <dl className={size === 'lg' ? 'lx-trust lx-trust--lg' : 'lx-trust'}>
-      <div className="lx-trust__cell">
-        <dt className="dapp-microlabel dapp-microlabel--tight">VERIFICATION</dt>
-        <dd>
-          <span className={VERIFICATION_BADGE[hook.verification]}>
-            {VERIFICATION_LABEL[hook.verification]}
-          </span>
-        </dd>
-      </div>
-      {/* "CAPABILITY", not "CAPABILITY CLASS": the longer label wraps to two
-          lines in a card-width cell and drops its badge out of line with the
-          other two. The legend in the rail spells the full name out. */}
-      <div className="lx-trust__cell">
-        <dt className="dapp-microlabel dapp-microlabel--tight">CAPABILITY</dt>
-        <dd>
-          <span className={RISK_BADGE[hook.risk]}>{RISK_LABEL[hook.risk]}</span>
-        </dd>
-      </div>
-      <div className="lx-trust__cell">
-        <dt className="dapp-microlabel dapp-microlabel--tight">LISTING</dt>
-        <dd>
-          <span className={LISTING_BADGE[hook.listing]}>{LISTING_LABEL[hook.listing]}</span>
-        </dd>
-      </div>
-    </dl>
-  )
-}
-
 function LatchCard({ hook, index }: { hook: RegisteredLatch; index: number }) {
   const source = safeHttpUrl(hook.sourceURI)
   const audit = safeHttpUrl(hook.auditURI)
-  const claims = capabilityClaims(hook)
-  const tone = cardTone(hook)
-  const held = hook.callbacks.length
+  const tone = latchTone(hook)
 
   return (
     <article
@@ -280,103 +140,98 @@ function LatchCard({ hook, index }: { hook: RegisteredLatch; index: number }) {
       data-tone={tone}
       style={{ animationDelay: `${(index * 0.05).toFixed(2)}s` }}
     >
-      <div className="lx-card__top">
-        <span className="dapp-tile lx-icon" aria-hidden="true">
-          <span className="dapp-tile__diamond" />
-        </span>
-        <div className="lx-card__id">
-          <h3 className="lx-card__name">
-            {/* The whole card is the hit target — this anchor's ::after covers it.
-                Every other link on the card is lifted above that overlay, so the
-                block-explorer links still work. */}
-            <Link className="lx-card__go" to={`${dappPath('marketplace')}/${hook.address}`}>
-              {hook.name || 'Unnamed Latch'}
-            </Link>
-          </h3>
-          <a
-            className="lx-card__addr"
-            href={explorerAddress(hook.chainId, hook.address)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {short(hook.address)} ↗
-          </a>
-          {/* Which chain this Latch lives on. Read off the record, not the page —
-              a marketplace that spans chains cannot infer it from context. */}
-          <ChainTag chainId={hook.chainId} size={13} className="lx-card__chain" />
-        </div>
+      <Ribbon hook={hook} />
+
+      <div className="lx-card__main">
+        <header className="lx-card__top">
+          <span className="dapp-tile lx-icon" aria-hidden="true">
+            <span className="dapp-tile__diamond" />
+          </span>
+          <div className="lx-card__id">
+            <h3 className="lx-card__name">
+              {/* The whole card is the hit target — this anchor's ::after covers
+                  it. Every other link on the card is lifted above that overlay,
+                  so the block-explorer links still work. */}
+              <Link className="lx-card__go" to={`${dappPath('marketplace')}/${hook.address}`}>
+                {hook.name || 'Unnamed Latch'}
+              </Link>
+            </h3>
+            {/* Where a store prints the vendor's tagline: the capability class
+                and callback count, both on-chain, and the chain the record was
+                read from. Nothing on this line is writable by the submitter. */}
+            <p className="lx-card__sub" data-risk={hook.risk}>
+              <span>{onChainSubline(hook)}</span>
+              <ChainTag chainId={hook.chainId} size={13} className="lx-card__chain" />
+            </p>
+          </div>
+          {/* The store's "GET" pill, repurposed. Decorative — the name is the
+              real link and it already covers the card. */}
+          <span className="lx-card__cta" aria-hidden="true">
+            Inspect
+          </span>
+        </header>
+
+        <TrustStrip hook={hook} />
+
+        {hasAlerts(hook) && (
+          <div className="lx-card__alerts">
+            <LatchAlerts hook={hook} />
+          </div>
+        )}
       </div>
-
-      <TrustRow hook={hook} />
-
-      <LatchAlerts hook={hook} />
 
       {/* The un-fakeable half of the card. It sits ABOVE the submitter's prose
           because it is the half that decides whether the prose matters. */}
-      <div className={`hx-caps ${tone === 'danger' ? 'hx-caps--danger' : ''}`}>
-        <p className="dapp-microlabel dapp-microlabel--tight">
-          WHAT THIS LATCH CAN DO · FROM ITS OWN BYTECODE
-        </p>
-        <ul className="hx-caps__list">
-          {claims.map((c) => (
-            <li key={c}>{c}</li>
-          ))}
-        </ul>
-        <p className="lx-caps__meter">
-          <span className="lx-caps__bitmap tabular">
-            0x{hook.permissions.toString(16).padStart(4, '0')}
-          </span>
-          <span className="lx-caps__count">
-            {held} of {TOTAL_CALLBACKS} callbacks held
-          </span>
-        </p>
+      <div className="lx-card__caps">
+        <CapabilityLedger hook={hook} />
       </div>
 
-      {hook.callbacks.length > 0 && (
-        <p className="dapp-tags">
-          {hook.callbacks.map((c) => (
-            <span key={c} className="dapp-tag">
-              {c}
-            </span>
-          ))}
-        </p>
-      )}
+      <div className="lx-card__tail">
+        <div className="lx-card__prose">
+          <p className="lx-card__desc">
+            {hook.description || <span className="hx-muted">No description supplied.</span>}
+          </p>
+          <p className="lx-card__byline">
+            Submitter&rsquo;s description, from{' '}
+            <a
+              href={explorerAddress(hook.chainId, hook.submitter)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {short(hook.submitter)}
+            </a>{' '}
+            — unverified, not a capability claim.
+          </p>
+        </div>
 
-      <p className="lx-card__desc">
-        {hook.description || <span className="hx-muted">No description supplied.</span>}
-      </p>
-      <p className="lx-card__byline">
-        Written by the submitter, {short(hook.submitter)} — not verified, and not a capability
-        claim.
-      </p>
-
-      <div className="lx-card__foot">
-        <span className="lx-links">
-          <a
-            href={explorerAddress(hook.chainId, hook.address)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Contract ↗
-          </a>
-          {source ? (
-            <a href={source} target="_blank" rel="noopener noreferrer">
-              Source ↗
+        <footer className="lx-card__foot">
+          <span className="lx-links">
+            <a
+              href={explorerAddress(hook.chainId, hook.address)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Contract {short(hook.address)} ↗
             </a>
-          ) : (
-            <span className="hx-muted">No source</span>
-          )}
-          {audit ? (
-            <a href={audit} target="_blank" rel="noopener noreferrer">
-              Audit ↗
-            </a>
-          ) : (
-            <span className="hx-muted">No audit</span>
-          )}
-        </span>
-        <span className="lx-card__more" aria-hidden="true">
-          Full record →
-        </span>
+            {source ? (
+              <a href={source} target="_blank" rel="noopener noreferrer">
+                Source ↗
+              </a>
+            ) : (
+              <span className="hx-muted">No source</span>
+            )}
+            {audit ? (
+              <a href={audit} target="_blank" rel="noopener noreferrer">
+                Audit ↗
+              </a>
+            ) : (
+              <span className="hx-muted">No audit</span>
+            )}
+          </span>
+          <span className="lx-card__more" aria-hidden="true">
+            Full record →
+          </span>
+        </footer>
       </div>
     </article>
   )
@@ -395,7 +250,7 @@ function SignalLegend() {
 
       <p className="dapp-microlabel dapp-microlabel--tight lx-legend__head">VERIFICATION</p>
       <ul className="lx-legend">
-        {VERIFICATION_FILTERS.map((v) => (
+        {VERIFICATION_VALUES.map((v) => (
           <li key={v}>
             <span className={VERIFICATION_BADGE[v]}>{VERIFICATION_LABEL[v]}</span>
             <span>{VERIFICATION_MEANING[v]}</span>
@@ -405,7 +260,7 @@ function SignalLegend() {
 
       <p className="dapp-microlabel dapp-microlabel--tight lx-legend__head">CAPABILITY CLASS</p>
       <ul className="lx-legend">
-        {RISK_FILTERS.map((r) => (
+        {RISK_VALUES.map((r) => (
           <li key={r}>
             <span className={RISK_BADGE[r]}>{RISK_LABEL[r]}</span>
             <span>{RISK_MEANING[r]}</span>
@@ -415,7 +270,7 @@ function SignalLegend() {
 
       <p className="dapp-microlabel dapp-microlabel--tight lx-legend__head">LISTING</p>
       <ul className="lx-legend">
-        {([0, 1, 2] as const).map((l) => (
+        {LISTING_VALUES.map((l) => (
           <li key={l}>
             <span className={LISTING_BADGE[l]}>{LISTING_LABEL[l]}</span>
             <span>{LISTING_MEANING[l]}</span>
@@ -474,6 +329,12 @@ export default function Explorer() {
   const d = DEPLOYMENTS[SEPOLIA_CHAIN_ID]
   const sepolia = chainByKey('sepolia')
   const filtersOn = verification !== 'all' || risk !== 'all' || q !== ''
+
+  /* One card, unfiltered, and it is the whole registry. It is laid out wide —
+     not because it is featured, but because a lone card in a two-track grid
+     reads as a layout bug, and stretching it lets the ledger sit beside the
+     identity instead of under it. The caption says what the number means. */
+  const solo = !filtersOn && visible.length === 1 && flagged.length === 0
 
   /* The grid re-renders on every keystroke; the announcement must not. A polite
      live region that changes on each character is read as a stream of interrupted
@@ -547,7 +408,7 @@ export default function Explorer() {
                   All
                   <span className="hx-count">{listable.length}</span>
                 </button>
-                {VERIFICATION_FILTERS.map((v) => (
+                {VERIFICATION_VALUES.map((v) => (
                   <button
                     key={v}
                     type="button"
@@ -582,7 +443,7 @@ export default function Explorer() {
                   All
                   <span className="hx-count">{listable.length}</span>
                 </button>
-                {RISK_FILTERS.map((r) => (
+                {RISK_VALUES.map((r) => (
                   <button
                     key={r}
                     type="button"
@@ -653,10 +514,17 @@ export default function Explorer() {
         {state.k === 'ready' && visible.length > 0 && (
           <>
             <p className="lx-count" role="presentation">
-              {visible.length === 1 ? '1 Latch' : `${visible.length} Latches`}
-              {filtersOn ? ' matching' : ' listed'}
+              <span>
+                {visible.length === 1 ? '1 Latch' : `${visible.length} Latches`}
+                {filtersOn ? ' matching' : ' listed'}
+              </span>
+              {solo && (
+                <span className="lx-count__note">
+                  — the whole registry on {d.name}, not a selection. Registration is open.
+                </span>
+              )}
             </p>
-            <div className="lx-grid">
+            <div className="lx-grid" data-solo={solo ? 'true' : undefined}>
               {visible.map((h, i) => (
                 <LatchCard key={h.address} hook={h} index={i} />
               ))}

@@ -9,13 +9,15 @@
    The page is ordered the way a decision is actually made, which is close to
    the reverse of how a store usually sells something:
 
-     1. Who it is, and the three on-chain signals.
-     2. Any warning it has earned.
-     3. What it CAN DO — the full fourteen-row permission matrix, decoded from
-        its own bytecode. This is the section nobody can fake and it is the one
-        that gets the most page.
-     4. Only then, what the submitter says about it, marked as their words.
-     5. Source and audit links, marked as claims.
+     1. Who it is, the info strip of on-chain signals, and any warning it has
+        earned — on the hero, above everything the submitter wrote.
+     2. What it CAN DO — the three-question ledger and the full fourteen-row
+        permission matrix, decoded from its own bytecode and grouped by what
+        each callback is able to do. This is the section nobody can fake and
+        it is the one that gets the most page.
+     3. Only then, what the submitter says about it, marked as their words.
+     4. The information table: every address and link, each marked as either
+        read from chain or claimed by the submitter.
 
    The same rule the verify page is built around applies here and is the reason
    both use `readRegisteredLatch` rather than reading the record directly: an
@@ -35,62 +37,40 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
-import { ChainMark } from '../../../components/ChainMark.tsx'
-import { chainByKey } from '../../../data/chains.ts'
+import { ChainTag, chainNameFor } from '../../../components/ChainTag.tsx'
+import { HOOK_CALLBACK_BIT } from '../../../data/registry.generated.ts'
 import {
-  HOOK_CALLBACKS,
-  HOOK_CALLBACK_BIT,
-  RETURNS_DELTA_CALLBACKS,
-  VETO_CALLBACKS,
-} from '../../../data/registry.generated.ts'
-import {
+  DEPLOYMENTS,
   SEPOLIA_CHAIN_ID,
-  capabilityClaims,
   explorerAddress,
   readRegisteredLatch,
   type LatchLookup,
-  type RegisteredLatch,
 } from '../../../lib/chain'
+import { CapabilityLedger, LatchAlerts, Ribbon, TrustStrip } from '../components/LatchSignals.tsx'
+import {
+  CALLBACK_GROUPS,
+  TOTAL_CALLBACKS,
+  bitmapHex,
+  hasAlerts,
+  latchTone,
+  onChainSubline,
+  safeHttpUrl,
+  shortAddress,
+} from '../components/latchModel.ts'
 import { dappPath } from '../paths.ts'
-import { LatchAlerts, TrustRow } from './Explorer.tsx'
 
-type State =
-  | { k: 'idle' }
-  | { k: 'loading' }
-  | { k: 'error'; message: string }
-  | { k: 'ready'; lookup: LatchLookup }
+/* Every result remembers which address it answers for. A result for a previous
+   address is simply not shown, so navigating between two Latches never flashes
+   the old record under the new URL — and there is no state to reset in an
+   effect. */
+type Result =
+  | { for: string; k: 'error'; message: string }
+  | { for: string; k: 'ready'; lookup: LatchLookup }
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
 
-/* The callbacks that can cost somebody money, from the registry's own masks —
-   not a judgement made here. A held row in either set is coloured as a risk. */
-const RISK_BEARING = new Set<string>([...RETURNS_DELTA_CALLBACKS, ...VETO_CALLBACKS])
-
 function short(a: string): string {
-  return `${a.slice(0, 10)}…${a.slice(-6)}`
-}
-
-/**
- * Submitter-supplied strings are rendered as text, never as markup, and any URI
- * is allowed through only when it is plainly http(s). A listing is written by
- * whoever registered it, so it is untrusted input on a page whose whole job is
- * telling someone whether to trust something.
- */
-function safeHttpUrl(uri: string): string | null {
-  try {
-    const u = new URL(uri)
-    return u.protocol === 'https:' || u.protocol === 'http:' ? u.toString() : null
-  } catch {
-    return null
-  }
-}
-
-/** Mirrors Explorer's `cardTone`: listing state and capability class only. */
-function detailTone(h: RegisteredLatch): 'danger' | 'caution' | 'deprecated' | 'plain' {
-  if (h.listing === 2 || h.risk === 2 || !h.permissionsReadable) return 'danger'
-  if (h.listing === 1) return 'deprecated'
-  if (h.risk === 1 || !h.permissionsValid) return 'caution'
-  return 'plain'
+  return shortAddress(a, 10, 6)
 }
 
 function BackLink() {
@@ -103,21 +83,22 @@ function BackLink() {
 
 export default function LatchDetail() {
   const { address } = useParams()
-  const [state, setState] = useState<State>({ k: 'idle' })
-  const sepolia = chainByKey('sepolia')
+  const [result, setResult] = useState<Result | null>(null)
+  const chainName = chainNameFor(SEPOLIA_CHAIN_ID)
+  const registry = DEPLOYMENTS[SEPOLIA_CHAIN_ID].registry
 
   const malformed = !address || !ADDRESS_RE.test(address)
 
   useEffect(() => {
     if (malformed || !address) return
     let off = false
-    setState({ k: 'loading' })
     readRegisteredLatch(address as `0x${string}`)
-      .then((lookup) => !off && setState({ k: 'ready', lookup }))
+      .then((lookup) => !off && setResult({ for: address, k: 'ready', lookup }))
       .catch(
         (e) =>
           !off &&
-          setState({
+          setResult({
+            for: address,
             k: 'error',
             message: e instanceof Error ? e.message : 'chain unreachable',
           }),
@@ -145,7 +126,9 @@ export default function LatchDetail() {
     )
   }
 
-  if (state.k === 'loading' || state.k === 'idle') {
+  const state = result && result.for === address ? result : null
+
+  if (state === null) {
     return (
       /* The heading names what is being read, so the live region is the whole
          card rather than the sentence under it — announcing "Looking up 0x…"
@@ -153,7 +136,9 @@ export default function LatchDetail() {
          kind of answer is coming. */
       <section className="dapp-card" role="status">
         <h2 className="dapp-card__title">Reading the Latch registry…</h2>
-        <p className="live-note">Looking up {short(address!)} on Ethereum Sepolia.</p>
+        <p className="live-note">
+          Looking up {short(address)} on {chainName}.
+        </p>
       </section>
     )
   }
@@ -187,18 +172,18 @@ export default function LatchDetail() {
         <p className="live-note">
           {hasCode
             ? 'A contract exists at this address, but nobody has ever listed it.'
-            : 'There is no contract at this address on Ethereum Sepolia.'}{' '}
+            : `There is no contract at this address on ${chainName}.`}{' '}
           It has no verification level, no capability class and no listing status — because it has
           no record, not because those values are zero. Checked at block{' '}
           {checkedAtBlock.toString()}.
         </p>
         <p className="dapp-note">
           <a
-            href={explorerAddress(SEPOLIA_CHAIN_ID, address!)}
+            href={explorerAddress(SEPOLIA_CHAIN_ID, address)}
             target="_blank"
             rel="noopener noreferrer"
           >
-            View {short(address!)} on Etherscan ↗
+            View {short(address)} on the block explorer ↗
           </a>
         </p>
         <p className="dapp-note">
@@ -211,18 +196,19 @@ export default function LatchDetail() {
   }
 
   const h = state.lookup.latch
-  const claims = capabilityClaims(h)
   const source = safeHttpUrl(h.sourceURI)
   const audit = safeHttpUrl(h.auditURI)
   const held = new Set(h.callbacks)
-  const tone = detailTone(h)
+  const tone = latchTone(h)
 
   return (
     <div className="lx-detail" data-tone={tone}>
       <BackLink />
 
-      {/* 1 — who it is, and the three signals. */}
+      {/* 1 — who it is, the strip, and any warning. */}
       <section className="dapp-card lx-hero" aria-labelledby="ld-name">
+        <Ribbon hook={h} />
+
         <div className="lx-hero__top">
           <span className="dapp-tile lx-hero__icon" aria-hidden="true">
             <span className="dapp-tile__diamond" />
@@ -231,92 +217,133 @@ export default function LatchDetail() {
             <h2 id="ld-name" className="lx-hero__name">
               {h.name || 'Unnamed Latch'}
             </h2>
-            <p className="lx-hero__addr">
+            <p className="lx-hero__sub" data-risk={h.risk}>
+              {onChainSubline(h)}
+            </p>
+            <p className="lx-hero__by">
+              Listed by{' '}
               <a
-                href={explorerAddress(h.chainId, h.address)}
+                href={explorerAddress(h.chainId, h.submitter)}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                {short(h.address)} ↗
+                {short(h.submitter)}
               </a>
-              <span className="lx-hero__chain">
-                <ChainMark brand={sepolia.brand} size={14} className="lx-hero__mark" />
-                {sepolia.name}
+              <span className="lx-hero__dot" aria-hidden="true">
+                ·
               </span>
+              <ChainTag chainId={h.chainId} size={14} />
             </p>
+          </div>
+          <div className="lx-hero__actions">
+            <a
+              className="dapp-btn dapp-btn--ghost dapp-btn--sm"
+              href={explorerAddress(h.chainId, h.address)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Contract ↗
+            </a>
+            {source && (
+              <a
+                className="dapp-btn dapp-btn--ghost dapp-btn--sm"
+                href={source}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Source ↗
+              </a>
+            )}
+            {audit && (
+              <a
+                className="dapp-btn dapp-btn--ghost dapp-btn--sm"
+                href={audit}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Audit ↗
+              </a>
+            )}
           </div>
         </div>
 
-        <TrustRow hook={h} size="lg" />
+        <TrustStrip hook={h} extended />
 
-        {/* 2 — any warning it has earned, before anything it says about itself. */}
-        <LatchAlerts hook={h} />
+        {hasAlerts(h) && (
+          <div className="lx-hero__alerts">
+            <LatchAlerts hook={h} />
+          </div>
+        )}
       </section>
 
-      {/* 3 — the un-fakeable section. */}
-      <section className="dapp-card" aria-labelledby="ld-caps">
+      {/* 2 — the un-fakeable section. */}
+      <section className="dapp-card lx-section" aria-labelledby="ld-caps">
         <div className="dapp-card__head">
           <h3 id="ld-caps" className="dapp-card__title dapp-card__title--lg">
-            What this Latch can do
+            Permissions
           </h3>
-          <span className="dapp-badge dapp-badge--info">
-            BITMAP 0x{h.permissions.toString(16).padStart(4, '0')}
-          </span>
+          <span className="dapp-badge dapp-badge--info tabular">BITMAP {bitmapHex(h)}</span>
         </div>
         <p className="live-note">
           Read by calling <code>getHooksRegistrationBitmap()</code> on the Latch&rsquo;s own
-          contract. A submitter cannot declare a permission their code does not have, so this is
-          the part of the page nobody can fake.
+          contract, and classified by the registry. A submitter cannot declare a permission
+          their code does not have, so this is the part of the page nobody can fake.
         </p>
 
-        {claims.length > 0 ? (
-          <ul className="hx-caps__list" style={{ marginTop: 12 }}>
-            {claims.map((c) => (
-              <li key={c}>{c}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="live-note">
-            This Latch declares no callbacks at all. It cannot intervene in a pool&rsquo;s
-            behaviour.
+        <CapabilityLedger hook={h} detail />
+
+        <div className="lx-matrix">
+          <p className="dapp-microlabel dapp-microlabel--tight">
+            ALL {TOTAL_CALLBACKS} CALLBACKS · {held.size} HELD
           </p>
-        )}
-
-        <p className="dapp-microlabel dapp-microlabel--tight" style={{ marginTop: 18 }}>
-          ALL {HOOK_CALLBACKS.length} CALLBACKS · {held.size} HELD
-        </p>
-        {/* Every row, held or not. An omitted row would read as "unknown". */}
-        <ul className="lx-perms">
-          {HOOK_CALLBACKS.map((name) => {
-            const on = held.has(name)
+          {/* Every row, held or not, grouped by what a held bit lets the Latch
+              do. An omitted row would read as "unknown" rather than as "no". */}
+          {CALLBACK_GROUPS.map((g) => {
+            const n = g.names.filter((name) => held.has(name)).length
             return (
-              <li
-                key={name}
-                data-held={on ? 'yes' : 'no'}
-                data-danger={RISK_BEARING.has(name) ? 'yes' : 'no'}
-              >
-                <span className="lx-perm__mark" aria-hidden="true">
-                  {on ? '●' : '○'}
-                </span>
-                <span>{name}</span>
-                <span className="dapp-sr">{on ? ' — held' : ' — not held'}</span>
-                <span className="lx-perm__bit tabular">bit {HOOK_CALLBACK_BIT[name]}</span>
-              </li>
+              <section key={g.kind} className="lx-matrix__group" data-kind={g.kind} data-any={n > 0 ? 'yes' : 'no'}>
+                <h4 className="lx-matrix__h">
+                  <span className="lx-matrix__swatch" aria-hidden="true" />
+                  {g.title}
+                  <span className="lx-matrix__n tabular">
+                    {n} of {g.names.length} held
+                  </span>
+                </h4>
+                <p className="lx-matrix__why">{g.meaning}</p>
+                <ul className="lx-perms">
+                  {g.names.map((name) => {
+                    const on = held.has(name)
+                    return (
+                      <li key={name} data-held={on ? 'yes' : 'no'} data-kind={g.kind}>
+                        <span className="lx-perm__mark" aria-hidden="true">
+                          {on ? '●' : '○'}
+                        </span>
+                        <span>{name}</span>
+                        <span className="dapp-sr">{on ? ' — held' : ' — not held'}</span>
+                        <span className="lx-perm__bit tabular">bit {HOOK_CALLBACK_BIT[name]}</span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </section>
             )
           })}
-        </ul>
+        </div>
       </section>
 
-      {/* 4 — the submitter's own words, marked as theirs. */}
-      <section className="dapp-card" aria-labelledby="ld-said">
-        <h3 id="ld-said" className="dapp-card__title dapp-card__title--lg">
-          What the submitter says
-        </h3>
+      {/* 3 — the submitter's own words, marked as theirs. */}
+      <section className="dapp-card lx-section" aria-labelledby="ld-said">
+        <div className="dapp-card__head">
+          <h3 id="ld-said" className="dapp-card__title dapp-card__title--lg">
+            What the submitter says
+          </h3>
+          <span className="dapp-badge dapp-badge--mute">UNVERIFIED</span>
+        </div>
         <p className="live-note">
           Everything in this card was typed by whoever registered the Latch. None of it is
           verified, and none of it is a capability claim — the section above is.
         </p>
-        <blockquote className="lx-quote" style={{ marginTop: 12 }}>
+        <blockquote className="lx-quote">
           {h.description || <span className="hx-muted">No description supplied.</span>}
           <cite className="lx-quote__by">
             — {h.name || 'Unnamed Latch'}, as listed by{' '}
@@ -329,11 +356,77 @@ export default function LatchDetail() {
             </a>
           </cite>
         </blockquote>
+      </section>
 
-        <dl className="lx-kv" style={{ marginTop: 16 }}>
-          <div>
-            <dt>Source</dt>
-            <dd className="lx-kv__mono">
+      {/* 4 — the information table. Each row says where it came from. */}
+      <section className="dapp-card lx-section" aria-labelledby="ld-info">
+        <h3 id="ld-info" className="dapp-card__title dapp-card__title--lg">
+          Information
+        </h3>
+        <dl className="lx-info">
+          <div className="lx-info__row">
+            <dt>
+              Address <span className="lx-info__src">on chain</span>
+            </dt>
+            <dd className="lx-info__mono">
+              <a
+                href={explorerAddress(h.chainId, h.address)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {h.address} ↗
+              </a>
+            </dd>
+          </div>
+          <div className="lx-info__row">
+            <dt>
+              Chain <span className="lx-info__src">on chain</span>
+            </dt>
+            <dd>
+              <ChainTag chainId={h.chainId} size={14} />
+            </dd>
+          </div>
+          <div className="lx-info__row">
+            <dt>
+              Registry <span className="lx-info__src">on chain</span>
+            </dt>
+            <dd className="lx-info__mono">
+              <a
+                href={explorerAddress(SEPOLIA_CHAIN_ID, registry)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                LatchRegistry {shortAddress(registry)} ↗
+              </a>
+            </dd>
+          </div>
+          <div className="lx-info__row">
+            <dt>
+              Submitter <span className="lx-info__src">on chain</span>
+            </dt>
+            <dd className="lx-info__mono">
+              <a
+                href={explorerAddress(h.chainId, h.submitter)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {h.submitter} ↗
+              </a>
+            </dd>
+          </div>
+          <div className="lx-info__row">
+            <dt>
+              Bitmap <span className="lx-info__src">on chain</span>
+            </dt>
+            <dd className="lx-info__mono tabular">
+              {bitmapHex(h)} · {held.size} of {TOTAL_CALLBACKS} callbacks
+            </dd>
+          </div>
+          <div className="lx-info__row">
+            <dt>
+              Source <span className="lx-info__src lx-info__src--claim">submitter&rsquo;s link</span>
+            </dt>
+            <dd className="lx-info__mono">
               {source ? (
                 <a href={source} target="_blank" rel="noopener noreferrer">
                   {source} ↗
@@ -343,9 +436,11 @@ export default function LatchDetail() {
               )}
             </dd>
           </div>
-          <div>
-            <dt>Audit</dt>
-            <dd className="lx-kv__mono">
+          <div className="lx-info__row">
+            <dt>
+              Audit <span className="lx-info__src lx-info__src--claim">submitter&rsquo;s link</span>
+            </dt>
+            <dd className="lx-info__mono">
               {audit ? (
                 <a href={audit} target="_blank" rel="noopener noreferrer">
                   {audit} ↗
@@ -355,19 +450,19 @@ export default function LatchDetail() {
               )}
             </dd>
           </div>
+          <div className="lx-info__row">
+            <dt>Public record</dt>
+            <dd className="lx-info__mono">
+              <a href={`/verify/${h.address}`} target="_blank" rel="noopener noreferrer">
+                /verify/{shortAddress(h.address)} ↗
+              </a>
+              <span className="lx-info__aside"> — the same record, no wallet, no app.</span>
+            </dd>
+          </div>
         </dl>
-        <p className="dapp-note" style={{ marginTop: 12 }}>
-          A link here is a claim, not a verification — follow it and read what is on the other end.
-        </p>
-      </section>
-
-      <section className="dapp-card">
-        <h3 className="dapp-card__title">Share this record</h3>
-        <p className="live-note">
-          The same record, on a page that needs no wallet and no app:{' '}
-          <a href={`/verify/${h.address}`} target="_blank" rel="noopener noreferrer">
-            public verification permalink ↗
-          </a>
+        <p className="dapp-note lx-section__note">
+          A link marked as the submitter&rsquo;s is a claim, not a verification — follow it and
+          read what is on the other end.
         </p>
         <BackLink />
       </section>

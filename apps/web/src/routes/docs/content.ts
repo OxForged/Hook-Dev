@@ -25,13 +25,29 @@
  *
  * REGISTRY AND MARKETPLACE CONTENT describes the contract that is actually
  * deployed on Sepolia at the `registry` address in src/lib/chain.ts — the one
- * `/app/deploy` writes to and `/verify/:hookAddress` reads from. That contract
- * is `LatchHookRegistry` (its ABI is src/lib/abi/registry.ts; the chain answers
- * `hookCount()` and reverts `latchCount()`), so every error, function and limit
- * below is spelled the way the DEPLOYED contract spells it, and the limits were
- * read back with eth_call rather than copied from source. A rename of the
- * source to `LatchRegistry` is in progress in packages/registry; until it is
- * redeployed, the deployed names are the true ones and these docs keep them.
+ * `/app/deploy` writes to and `/verify/:hookAddress` reads from. As of the
+ * 2026-09-10 redeploy that contract is `LatchRegistry` (ABI in
+ * src/lib/abi/registry.ts, generated from packages/registry). Probed with
+ * eth_call on 2026-09-10: the new address answers `latchCount()` (1) and
+ * reverts `hookCount()`; the retired `LatchHookRegistry` at
+ * 0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE does the opposite and nothing
+ * reads it any more. `register(address(0), …)` on the new contract reverts
+ * `ZeroAddress()` and `register(<EOA>, …)` reverts `LatchHasNoCode(address)`,
+ * so the error names below are the deployed ones, not a guess from source. The
+ * numeric limits were read back the same way and are unchanged.
+ *
+ * REVENUE SHARE, ORACLE, KEEPER AND CHAIN CONTENT is verified against:
+ *
+ *   packages/hooks-revshare/src/RevShareHook.sol        keyOf / hasKey / totalTaken
+ *   packages/hooks-rwa/src/oracles/PythPriceBandAdapter.sol
+ *   packages/hooks-rwa/src/interfaces/IPriceBandOracle.sol
+ *   packages/hooks-rwa/src/modules/MarketHoursModule.sol  PRICE_ORACLE_GAS_LIMIT
+ *   packages/hooks-rwa/script/ExercisePythFull.s.sol     the 19 live checks
+ *   packages/keeper/src, Dockerfile, docker-compose.yml
+ *   packages/sdk/src/chains/endpoints.ts                 CHAIN_RPCS
+ *
+ * and, where a number is a measurement, against Sepolia itself — each such
+ * figure says how it was obtained next to where it is used.
  *
  * VOCABULARY. "Latch" is the product noun; the contract-level noun is still
  * "hook", because that is what the upstream interfaces call it. The rule here
@@ -63,6 +79,10 @@ export const SECTION_IDS = [
   'interface',
   'lifecycle',
   'errors',
+  'revshare',
+  'oracles',
+  'keeper',
+  'chains',
 ] as const
 
 export type SectionId = (typeof SECTION_IDS)[number]
@@ -105,6 +125,8 @@ export const RAIL_GROUPS: RailGroup[] = [
       { label: 'Callbacks', href: '#interface', spy: true },
       { label: 'Execution order', href: '#lifecycle', spy: true },
       { label: 'Errors', href: '#errors', spy: true },
+      { label: 'Revenue share reads', href: '#revshare', spy: true },
+      { label: 'Price-band oracles', href: '#oracles', spy: true },
     ],
   },
   {
@@ -120,6 +142,8 @@ export const RAIL_GROUPS: RailGroup[] = [
     items: [
       { label: 'Local devnet', href: '#install', spy: false },
       { label: 'Sepolia deployment', href: '#deploy', spy: false },
+      { label: 'Keeper', href: '#keeper', spy: true },
+      { label: 'Target chains', href: '#chains', spy: true },
       { label: 'Audits', href: '#verify', spy: false },
     ],
   },
@@ -137,6 +161,10 @@ export const TOC: TocItem[] = [
   { label: 'Callback reference', href: '#interface' },
   { label: 'Execution order', href: '#lifecycle' },
   { label: 'Common errors', href: '#errors' },
+  { label: 'Revenue share reads', href: '#revshare' },
+  { label: 'Price-band oracles', href: '#oracles' },
+  { label: 'The keeper', href: '#keeper' },
+  { label: 'Target chains', href: '#chains' },
 ]
 
 /* ------------------------------------------------------------------- intro */
@@ -144,11 +172,16 @@ export const TOC: TocItem[] = [
 /**
  * packages/cli/package.json pins node >= 20; every contract here is solc 0.8.26
  * exactly. "LIVE ON" is the one entry in `DEPLOYMENTS` (src/lib/chain.ts).
+ * "TARGET CHAINS" is the key count of `CHAIN_RPCS` in
+ * packages/sdk/src/chains/endpoints.ts — see `CHAINS` below, which is that
+ * table transcribed. A target chain is one the SDK carries probed RPCs for; it
+ * is not a deployment.
  */
 export const FACTS: { label: string; value: string }[] = [
   { label: 'TOOLCHAIN', value: 'Foundry + Node ≥ 20' },
   { label: 'SOLIDITY', value: '0.8.26' },
   { label: 'LIVE ON', value: 'Ethereum Sepolia' },
+  { label: 'TARGET CHAINS', value: '15' },
   { label: 'TIME TO FIRST LATCH', value: '~20 min' },
 ]
 
@@ -239,23 +272,28 @@ export const DEPLOY_SHELL = `[[com:# Latch on Sepolia · chain 11155111]]
 /* ------------------------------------------------------------- registry */
 
 /**
- * The deployed LatchHookRegistry — `DEPLOYMENTS[11155111].registry` in
- * src/lib/chain.ts. Everything the Latch Marketplace shows is read from it and
- * `/app/deploy` writes to it. Spelled out here so a reader can paste it into a
- * block explorer without opening the app.
+ * The deployed LatchRegistry — `DEPLOYMENTS[11155111].registry` in
+ * src/lib/chain.ts, redeployed 2026-09-10. Everything the Latch Marketplace
+ * shows is read from it and `/app/deploy` writes to it. Spelled out here so a
+ * reader can paste it into a block explorer without opening the app.
+ *
+ * The previous address, 0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE, still
+ * answers but is retired: it holds the original listing and nothing reads it.
  */
-export const REGISTRY_ADDRESS_SEPOLIA = '0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE'
+export const REGISTRY_ADDRESS_SEPOLIA = '0xB504da43C6ED342a511f3e5849f53035F2C807d1'
 
 /**
  * The same `register` call `/app/deploy` sends, from a shell. The struct is
- * `HookMetadata` in the deployed ABI: (name, description, sourceURI, auditURI,
- * chainIds). Verified: `cast calldata` on exactly this signature and tuple
- * literal decodes, via viem, to the expected `register` arguments.
+ * `LatchMetadata` in the deployed ABI: (name, description, sourceURI, auditURI,
+ * chainIds) — the same five fields, in the same order, as the retired
+ * contract's `HookMetadata`, so the tuple literal is unchanged. Verified:
+ * `cast call` with this exact signature against the deployed address decodes
+ * far enough to revert `LatchHasNoCode` for an EOA argument.
  *
  * `\\` at a line end is a real backslash in the rendered snippet — a bare `\`
  * inside a template literal would be a JS line continuation and vanish.
  */
-export const REGISTER_SHELL = `[[com:# LatchHookRegistry on Sepolia — the contract behind /app/marketplace]]
+export const REGISTER_SHELL = `[[com:# LatchRegistry on Sepolia — the contract behind /app/marketplace]]
 [[cmd:export]] REGISTRY=${REGISTRY_ADDRESS_SEPOLIA}
 [[cmd:export]] HOOK=0x...   [[com:# the Latch you just deployed]]
 
@@ -304,11 +342,15 @@ export const REGISTER_STEPS: LifecycleStep[] = [
 
 /**
  * Every custom error the deployed `register` can revert with, in the order the
- * function checks them (packages/registry, `register` + `_validateMetadata` +
- * `_probePermissions`). The numeric limits were read back from the deployed
- * contract with eth_call, not copied from source:
+ * function checks them (packages/registry/src/LatchRegistry.sol, `register` +
+ * `_validateMetadata` + `_probePermissions`). The numeric limits were read back
+ * from the deployed contract at REGISTRY_ADDRESS_SEPOLIA with eth_call on
+ * 2026-09-10, not copied from source:
  *   MAX_NAME_BYTES 64 · MAX_DESCRIPTION_BYTES 2048 · MAX_URI_BYTES 512 ·
  *   MAX_CHAINS 32 · PROBE_GAS 100000 · PROBE_GAS_FLOOR 131587.
+ * Two names changed with the redeploy: `HookAlreadyRegistered` is now
+ * `LatchAlreadyRegistered` and `HookHasNoCode` is now `LatchHasNoCode`. The
+ * second was confirmed on chain by calling `register` with an EOA.
  */
 export const REGISTRY_REJECTIONS: DocError[] = [
   {
@@ -316,11 +358,11 @@ export const REGISTRY_REJECTIONS: DocError[] = [
     fix: 'The hook argument is address(0). Pass the address of the deployed Latch.',
   },
   {
-    code: 'HookAlreadyRegistered(address hook)',
+    code: 'LatchAlreadyRegistered(address hook)',
     fix: 'A record already exists for that address. Registration happens once and there is no unregister. If it is yours, the steward can call updateMetadata or transferSteward; a curator can reassign a squatted listing.',
   },
   {
-    code: 'HookHasNoCode(address hook)',
+    code: 'LatchHasNoCode(address hook)',
     fix: 'No bytecode at that address on Sepolia — an EOA, a typo, or a contract deployed on a different chain.',
   },
   {
@@ -468,3 +510,259 @@ export const ERRORS: DocError[] = [
     fix: 'The callback returned the wrong selector or the wrong number of words. Return ICLHooks.<fn>.selector, or use the BaseCLHook passthrough helpers.',
   },
 ]
+
+/* ------------------------------------------------------ revenue share reads */
+
+export type ReadFn = { name: string; returns: string; note: string }
+
+/**
+ * The read surface of `RevShareHook` (packages/hooks-revshare/src/RevShareHook.sol)
+ * that an integrator holding only a `PoolId` needs. Signatures are copied from
+ * the contract; the two `pending*` rows are there to make the contrast with
+ * `totalTaken` concrete — they are balances, it is a counter.
+ *
+ * DEPLOYMENT STATUS, probed 2026-09-10 with eth_call on Sepolia: the exercise
+ * hook at 0x1C86dc775FF3FDADCCF87F132de7a4eb60B6bE28 (the keeper's target)
+ * answers `pendingBeneficiary` and `distributorOf` but REVERTS on `keyOf`,
+ * `hasKey` and `totalTaken`. It was deployed before those three landed
+ * (commit 10a1d32). They are in the package source and on any hook deployed
+ * from it since; they are not on that address. Said in the page, not hidden.
+ */
+export const REVSHARE_EXERCISE_HOOK_SEPOLIA = '0x1C86dc775FF3FDADCCF87F132de7a4eb60B6bE28'
+
+export const REVSHARE_READS: ReadFn[] = [
+  {
+    name: 'keyOf(PoolId)',
+    returns: 'PoolKey',
+    note: 'The full key the hook stored when configure first claimed the pool. Zeroed struct for a pool it never governed.',
+  },
+  {
+    name: 'hasKey(PoolId)',
+    returns: 'bool',
+    note: 'True when a key is stored — the hook has been configured for this pool at least once. Saves comparing struct fields against zero.',
+  },
+  {
+    name: 'totalTaken(PoolId, Currency)',
+    returns: 'uint256',
+    note: 'Lifetime fees taken by the pool in that currency across all three routes. Only ever increases.',
+  },
+  {
+    name: 'pendingBeneficiary(PoolId, Currency)',
+    returns: 'uint256',
+    note: 'A balance: the beneficiary pot accrued but not yet split. Drops when settleBeneficiaries runs.',
+  },
+  {
+    name: 'pendingDistributorShare(PoolId, Currency)',
+    returns: 'uint256',
+    note: 'A balance: what the epoch distributor can pull. Drops to zero when it does.',
+  },
+]
+
+/**
+ * `cast` output types: `keyOf` returns a `PoolKey` struct, spelled as the
+ * tuple in PoolKey.sol field order (currency0, currency1, hooks, poolManager,
+ * fee, parameters) — the same order the keeper's ABI and the write functions
+ * use. Every signature here was parsed by cast 1.8.1 against Sepolia.
+ */
+export const REVSHARE_READS_SHELL = `[[com:# All you have is a pool id — from a URL, an event, an indexer row.]]
+[[cmd:export]] HOOK=0x...      [[com:# the RevShareHook governing the pool]]
+[[cmd:export]] POOL_ID=0x...   [[com:# bytes32]]
+
+[[com:# One eth_call, not an indexer. Zeroed struct if this hook never governed the pool.]]
+[[cmd:cast]] call $HOOK "hasKey(bytes32)(bool)" $POOL_ID --rpc-url $SEPOLIA_RPC_URL
+[[cmd:cast]] call $HOOK "keyOf(bytes32)((address,address,address,address,uint24,bytes32))" $POOL_ID --rpc-url $SEPOLIA_RPC_URL
+
+[[com:# Lifetime revenue for one currency. Compare with the balance beside it.]]
+[[cmd:export]] CURRENCY=0x...  [[com:# currency0 or currency1 from the key above]]
+[[cmd:cast]] call $HOOK "totalTaken(bytes32,address)(uint256)" $POOL_ID $CURRENCY --rpc-url $SEPOLIA_RPC_URL
+[[cmd:cast]] call $HOOK "pendingBeneficiary(bytes32,address)(uint256)" $POOL_ID $CURRENCY --rpc-url $SEPOLIA_RPC_URL
+
+[[com:# Now you can build the write you could not build before. KEY is the tuple keyOf]]
+[[com:# printed, in PoolKey field order: (currency0, currency1, hooks, poolManager, fee, parameters).]]
+[[cmd:export]] KEY='(0x...,0x...,0x...,0x...,3000,0x...)'
+[[cmd:cast]] send $HOOK "settleBeneficiaries((address,address,address,address,uint24,bytes32),address)" "$KEY" $CURRENCY \\
+  --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY`
+
+/* ------------------------------------------------------ price-band oracles */
+
+/**
+ * Pyth's Sepolia deployment and the ETH/USD feed id, both from
+ * packages/hooks-rwa/script/ExercisePythSepolia.s.sol and both re-checked on
+ * 2026-09-10: the address has code, and `getPriceUnsafe(ETH_USD)` answered
+ * (price 239697384120, conf 108116130, expo -8, publishTime 1788339862).
+ */
+export const PYTH_SEPOLIA = '0xDd24F84d36BF92C65F92307595335bdFab5Bbd21'
+export const PYTH_ETH_USD = '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace'
+
+/**
+ * How stale the feed was when this page was checked. `publishTime` is from the
+ * `getPriceUnsafe` call above; the "now" it is compared against is the shell
+ * clock at the same moment (1789094545). 754,683 seconds is 8.73 days.
+ */
+export const PYTH_SEPOLIA_STALENESS = {
+  publishTime: 1788339862,
+  observedAt: 1789094545,
+  ageSeconds: 754_683,
+  ageDays: '8.7',
+} as const
+
+/**
+ * Every revert `refresh` (and `previewRefresh`, which shares the checks) can
+ * raise, in the order the function performs them. Names and order from
+ * PythPriceBandAdapter.sol; nothing here is inferred.
+ */
+export const PYTH_REJECTIONS: DocError[] = [
+  {
+    code: 'FeedNotConfigured(PoolId poolId)',
+    fix: 'No feed is configured for this pool. The owner calls configureFeed first; until then referencePrice reads (0, 0) and the consumer halts the pool.',
+  },
+  {
+    code: 'NonPositivePrice(int64 price)',
+    fix: 'Pyth reported a price at or below zero. Nothing is cached. Cannot occur on a live feed, so it is covered against a mock rather than exercised on Sepolia.',
+  },
+  {
+    code: 'ExponentOutOfRange(int32 expo)',
+    fix: 'expo is outside [-30, 12]. Real feeds sit around -8; the bound keeps 10**|expo| from overflowing or costing unbounded gas.',
+  },
+  {
+    code: 'PriceTooOld(uint256 publishTime, uint32 maxPublishAge, uint256 nowTs)',
+    fix: 'Pyth’s own publish time is older than the feed’s maxPublishAge. On a testnet this is the normal state: post an update to Pyth, then refresh.',
+  },
+  {
+    code: 'ConfidenceTooWide(uint64 conf, uint256 maxConf)',
+    fix: 'conf exceeds maxConfBps of the price. Not a claim the price is wrong — a statement that Pyth’s publishers disagree by more than the issuer will trade through.',
+  },
+  {
+    code: 'PriceOutOfRange(uint160 sqrtPriceX96)',
+    fix: 'The converted price is outside TickMath’s representable range. Almost always a decimals or baseIsCurrency0 mistake in the Feed.',
+  },
+]
+
+/**
+ * The read side is one call and the refresh side is one call; the Pyth update
+ * that makes a refresh worth doing is a third, deliberately outside the adapter.
+ * `previewRefresh` reverts with exactly the error `refresh` would, so a keeper
+ * can find out for free whether posting an update is worth its fee.
+ */
+export const PYTH_SHELL = `[[cmd:export]] ADAPTER=0x...   [[com:# your PythPriceBandAdapter]]
+[[cmd:export]] POOL_ID=0x...
+
+[[com:# What Pyth holds right now for ETH/USD on Sepolia: (price, conf, expo, publishTime).]]
+[[com:# On a testnet publishTime is usually days old — nobody pays to post updates.]]
+[[cmd:cast]] call ${PYTH_SEPOLIA} \\
+  "getPriceUnsafe(bytes32)((int64,uint64,int32,uint256))" \\
+  ${PYTH_ETH_USD} --rpc-url $SEPOLIA_RPC_URL
+
+[[com:# Would a refresh succeed, and with what? Reverts with the same error refresh would.]]
+[[cmd:cast]] call $ADAPTER "previewRefresh(bytes32)(uint160,uint64)" $POOL_ID --rpc-url $SEPOLIA_RPC_URL
+
+[[com:# Permissionless. Converts, checks, caches. The caller supplies no price.]]
+[[cmd:cast]] send $ADAPTER "refresh(bytes32)" $POOL_ID --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY
+
+[[com:# What every swap reads: one storage slot, Pyth's publish time, not the refresh time.]]
+[[cmd:cast]] call $ADAPTER "referencePrice(bytes32)(uint160,uint64)" $POOL_ID --rpc-url $SEPOLIA_RPC_URL`
+
+/* ------------------------------------------------------------------ keeper */
+
+export type KeeperJob = { call: string; without: string; gas: string }
+
+/**
+ * The four calls from packages/keeper/src/index.ts (`allJobs`) and their ABI in
+ * src/abi.ts. The middle column is the README's table. Gas:
+ *
+ *   closeEpoch   326,264 — gasUsed on the Sepolia receipt for
+ *                0xf4b1122b1ccff7e831570684ddfc218fbb540f43a33ceb40cbee75f0a6538e3f
+ *                (to the exercise distributor, selector 0xcdd5f2c8 =
+ *                closeEpoch(), status 1). Read back with `cast receipt`.
+ *   rollover     97,524 — `cast estimate rollover(0)` against the same
+ *                distributor on 2026-09-10, once epoch 0 had expired.
+ *
+ * The other two have not been measured, so no number is printed for them.
+ */
+export const KEEPER_JOBS: KeeperJob[] = [
+  {
+    call: 'closeEpoch()',
+    without: 'Revenue accrues in the distributor and no epoch ever closes. Nobody can claim anything.',
+    gas: '326,264 · receipt',
+  },
+  {
+    call: 'rollover(epochId)',
+    without: 'An expired epoch’s unclaimed funds sit stranded instead of returning to the next epoch.',
+    gas: '97,524 · estimate',
+  },
+  {
+    call: 'settleBeneficiaries(key, currency)',
+    without: 'Fees accrue against the pool but never reach the beneficiary roster.',
+    gas: 'not measured',
+  },
+  {
+    call: 'applyPendingConfig(key)',
+    without: 'A config change waits out its delay and then never takes effect.',
+    gas: 'not measured',
+  },
+]
+
+/**
+ * Flags from `parseArgs` in packages/keeper/src/index.ts: `--config` (default
+ * keeper.config.json), `--once`, `--execute`, `--interval <s>` (default 300,
+ * minimum 15). The compose command is the one in docker-compose.yml, and the
+ * project name is fixed by `name: latch` there.
+ */
+export const KEEPER_SHELL = `[[com:# packages/keeper — dry run is the default. Needs no key.]]
+[[cmd:npm]] install && [[cmd:npm]] run build
+[[cmd:node]] dist/index.js --config keeper.config.json --once
+
+[[com:# Actually send. BOTH the flag AND the key; either alone is still a dry run.]]
+[[cmd:export]] KEEPER_PRIVATE_KEY=0x...   [[com:# a dedicated address holding only gas]]
+[[cmd:node]] dist/index.js --config keeper.config.json --execute --interval 300
+
+[[com:# As a container: non-root, no ports, config mounted read-only, key from .env or absent.]]
+[[cmd:docker]] compose -p latch up -d --build`
+
+/* ----------------------------------------------------------------- chains */
+
+export type ChainRow = { name: string; chainId: string; rpcs: string }
+
+/**
+ * `CHAIN_RPCS` from packages/sdk/src/chains/endpoints.ts, transcribed by a
+ * script rather than by hand on 2026-09-10: 15 chains, 69 endpoints,
+ * `ENDPOINT_TARGET` 5, `SINGLE_ENDPOINT_CHAINS` empty, `THIN_ENDPOINT_CHAINS`
+ * = xlayer, plasma, stable, stableTestnet. `supportsEip1153` is true for every
+ * entry. Order is the file's order. When endpoints.ts changes, this table is
+ * what drifts — re-run the transcription.
+ */
+export const CHAINS: ChainRow[] = [
+  { name: 'Ethereum', chainId: '1', rpcs: '5' },
+  { name: 'Base', chainId: '8453', rpcs: '5' },
+  { name: 'BNB Smart Chain', chainId: '56', rpcs: '5' },
+  { name: 'Linea', chainId: '59144', rpcs: '5 · zkEVM, see note' },
+  { name: 'Robinhood Chain', chainId: '4663', rpcs: '5 · five operators' },
+  { name: 'Ink', chainId: '57073', rpcs: '5' },
+  { name: 'X Layer', chainId: '196', rpcs: '4 · thin, zkEVM' },
+  { name: 'HyperEVM', chainId: '999', rpcs: '5' },
+  { name: 'Monad', chainId: '143', rpcs: '5' },
+  { name: 'Plasma', chainId: '9745', rpcs: '3 · thin' },
+  { name: 'Stable', chainId: '988', rpcs: '4 · thin' },
+  { name: 'Ethereum Sepolia', chainId: '11155111', rpcs: '5 · the live deployment' },
+  { name: 'Monad Testnet', chainId: '10143', rpcs: '5' },
+  { name: 'Stable Testnet', chainId: '2201', rpcs: '3 · thin' },
+  { name: 'Arc Testnet', chainId: '5042002', rpcs: '5 · five operators' },
+]
+
+export const CHAIN_COUNTS = { chains: 15, endpoints: 69, target: 5 } as const
+
+/**
+ * `resolveEndpoints` and `latchTransport` from packages/sdk/src/chains. The env
+ * variable name is `LATCH_RPC_<chainId>`, comma-separated for several; private
+ * endpoints go first and the probed public list is the safety net behind them.
+ */
+export const CHAINS_TS = `[[kw:import]] { latchTransport, resolveEndpoints, chainById } [[kw:from]] [[str:'@latchprotocol/sdk']]
+[[kw:import]] { createPublicClient } [[kw:from]] [[str:'viem']]
+
+[[com:// Robinhood Chain. Five probed public endpoints behind viem's fallback,]]
+[[com:// your own LATCH_RPC_4663 tried first if it is set.]]
+[[kw:const]] client = [[fn:createPublicClient]]({ transport: [[fn:latchTransport]]([[num:4663]], { env: process.env }) })
+
+[[com:// Or just the ordered URL list, private first.]]
+[[kw:const]] urls = [[fn:resolveEndpoints]]([[num:4663]], process.env)
+[[kw:const]] chain = [[fn:chainById]]([[num:4663]])   [[com:// { chainId, name, supportsEip1153, endpoints }]]`
