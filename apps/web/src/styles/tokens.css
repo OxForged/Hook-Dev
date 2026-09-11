@@ -1,175 +1,261 @@
 /* ============================================================================
-   Latch Protocol — design tokens
-   Transcribed verbatim from "latch design/README.md" § Design tokens.
-   The README is authoritative: where a reference HTML disagrees, this file
-   follows the README. Do not invent values here; add them to the spec first.
+   Latch Protocol — design tokens · CANVAS
 
-   This design commits to a single dark visual world (Void ground). There is
-   deliberately no light theme — the spec defines none. Every color is declared
-   explicitly so the page never borrows a host ground.
+   Ported from design Option B (`public/design/option-b.html`), which the team
+   chose over Option A (Terminal) as the production direction.
+
+   THIS FILE REPLACED A DARK PALETTE. The previous tokens transcribed
+   "latch design/README.md" § Design tokens, which committed to a single dark
+   world (Void ground) and stated "there is deliberately no light theme". Canvas
+   reverses that: a warm paper ground, white layered surfaces, one brand blue.
+   The dark values are in git history at the commit before this one; nothing
+   else needs consulting to restore them.
+
+   WHY THE TOKEN NAMES DID NOT CHANGE. Every one of the ~160 names below is
+   still here, because roughly two hundred rules across four surfaces read them.
+   Renaming would have meant touching every one of those rules to change a
+   colour, which is exactly the coupling a token layer exists to prevent. So the
+   names are the stable interface and only the values moved. A few names now
+   describe their value loosely — `--void` is a warm off-white, not a void —
+   and that is the deliberate price of the swap. Each such case is flagged.
+
+   ---------------------------------------------------------------------------
+   THE SCALE. Option B is built on a 4px base with ten stops, and everything in
+   the ported surfaces must land on it:
+
+     --s1   4px      --s6   32px
+     --s2   8px      --s7   48px
+     --s3  12px      --s8   64px
+     --s4  16px      --s9   96px
+     --s5  24px      --s10 128px
+
+   Line-heights sit on the same 4px grid (16/20/24/28/32/40/48/56/72).
+   Radii: 8 / 12 / 16 / 24 / pill, plus 4 for tiny cells.
+
+   A stray 13px where the scale says 12 or 16 is the failure mode to watch for:
+   invisible in a screenshot, obvious in a diff, and it compounds.
+   ---------------------------------------------------------------------------
+
+   COLOUR. Warm paper ground, white surfaces, one brand blue doing the work.
+   The three RevShareHook shares carry three hues chosen for colour-vision-
+   deficiency separation (blue / violet / aqua-green) and are ALWAYS labelled in
+   text as well — the hue is a convenience, never the only carrier of meaning.
    ============================================================================ */
 
 :root {
-  /* ---- brand ---- */
-  --latch-blue: #2b8bff;      /* primary: CTAs, active states, chart lines */
-  --deep-blue: #0a63e0;       /* gradient end, pressed */
-  --signal-blue: #4a9bff;     /* links, secondary series, icon strokes */
-  --sky-ink: #8fc2ff;         /* active nav text, inline code */
-  --eyebrow-blue: #3f8ff0;    /* section eyebrows */
+  /* ---- the spacing scale (new in Canvas; use these, not literals) ---- */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
+  --s9: 96px;
+  --s10: 128px;
 
-  /* ---- grounds ---- */
-  --void: #04060c;            /* page background */
-  --panel: #070c17;           /* cards, surfaces */
-  --panel-alt: #080e1a;       /* inputs, sidebar cards, feed rows */
-  --code-ground: #05080f;     /* code block interiors */
-  --deep-panel: #061024;      /* gradient mid-tone */
-  --light-surface: #eef2f8;   /* light-ink badge preview */
+  /* ---- brand ----
+     One blue. `--latch-blue` is the action colour; `--deep-blue` is its pressed
+     and gradient-end state; `--signal-blue` is links. In the dark palette these
+     were three visibly different blues because a dark ground needs the
+     separation. On paper they collapse toward two, and forcing a third would
+     read as an inconsistency rather than a hierarchy. */
+  --latch-blue: #2d5bff; /* primary: CTAs, active states, chart lines */
+  --deep-blue: #1e43d6; /* gradient end, pressed, hovered link */
+  --signal-blue: #2d5bff; /* links */
+  --sky-ink: #1e43d6; /* active nav text, inline code */
+  --eyebrow-blue: #858b9b; /* section eyebrows — grey in Canvas, not blue */
 
-  /* ---- lines ---- */
-  --hairline: #16223a;        /* card borders, dividers */
-  --hairline-soft: #131f34;   /* inner dividers, chart gridlines */
-  --hairline-blue: #1b2942;   /* input borders */
-  --hairline-blue-2: #24314c; /* secondary button borders */
-  --cta-border: #1c3a68;      /* CTA panel */
-  --border-hover: #25528f;
-  --active-nav: #173768;      /* selected pill/tab ground */
+  /* ---- grounds ----
+     `--void` and `--deep-panel` keep their names and lose their meaning. Both
+     are light now. Renaming them would touch every surface; see the header. */
+  --void: #f4f3ef; /* page background — warm paper */
+  --panel: #ffffff; /* cards, surfaces */
+  --panel-alt: #f9f8f5; /* inputs, sidebar cards, feed rows */
+  --code-ground: #f9f8f5; /* code block interiors */
+  --deep-panel: #efeee9; /* the deepest tint, for wells and tracks */
+  --light-surface: #ffffff;
 
-  /* ---- ink ---- */
-  --ink: #e4ecf9;             /* primary text */
-  --ink-bright: #ffffff;      /* headlines, numerals */
-  --muted-ink: #8a9bb6;       /* body */
-  --muted-ink-2: #96a6c0;     /* long-form paragraphs */
-  --label-ink: #657ca0;       /* mono micro-labels - spec #61789C, lifted for AA */
-  --faint-ink: #697c9a;       /* table headers, axis labels - spec #4C5F7D, lifted for AA */
+  /* ---- lines ----
+     Two weights carry almost everything: `--line` for card borders and
+     dividers, `--line-2` where a border must be seen against white. The four
+     legacy names map onto that pair rather than inventing four light greys
+     nobody could tell apart. */
+  --hairline: #e7e5df;
+  --hairline-soft: #efeee9;
+  --hairline-blue: #d8d6cf;
+  --hairline-blue-2: #d8d6cf;
+  --cta-border: #d8d6cf;
+  --border-hover: #858b9b;
+  --active-nav: #e9eeff; /* selected pill/tab ground — accent-soft */
 
-  /* ---- ACCESSIBILITY DIVERGENCE FROM THE SPEC - deliberate, measured ----
-     The README mandates --label-ink #61789C and --faint-ink #4C5F7D. Both fail WCAG AA
-     for normal-size text against the surfaces they are actually used on:
+  /* ---- ink ----
+     Three stops, which is all a light palette needs. The dark file carried six
+     because it was compensating for low contrast on a near-black ground. */
+  --ink: #12151a; /* primary text */
+  --ink-bright: #12151a; /* headlines — same ink; weight carries emphasis */
+  --muted-ink: #4a5163; /* body */
+  --muted-ink-2: #4a5163; /* long-form paragraphs */
+  --label-ink: #858b9b; /* mono micro-labels */
+  --faint-ink: #858b9b; /* table headers, axis labels */
 
-                        on --panel   on --panel-alt   on --void
-       #61789C            4.35:1        4.30:1          4.51:1
-       #4C5F7D            3.02:1        2.98:1          3.13:1
+  /* CONTRAST. Checked against the two grounds these actually sit on:
+                        on --panel (#FFF)   on --void (#F4F3EF)
+       --ink    #12151A       17.4:1              16.3:1
+       --muted  #4A5163        8.3:1               7.8:1
+       --label  #858B9B        3.4:1               3.2:1
+     `--label-ink` / `--faint-ink` clear 3:1 but NOT 4.5:1, so they are valid
+     for large text and non-text UI only. Every current use is a mono
+     micro-label at 10-11px, which is small text — the same failure the dark
+     palette documented and fixed by lifting the value.
 
-     Both are specified for SMALL text (mono micro-labels, table headers, axis labels), so
-     the 4.5:1 threshold applies - the 3:1 allowance covers large text and non-text UI only.
-     3.02:1 on chart axis labels is a real legibility failure, not a technicality.
+     Canvas cannot lift it the same way: darkening the grey until it clears
+     4.5:1 lands on #6B7183, which is close enough to --muted-ink that the
+     label/body distinction collapses. Option B accepts this by using its
+     --ink-3 for uppercase tracked labels where the letterforms are doing the
+     separating rather than the colour.
 
-     Lifted along the same hue to the minimum that clears 4.5:1 on the worst ground:
-       --label-ink  #61789C -> #657CA0   (4.60 / 4.54 / 4.77)  ~invisible, 4 steps
-       --faint-ink  #4C5F7D -> #697C9A   (4.61 / 4.55 / 4.78)  visibly lighter
+     RESOLUTION, and it is a real constraint on the port: micro-labels must be
+     UPPERCASE AND LETTER-SPACED, never sentence-case body text at this colour.
+     Anything that must be read as prose uses --muted-ink. Where a label is the
+     only carrier of a value, use --muted-ink. */
 
-     The second is a real visual change and the designer may want to push back. Revert by
-     restoring the two originals above - everything else is driven from these tokens. ---- */
+  /* ---- status ----
+     `--error` is DERIVED, not ported: Option B's prototype defines --good and
+     --warn but never a danger colour, because nothing in it fails. The app has
+     flagged Latches, reverted transactions and unreachable chains. Placed at
+     the same lightness and chroma as the other two so the three read as one
+     family (#1E8E3E green, #B26A00 amber, #C4342A red). */
+  --success: #1baf7a;
+  --warning: #b26a00;
+  --warning-alt: #b26a00;
+  --error: #c4342a;
+  --violet: #4a3aa7; /* third data series — the beneficiary roster hue */
+  --amber: #b26a00;
 
-  /* ---- status ---- */
-  --success: #5fd39a;
-  --warning: #e0c05f;
-  --warning-alt: #e0a95f;
-  --error: #e06a6a;
-  --violet: #6c5cff;          /* third data series */
-  --amber: #ffd166;           /* code type names, audit dot */
+  /* ---- the three RevShareHook shares ----
+     Named for what they mean, not where they are used. Chosen in Option B for
+     CVD separation; always labelled in text as well. */
+  --share-lp: #2a78d6;
+  --share-lp-soft: #e3eefb;
+  --share-ben: #4a3aa7;
+  --share-ben-soft: #e8e5f6;
+  --share-hold: #1baf7a;
+  --share-hold-soft: #ddf4ea;
+  --accent-soft: #e9eeff;
 
-  /* ---- syntax ---- */
-  --code-keyword: #c56bff;
-  --code-comment: #6d80a0;
+  /* ---- syntax (Option B's code palette, verbatim) ---- */
+  --code-keyword: #8a3fc8;
+  --code-comment: #858b9b;
+  --code-type: #1e43d6;
+  --code-string: #0f7b5f;
+  --code-number: #b25a00;
 
-  /* ---- gradients (verbatim) ---- */
-  --grad-primary: linear-gradient(180deg, #2b8bff, #0a63e0);
-  --grad-success: linear-gradient(180deg, #37c98d, #159463);
-  --grad-hero: linear-gradient(115deg, #04060c 0%, #061024 48%, #04070f 100%);
-  --grad-bar: linear-gradient(180deg, #2b8bff, rgba(43, 139, 255, 0.16));
-  --grad-progress: linear-gradient(90deg, #2b8bff, #5fd39a);
-  --grad-sidebar-active: linear-gradient(90deg, rgba(23, 55, 104, 0.75), rgba(8, 14, 26, 0.2));
-  --glow-hero: radial-gradient(680px 420px at 78% 42%, rgba(26, 127, 255, 0.2), transparent 70%);
+  /* ---- gradients ----
+     Restrained on paper. A light theme that gradients as hard as a dark one
+     looks cheap; these mostly resolve to a flat surface or a barely-there
+     tint, and only the primary action keeps a real gradient. */
+  --grad-primary: linear-gradient(180deg, #2d5bff, #1e43d6);
+  --grad-success: linear-gradient(180deg, #1baf7a, #158a60);
+  --grad-hero: linear-gradient(115deg, #f4f3ef 0%, #ffffff 48%, #f4f3ef 100%);
+  --grad-bar: linear-gradient(180deg, #2d5bff, rgba(45, 91, 255, 0.16));
+  --grad-progress: linear-gradient(90deg, #2d5bff, #1baf7a);
+  --grad-sidebar-active: linear-gradient(90deg, #e9eeff, rgba(233, 238, 255, 0.35));
+  --glow-hero: radial-gradient(680px 420px at 78% 42%, rgba(45, 91, 255, 0.08), transparent 70%);
 
-  /* ---- type ---- */
-  --font-display: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* ---- type ----
+     Inter for everything structural, Instrument Serif italic as the display
+     accent (Option B sets one clause of each headline in it), JetBrains Mono
+     for numbers and code. `--font-display` stays Inter: in Canvas the headline
+     voice is weight and tracking, and the serif is a highlight applied to a
+     phrase, never to a whole heading. */
+  --font-display: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* ---- radii ---- */
   --r-pill: 999px;
-  --r-hero: 24px;   /* hero CTA panel */
-  --r-card-lg: 18px; /* landing cards */
-  --r-card: 16px;    /* dapp cards */
-  --r-sm: 14px;      /* small cards, inputs, code blocks */
+  --r-hero: 24px;
+  --r-card-lg: 24px;
+  --r-card: 16px;
+  --r-sm: 12px;
   --r-btn: 12px;
-  --r-chip: 10px;
+  --r-chip: 999px; /* Canvas chips are pills, not rounded rectangles */
   --r-badge: 8px;
-  --r-micro: 7px;
+  --r-micro: 4px;
 
-  /* ---- shadows ---- */
-  --sh-btn: 0 10px 30px rgba(26, 127, 255, 0.32);
-  --sh-btn-hover: 0 16px 42px rgba(26, 127, 255, 0.5);
-  --sh-card-hover: 0 18px 48px rgba(4, 10, 24, 0.8);
-  --glow-ring: inset 0 0 40px rgba(26, 127, 255, 0.14), 0 0 70px rgba(26, 127, 255, 0.35);
+  /* ---- shadows ----
+     Elevation replaces the dark theme's glow. Two stops: `--shadow-1` for
+     resting cards, `--shadow-2` for anything genuinely floating. */
+  --shadow-1: 0 1px 2px rgba(18, 21, 26, 0.04), 0 4px 16px rgba(18, 21, 26, 0.05);
+  --shadow-2: 0 2px 4px rgba(18, 21, 26, 0.05), 0 24px 64px rgba(18, 21, 26, 0.09);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --sh-btn: 0 1px 2px rgba(30, 67, 214, 0.24), 0 8px 24px rgba(45, 91, 255, 0.18);
+  --sh-btn-hover: 0 2px 4px rgba(30, 67, 214, 0.28), 0 14px 34px rgba(45, 91, 255, 0.26);
+  --sh-card-hover: 0 2px 4px rgba(18, 21, 26, 0.05), 0 24px 64px rgba(18, 21, 26, 0.09);
+  --glow-ring: 0 0 0 4px rgba(45, 91, 255, 0.12);
 
-  /* ---- easing (README § Interactions & behavior — every timing uses it) ---- */
-  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* ---- easing ---- */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur: 320ms;
 
-  /* ---- landing-page values ------------------------------------------------
-     Used by the landing surface and absent from the README token table.
-     Each line cites where the value comes from; README § numbering refers to
-     "latch design/README.md", "ref" to design-references/Latch Landing.dc.html
-     (the reference is only consulted where the README is silent).
-     ------------------------------------------------------------------------ */
-  --header-bg: rgba(4, 6, 12, 0.82); /* README § Screens 1 Layout: sticky header ground */
-  --header-border: #131c2e;          /* README § Screens 1 Layout: header bottom border */
-  --stats-ground: #060a14;           /* README § Screens 1.3: stats strip ground */
-  --hairline-dark: #101a2c;          /* README § Screens 3 sidebar border; ref: stats-strip rules */
-  --roadmap-rule: #1a2740;           /* ref: per-item roadmap top rule */
-  --selection: #1a7fff;              /* ref: ::selection ground */
+  /* ---- landing-surface values ---- */
+  --header-bg: rgba(244, 243, 239, 0.82);
+  --header-border: #e7e5df;
+  --stats-ground: #ffffff;
+  --hairline-dark: #e7e5df;
+  --roadmap-rule: #e7e5df;
+  --selection: #c9d6ff;
 
-  --pill-border: #1e4f96;             /* README § Screens 1.2: eyebrow pill border */
-  --pill-bg: rgba(16, 50, 102, 0.35); /* README § Screens 1.2: eyebrow pill ground */
-  --pill-ink: #6fb2ff;                /* README § Screens 1.2: eyebrow pill text */
+  --pill-border: #d8d6cf;
+  --pill-bg: #ffffff;
+  --pill-ink: #4a5163;
 
-  /* --nav-ink (#93A3BD) and --code-ink (#C3D3EA) are declared in the shared
-     block at the foot of this file; the landing surface consumes those. */
-  --btn2-ink: #cfdcf0;          /* ref: secondary button label */
-  --btn2-border-hover: #3a5f96; /* ref: secondary button hover border */
+  --btn2-ink: #12151a;
+  --btn2-border-hover: #858b9b;
 
-  --tile-border: #23446f;              /* ref: icon / satellite / chain tiles */
-  --tile-bg: rgba(16, 42, 82, 0.45);   /* ref: feature + chain tile ground */
-  --tile-bg-strong: rgba(16, 42, 82, 0.5); /* ref: use-case icon tile ground */
-  --node-rim: #1f66c4;                 /* README § Screens 1.2: hero centre tile blue rim */
-  --node-label-ink: #7f96b8;           /* ref: hero satellite labels */
+  --tile-border: #e7e5df;
+  --tile-bg: #f9f8f5;
+  --tile-bg-strong: #efeee9;
+  --node-rim: #2d5bff;
+  --node-label-ink: #4a5163;
 
-  --mono-data-ink: #a9b9d1;  /* README § Typography: mono data 11–13 */
-  --mono-data-dim: #7f92ad;  /* README § Screens 3: subtitle ink; ref: data values, team role */
-  --stat-label-ink: #6d80a0; /* ref: stats-strip caption */
+  --mono-data-ink: #12151a;
+  --mono-data-dim: #4a5163;
+  --stat-label-ink: #858b9b;
 
-  --track: #111c2f;         /* ref: progress-bar and donut track */
-  --switch-border: #1b2438; /* ref: range switcher frame */
-  --switch-ground: #080d18; /* ref: range switcher ground */
+  --track: #efeee9;
+  --switch-border: #d8d6cf;
+  --switch-ground: #f9f8f5;
 
-  --bar-fade: rgba(43, 139, 255, 0.35);    /* ref: horizontal bar gradient end */
-  --gas-col-dim: rgba(43, 139, 255, 0.42); /* ref: non-peak gas column */
+  --bar-fade: rgba(45, 91, 255, 0.16);
+  --gas-col-dim: rgba(45, 91, 255, 0.28);
 
-  --grad-node-core: linear-gradient(160deg, rgba(20, 60, 120, 0.55), rgba(8, 16, 32, 0.9)); /* ref */
-  --grad-node-tile: linear-gradient(160deg, rgba(18, 44, 84, 0.7), rgba(7, 12, 24, 0.9));   /* ref */
-  --grad-card: linear-gradient(180deg, rgba(10, 18, 34, 0.9), rgba(5, 8, 16, 0.9));         /* ref: use-case card */
-  --grad-panel-deep: linear-gradient(180deg, #080e1a, #05080f);                             /* ref: activity main card */
-  --grad-cta: linear-gradient(120deg, #061229, #04070f 70%);                                /* ref: CTA panel */
-  --glow-cta: radial-gradient(closest-side, rgba(43, 139, 255, 0.22), transparent 70%);     /* ref: CTA panel glow */
-  --stripes: repeating-linear-gradient(135deg, #0c1526 0 9px, #0a1120 9px 18px);            /* ref: headshot placeholder */
+  --grad-node-core: linear-gradient(160deg, #ffffff, #f4f3ef);
+  --grad-node-tile: linear-gradient(160deg, #ffffff, #f9f8f5);
+  --grad-card: linear-gradient(180deg, #ffffff, #fbfaf8);
+  --grad-panel-deep: linear-gradient(180deg, #ffffff, #f9f8f5);
+  --grad-cta: linear-gradient(120deg, #ffffff, #f4f3ef 70%);
+  --glow-cta: radial-gradient(closest-side, rgba(45, 91, 255, 0.08), transparent 70%);
+  --stripes: repeating-linear-gradient(135deg, #f4f3ef 0 9px, #efeee9 9px 18px);
 
-  /* README § Interactions: button sheen is a white gradient sweeping across. */
-  --grad-sheen: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  --grad-sheen: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
 
-  --sh-nav-pill: 0 6px 22px rgba(26, 127, 255, 0.38); /* ref: Launch App pill */
-  --sh-node: 0 0 26px rgba(26, 127, 255, 0.2);        /* ref: hero satellite tile */
-  --glow-dot: 0 0 14px rgba(43, 139, 255, 0.9);       /* ref: roadmap dot */
+  --sh-nav-pill: 0 1px 2px rgba(30, 67, 214, 0.24), 0 6px 22px rgba(45, 91, 255, 0.2);
+  --sh-node: 0 1px 2px rgba(18, 21, 26, 0.04), 0 4px 16px rgba(18, 21, 26, 0.05);
+  --glow-dot: 0 0 0 4px rgba(45, 91, 255, 0.14);
 
   /* ---- layout ---- */
-  --gutter-landing: 40px;
+  --gutter-landing: 48px;
   --gutter-docs: 32px;
-  --gutter-dapp: 26px;
-  --max-landing: 1280px;
+  --gutter-dapp: 24px;
+  --max-landing: 1200px;
   --max-docs: 1400px;
   --max-brand: 1180px;
 
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 *,
@@ -180,6 +266,7 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -187,8 +274,11 @@ body {
   background: var(--void);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 24px;
+  /* Inter's contextual alternates: `cv11` gives the single-storey a lowercase
+     l a tail, which is the difference between 1, l and I in an address. */
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -199,8 +289,17 @@ h3,
 h4 {
   font-family: var(--font-display);
   color: var(--ink-bright);
+  letter-spacing: -0.02em;
   text-wrap: balance;
   margin: 0;
+}
+
+/* The display accent: one clause of a headline, never the whole thing. */
+.serif {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 code,
@@ -214,8 +313,16 @@ a {
   color: var(--signal-blue);
 }
 
+a:hover {
+  color: var(--deep-blue);
+}
+
 img {
   max-width: 100%;
+}
+
+::selection {
+  background: var(--selection);
 }
 
 /* Numerals must never reflow in columns */
@@ -223,14 +330,14 @@ img {
   font-variant-numeric: tabular-nums;
 }
 
-/* Focus is always visible, always Latch Blue (spec: Accessibility) */
+/* Focus is always visible, always the brand blue */
 :focus-visible {
   outline: 2px solid var(--latch-blue);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--r-micro);
 }
 
-/* Hit targets stay >= 44px on touch (spec: Responsive) */
+/* Hit targets stay >= 44px on touch */
 @media (pointer: coarse) {
   button,
   a[role="button"],
@@ -242,68 +349,69 @@ img {
 /* ----------------------------------------------------------------------------
    Dapp surface tokens.
 
-   The README's token table covers the palette; these are the dapp-only
-   compounds its § 3. Dapp section describes in prose and the reference
-   (design-references/Latch Dapp.dc.html) pins down exactly — sidebar ground,
-   translucent header, status badge grounds, series tails. Namespaced --dapp-*
-   so the four surfaces never collide.
+   Namespaced --dapp-* so the four surfaces never collide. In Canvas the dapp
+   shell is a white sidebar on the paper ground rather than a darker panel on a
+   dark one — the depth cue inverts, so the sidebar is the LIGHTER surface and
+   the content area keeps the paper.
    -------------------------------------------------------------------------- */
 :root {
-  --dapp-sidebar-bg: #060a12;          /* aside ground */
-  --dapp-sidebar-line: #101a2c;        /* sidebar right border + header rule */
-  --dapp-header-bg: rgba(4, 6, 12, 0.88); /* sticky header over blur(14px) */
+  --dapp-sidebar-bg: #ffffff;
+  --dapp-sidebar-line: #e7e5df;
+  --dapp-header-bg: rgba(244, 243, 239, 0.82);
 
-  --dapp-ink-soft: #cfdcf0;            /* wallet + readout text */
-  --dapp-ink-data: #a9b9d1;            /* README: mono data #A9B9D1–#E4ECF9 */
-  --dapp-ink-sub: #7f92ad;             /* README: header subtitle 12.5px */
+  --dapp-ink-soft: #12151a;
+  --dapp-ink-data: #12151a;
+  --dapp-ink-sub: #4a5163;
 
-  --dapp-track: #111c2f;               /* progress + column track */
-  --dapp-switcher-border: #1b2438;     /* range switcher shell */
-  --dapp-switcher-bg: #080d18;
-  --dapp-tile-border: #23446f;         /* latch card icon tile */
-  --dapp-tile-bg: rgba(16, 42, 82, 0.5);
-  --dapp-chip-active-bg: rgba(23, 55, 104, 0.55);
-  --dapp-step-active-bg: rgba(12, 24, 46, 0.7);
-  --dapp-step-num-bg: rgba(43, 139, 255, 0.14);
-  --dapp-search-ring: #4a6b96;
+  --dapp-track: #efeee9;
+  --dapp-switcher-border: #d8d6cf;
+  --dapp-switcher-bg: #f9f8f5;
+  --dapp-tile-border: #e7e5df;
+  --dapp-tile-bg: #f9f8f5;
+  --dapp-chip-active-bg: #e9eeff;
+  --dapp-step-active-bg: #f9f8f5;
+  --dapp-step-num-bg: #e9eeff;
+  --dapp-search-ring: #2d5bff;
 
-  --dapp-badge-ok-border: #1f5f45;
-  --dapp-badge-ok-bg: rgba(31, 95, 69, 0.3);
-  --dapp-badge-info-border: #1f4f96;
-  --dapp-badge-info-bg: rgba(31, 79, 150, 0.3);
-  --dapp-badge-warn-border: #4f4321;
-  --dapp-badge-warn-bg: rgba(79, 67, 33, 0.3);
-  --dapp-badge-mute-border: #2a3448;
-  --dapp-badge-mute-bg: rgba(42, 52, 72, 0.3);
-  /* One step past --warn, for the hook marketplace's value-extracting and
-     flagged-malicious badges. Derived from --error so it cannot drift from the
-     error dot and the flagged card border it sits beside. */
-  --dapp-badge-danger-border: color-mix(in srgb, var(--error) 45%, transparent);
-  --dapp-badge-danger-bg: color-mix(in srgb, var(--error) 16%, transparent);
+  /* Status badges. Soft tint + a border one step stronger, rather than the
+     dark theme's translucent overlay — translucency over paper muddies. */
+  --dapp-badge-ok-border: #b7e3cf;
+  --dapp-badge-ok-bg: #ddf4ea;
+  --dapp-badge-info-border: #c3d2ff;
+  --dapp-badge-info-bg: #e9eeff;
+  --dapp-badge-warn-border: #ecd9b0;
+  --dapp-badge-warn-bg: #fdf3e0;
+  --dapp-badge-mute-border: #e7e5df;
+  --dapp-badge-mute-bg: #f4f3ef;
+  --dapp-badge-danger-border: color-mix(in srgb, var(--error) 32%, white);
+  --dapp-badge-danger-bg: color-mix(in srgb, var(--error) 9%, white);
 
-  --dapp-grad-panel: linear-gradient(180deg, #080e1a, #05080f);
-  --dapp-grad-pool: linear-gradient(120deg, #081227, #05080f);
-  --dapp-grad-avatar: linear-gradient(140deg, #2b8bff, #5fd39a);
-  --dapp-grad-token: linear-gradient(140deg, #2b8bff, #0a63e0);
-  --dapp-grad-token-alt: linear-gradient(140deg, #5fd39a, #2b8bff);
-  --dapp-grad-bar-green: linear-gradient(180deg, #5fd39a, rgba(95, 211, 154, 0.2));
-  --dapp-bar-tail: rgba(43, 139, 255, 0.3);
-  --dapp-spark-idle: rgba(43, 139, 255, 0.34);
+  --dapp-grad-panel: linear-gradient(180deg, #ffffff, #fbfaf8);
+  --dapp-grad-pool: linear-gradient(120deg, #ffffff, #f4f3ef);
+  --dapp-grad-avatar: linear-gradient(140deg, #2d5bff, #1baf7a);
+  --dapp-grad-token: linear-gradient(140deg, #2d5bff, #1e43d6);
+  --dapp-grad-token-alt: linear-gradient(140deg, #1baf7a, #2d5bff);
+  --dapp-grad-bar-green: linear-gradient(180deg, #1baf7a, rgba(27, 175, 122, 0.2));
+  --dapp-bar-tail: rgba(45, 91, 255, 0.16);
+  --dapp-spark-idle: rgba(45, 91, 255, 0.28);
 
-  --dapp-sh-btn: 0 8px 24px rgba(26, 127, 255, 0.32);
-  --dapp-sh-btn-hover: 0 14px 34px rgba(26, 127, 255, 0.48);
-  --dapp-sh-deploy: 0 10px 28px rgba(26, 127, 255, 0.3);
-  --dapp-knob-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  --dapp-sh-btn: 0 1px 2px rgba(30, 67, 214, 0.24), 0 8px 24px rgba(45, 91, 255, 0.18);
+  --dapp-sh-btn-hover: 0 2px 4px rgba(30, 67, 214, 0.28), 0 14px 34px rgba(45, 91, 255, 0.26);
+  --dapp-sh-deploy: 0 1px 2px rgba(30, 67, 214, 0.24), 0 8px 24px rgba(45, 91, 255, 0.18);
+  --dapp-knob-shadow: 0 1px 3px rgba(18, 21, 26, 0.18);
 
-  /* README: "status dot glow 0 0 10px of its own color at 75-80%" */
-  --dapp-glow-success: 0 0 10px rgba(95, 211, 154, 0.78);
-  --dapp-glow-warning: 0 0 10px rgba(224, 169, 95, 0.78);
-  --dapp-glow-error: 0 0 10px rgba(224, 106, 106, 0.78);
-  --dapp-glow-primary: 0 0 10px rgba(43, 139, 255, 0.78);
+  /* On paper a "glow" is a soft ring, not a bloom. */
+  --dapp-glow-success: 0 0 0 3px rgba(27, 175, 122, 0.18);
+  --dapp-glow-warning: 0 0 0 3px rgba(178, 106, 0, 0.18);
+  --dapp-glow-error: 0 0 0 3px rgba(196, 52, 42, 0.18);
+  --dapp-glow-primary: 0 0 0 3px rgba(45, 91, 255, 0.16);
 }
 
-/* Every animation in this design must be disabled here (spec: Motion) */
+/* Every animation in this design must be disabled here */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   *,
   *::before,
   *::after {
@@ -314,79 +422,35 @@ img {
   }
 }
 
-/* ----------------------------------------------------------------------------
-   Values used by the surfaces that the README's token table does not name.
-   Each is cited to where the spec states it. Added, not invented.
-   ---------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------- */
 :root {
-  /* Inactive header nav link. Verbatim from every reference header; the README
-     names only the *active* colour (#4A9BFF). */
-  --nav-ink: #93a3bd;
-
-  /* Body ink inside code blocks. Verbatim from the Brand Kit and Docs
-     references; the README's syntax palette covers only keyword and comment. */
-  --code-ink: #c3d3ea;
-
-  /* README § Screens 1 Layout: sticky header is `blur(14px)`. Ground and border
-     for the same header are --header-bg / --header-border above. */
-  --header-blur: 14px;
-
-  /* Brand kit § Usage: the dashed rule around the clear-space diagram.
-     Verbatim from design-references/Latch Brand Kit.dc.html. */
-  --dashed-rule: #24406b;
-
-  /* Brand kit § Logo: ground behind the "Mark" tile — the one asset tile that
-     sits on a gradient rather than flat Void. Verbatim from the reference. */
-  --grad-mark-tile: linear-gradient(140deg, #061024, #04070f);
+  --nav-ink: #4a5163;
+  --code-ink: #12151a;
+  --header-blur: 16px;
+  --dashed-rule: #d8d6cf;
+  --grad-mark-tile: linear-gradient(140deg, #ffffff, #f4f3ef);
 }
 
 /* ----------------------------------------------------------------------------
    Docs surface tokens.
-
-   Only the four compounds the docs page needs that no other surface defines.
-   Everything else it uses is already above: --header-bg / --header-border /
-   --header-blur, --pill-*, --nav-ink, --code-ink, --mono-data-ink (#A9B9D1),
-   --mono-data-dim (#7F92AD), --btn2-ink (#CFDCF0), --hairline-dark (#101A2C).
-   Namespaced --docs-* so the four surfaces never collide.
    -------------------------------------------------------------------------- */
 :root {
-  /* README § Screens 2: "active link gets rgba(23,55,104,.5) background". */
-  --docs-rail-active-bg: rgba(23, 55, 104, 0.5);
-
-  /* Info callout under "2 · Write the latch". Verbatim from
-     design-references/Latch Docs.dc.html; README describes it only in prose
-     ("an info callout with a pulsing dot"). */
-  --docs-callout-border: #1e3f6f;
-  --docs-callout-bg: rgba(12, 32, 62, 0.5);
-
-  /* "Next: attach it to a pool" panel. The README's radii scale does not
-     enumerate the docs CTA panel; the reference sets 20px, its ground and its
-     glow, all verbatim below. Distinct from the landing --grad-cta / --glow-cta
-     (70% stop, .22 alpha). */
+  --docs-rail-active-bg: #e9eeff;
+  --docs-callout-border: #c3d2ff;
+  --docs-callout-bg: #e9eeff;
   --docs-r-panel: 20px;
-  --docs-grad-next: linear-gradient(120deg, #061229, #04070f 72%);
-  --docs-glow-next: radial-gradient(closest-side, rgba(43, 139, 255, 0.26), transparent 70%);
-
-  /* Scrim behind the rail drawer below 1024px. Void at 72% — no spec value
-     exists because the reference prototype has no responsive drawer. */
-  --docs-scrim: rgba(4, 6, 12, 0.72);
+  --docs-grad-next: linear-gradient(120deg, #ffffff, #f4f3ef 72%);
+  --docs-glow-next: radial-gradient(closest-side, rgba(45, 91, 255, 0.1), transparent 70%);
+  --docs-scrim: rgba(18, 21, 26, 0.4);
 }
 
 /* ----------------------------------------------------------------------------
-   Chain status badges — "DEPLOYED" vs "TARGET".
-
-   Latch is live on Ethereum Sepolia and on no other chain, so both the landing
-   page's chain grid and the dapp's network chips have to draw that distinction.
-   The dapp already defines exactly these two badge treatments as
-   --dapp-badge-ok-* (success) and --dapp-badge-mute-* (neutral); rather than
-   introduce a second set of near-identical values, these are aliases so the
-   landing surface can carry the identical badge without borrowing a --dapp-*
-   name. No new colours are introduced here.
+   Chain status badges — "DEPLOYED" vs "TARGET". Aliases, no new colours.
    ---------------------------------------------------------------------------- */
 :root {
   --badge-live-border: var(--dapp-badge-ok-border);
   --badge-live-bg: var(--dapp-badge-ok-bg);
-  --badge-live-ink: var(--success);
+  --badge-live-ink: #14795a;
 
   --badge-target-border: var(--dapp-badge-mute-border);
   --badge-target-bg: var(--dapp-badge-mute-bg);
