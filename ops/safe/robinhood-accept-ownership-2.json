@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "chainId": "4663",
+  "createdAt": 1789119574481,
+  "meta": {
+    "name": "Latch — accept ownership, part 2 (pool manager owners + router)",
+    "description": "Second and final accept batch. CLPoolManagerOwner and BinPoolManagerOwner each already own their pool manager, so accepting these puts both managers under the Safe transitively. UniversalRouter had nominated the DEPLOYER, not the Safe; that was re-pointed on chain first.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+    "checksum": ""
+  },
+  "transactions": [
+    {
+      "to": "0x5D7111d6c624e9a08aE63d342E4baE5878989a67",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0x98920e33313257Ffd942f94379A7ced216462665",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": null,
+      "contractInputsValues": null
+    }
+  ]
+}
