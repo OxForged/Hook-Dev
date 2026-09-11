@@ -166,8 +166,10 @@ export default function Claim() {
 
             {isConnected && !onChain && (
               <div className="dp-gate dp-gate--warn" style={{ marginTop: 12 }}>
-                <p className="dp-gate__title">Wrong network</p>
-                <p className="dp-gate__body">These contracts exist on {CHAIN.name} only.</p>
+                <p className="dp-gate__title">Not deployed on this chain</p>
+                <p className="dp-gate__body">
+                  RevShareHook is deployed on {CHAIN.name} and nowhere else — not because your wallet is on the wrong network, but because the hook has not been deployed to the chain you are on. Switching moves you to the only chain where these reads mean anything.
+                </p>
                 <button
                   type="button"
                   className="dapp-btn dapp-btn--sm"

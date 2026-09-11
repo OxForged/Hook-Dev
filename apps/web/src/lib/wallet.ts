@@ -49,8 +49,10 @@ export const wagmiConfig = createLatchConfig({
   appIcon: 'https://latch.guru/brand/app-icon-512.png',
 })
 
-/** The chain a fresh connection targets. */
-export const DEFAULT_CHAIN: Chain = sepolia
+/** The chain a fresh connection targets. Robinhood, because it is the mainnet
+    and that is what the product should present by default. Sepolia stays in the
+    switcher and is still where the protocol gets exercised. */
+export const DEFAULT_CHAIN: Chain = robinhood
 
 export { SEPOLIA_CHAIN_ID }
 

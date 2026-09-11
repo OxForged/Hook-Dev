@@ -66,6 +66,10 @@ export const DEPLOYMENTS = {
       lpFee: 3000,
       tickSpacing: 60,
     },
+    /** The hook the Sepolia exercise deployed and drove a full revenue cycle
+        through. It PREDATES keyOf/hasKey/totalTaken and reverts on all three;
+        the dapp reads none of them, summing RevShareTaken logs instead. */
+    revShareHook: '0x1C86dc775FF3FDADCCF87F132de7a4eb60B6bE28',
     /** Block the protocol was deployed at — log scans start here, not from genesis. */
     deployedAtBlock: 11672600n,
   },
@@ -112,6 +116,11 @@ export const DEPLOYMENTS = {
     /** Canonical per docs.robinhood.com/chain/contracts. The usual predeploys
         0x4200..06 and 0xC02aaA.. have NO CODE on this chain. */
     weth: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
+    /** RevShareHook. Owner is the Safe from the constructor — this contract is
+        the one exception to the two-step pattern everywhere else here, because
+        it passes owner_ straight to Ownable(). Guardian is the ops key and can
+        only pause, never unpause. Takes nothing until a pool owner configures. */
+    revShareHook: '0x23CE34E8199927DD270dddd8579c947542bDE446',
     demoPool: null,
     /** Block the first Latch contract landed — the two timelocks. */
     deployedAtBlock: 60111836n,
