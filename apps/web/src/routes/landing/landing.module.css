@@ -276,6 +276,13 @@
   height: 28px;
 }
 
+/* Same cluster as .headerSocials, one item: hidden at the same breakpoint,
+   reachable from the collapsed menu instead (see .menuFoot in the JSX). */
+.themeToggleSlot {
+  display: flex;
+  align-items: center;
+}
+
 /* Disclosure trigger — hidden until the links collapse (see the 860px block). */
 .menuBtn {
   display: none;
@@ -417,7 +424,7 @@
 .btnPrimary {
   position: relative;
   overflow: hidden;
-  padding: 14px 26px;
+  padding: var(--s4) var(--s5);
   border: none;
   border-radius: var(--r-pill);
   background: var(--grad-primary);
@@ -446,7 +453,7 @@
 }
 
 .btnSecondary {
-  padding: 14px 26px;
+  padding: var(--s4) var(--s5);
   border: 1px solid var(--hairline-blue-2);
   border-radius: var(--r-pill);
   background: transparent;
@@ -463,7 +470,7 @@
 }
 
 .btnWide {
-  padding: 14px 28px;
+  padding: var(--s4) var(--s6);
 }
 
 /* -------------------------------------------------------------------- hero */
@@ -636,7 +643,7 @@
 }
 
 .statCell {
-  padding: 30px 28px;
+  padding: var(--s6) var(--s6);
   border-right: 1px solid var(--hairline-dark);
 }
 
@@ -654,7 +661,7 @@
   box-sizing: content-box;
   max-width: var(--max-landing);
   margin: 0 auto;
-  padding: 0 28px 22px;
+  padding: 0 var(--s6) var(--s5);
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.14em;
@@ -662,7 +669,7 @@
 }
 
 .statLabel {
-  margin-top: 6px;
+  margin-top: var(--s2);
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.14em;
@@ -675,7 +682,7 @@
   box-sizing: content-box;
   max-width: var(--max-landing);
   margin: 0 auto;
-  padding: 96px var(--gutter-landing) 0;
+  padding: var(--s9) var(--gutter-landing) 0;
 }
 
 .eyebrow {
@@ -720,22 +727,22 @@
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 20px;
+  gap: var(--s5);
 }
 
 /* --------------------------------------------------------------- activity */
 
 .rangeSwitcher {
   display: flex;
-  gap: 6px;
-  padding: 4px;
+  gap: var(--s2);
+  padding: var(--s1);
   border: 1px solid var(--switch-border);
   border-radius: var(--r-chip);
   background: var(--switch-ground);
 }
 
 .rangeBtn {
-  padding: 7px 14px;
+  padding: var(--s2) var(--s4);
   border: none;
   border-radius: var(--r-micro);
   background: transparent;
@@ -757,22 +764,23 @@
 .activityGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
-  gap: 18px;
-  margin-top: 30px;
+  gap: var(--s4);
+  margin-top: var(--s6);
 }
 
 .chartCard {
-  padding: 26px 26px 18px;
+  padding: var(--s5) var(--s5) var(--s4);
   border: 1px solid var(--hairline);
   border-radius: var(--r-card-lg);
   background: var(--grad-panel-deep);
+  box-shadow: var(--shadow-1);
 }
 
 .chartHead {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 14px;
+  gap: var(--s4);
 }
 
 .chartHeadline {
@@ -800,7 +808,7 @@
   display: block;
   width: 100%;
   height: 240px;
-  margin-top: 22px;
+  margin-top: var(--s5);
   overflow: visible;
 }
 
@@ -832,7 +840,7 @@
 .axisRow {
   display: flex;
   justify-content: space-between;
-  margin-top: 12px;
+  margin-top: var(--s3);
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--faint-ink);
@@ -841,14 +849,15 @@
 .sideColumn {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--s4);
 }
 
 .card {
-  padding: 24px;
+  padding: var(--s5);
   border: 1px solid var(--hairline);
   border-radius: var(--r-card-lg);
   background: var(--panel);
+  box-shadow: var(--shadow-1);
 }
 
 .microLabel {
@@ -863,14 +872,14 @@
 .barList {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: 20px;
+  gap: var(--s4);
+  margin-top: var(--s5);
 }
 
 .barHead {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--s3);
   font-size: 13px;
   color: var(--mono-data-ink);
 }
@@ -882,7 +891,7 @@
 }
 
 .barTrack {
-  margin-top: 7px;
+  margin-top: var(--s2);
   height: 6px;
   border-radius: 99px;
   background: var(--track);
@@ -899,11 +908,11 @@
 .columns {
   display: flex;
   align-items: flex-end;
-  margin-top: 20px;
+  margin-top: var(--s5);
 }
 
 .gasColumns {
-  gap: 7px;
+  gap: var(--s2);
   height: 118px;
 }
 
@@ -921,7 +930,7 @@
 }
 
 .deployColumns {
-  gap: 5px;
+  gap: var(--s1);
   height: 104px;
 }
 
@@ -937,14 +946,14 @@
 .captionRow {
   display: flex;
   justify-content: space-between;
-  margin: 10px 0 0;
+  margin: var(--s3) 0 0;
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--faint-ink);
 }
 
 .deployCaption {
-  margin: 12px 0 0;
+  margin: var(--s3) 0 0;
   font-size: 13px;
   color: var(--muted-ink);
 }
@@ -952,18 +961,19 @@
 .activityRow {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 18px;
-  margin-top: 18px;
+  gap: var(--s4);
+  margin-top: var(--s4);
 }
 
 .donutCard {
   display: flex;
   align-items: center;
-  gap: 22px;
-  padding: 24px;
+  gap: var(--s5);
+  padding: var(--s5);
   border: 1px solid var(--hairline);
   border-radius: var(--r-card-lg);
   background: var(--panel);
+  box-shadow: var(--shadow-1);
 }
 
 .donut {
@@ -992,14 +1002,14 @@
 .legend {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 14px;
+  gap: var(--s2);
+  margin-top: var(--s4);
 }
 
 .legendRow {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--s2);
   font-size: 13px;
   color: var(--mono-data-ink);
 }
@@ -1022,14 +1032,14 @@
 .healthList {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-top: 20px;
+  gap: var(--s4);
+  margin-top: var(--s5);
 }
 
 .healthRow {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--s3);
 }
 
 .statusDot {
@@ -1055,7 +1065,7 @@
 }
 
 .placeholderNote {
-  margin: 18px 0 0;
+  margin: var(--s4) 0 0;
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.1em;
@@ -1079,7 +1089,7 @@
 }
 
 .chartHost {
-  margin-top: 18px;
+  margin-top: var(--s4);
 }
 
 /* ------------------------------------------------------------- the fee meter
@@ -1093,7 +1103,7 @@
 .feeMeter {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: var(--s2);
 }
 
 .meterTrack {
@@ -1139,16 +1149,47 @@
 .cardGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 18px;
-  margin-top: 38px;
+  gap: var(--s4);
+  margin-top: var(--s6);
+}
+
+/* UseCases renders four markets (DEX/AMM, launchpads, stock pairs, revenue
+   share); a narrower minmax than .cardGrid keeps all four on one row above
+   ~1040px while still stacking cleanly at phone width. This class was
+   referenced by Sections.tsx but never defined, so the grid rendered
+   unstyled — fixed as part of bringing UseCases onto Canvas. */
+/* Explicitly four, not `auto-fit`. With `repeat(auto-fit, minmax(220px, 1fr))`
+   the container fits FIVE 220px tracks, so with four cards the fifth collapsed
+   to 0px — and the gap before a zero-width track still renders, leaving a
+   phantom 16px on the right and holding the cards at 288px instead of letting
+   them fill the row. `auto-fit` is for an unknown number of items; this grid
+   is named for its count. */
+.cardGrid4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s4);
+  margin-top: var(--s6);
+}
+
+@media (max-width: 1024px) {
+  .cardGrid4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .cardGrid4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .useCase {
   position: relative;
-  padding: 26px 24px 28px;
+  padding: var(--s5) var(--s5) var(--s6);
   border: 1px solid var(--hairline);
   border-radius: var(--r-card-lg);
   background: var(--grad-card);
+  box-shadow: var(--shadow-1);
   transition:
     transform 0.3s var(--ease),
     border-color 0.3s,
@@ -1180,7 +1221,7 @@
 }
 
 .useCaseName {
-  margin-top: 20px;
+  margin-top: var(--s5);
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 20px;
@@ -1188,7 +1229,7 @@
 }
 
 .useCaseBody {
-  margin: 10px 0 0;
+  margin: var(--s3) 0 0;
   font-size: 14.5px;
   line-height: 1.6;
   color: var(--muted-ink);
@@ -1196,7 +1237,7 @@
 }
 
 .useCaseTag {
-  margin: 18px 0 0;
+  margin: var(--s4) 0 0;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.1em;
@@ -1208,14 +1249,15 @@
 .stepGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 18px;
+  gap: var(--s4);
 }
 
 .stepCard {
-  padding: 26px;
+  padding: var(--s5);
   border: 1px solid var(--hairline);
   border-radius: var(--r-card-lg);
   background: var(--panel);
+  box-shadow: var(--shadow-1);
 }
 
 .stepNum {
@@ -1226,7 +1268,7 @@
 }
 
 .stepName {
-  margin-top: 14px;
+  margin-top: var(--s4);
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 19px;
@@ -1234,7 +1276,7 @@
 }
 
 .stepDesc {
-  margin: 10px 0 0;
+  margin: var(--s3) 0 0;
   font-size: 14.5px;
   line-height: 1.6;
   color: var(--muted-ink);
@@ -1243,16 +1285,17 @@
 .splitGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  gap: 28px;
+  gap: var(--s6);
   align-items: start;
-  margin-top: 26px;
+  margin-top: var(--s5);
 }
 
 .interfaceCard {
-  padding: 30px;
+  padding: var(--s6);
   border: 1px solid var(--hairline);
   border-radius: var(--r-card-lg);
   background: var(--panel);
+  box-shadow: var(--shadow-1);
 }
 
 .interfaceTitle {
@@ -1263,7 +1306,7 @@
 }
 
 .interfaceBody {
-  margin: 12px 0 0;
+  margin: var(--s3) 0 0;
   font-size: 14.5px;
   line-height: 1.65;
   color: var(--muted-ink);
@@ -1273,8 +1316,8 @@
 .factList {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 22px 0 0;
+  gap: var(--s3);
+  margin: var(--s5) 0 0;
   padding: 0;
   list-style: none;
   font-family: var(--font-mono);
@@ -1286,14 +1329,15 @@
   border: 1px solid var(--hairline);
   border-radius: var(--r-card-lg);
   background: var(--code-ground);
+  box-shadow: var(--shadow-1);
   overflow: hidden;
 }
 
 .codeBar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
   border-bottom: 1px solid var(--hairline);
   background: var(--panel);
 }
@@ -1317,7 +1361,7 @@
 
 .code {
   margin: 0;
-  padding: 22px;
+  padding: var(--s5);
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.85;
@@ -1349,7 +1393,7 @@
 .featureGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 22px;
+  gap: var(--s5);
 }
 
 .featureTile {
@@ -1370,7 +1414,7 @@
 }
 
 .featureName {
-  margin-top: 16px;
+  margin-top: var(--s4);
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 18px;
@@ -1378,7 +1422,7 @@
 }
 
 .featureDesc {
-  margin: 8px 0 0;
+  margin: var(--s2) 0 0;
   font-size: 14px;
   line-height: 1.6;
   color: var(--muted-ink);
@@ -1388,7 +1432,7 @@
 
 .chainLede {
   max-width: 70ch;
-  margin: 16px 0 0;
+  margin: var(--s4) 0 0;
   font-size: 15px;
   line-height: 1.7;
   color: var(--muted-ink-2);
@@ -1398,8 +1442,8 @@
 .chainGroup {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 30px 0 12px;
+  gap: var(--s3);
+  margin: var(--s6) 0 var(--s3);
   font-family: var(--font-mono);
   font-weight: 500;
   font-size: 11px;
@@ -1408,7 +1452,7 @@
 }
 
 .chainGroupCount {
-  padding: 1px 9px;
+  padding: var(--s1) var(--s2);
   border: 1px solid var(--hairline);
   border-radius: var(--r-pill);
   color: var(--mono-data-dim);
@@ -1421,15 +1465,15 @@
   list-style: none;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
+  gap: var(--s3);
 }
 
 .chainTile {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 9px;
-  padding: 20px 10px 16px;
+  gap: var(--s2);
+  padding: var(--s5) var(--s3) var(--s4);
   text-align: center;
   border: 1px solid var(--hairline-soft);
   border-radius: var(--r-sm);
@@ -1491,7 +1535,7 @@ span.chainMark {
 }
 
 .chainBadge {
-  padding: 3px 9px;
+  padding: var(--s1) var(--s2);
   border: 1px solid var(--badge-target-border);
   border-radius: var(--r-badge);
   background: var(--badge-target-bg);
@@ -1502,7 +1546,7 @@ span.chainMark {
 }
 
 .chainBadgeLive {
-  padding: 3px 9px;
+  padding: var(--s1) var(--s2);
   border: 1px solid var(--badge-live-border);
   border-radius: var(--r-badge);
   background: var(--badge-live-bg);
@@ -1514,18 +1558,19 @@ span.chainMark {
 
 /* The Sepolia deployment, stated once with links to the verified contracts. */
 .deployPanel {
-  margin-top: 28px;
-  padding: 22px 20px;
+  margin-top: var(--s6);
+  padding: var(--s5) var(--s5);
   border: 1px solid var(--hairline);
   border-radius: var(--r-card-lg);
   background: var(--grad-panel-deep);
+  box-shadow: var(--shadow-1);
 }
 
 .deployHead {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 12px;
+  gap: var(--s3) var(--s3);
 }
 
 .deployTitle {
@@ -1541,19 +1586,19 @@ span.chainMark {
 }
 
 .deployList {
-  margin: 16px 0 0;
+  margin: var(--s4) 0 0;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 8px;
+  gap: var(--s2);
 }
 
 .deployRow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 14px;
-  padding: 9px 12px;
+  gap: var(--s1) var(--s4);
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--hairline-soft);
   border-radius: var(--r-chip);
   background: var(--panel-alt);
@@ -1676,7 +1721,7 @@ span.chainMark {
 }
 
 .teamRole {
-  margin: 4px 0 0;
+  margin: var(--s1) 0 0;
   font-size: 13px;
   color: var(--mono-data-dim);
 }
@@ -1686,17 +1731,18 @@ span.chainMark {
 .ctaSection {
   box-sizing: content-box;
   max-width: var(--max-landing);
-  margin: 96px auto 0;
+  margin: var(--s9) auto 0;
   padding: 0 var(--gutter-landing);
 }
 
 .ctaPanel {
   position: relative;
   overflow: hidden;
-  padding: 64px 44px;
+  padding: var(--s8) var(--s7);
   border: 1px solid var(--cta-border);
   border-radius: var(--r-hero);
   background: var(--grad-cta);
+  box-shadow: var(--shadow-2);
   text-align: center;
 }
 
@@ -1723,7 +1769,7 @@ span.chainMark {
 .ctaBody {
   position: relative;
   max-width: 560px;
-  margin: 16px auto 0;
+  margin: var(--s4) auto 0;
   font-size: 16px;
   line-height: 1.6;
   color: var(--muted-ink-2);
@@ -1734,8 +1780,8 @@ span.chainMark {
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 30px;
+  gap: var(--s4);
+  margin-top: var(--s6);
 }
 
 /* ------------------------------------------------------------------ footer */
@@ -1744,13 +1790,13 @@ span.chainMark {
   box-sizing: content-box;
   max-width: var(--max-landing);
   margin: 0 auto;
-  padding: 56px var(--gutter-landing) 56px;
+  padding: var(--s8) var(--gutter-landing) var(--s8);
 }
 
 .footerTop {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr);
-  gap: 44px;
+  gap: var(--s7);
   align-items: start;
 }
 
@@ -1758,17 +1804,17 @@ span.chainMark {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 14px;
+  gap: var(--s4);
 }
 
 .footerGroups {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 30px 20px;
+  gap: var(--s6) var(--s5);
 }
 
 .footerGroupTitle {
-  margin: 0 0 14px;
+  margin: 0 0 var(--s4);
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 400;
@@ -1779,7 +1825,7 @@ span.chainMark {
 .footerList {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--s3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1791,9 +1837,9 @@ span.chainMark {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-top: 44px;
-  padding-top: 22px;
+  gap: var(--s4);
+  margin-top: var(--s7);
+  padding-top: var(--s5);
   border-top: 1px solid var(--hairline-soft);
 }
 
@@ -1821,7 +1867,7 @@ span.chainMark {
 .socials {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--s2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1886,7 +1932,8 @@ span.chainMark {
   /* display:none, not visibility or opacity: these links must leave the tab
      order entirely while the menu owns them. */
   .navList,
-  .headerSocials {
+  .headerSocials,
+  .themeToggleSlot {
     display: none;
   }
 
@@ -1896,14 +1943,14 @@ span.chainMark {
 
   .footerTop {
     grid-template-columns: minmax(0, 1fr);
-    gap: 34px;
+    gap: var(--s6);
   }
 
   .section,
   .ctaSection,
   .footer {
-    padding-left: 24px;
-    padding-right: 24px;
+    padding-left: var(--s5);
+    padding-right: var(--s5);
   }
 
   .hero {
@@ -1912,26 +1959,30 @@ span.chainMark {
   }
 
   .statCell {
-    padding: 26px 24px;
+    padding: var(--s5) var(--s5);
   }
 
   .section {
-    padding-top: 72px;
+    padding-top: var(--s8);
   }
 
   .ctaSection {
-    margin-top: 72px;
+    margin-top: var(--s8);
   }
 
   .ctaPanel {
-    padding: 48px 24px;
+    padding: var(--s7) var(--s5);
   }
 }
 
 @media (max-width: 560px) {
   .section,
   .ctaSection,
-  .footer,
+  .footer {
+    padding-left: var(--s5);
+    padding-right: var(--s5);
+  }
+
   .hero {
     padding-left: 20px;
     padding-right: 20px;
@@ -1977,19 +2028,19 @@ span.chainMark {
   }
 
   .chartCard {
-    padding: 22px 18px 16px;
+    padding: var(--s5) var(--s4) var(--s4);
   }
 
   .card,
   .donutCard,
   .interfaceCard,
   .stepCard {
-    padding: 20px;
+    padding: var(--s5);
   }
 
   .donutCard {
     flex-wrap: wrap;
-    gap: 18px;
+    gap: var(--s4);
   }
 
   .roadmapItem {
@@ -2002,7 +2053,7 @@ span.chainMark {
   }
 
   .footerBottom {
-    margin-top: 34px;
+    margin-top: var(--s6);
   }
 }
 
@@ -2079,9 +2130,9 @@ span.chainMark {
 .useCaseStatus {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  padding: 3px 9px;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  padding: var(--s1) var(--s2);
   border-radius: 999px;
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -2110,7 +2161,7 @@ span.chainMark {
 /* Lead paragraph under a section heading, above its card grid. */
 .sectionLead {
   max-width: 62ch;
-  margin: 14px auto 0;
+  margin: var(--s4) auto 0;
   --tone: var(--label-ink);
   font-size: 14.5px;
   line-height: 1.65;
