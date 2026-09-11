@@ -14,8 +14,8 @@
   /* Local compounds the README describes but its token table does not name.
      Kept scoped to this surface rather than global. */
   --dapp-sheen: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-  --dapp-grad-toggle: linear-gradient(90deg, #2b8bff, #0a63e0);
-  --dapp-scrim: rgba(4, 6, 12, 0.72);
+  --dapp-grad-toggle: var(--grad-primary);
+  --dapp-scrim: var(--docs-scrim);
   --dapp-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   display: grid;
@@ -86,8 +86,8 @@
 .dapp-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  padding: 18px 14px;
+  gap: var(--s6);
+  padding: var(--s5) var(--s4);
   border-right: 1px solid var(--dapp-sidebar-line);
   background: var(--dapp-sidebar-bg);
 }
@@ -99,21 +99,21 @@
 .dapp-lockup {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-sm);
   text-decoration: none;
   color: inherit;
   transition: background 0.22s ease, opacity 0.22s ease;
 }
-.dapp-lockup:hover { background: rgba(255, 255, 255, 0.04); }
+.dapp-lockup:hover { background: var(--panel-alt); }
 .dapp-lockup:active { opacity: 0.75; }
 .dapp-lockup:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--latch-blue);
   outline-offset: 2px;
 }
 .dapp-lockup__mark { height: 26px; width: auto; }
-.dapp-lockup__type { display: flex; flex-direction: column; gap: 2px; line-height: 1; }
+.dapp-lockup__type { display: flex; flex-direction: column; gap: var(--s1); line-height: 1; }
 .dapp-lockup__name {
   font-family: var(--font-display);
   font-weight: 700;
@@ -129,25 +129,31 @@
   color: var(--latch-blue);
 }
 
-.dapp-nav { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.dapp-nav { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); }
 .dapp-nav__row {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 11px 12px;
-  border-radius: var(--r-chip);
+  gap: var(--s3);
+  height: 40px;
+  padding-inline: var(--s3);
+  border-radius: var(--r-sm);
   font-family: var(--font-body);
-  font-size: 13.5px;
+  font-weight: 500;
+  font-size: 14px;
   text-align: left;
   text-decoration: none;
   background: transparent;
   color: var(--muted-ink);
   transition: background 0.22s, color 0.22s;
 }
-.dapp-nav__row:hover { color: var(--ink); }
+.dapp-nav__row:hover { background: var(--panel-alt); color: var(--ink); }
+/* Flat, not a gradient: `--active-nav` is the same accent-soft ground the
+   segmented pills use elsewhere (`.dapp-pill.is-active`), so the selected
+   state reads consistently across the shell. A gradient tuned to fade into a
+   dark sidebar just looks like a smudge on white. */
 .dapp-nav__row.is-active {
-  background: var(--grad-sidebar-active);
-  color: var(--ink);
+  background: var(--active-nav);
+  color: var(--sky-ink);
 }
 .dapp-nav__bar {
   width: 3px;
@@ -159,7 +165,7 @@
 }
 .dapp-nav__row.is-active .dapp-nav__bar { background: var(--latch-blue); }
 
-.dapp-sidebar__foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
+.dapp-sidebar__foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--s2); }
 
 .dapp-sample-note {
   margin: 0;
@@ -170,53 +176,12 @@
   color: var(--faint-ink);
 }
 
-.dapp-credits {
-  padding: 14px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-sm);
-  background: var(--panel-alt);
-}
-.dapp-credits__track {
-  margin-top: 10px;
-  height: 5px;
-  border-radius: var(--r-pill);
-  background: var(--hairline-soft);
-  overflow: hidden;
-}
-.dapp-credits__fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--r-pill);
-  background: var(--grad-progress);
-  transition: width 1s var(--dapp-ease);
-}
-.dapp-credits__value { margin: 9px 0 0; font-size: 12px; color: var(--muted-ink); }
-
-.dapp-wallet {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 12px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-btn);
-  background: var(--panel-alt);
-  color: var(--dapp-ink-soft);
-  font-family: var(--font-body);
-  font-size: 13px;
-  cursor: pointer;
-  transition: border-color 0.25s, transform 0.25s;
-}
-.dapp-wallet:hover { border-color: var(--border-hover); transform: translateY(-1px); }
-.dapp-wallet__avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--dapp-grad-avatar);
-  flex: 0 0 auto;
-}
-.dapp-wallet__address { font-family: var(--font-mono); font-size: 12px; }
-.dapp-wallet .dapp-dot { margin-left: auto; }
-.dapp-wallet .dapp-dot--pulse { animation-duration: 2.4s; }
+/* NOTE: the gas-sponsor credits card and the old in-sidebar wallet button
+   (`.dapp-credits*`, `.dapp-wallet*`) were removed along with the markup that
+   used them — see Sidebar.tsx. There is no gas sponsor, and the wallet
+   control now lives in the header (TopBar.tsx / `.dapp-block`,
+   `LatchConnectButton`). Nothing in this stylesheet references those classes
+   anymore; verified via grep before deleting them. */
 
 /* ---- main column + header ------------------------------------------------ */
 
@@ -239,8 +204,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding: 15px var(--gutter-dapp);
+  gap: var(--s4);
+  padding: var(--s4) var(--gutter-dapp);
   border-bottom: 1px solid var(--dapp-sidebar-line);
 }
 /* The header is a single row of fixed-size controls plus one flexible title.
@@ -262,14 +227,32 @@
   text-overflow: ellipsis;
 }
 .dapp-header__subtitle {
-  margin: 3px 0 0;
+  margin: var(--s1) 0 0;
   font-size: 12.5px;
   color: var(--dapp-ink-sub);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.dapp-header__right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.dapp-header__right { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3); flex-shrink: 0; }
+/* Two clusters, not six loose atoms, inside `.dapp-header__right`: the two
+   "state" chips (sample chip, network chip) in `.dapp-header__status`, and
+   the four interactive controls (chain switcher, wallet, block readout,
+   Deploy Latch) in `.dapp-header__controls`. At ~1024px — sidebar still
+   docked at 238px, so the content column is at its narrowest before the
+   drawer breakpoint hands the width back — six independently-wrapping atoms
+   didn't divide evenly and the primary button was the odd one left stranded
+   alone on a third line. Wrapping in two named clusters means that if the row
+   doesn't fit beside the title, an entire cluster drops as one unit onto its
+   own full-width line, where it has the whole header's width to itself and
+   fits without a further, uglier wrap. */
+.dapp-header__status,
+.dapp-header__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
 /* The network chip carries three separate facts. Keeping it on one line is the
    difference between a 39px control and a 63px one. */
 .dapp-net-chip { white-space: nowrap; }
@@ -303,7 +286,7 @@
 
 .dapp-sample-chip {
   margin: 0;
-  padding: 8px 11px;
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--dapp-badge-warn-border);
   border-radius: var(--r-chip);
   background: var(--dapp-badge-warn-bg);
@@ -318,9 +301,9 @@
 .dapp-block {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--s2);
   margin: 0;
-  padding: 9px 14px;
+  padding: var(--s2) var(--s4);
   border: 1px solid var(--hairline);
   border-radius: var(--r-chip);
   background: var(--panel-alt);
@@ -334,6 +317,52 @@
 .dapp-content {
   padding: 22px var(--gutter-dapp) 40px;
   animation: dapp-fade 0.45s var(--dapp-ease) both;
+}
+
+/* ---- reference-price rails: two honesty disclosures, one condensed row ----
+   TickerStrip.tsx/.css are shared with the landing surface and are untouched
+   here; this only changes how the dapp shell ARRANGES the two mounts it
+   already renders (crypto, then US equities). Stacked, each rail's own
+   `min-height: 32px` plus its top/bottom rule cost roughly 70px before a
+   reader reaches any actual screen content — for a strip whose two most
+   common states are "loading" and "not configured", that is a lot of vertical
+   rent for two lines that are usually not prices at all. Side by side they
+   read as one row with a divider, at roughly half the height, and each rail
+   still keeps its own accessible name, its own loading/error/empty state, and
+   its own truncating `.ltk-msg` — nothing here shortens the disclosure text,
+   it only gives it a narrower column once there is room for two. Below
+   ~720px the two columns would be too narrow to stay legible, so they stack
+   back to the original full-width rows. */
+.dapp-tickers {
+  display: flex;
+  flex-direction: column;
+}
+.dapp-tickers__divider {
+  display: none;
+}
+@media (min-width: 721px) {
+  .dapp-tickers {
+    flex-direction: row;
+    align-items: stretch;
+  }
+  .dapp-tickers__rail.ltk--dapp {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: var(--s4);
+  }
+  .dapp-tickers__rail.ltk--dapp:first-child {
+    padding-left: var(--gutter-dapp);
+  }
+  .dapp-tickers__rail.ltk--dapp:last-child {
+    padding-right: var(--gutter-dapp);
+  }
+  .dapp-tickers__divider {
+    display: block;
+    flex: 0 0 auto;
+    width: 1px;
+    align-self: stretch;
+    background: var(--dapp-sidebar-line);
+  }
 }
 
 /* ---- drawer (under ~1024px) ---------------------------------------------- */
@@ -1331,9 +1360,9 @@ span.dapp-netchip__mark {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: var(--s2);
   margin: 0;
-  padding: 7px 10px;
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--hairline);
   border-radius: var(--r-chip);
   background: var(--panel-alt);
@@ -1369,12 +1398,12 @@ span.dapp-net-chip__mark {
    the control group to its own row from there rather than letting it compete
    with the title for space. */
 @media (max-width: 1180px) {
-  .dapp-header { flex-wrap: wrap; gap: 12px; }
+  .dapp-header { flex-wrap: wrap; gap: var(--s3); }
   .dapp-header__right { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-start; }
 }
 
 @media (max-width: 720px) {
-  .dapp-header { gap: 12px; }
+  .dapp-header { gap: var(--s3); }
   .dapp-header__meta { flex: 1 1 auto; }
   .dapp-pool-stats { margin-left: 0; gap: 20px; }
   .dapp-latch__foot { gap: 16px; }
@@ -1419,7 +1448,7 @@ span.dapp-net-chip__mark {
 }
 
 @media (max-width: 640px) {
-  .dapp-header { padding-inline: 16px; }
+  .dapp-header { padding-inline: var(--s4); }
   .dapp-content { padding-inline: 16px; }
   .dapp-card,
   .dapp-card--config { padding: 18px; }
@@ -1461,7 +1490,7 @@ span.dapp-net-chip__mark {
 .live-badge {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .14em;
-  color: var(--success); background: var(--dapp-badge-ok-bg, rgba(95,211,154,.12));
+  color: var(--success); background: var(--dapp-badge-ok-bg);
   border-radius: var(--r-micro); padding: 3px 8px; white-space: nowrap;
 }
 .live-dot {

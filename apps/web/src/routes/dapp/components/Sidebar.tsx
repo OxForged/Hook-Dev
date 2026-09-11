@@ -1,9 +1,12 @@
 /* ============================================================================
-   Sidebar — README § Dapp shell.
-   238px, ground #060A12, right border #101A2C. Seven nav rows, each with a
-   3x16px indicator bar (Latch Blue when active), 13.5px label, the sidebar
-   gradient behind the active row, 0.22s transitions. Bottom: the real wallet
-   connect control (@latchprotocol/connect).
+   Sidebar — README § Dapp shell, ported to Canvas.
+   238px, white surface on the paper ground (the lighter surface now — Canvas
+   inverts the old dark-sidebar-on-dark-content depth cue). Seven nav rows,
+   each with a 3x16px indicator bar (Latch Blue when active), 14px label. The
+   active row is a flat `--active-nav` ground with `--sky-ink` text, not a
+   gradient: a gradient built to fade into a dark ground reads as a faint
+   smudge on white. 0.22s transitions. Bottom: the real wallet connect control
+   (@latchprotocol/connect).
 
    The gas-sponsor credits card that used to sit here is gone. There is no gas
    sponsor, so a progress bar reading "0.62 ETH remaining" was a picture of a

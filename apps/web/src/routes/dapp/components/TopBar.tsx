@@ -10,7 +10,8 @@
    with, next to it, whether Latch is actually deployed there. Ten of the eleven
    target chains carry no contracts, and the shell must not imply otherwise.
 
-   Below the bar, two full-bleed reference-price rails — crypto and US equities.
+   Below the bar, two reference-price rails — crypto and US equities — sit side
+   by side in `.dapp-tickers` above ~720px, and stack to full width below it.
    BOTH render here unconditionally, including the equity rail's "not
    configured" line when VITE_FINNHUB_API_KEY is unset. That is the difference
    from the landing header, which hides the equity rail in that case: the dapp's
@@ -81,69 +82,88 @@ export function TopBar({
         </div>
 
         <div className="dapp-header__right">
-          <p
-            className="dapp-sample-chip"
-            title="Every figure in this dapp is read from the deployed Ethereum Sepolia contracts. Nothing here is sample data. Testnet only — there is no mainnet deployment."
-          >
-            <span aria-hidden="true">LIVE · TESTNET</span>
-            <span className="dapp-sr">
-              Live. Every figure in this dapp is read from the deployed Ethereum Sepolia contracts, and nothing here is sample data. Testnet only — there is no mainnet deployment.
-            </span>
-          </p>
-
-          {/* Protocol state, NOT wallet state. This chip says where the CONTRACTS
-              are; the two controls after it say where the WALLET is. Keeping them
-              adjacent but distinct matters — this chip reading "Ethereum Sepolia"
-              while a wallet sits on another network is the normal case, not a
-              contradiction, and the pairing is what makes that legible. */}
-          <p className="dapp-net-chip">
-            <ChainMark brand={net.brand} size={18} className="dapp-net-chip__mark" />
-            <span className="dapp-net-chip__name">{net.name}</span>
-            <span className="dapp-net-chip__id tabular">{net.chainId}</span>
-            <span
-              className={net.deployed ? 'dapp-badge dapp-badge--ok' : 'dapp-badge dapp-badge--mute'}
+          {/* State chips: where the CONTRACTS are (sample-data disclosure, then
+              network). Grouped separately from the interactive controls below
+              so the two wrap as independent units — see dapp.css for why. */}
+          <div className="dapp-header__status">
+            <p
+              className="dapp-sample-chip"
+              title="Every figure in this dapp is read from the deployed Ethereum Sepolia contracts. Nothing here is sample data. Testnet only — there is no mainnet deployment."
             >
-              {net.deployed ? 'DEPLOYED' : 'NO DEPLOYMENT'}
-            </span>
-          </p>
+              <span aria-hidden="true">LIVE · TESTNET</span>
+              <span className="dapp-sr">
+                Live. Every figure in this dapp is read from the deployed Ethereum Sepolia contracts, and nothing here is sample data. Testnet only — there is no mainnet deployment.
+              </span>
+            </p>
 
-          {/* The wallet lives HERE, in the header, because that is where every
+            {/* Protocol state, NOT wallet state. This chip says where the CONTRACTS
+                are; the two controls after it say where the WALLET is. Keeping them
+                adjacent but distinct matters — this chip reading "Ethereum Sepolia"
+                while a wallet sits on another network is the normal case, not a
+                contradiction, and the pairing is what makes that legible. */}
+            <p className="dapp-net-chip">
+              <ChainMark brand={net.brand} size={18} className="dapp-net-chip__mark" />
+              <span className="dapp-net-chip__name">{net.name}</span>
+              <span className="dapp-net-chip__id tabular">{net.chainId}</span>
+              <span
+                className={net.deployed ? 'dapp-badge dapp-badge--ok' : 'dapp-badge dapp-badge--mute'}
+              >
+                {net.deployed ? 'DEPLOYED' : 'NO DEPLOYMENT'}
+              </span>
+            </p>
+          </div>
+
+          {/* Interactive controls: where the WALLET is, plus the primary action.
+              The wallet lives HERE, in the header, because that is where every
               other dapp puts it and where a user looks for it. It was previously
               only at the foot of the sidebar — present, but past the seven nav
               rows and effectively undiscoverable. */}
-          {/* The switcher ships no logos on purpose: packages/connect is a standalone
-              MIT package and must not reach into this app's public/ directory. It
-              takes a render prop instead, and we hand it the same ChainMark the rest
-              of the dapp uses — so an unmapped chain falls back to the package's own
-              monogram rather than a broken image. */}
-          <LatchChainSwitcher
-            className="dapp-header__chain"
-            renderIcon={(chain) => {
-              const row = CHAIN_ROWS.find((r) => r.chainId === chain.id)
-              return row ? <ChainMark brand={row.brand} size={18} /> : null
-            }}
-          />
-          <LatchConnectButton variant="inline" />
+          <div className="dapp-header__controls">
+            {/* The switcher ships no logos on purpose: packages/connect is a standalone
+                MIT package and must not reach into this app's public/ directory. It
+                takes a render prop instead, and we hand it the same ChainMark the rest
+                of the dapp uses — so an unmapped chain falls back to the package's own
+                monogram rather than a broken image. */}
+            <LatchChainSwitcher
+              className="dapp-header__chain"
+              renderIcon={(chain) => {
+                const row = CHAIN_ROWS.find((r) => r.chainId === chain.id)
+                return row ? <ChainMark brand={row.brand} size={18} /> : null
+              }}
+            />
+            <LatchConnectButton variant="inline" />
 
-          <p className="dapp-block">
-            <span className="dapp-dot dapp-dot--success dapp-dot--pulse dapp-dot--sm" aria-hidden="true" />
-            <span>{block === null ? 'BLOCK —' : `BLOCK ${block.toLocaleString('en-US')}`}</span>
-          </p>
+            <p className="dapp-block">
+              <span className="dapp-dot dapp-dot--success dapp-dot--pulse dapp-dot--sm" aria-hidden="true" />
+              <span>{block === null ? 'BLOCK —' : `BLOCK ${block.toLocaleString('en-US')}`}</span>
+            </p>
 
-          <Link to={deployHref} className="dapp-btn dapp-btn--primary dapp-btn--sm">
-            Deploy Latch
-            <span className="dapp-sheen" aria-hidden="true" />
-          </Link>
+            <Link to={deployHref} className="dapp-btn dapp-btn--primary dapp-btn--sm">
+              Deploy Latch
+              <span className="dapp-sheen" aria-hidden="true" />
+            </Link>
+          </div>
         </div>
       </header>
 
-      <TickerStrip provider={coinGeckoCrypto} state={crypto} className="ltk--dapp" />
-      <TickerStrip
-        provider={finnhubStocks}
-        state={stocks}
-        configured={stocksConfigured()}
-        className="ltk--dapp"
-      />
+      {/* Two honesty disclosures, one condensed row above ~720px — see
+          `.dapp-tickers` in dapp.css. TickerStrip itself is untouched: each
+          rail keeps its own accessible name and loading/unconfigured/error
+          state, just narrower once there's room for both side by side. */}
+      <div className="dapp-tickers">
+        <TickerStrip
+          provider={coinGeckoCrypto}
+          state={crypto}
+          className="ltk--dapp dapp-tickers__rail"
+        />
+        <span className="dapp-tickers__divider" aria-hidden="true" />
+        <TickerStrip
+          provider={finnhubStocks}
+          state={stocks}
+          configured={stocksConfigured()}
+          className="ltk--dapp dapp-tickers__rail"
+        />
+      </div>
     </div>
   )
 }
