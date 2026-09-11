@@ -478,11 +478,11 @@
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-  gap: 56px;
+  gap: var(--s7);
   align-items: center;
   max-width: var(--max-landing);
   margin: 0 auto;
-  padding: 76px var(--gutter-landing) 96px;
+  padding: var(--s8) var(--gutter-landing) var(--s9);
 }
 
 .heroGlow {
@@ -499,7 +499,7 @@
 .eyebrowPill {
   display: inline-block;
   margin: 0;
-  padding: 7px 16px;
+  padding: var(--s2) var(--s4);
   border: 1px solid var(--pill-border);
   border-radius: var(--r-pill);
   background: var(--pill-bg);
@@ -509,25 +509,39 @@
   letter-spacing: 0.16em;
 }
 
+/* CANVAS HEADLINE VOICE.
+
+   The whole headline is Instrument Serif at weight 400 — not Inter with a
+   serif word dropped in. That was the mistake worth avoiding: a single serif
+   clause inside a bold sans headline reads as a typo, where a serif headline
+   with one italic clause reads as emphasis. Option B sets every section
+   heading this way (`.display`), so the landing does too.
+
+   Weight 400, because Instrument Serif has one weight and faking bold on a
+   display serif is what synthetic bolding looks like. Size carries the
+   hierarchy instead. */
 .h1 {
-  margin: 24px 0 0;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(38px, 4.6vw, 64px);
-  line-height: 1.04;
-  letter-spacing: -0.01em;
+  margin: var(--s5) 0 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(40px, 6.4vw, 72px);
+  line-height: 1.05;
+  letter-spacing: -0.015em;
   text-wrap: balance;
 }
 
+/* The emphasised clause: italic, and the deeper blue rather than the action
+   blue — this is prose, and it must not read as something you can click. */
 .accent {
-  color: var(--latch-blue);
+  font-style: italic;
+  color: var(--deep-blue);
 }
 
 .lead {
   max-width: 520px;
-  margin: 22px 0 0;
+  margin: var(--s5) 0 0;
   font-size: 17px;
-  line-height: 1.62;
+  line-height: 28px;
   color: var(--muted-ink-2);
   text-wrap: pretty;
 }
@@ -535,8 +549,8 @@
 .heroActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 32px;
+  gap: var(--s3);
+  margin-top: var(--s6);
 }
 
 /* hero node graph */
@@ -672,12 +686,15 @@
   color: var(--eyebrow-blue);
 }
 
+/* Same voice as .h1 — see the note there. A serif hero above sans section
+   headings would read as two different websites. */
 .h2 {
-  margin: 16px 0 0;
-  font-family: var(--font-display);
-  font-weight: 700;
+  margin: var(--s4) 0 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
   font-size: clamp(28px, 3.2vw, 42px);
-  line-height: 1.1;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
 }
 
 .h2Large {
@@ -688,13 +705,14 @@
   font-size: clamp(28px, 3.2vw, 40px);
 }
 
-/* Reference: 34px under the "How it works" H2, 30px under Chains and Team. */
+/* Was 30/34px — off the 4px scale, and the two stops were close enough to be
+   indistinguishable. Both now land on it. */
 .h2Spaced {
-  margin-bottom: 30px;
+  margin-bottom: var(--s6);
 }
 
 .h2SpacedLarge {
-  margin-bottom: 34px;
+  margin-bottom: var(--s7);
 }
 
 .sectionHead {
@@ -2079,9 +2097,9 @@ span.chainMark {
   background: currentColor;
 }
 .useCaseStatusLive {
-  color: var(--success-ink, #4ade80);
-  background: color-mix(in srgb, var(--success-ink, #4ade80) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--success-ink, #4ade80) 28%, transparent);
+  color: var(--success);
+  background: var(--dapp-badge-ok-bg);
+  border: 1px solid var(--dapp-badge-ok-border);
 }
 .useCaseStatusSoon {
   --tone: var(--label-ink);
@@ -2299,7 +2317,7 @@ span.chainMark {
 
 .flowNodeBox,
 .flowNodeBoxOn {
-  fill: var(--panel-alt, rgb(255 255 255 / 4%));
+  fill: var(--panel-alt);
   stroke: var(--tone);
   stroke-opacity: 0.5;
 }
