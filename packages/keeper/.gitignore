@@ -4,3 +4,6 @@ keeper.config.json
 .env
 .env.*
 !.env.example
+
+# Deploy-time secret. Read by docker-compose; never committed.
+.env

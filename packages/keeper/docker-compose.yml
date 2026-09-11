@@ -1,0 +1,65 @@
+# The `latch` stack. Deployed to ~/latch on the host.
+#
+# This host is SHARED. The `peddles`, `peddles-quest` and `peddlepro` compose
+# projects run alongside this one, and `peddles-caddy-1` owns :80 and :443 for
+# all of them. Everything here is therefore namespaced and self-contained:
+#
+#   project   latch          (set by `name:`, so it cannot inherit a directory name)
+#   network   latch_net      (declared here, not the default bridge)
+#   names     latch-*        (explicit, so `docker ps` shows ownership at a glance)
+#   ports     none published (the keeper dials out; nothing needs to reach it)
+#
+# Always `docker compose -p latch ...` from this directory. A bare
+# `docker compose down` run from the wrong path takes down somebody else's stack.
+
+name: latch
+
+services:
+  keeper:
+    container_name: latch-keeper
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+    # Config is mounted read-only. The keeper never writes it, and a container
+    # that cannot modify its own target list is one fewer thing to reason about.
+    volumes:
+      - ./keeper.config.json:/config/keeper.config.json:ro
+
+    environment:
+      # ABSENT BY DEFAULT, and that is the safe state: with no key the keeper
+      # reports what it would do and sends nothing. Sending needs BOTH this and
+      # --execute, so neither alone can start signing.
+      #
+      # Set it in .env beside this file (gitignored, chmod 600) only when the
+      # stack is meant to act. It is a low-value key by construction — every
+      # function the keeper calls is permissionless, so a stolen keeper key buys
+      # an attacker nothing they could not already do from any address.
+      #
+      # NEVER put the deployer key here. That one owns the Vault, and
+      # `registerApp` is irreversible.
+      KEEPER_PRIVATE_KEY: ${KEEPER_PRIVATE_KEY:-}
+
+    # Default is a dry run on a 5-minute loop. Add --execute to actually send.
+    command: ["--config", "/config/keeper.config.json", "--interval", "300"]
+
+    networks: [latch_net]
+
+    logging:
+      driver: json-file
+      options:
+        # The keeper logs every job every tick. Uncapped, that fills a disk
+        # already at 82%.
+        max-size: "10m"
+        max-file: "3"
+
+    # It holds a key and talks to the internet. Give it nothing else.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+networks:
+  latch_net:
+    name: latch_net
