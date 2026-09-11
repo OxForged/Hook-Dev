@@ -212,8 +212,11 @@ export default function TermsPage() {
           created by your use of it.
         </p>
         <p className={styles['p']}>
-          Figures shown are labelled where they are placeholders and where they are read live from
-          chain. Even live figures should be verified independently before you act on them.
+          Every figure shown in the interface is read from chain, measured from the source
+          repository, or quoted from a named third-party feed with its source and timestamp
+          attached. Nothing is a placeholder. That is a statement about provenance, not about
+          accuracy: a figure read correctly from a contract can still be stale, and a feed can
+          be wrong. Verify independently before you act on anything here.
         </p>
       </Section>
 
