@@ -17,12 +17,24 @@
          here for that case. Must never throw. -->
     <script>
       (function () {
+        // DARK IS THE DEFAULT. Must stay in step with DEFAULT_THEME_CHOICE in
+        // src/lib/theme.ts, which this cannot import — inline scripts run
+        // before any module graph exists. If the two disagree, the first paint
+        // is one theme and React's first render is the other, which is the
+        // exact flash this script exists to prevent.
         try {
           var t = localStorage.getItem('latch-theme');
           if (t === 'light' || t === 'dark') {
             document.documentElement.setAttribute('data-theme', t);
+          } else if (t !== 'system') {
+            // Nothing stored, or something unparseable: fall back to the
+            // default. Only an explicit stored 'system' leaves the attribute
+            // off so the CSS can follow prefers-color-scheme.
+            document.documentElement.setAttribute('data-theme', 'dark');
           }
-        } catch (e) {}
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
       })();
     </script>
 

@@ -32,13 +32,29 @@ function isThemeChoice(value: unknown): value is ThemeChoice {
   return value === 'light' || value === 'dark' || value === 'system'
 }
 
-/** Absent or unparseable stored value resolves to `system`, never throws. */
+/**
+ * What a visitor gets before they have chosen anything.
+ *
+ * DARK, not `system`. All three states still exist and `system` still tracks
+ * the OS live once selected — this only changes the starting point. The
+ * trade is deliberate and worth naming: a visitor whose OS is set to light now
+ * gets a dark app until they say otherwise, which is the cost of having a
+ * default at all.
+ *
+ * Changing this ALSO requires editing the inline anti-flash script in
+ * apps/web/index.html, which cannot import this module — it runs before any
+ * module graph exists. The two must agree or the first paint is the wrong
+ * theme and then snaps.
+ */
+export const DEFAULT_THEME_CHOICE: ThemeChoice = 'dark'
+
+/** Absent or unparseable stored value resolves to the default, never throws. */
 export function readStoredChoice(): ThemeChoice {
   try {
     const raw = localStorage.getItem(THEME_STORAGE_KEY)
-    return isThemeChoice(raw) ? raw : 'system'
+    return isThemeChoice(raw) ? raw : DEFAULT_THEME_CHOICE
   } catch {
-    return 'system'
+    return DEFAULT_THEME_CHOICE
   }
 }
 
@@ -77,7 +93,41 @@ function applyTheme(choice: ThemeChoice): ResolvedTheme {
   } else {
     root.setAttribute('data-theme', choice)
   }
-  return resolveTheme(choice)
+  const resolved = resolveTheme(choice)
+  applyThemeColor(resolved)
+  return resolved
+}
+
+/** The two --void values. Duplicated from tokens.css because a <meta> content
+    attribute cannot read a CSS custom property. */
+const THEME_COLOR: Record<ResolvedTheme, string> = { light: '#F4F3EF', dark: '#0E1013' }
+
+/**
+ * Keeps the browser chrome colour in step with the ACTIVE theme.
+ *
+ * index.html ships two `theme-color` metas with `prefers-color-scheme` media
+ * queries, which follow the OS — and the OS is no longer what decides the
+ * theme, since the default is dark and the user can override. On a light OS
+ * with the app in dark, the address bar would have gone pale against a
+ * near-black page.
+ *
+ * So the media-query metas are removed on first apply and one plain meta is
+ * driven from here instead. It has to be done in JS: `content` cannot read a
+ * custom property, and no media query can observe `data-theme`.
+ */
+function applyThemeColor(resolved: ResolvedTheme): void {
+  try {
+    for (const el of document.querySelectorAll('meta[name="theme-color"][media]')) el.remove()
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]:not([media])')
+    if (!meta) {
+      meta = document.createElement('meta')
+      meta.name = 'theme-color'
+      document.head.appendChild(meta)
+    }
+    meta.content = THEME_COLOR[resolved]
+  } catch {
+    /* A missing <head> is not a reason to fail a theme change. */
+  }
 }
 
 /**
