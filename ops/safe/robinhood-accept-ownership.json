@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "chainId": "4663",
+  "createdAt": 1789117241964,
+  "meta": {
+    "name": "Latch — accept ownership (Vault + both fee controllers)",
+    "description": "Ownable2Step: transferOwnership only nominates. These three calls make the Safe the actual owner. Until they land, the Vault is owned by the deployer EOA.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+    "checksum": ""
+  },
+  "transactions": [
+    {
+      "to": "0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0xb1cC5BDBADD19a2430131EaE332afD72fF6be64B",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0x320feB54e940741AeB037E3944F2C95afAEE84af",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": null,
+      "contractInputsValues": null
+    }
+  ]
+}
