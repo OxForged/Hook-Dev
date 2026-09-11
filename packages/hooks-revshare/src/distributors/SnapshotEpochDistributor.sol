@@ -11,6 +11,7 @@ import {PoolKey} from "infinity-core/src/types/PoolKey.sol";
 import {PoolId} from "infinity-core/src/types/PoolId.sol";
 
 import {IRevShareHook} from "../interfaces/IRevShareHook.sol";
+import {IEpochDistributor, EpochDistributorKind} from "../interfaces/IEpochDistributor.sol";
 
 /// @title SnapshotEpochDistributor
 /// @notice Route 3 for a token that CAN prove its own history: pay holders their exact pro-rata
@@ -74,7 +75,7 @@ import {IRevShareHook} from "../interfaces/IRevShareHook.sol";
 /// the token does not implement it. This is the "detect, don't assume" requirement, and it is the
 /// single most likely thing to get silently wrong when integrating a new token.
 /// ###############################################################################
-contract SnapshotEpochDistributor is ReentrancyGuard {
+contract SnapshotEpochDistributor is IEpochDistributor, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -208,6 +209,15 @@ contract SnapshotEpochDistributor is ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                                  VIEWS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IEpochDistributor
+    /// @dev The `Epoch` returned by `getEpoch` below is nine all-static fields, and so is the
+    /// merkle distributor's. Decoding one with the other's ABI therefore SUCCEEDS and hands back
+    /// this contract's `totalVotingSupply` as a merkle root, or a root as a voting supply. This is
+    /// the call that stops that happening; there is nothing further down this file that will.
+    function kind() external pure returns (bytes32) {
+        return EpochDistributorKind.SNAPSHOT;
+    }
 
     function poolKey() external view returns (PoolKey memory) {
         return _key;

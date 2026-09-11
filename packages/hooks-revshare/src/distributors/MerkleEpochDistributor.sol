@@ -10,6 +10,7 @@ import {PoolKey} from "infinity-core/src/types/PoolKey.sol";
 import {PoolId} from "infinity-core/src/types/PoolId.sol";
 
 import {IRevShareHook} from "../interfaces/IRevShareHook.sol";
+import {IEpochDistributor, EpochDistributorKind} from "../interfaces/IEpochDistributor.sol";
 
 /// @title MerkleEpochDistributor
 /// @notice Route 3 for an ordinary ERC20 with no snapshot support: pay arbitrary token holders a
@@ -57,8 +58,15 @@ import {IRevShareHook} from "../interfaces/IRevShareHook.sol";
 /// Double hashing, and `abi.encode` (fixed 128-byte preimage) rather than `abi.encodePacked`, so
 /// no leaf can be confused with an internal node and no two distinct claims can share an encoding.
 /// `index` is the claimant's position in the generated tree and is what the claim bitmap keys on.
+///
+/// ------------------------------- FINDING THE TREE -------------------------------
+///
+/// A root is 32 bytes and a claim needs a PROOF, so a root on its own is unclaimable by anyone who
+/// was not handed the tree out of band. `postRoot` therefore takes a pointer to where the tree is
+/// published, stored per epoch and readable through `getRootSource`. It is a pointer and nothing
+/// more - see the notes on that function for what it is and is not evidence of.
 /// ###############################################################################
-contract MerkleEpochDistributor is Ownable2Step, ReentrancyGuard {
+contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -72,6 +80,8 @@ contract MerkleEpochDistributor is Ownable2Step, ReentrancyGuard {
     error RootAlreadyPosted(uint256 epochId);
     error RootNotPosted(uint256 epochId);
     error InvalidRoot();
+    error RootURIRequired();
+    error RootURITooLong(uint256 length, uint256 maximum);
     error ClaimNotOpenYet(uint256 epochId, uint64 claimableAt);
     error ClaimWindowClosed(uint256 epochId, uint64 expiresAt);
     error ChallengeWindowClosed(uint256 epochId, uint64 claimableAt);
@@ -90,6 +100,13 @@ contract MerkleEpochDistributor is Ownable2Step, ReentrancyGuard {
     event EpochClosed(uint256 indexed epochId, uint256 amount0, uint256 amount1, uint64 closedAt);
     event RootPosted(uint256 indexed epochId, bytes32 root, uint64 claimableAt, uint64 expiresAt);
     event RootCancelled(uint256 indexed epochId, bytes32 root);
+
+    /// @notice The epoch's tree pointer changed. Also emitted on first publication (`previousURI`
+    /// empty, `revisions` zero) and on `cancelRoot` (`newURI` empty).
+    /// @dev Every write to the pointer goes through one topic, so an indexer that keeps only the
+    /// LATEST `RootURIUpdated` per epoch always holds the current value and never has to replay
+    /// the history to find it.
+    event RootURIUpdated(uint256 indexed epochId, string previousURI, string newURI, uint32 revisions);
     event EpochClaimed(
         uint256 indexed epochId, uint256 indexed index, address indexed account, uint256 amount0, uint256 amount1
     );
@@ -120,6 +137,31 @@ contract MerkleEpochDistributor is Ownable2Step, ReentrancyGuard {
         uint64 expiresAt;
         bool rolledOver;
     }
+
+    /// @notice Where an epoch's Merkle tree is published, and how often that pointer has moved.
+    ///
+    /// @dev Deliberately NOT a field on `Epoch`. A `string` would make `Epoch` a dynamic type, which
+    /// changes the encoding of `getEpoch` - the one call keepers and indexers poll on a timer, and
+    /// the one whose return shape three consumers already have hand-written ABIs for. A separate
+    /// mapping keeps `getEpoch` nine static words and puts the cost of reading the pointer on the
+    /// claim UI that actually wants it.
+    ///
+    /// @param uri Where the tree is published. SUBMITTER-SUPPLIED. See `getRootSource`.
+    /// @param revisions How many times `setRootURI` has moved this pointer since the current root
+    /// was posted. Zero on a freshly posted root, and reset by `cancelRoot`.
+    struct RootSource {
+        string uri;
+        uint32 revisions;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Longest tree pointer accepted, in bytes.
+    /// @dev Matches `LatchRegistry.MAX_URI_BYTES`. Bounded so one admin call cannot write unbounded
+    /// storage or emit an unbounded log; generous enough that no honest CID or URL comes close.
+    uint256 public constant MAX_ROOT_URI_BYTES = 512;
 
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
@@ -160,6 +202,9 @@ contract MerkleEpochDistributor is Ownable2Step, ReentrancyGuard {
     uint256 public carryOver1;
 
     mapping(uint256 epochId => Epoch) internal _epochs;
+
+    /// @dev Written only alongside a root, and cleared with it. See `getRootSource`.
+    mapping(uint256 epochId => RootSource) internal _rootSources;
 
     /// @dev epochId => word index => bitmap of claimed leaf indices.
     mapping(uint256 epochId => mapping(uint256 word => uint256 bits)) private _claimedBitmap;
@@ -215,6 +260,14 @@ contract MerkleEpochDistributor is Ownable2Step, ReentrancyGuard {
                                  VIEWS
     //////////////////////////////////////////////////////////////*/
 
+    /// @inheritdoc IEpochDistributor
+    /// @dev Answer this before touching `getEpoch`. This contract's `Epoch` and the snapshot
+    /// distributor's are both nine all-static fields, so the wrong ABI does not fail, it returns
+    /// `root` where a caller expected `totalVotingSupply`.
+    function kind() external pure returns (bytes32) {
+        return EpochDistributorKind.MERKLE;
+    }
+
     function poolKey() external view returns (PoolKey memory) {
         return _key;
     }
@@ -226,6 +279,49 @@ contract MerkleEpochDistributor is Ownable2Step, ReentrancyGuard {
     function getEpoch(uint256 epochId) external view returns (Epoch memory) {
         if (epochId >= epochCount) revert UnknownEpoch(epochId);
         return _epochs[epochId];
+    }
+
+    /**
+     * Where `epochId`'s Merkle tree is published, and how many times that pointer
+     * has been moved since the current root was posted.
+     *
+     * `claim` needs `(index, account, amount0, amount1, proof)`, and a 32-byte
+     * root commits to all of that without revealing any of it. Nothing on chain
+     * published the leaves, so a self-service claim UI was not buildable at all:
+     * it would have had to invent a proof source. This is the epoch's own answer
+     * to "where is the tree", written by the same transaction that posted the
+     * root it belongs to.
+     *
+     * ---------------------------------------------------------------------
+     * THIS IS A POINTER, NOT EVIDENCE. IT IS NEVER VERIFIED BY THIS CONTRACT.
+     * ---------------------------------------------------------------------
+     *
+     * The owner types this string. There is no scheme check, no content
+     * addressing check, no reachability check - a contract cannot tell an IPFS
+     * CID from a phishing URL, and pretending to check would be worse than not
+     * checking, because it would imply a guarantee that is not there. Treat it
+     * exactly as the registry's `sourceURI` is treated: submitter-supplied,
+     * displayed as such, never rendered as verified or auto-trusted.
+     *
+     * What bounds the damage is that THE ROOT IS THE AUTHORITY, not this string.
+     * A tree served from a hostile pointer produces proofs that fail
+     * `MerkleProof.verifyCalldata`, so the worst a bad URI achieves on chain is
+     * denial of service - which the owner already has by never posting a root -
+     * and off chain, a phishing page. It cannot move one wei.
+     *
+     * `revisions` is the anti-phishing surface: a pointer that has moved since
+     * the root was posted is a fact a claim UI should show, and counting
+     * `RootURIUpdated` logs to learn it would bound the answer by however far
+     * back an RPC serves logs. It is on chain for the same reason
+     * `RevShareHook.totalTaken` is.
+     *
+     * Reverts for an epoch that does not exist. An epoch with no root returns an
+     * empty `uri`: `postRoot` requires a non-empty one, so `root != 0` and
+     * `bytes(uri).length != 0` always agree.
+     */
+    function getRootSource(uint256 epochId) external view returns (RootSource memory) {
+        if (epochId >= epochCount) revert UnknownEpoch(epochId);
+        return _rootSources[epochId];
     }
 
     /// @notice Whether leaf `index` of `epochId` has already been claimed.
@@ -283,10 +379,25 @@ contract MerkleEpochDistributor is Ownable2Step, ReentrancyGuard {
         emit EpochClosed(epochId, amount0, amount1, uint64(block.timestamp));
     }
 
-    /// @notice Publish the holder-set root for a closed epoch. Claims open after the challenge delay.
-    function postRoot(uint256 epochId, bytes32 root) external onlyOwner {
+    /// @notice Publish the holder-set root for a closed epoch, and say where the tree that root
+    /// commits to can be found. Claims open after the challenge delay.
+    ///
+    /// @dev The pointer is MANDATORY, not optional, and that is the only reason this signature
+    /// takes it rather than leaving it to a follow-up call. A root with no published tree is a root
+    /// only the poster can claim against: everybody else holds a 32-byte hash of leaves they have
+    /// never seen. Requiring it here makes `root != 0` and a non-empty `uri` the same condition, so
+    /// a claim UI that sees a root can rely on there being somewhere to go, and an epoch cannot
+    /// reach `claimableAt` in a state where nobody but the owner can act on it.
+    ///
+    /// It is not validated beyond a length bound, and it is not evidence of anything. See
+    /// `getRootSource`.
+    ///
+    /// @param rootURI_ Where the tree is published, e.g. an `ipfs://` CID. Must be non-empty and at
+    /// most `MAX_ROOT_URI_BYTES` bytes.
+    function postRoot(uint256 epochId, bytes32 root, string calldata rootURI_) external onlyOwner {
         if (epochId >= epochCount) revert UnknownEpoch(epochId);
         if (root == bytes32(0)) revert InvalidRoot();
+        _validateRootURI(rootURI_);
 
         Epoch storage epoch = _epochs[epochId];
         if (epoch.root != bytes32(0)) revert RootAlreadyPosted(epochId);
@@ -300,6 +411,61 @@ contract MerkleEpochDistributor is Ownable2Step, ReentrancyGuard {
         epoch.expiresAt = expiresAt;
 
         emit RootPosted(epochId, root, claimableAt, expiresAt);
+        // Revision zero: this root has never had its pointer moved. `cancelRoot` clears the record
+        // outright, so a re-posted root starts from zero again rather than inheriting a count that
+        // belonged to a root nobody can claim against any more.
+        _writeRootURI(epochId, rootURI_, 0);
+    }
+
+    /// @notice Repoint an epoch at a different copy of the SAME tree. Does not touch the root.
+    ///
+    /// @dev Separate from `postRoot`, and deliberately available for as long as the root stands -
+    /// including after the challenge window has closed. That is not an oversight, it is the case
+    /// this function exists for:
+    ///
+    ///   * Inside the challenge window a wrong pointer can already be fixed by `cancelRoot` and a
+    ///     fresh `postRoot`, at the cost of restarting the delay.
+    ///   * AFTER it, `cancelRoot` is gone and the root is final. If a pin drops, a bucket moves or
+    ///     a gateway dies at that point and the pointer were frozen too, the epoch would hold a
+    ///     correct, immutable allocation that nobody can build a proof for. Every holder's share
+    ///     would sit there until `rollover` swept it to the next epoch - funds not stolen, but
+    ///     nobody paid, for a typo. A pointer that cannot be repaired is a live way to lose an
+    ///     epoch, so the pointer is repairable and the ROOT is what is frozen.
+    ///
+    /// This grants the owner nothing: the root is unchanged, so a tree served from a new pointer
+    /// still has to hash to it or every proof fails. The only new power is to break or redirect
+    /// discovery, which the owner held anyway. It is made loud rather than forbidden - each call
+    /// bumps `revisions` and emits `RootURIUpdated` with the value it replaced.
+    ///
+    /// Owner-only, and NOT extended to the guardian. The guardian's entire remit is to delay a
+    /// payout during the challenge window; handing a faster key the ability to repoint any epoch's
+    /// tree at any time would create exactly the phishing lever this contract otherwise does not
+    /// have. A pointer repair can wait out a timelock inside a `claimWindow` measured in weeks.
+    function setRootURI(uint256 epochId, string calldata rootURI_) external onlyOwner {
+        if (epochId >= epochCount) revert UnknownEpoch(epochId);
+        // No root means no tree, so there is nothing for a pointer to point AT. Blocking it also
+        // keeps the `root != 0` <=> non-empty `uri` equivalence that `getRootSource` promises.
+        if (_epochs[epochId].root == bytes32(0)) revert RootNotPosted(epochId);
+        _validateRootURI(rootURI_);
+
+        // Checked arithmetic on a uint32 the owner would have to call 4 billion times to overflow.
+        _writeRootURI(epochId, rootURI_, _rootSources[epochId].revisions + 1);
+    }
+
+    function _validateRootURI(string calldata rootURI_) private pure {
+        uint256 length = bytes(rootURI_).length;
+        if (length == 0) revert RootURIRequired();
+        if (length > MAX_ROOT_URI_BYTES) revert RootURITooLong(length, MAX_ROOT_URI_BYTES);
+    }
+
+    /// @dev The single writer for the tree pointer, so publication, correction and clearing all
+    /// land on one log topic in the order they happened.
+    function _writeRootURI(uint256 epochId, string memory rootURI_, uint32 revisions) private {
+        RootSource storage source = _rootSources[epochId];
+        string memory previous = source.uri;
+        source.uri = rootURI_;
+        source.revisions = revisions;
+        emit RootURIUpdated(epochId, previous, rootURI_, revisions);
     }
 
     /// @notice Clear a root during its challenge window so a corrected one can be posted.
@@ -320,6 +486,10 @@ contract MerkleEpochDistributor is Ownable2Step, ReentrancyGuard {
         epoch.expiresAt = 0;
 
         emit RootCancelled(epochId, root);
+        // The pointer goes with the root. Leaving it would advertise a tree for an allocation that
+        // has just been withdrawn, and a UI reading the pointer alone would show a claim set that
+        // no longer has a root behind it.
+        _writeRootURI(epochId, "", 0);
     }
 
     /*//////////////////////////////////////////////////////////////

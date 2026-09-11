@@ -85,8 +85,10 @@ import {IRevShareHook} from "./interfaces/IRevShareHook.sol";
 ///     See `distributors/MerkleEpochDistributor.sol` (any ERC20, off-chain root, escrowed per
 ///     epoch) and `distributors/SnapshotEpochDistributor.sol` (ERC-5805 / ERC20Votes tokens,
 ///     fully trustless, exact per-holder accrual). Detect which one applies to your token; do not
-///     assume. A distributor that reverts, stalls, or is never deployed can only strand its own
-///     share - it can never revert a swap.
+///     assume. `distributorOf` returns a bare address, so ask the address itself: both implement
+///     `IEpochDistributor.kind()`, and their `Epoch` structs are NOT interchangeable. A
+///     distributor that reverts, stalls, or is never deployed can only strand its own share - it
+///     can never revert a swap.
 ///
 /// A deployment picks its mix. `10_000 / 0 / 0` is a pure LP-donation pool. `0 / 10_000 / 0` is a
 /// pure treasury/charity split. `0 / 0 / 10_000` is a pure holder-dividend pool.

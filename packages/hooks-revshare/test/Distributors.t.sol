@@ -25,6 +25,7 @@ import {RevShareHook} from "../src/RevShareHook.sol";
 import {IRevShareHook} from "../src/interfaces/IRevShareHook.sol";
 import {MerkleEpochDistributor} from "../src/distributors/MerkleEpochDistributor.sol";
 import {SnapshotEpochDistributor} from "../src/distributors/SnapshotEpochDistributor.sol";
+import {IEpochDistributor, EpochDistributorKind} from "../src/interfaces/IEpochDistributor.sol";
 import {VotesToken, TimestampVotesToken, PlainToken} from "./mocks/Mocks.sol";
 
 /// @dev Shared plumbing: a live pool whose whole revenue share is routed to route 3.
@@ -113,6 +114,37 @@ abstract contract DistributorFixture is Test, Deployers {
     }
 }
 
+/// @dev Stands in for wherever an operator actually publishes an epoch's tree - IPFS, a bucket, a
+/// git tag. Everything is keyed by URI, so a test can only obtain a proof by RESOLVING A POINTER.
+/// That is the whole point: before `getRootSource` there was no on-chain pointer to resolve, and a
+/// test that reached for a proof it had built itself two lines earlier would prove nothing about
+/// whether a real claim UI could find one.
+contract TreePublisher {
+    struct Leaf {
+        uint256 index;
+        address account;
+        uint256 amount0;
+        uint256 amount1;
+    }
+
+    mapping(bytes32 uriKey => Leaf[]) private _leaves;
+    mapping(bytes32 uriKey => mapping(uint256 index => bytes32[])) private _proofs;
+
+    function publish(string calldata uri, Leaf calldata leaf, bytes32[] calldata proof) external {
+        bytes32 uriKey = keccak256(bytes(uri));
+        _leaves[uriKey].push(leaf);
+        _proofs[uriKey][leaf.index] = proof;
+    }
+
+    function tree(string calldata uri) external view returns (Leaf[] memory) {
+        return _leaves[keccak256(bytes(uri))];
+    }
+
+    function proofFor(string calldata uri, uint256 index) external view returns (bytes32[] memory) {
+        return _proofs[keccak256(bytes(uri))][index];
+    }
+}
+
 /*//////////////////////////////////////////////////////////////
                      MERKLE EPOCH DISTRIBUTOR
 //////////////////////////////////////////////////////////////*/
@@ -123,6 +155,10 @@ contract MerkleEpochDistributorTest is DistributorFixture {
     uint64 constant MIN_EPOCH = 1 days;
     uint64 constant CHALLENGE = 2 hours;
     uint64 constant CLAIM_WINDOW = 30 days;
+
+    /// @dev Every `postRoot` needs a tree pointer, so the tests that are not about the pointer use
+    /// this one and say nothing more about it.
+    string constant TREE_URI = "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
 
     function setUp() public {
         vm.warp(1_000_000);
@@ -208,7 +244,7 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         bytes32 root = _hashPair(leafA, leafB);
 
         vm.prank(GOVERNANCE);
-        distributor.postRoot(0, root);
+        distributor.postRoot(0, root, TREE_URI);
 
         // Claims are shut during the challenge window.
         vm.expectRevert(
@@ -245,7 +281,7 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         bytes32 leafB = _leaf(1, HOLDER_B, 0, shareB);
 
         vm.prank(GOVERNANCE);
-        distributor.postRoot(0, _hashPair(leafA, leafB));
+        distributor.postRoot(0, _hashPair(leafA, leafB), TREE_URI);
         vm.warp(block.timestamp + CHALLENGE);
 
         // Right proof, inflated amount.
@@ -280,7 +316,7 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         bytes32 leafB = _leaf(1, HOLDER_B, 0, 1);
 
         vm.prank(GOVERNANCE);
-        distributor.postRoot(0, _hashPair(leafA, leafB));
+        distributor.postRoot(0, _hashPair(leafA, leafB), TREE_URI);
         vm.warp(block.timestamp + CHALLENGE);
 
         vm.expectRevert(abi.encodeWithSelector(MerkleEpochDistributor.EpochOverAllocated.selector, uint256(0)));
@@ -297,18 +333,18 @@ contract MerkleEpochDistributorTest is DistributorFixture {
 
         vm.prank(HOLDER_A);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, HOLDER_A));
-        distributor.postRoot(0, bytes32(uint256(1)));
+        distributor.postRoot(0, bytes32(uint256(1)), TREE_URI);
 
         vm.prank(GOVERNANCE);
         vm.expectRevert(MerkleEpochDistributor.InvalidRoot.selector);
-        distributor.postRoot(0, bytes32(0));
+        distributor.postRoot(0, bytes32(0), TREE_URI);
 
         vm.prank(GOVERNANCE);
-        distributor.postRoot(0, bytes32(uint256(1)));
+        distributor.postRoot(0, bytes32(uint256(1)), TREE_URI);
 
         vm.prank(GOVERNANCE);
         vm.expectRevert(abi.encodeWithSelector(MerkleEpochDistributor.RootAlreadyPosted.selector, uint256(0)));
-        distributor.postRoot(0, bytes32(uint256(2)));
+        distributor.postRoot(0, bytes32(uint256(2)), TREE_URI);
     }
 
     function test_cancelRoot_onlyInsideTheChallengeWindow() public {
@@ -316,7 +352,7 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         distributor.closeEpoch();
 
         vm.prank(GOVERNANCE);
-        distributor.postRoot(0, bytes32(uint256(1)));
+        distributor.postRoot(0, bytes32(uint256(1)), TREE_URI);
 
         vm.prank(HOLDER_A);
         vm.expectRevert(MerkleEpochDistributor.NotGuardianOrOwner.selector);
@@ -328,7 +364,7 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         assertEq(distributor.getEpoch(0).root, bytes32(0));
 
         vm.prank(GOVERNANCE);
-        distributor.postRoot(0, bytes32(uint256(2)));
+        distributor.postRoot(0, bytes32(uint256(2)), TREE_URI);
         vm.warp(block.timestamp + CHALLENGE);
 
         // Once claims open the allocation is final, even for the owner. Read `claimableAt` BEFORE
@@ -351,7 +387,7 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         bytes32 leafA = _leaf(0, HOLDER_A, 0, pot0 / 2);
         bytes32 leafB = _leaf(1, HOLDER_B, 0, pot0 - pot0 / 2);
         vm.prank(GOVERNANCE);
-        distributor.postRoot(0, _hashPair(leafA, leafB));
+        distributor.postRoot(0, _hashPair(leafA, leafB), TREE_URI);
         vm.warp(block.timestamp + CHALLENGE);
         distributor.claim(0, 0, HOLDER_A, 0, pot0 / 2, _proof(leafB));
 
@@ -395,6 +431,206 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         vm.warp(block.timestamp + MIN_EPOCH + CLAIM_WINDOW);
         distributor.rollover(0);
         assertEq(distributor.carryOver1(), pot);
+    }
+
+    /*//////////////////////// the tree pointer ////////////////////////*/
+
+    /// @dev The gap, end to end. A claim UI that begins with NOTHING BUT THE DISTRIBUTOR ADDRESS -
+    /// which is all `RevShareHook.distributorOf` gives it - reaches a working proof and pays out.
+    /// Every input to `claim` below travels address -> `kind()` -> `getRootSource` -> the tree.
+    /// Nothing is passed to the consumer half of this test out of band.
+    function test_rootSource_aClaimUiReachesTheProofFromChainAlone() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        uint256 pot = distributor.getEpoch(0).amount1;
+
+        // ---- the operator's off-chain job: compute the holder set, publish it, post the root ----
+        uint256 shareA = pot / 2;
+        uint256 shareB = pot - shareA;
+        bytes32 leafA = _leaf(0, HOLDER_A, 0, shareA);
+        bytes32 leafB = _leaf(1, HOLDER_B, 0, shareB);
+        bytes32 root = _hashPair(leafA, leafB);
+
+        TreePublisher publisher = new TreePublisher();
+        string memory published = "ipfs://bafkreiepochzeroholderset";
+        publisher.publish(published, TreePublisher.Leaf(0, HOLDER_A, 0, shareA), _proof(leafB));
+        publisher.publish(published, TreePublisher.Leaf(1, HOLDER_B, 0, shareB), _proof(leafA));
+
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, root, published);
+        vm.warp(block.timestamp + CHALLENGE);
+
+        // ---- the consumer: hands itself the address and nothing else ----
+        address discovered = address(distributor);
+
+        // Step 1. What is this? One call, no probing, no guessing at `getEpoch`'s layout.
+        assertEq(IEpochDistributor(discovered).kind(), EpochDistributorKind.MERKLE);
+
+        MerkleEpochDistributor d = MerkleEpochDistributor(payable(discovered));
+
+        // Step 2. Where is the tree? This is the answer that did not exist before.
+        MerkleEpochDistributor.RootSource memory source = d.getRootSource(0);
+        assertGt(bytes(source.uri).length, 0, "a posted root always names somewhere to go");
+        assertEq(source.revisions, 0, "this pointer has not been moved since the root was posted");
+
+        // Step 3. Resolve it and claim. `source.uri` is the only path to a proof here - the local
+        // `published` and the leaves above are never referenced again.
+        TreePublisher.Leaf[] memory leaves = publisher.tree(source.uri);
+        assertEq(leaves.length, 2, "the pointer resolved to the epoch's tree");
+        for (uint256 i = 0; i < leaves.length; ++i) {
+            TreePublisher.Leaf memory entry = leaves[i];
+            // Cross-check the leaf against the contract's own encoding before spending gas, which
+            // is what a UI should do and what `leafHash` is exposed for.
+            assertTrue(
+                d.leafHash(entry.index, entry.account, entry.amount0, entry.amount1) != bytes32(0)
+            );
+            d.claim(0, entry.index, entry.account, entry.amount0, entry.amount1, publisher.proofFor(source.uri, entry.index));
+        }
+
+        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(HOLDER_A), shareA);
+        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(HOLDER_B), shareB);
+        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(address(distributor)), 0, "epoch fully drained");
+    }
+
+    /// @dev `root != 0` and a non-empty pointer must be the same condition. A root with no pointer
+    /// is a root only its poster can claim against.
+    function test_postRoot_requiresATreePointer() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+
+        vm.prank(GOVERNANCE);
+        vm.expectRevert(MerkleEpochDistributor.RootURIRequired.selector);
+        distributor.postRoot(0, bytes32(uint256(1)), "");
+
+        vm.prank(GOVERNANCE);
+        vm.expectRevert(
+            abi.encodeWithSelector(MerkleEpochDistributor.RootURITooLong.selector, uint256(513), uint256(512))
+        );
+        distributor.postRoot(0, bytes32(uint256(1)), new string(513));
+
+        // The bound is inclusive, so exactly `MAX_ROOT_URI_BYTES` is not an off-by-one rejection.
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, bytes32(uint256(1)), new string(512));
+        assertEq(bytes(distributor.getRootSource(0).uri).length, distributor.MAX_ROOT_URI_BYTES());
+
+        vm.expectRevert(abi.encodeWithSelector(MerkleEpochDistributor.UnknownEpoch.selector, uint256(9)));
+        distributor.getRootSource(9);
+    }
+
+    /// @dev The case the separate setter exists for. Past the challenge window the root is final
+    /// and `cancelRoot` is gone, so if the pointer were frozen too a dead link would leave a
+    /// correct allocation that nobody can build a proof for - every share stranded until rollover,
+    /// for a typo. The root stays immutable; the pointer does not.
+    function test_setRootURI_repairsAPointerAfterTheRootIsFinal() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        uint256 pot = distributor.getEpoch(0).amount1;
+
+        uint256 shareA = pot / 2;
+        uint256 shareB = pot - shareA;
+        bytes32 leafA = _leaf(0, HOLDER_A, 0, shareA);
+        bytes32 leafB = _leaf(1, HOLDER_B, 0, shareB);
+        bytes32 root = _hashPair(leafA, leafB);
+
+        TreePublisher publisher = new TreePublisher();
+        string memory movedTo = "ipfs://bafkreithecopythatisstillup";
+        publisher.publish(movedTo, TreePublisher.Leaf(0, HOLDER_A, 0, shareA), _proof(leafB));
+
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, root, "ipfs://bafkreithepinthatdropped");
+
+        vm.warp(block.timestamp + CHALLENGE);
+
+        // Read before the prank: an external call in an argument list consumes it.
+        uint64 claimableAt = distributor.getEpoch(0).claimableAt;
+        vm.prank(GOVERNANCE);
+        vm.expectRevert(
+            abi.encodeWithSelector(MerkleEpochDistributor.ChallengeWindowClosed.selector, uint256(0), claimableAt)
+        );
+        distributor.cancelRoot(0);
+
+        // Every move is announced, with the value it replaced, so a UI can show that the pointer
+        // is not the one the root was posted with.
+        vm.expectEmit(true, false, false, true, address(distributor));
+        emit MerkleEpochDistributor.RootURIUpdated(0, "ipfs://bafkreithepinthatdropped", movedTo, 1);
+        vm.prank(GOVERNANCE);
+        distributor.setRootURI(0, movedTo);
+
+        MerkleEpochDistributor.RootSource memory source = distributor.getRootSource(0);
+        assertEq(source.uri, movedTo);
+        assertEq(source.revisions, 1, "a moved pointer is a fact on chain, not a log to be summed");
+        assertEq(distributor.getEpoch(0).root, root, "the root is what is frozen, not the pointer");
+
+        // And the repaired pointer leads to a tree that still satisfies the ORIGINAL root - which
+        // is why letting the owner move it grants no new power over the money.
+        distributor.claim(0, 0, HOLDER_A, 0, shareA, publisher.proofFor(source.uri, 0));
+        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(HOLDER_A), shareA);
+    }
+
+    function test_setRootURI_isOwnerOnlyAndNeedsARootToPointAt() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+
+        vm.prank(GOVERNANCE);
+        vm.expectRevert(abi.encodeWithSelector(MerkleEpochDistributor.RootNotPosted.selector, uint256(0)));
+        distributor.setRootURI(0, TREE_URI);
+
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, bytes32(uint256(1)), TREE_URI);
+
+        vm.prank(HOLDER_A);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, HOLDER_A));
+        distributor.setRootURI(0, "ipfs://hijacked");
+
+        // Not the guardian either. Its entire remit is to DELAY a payout inside the challenge
+        // window; a faster key that could repoint any epoch's tree at any time would be a phishing
+        // lever this contract otherwise does not hand anybody.
+        vm.prank(GUARDIAN);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, GUARDIAN));
+        distributor.setRootURI(0, "ipfs://hijacked");
+
+        vm.prank(GOVERNANCE);
+        vm.expectRevert(MerkleEpochDistributor.RootURIRequired.selector);
+        distributor.setRootURI(0, "");
+
+        assertEq(distributor.getRootSource(0).uri, TREE_URI, "nothing above moved the pointer");
+    }
+
+    function test_cancelRoot_clearsTheTreePointerWithTheRoot() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        _assertRootAndPointerAgree(0);
+
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, bytes32(uint256(1)), TREE_URI);
+        _assertRootAndPointerAgree(0);
+
+        vm.prank(GOVERNANCE);
+        distributor.setRootURI(0, "ipfs://second");
+        assertEq(distributor.getRootSource(0).revisions, 1);
+
+        vm.prank(GUARDIAN);
+        distributor.cancelRoot(0);
+        // A pointer that outlived its root would advertise an allocation that has been withdrawn.
+        _assertRootAndPointerAgree(0);
+        assertEq(distributor.getRootSource(0).uri, "");
+
+        // The corrected root starts its own revision count rather than inheriting one that
+        // belonged to a root nobody can claim against any more.
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, bytes32(uint256(2)), "ipfs://corrected");
+        MerkleEpochDistributor.RootSource memory source = distributor.getRootSource(0);
+        assertEq(source.uri, "ipfs://corrected");
+        assertEq(source.revisions, 0);
+        _assertRootAndPointerAgree(0);
+    }
+
+    /// @dev The invariant `getRootSource` promises: a consumer that sees a root can rely on there
+    /// being somewhere to go, and one that sees a pointer can rely on a root standing behind it.
+    function _assertRootAndPointerAgree(uint256 epochId) internal view {
+        bool hasRoot = distributor.getEpoch(epochId).root != bytes32(0);
+        bool hasPointer = bytes(distributor.getRootSource(epochId).uri).length != 0;
+        assertEq(hasRoot, hasPointer, "root and tree pointer must be set and cleared together");
     }
 
     function test_constructor_rejectsAMismatchedKeyOrZeroWindows() public {
@@ -450,6 +686,29 @@ contract SnapshotEpochDistributorTest is DistributorFixture {
         vm.prank(HOLDER_B);
         votes.delegate(HOLDER_B);
         vm.roll(block.number + 1);
+    }
+
+    /// @dev The mirror of `EpochDistributorKindTest`'s merkle case, and the worse direction. A
+    /// snapshot epoch decoded through the merkle layout comes back with a NON-ZERO `root` - which
+    /// is exactly how a UI decides an epoch has been posted and is claimable - so this epoch would
+    /// present as a merkle epoch with a tree to go and fetch that has never existed.
+    function test_kind_isWhatStopsASnapshotEpochBeingReadAsAMerkleEpoch() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+
+        SnapshotEpochDistributor.Epoch memory truth = distributor.getEpoch(0);
+
+        (bool ok, bytes memory raw) =
+            address(distributor).staticcall(abi.encodeWithSignature("getEpoch(uint256)", uint256(0)));
+        assertTrue(ok);
+        MerkleEpochDistributor.Epoch memory misread = abi.decode(raw, (MerkleEpochDistributor.Epoch));
+
+        assertEq(misread.root, bytes32(truth.totalVotingSupply), "index 4: a voting supply read as a root");
+        assertEq(misread.closedAt, uint64(truth.timepoint), "index 5: a timepoint read as closedAt");
+        assertEq(misread.claimableAt, truth.closedAt, "index 6: closedAt read as claimableAt");
+        assertTrue(misread.root != bytes32(0), "a supply of zero is impossible, so the fake root is never zero");
+
+        assertEq(distributor.kind(), EpochDistributorKind.SNAPSHOT);
     }
 
     function test_clockDetection_blockNumberToken() public view {
@@ -642,5 +901,114 @@ contract SnapshotEpochDistributorTest is DistributorFixture {
             epoch.amount0 - epoch.claimed0,
             "distributor balance must equal unclaimed escrow"
         );
+    }
+}
+
+/*//////////////////////////////////////////////////////////////
+                     DISTRIBUTOR TYPE DISCOVERY
+//////////////////////////////////////////////////////////////*/
+
+/// @dev `RevShareHook.distributorOf` returns a bare address. Until `kind()` the only way to learn
+/// which of the two distributors was behind it was to PROBE - call `token()` (answers only on the
+/// snapshot one) and `challengeDelay()` (only on the merkle one) and require exactly one to
+/// succeed. Three separate consumers had reimplemented that.
+///
+/// These tests do two things: show that one call now answers the question outright, and show what
+/// the probe was actually protecting against, so that removing it is a deliberate decision rather
+/// than a tidy-up.
+contract EpochDistributorKindTest is DistributorFixture {
+    MerkleEpochDistributor merkle;
+    SnapshotEpochDistributor snapshot;
+
+    uint64 constant MIN_EPOCH = 1 days;
+    uint64 constant CHALLENGE = 2 hours;
+    uint64 constant CLAIM_WINDOW = 30 days;
+
+    function setUp() public {
+        // Two clock domains apart, so the snapshot distributor's ERC-6372 probe has something to
+        // tell apart when it is constructed.
+        vm.roll(1000);
+        vm.warp(1_000_000);
+
+        VotesToken votes = new VotesToken();
+        votes.mint(address(this), 1_000_000 ether);
+        MockERC20 pair = new MockERC20("PAIR", "PAIR", 18);
+        pair.mint(address(this), 1_000_000 ether);
+        _deployPool(address(votes), address(pair));
+
+        // Both are built against the same key, but only the merkle one is the pool's configured
+        // distributor. `kind()` is `pure`, so being wired to a pool is not a precondition for
+        // answering - which matters, because a consumer inspecting an address it was handed has no
+        // way to know in advance whether it is wired to anything.
+        merkle = new MerkleEpochDistributor(
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW
+        );
+        snapshot = new SnapshotEpochDistributor(
+            IRevShareHook(address(hook)), key, IVotes(address(votes)), MIN_EPOCH, CLAIM_WINDOW
+        );
+        _configureAndSeed(address(merkle));
+    }
+
+    function test_kind_answersDirectlyForBothDistributors() public view {
+        assertEq(merkle.kind(), EpochDistributorKind.MERKLE);
+        assertEq(snapshot.kind(), EpochDistributorKind.SNAPSHOT);
+
+        // Distinct, and neither is the value a catch-all fallback, an empty proxy or a zero-filled
+        // decode produces. That last property is the reason these are keccak constants and not an
+        // enum: with an enum, "I could not tell" and "it is a snapshot distributor" are both 0.
+        assertTrue(EpochDistributorKind.MERKLE != EpochDistributorKind.SNAPSHOT);
+        assertTrue(EpochDistributorKind.MERKLE != bytes32(0));
+        assertTrue(EpochDistributorKind.SNAPSHOT != bytes32(0));
+    }
+
+    /// @dev Consumers reach this over `eth_call` and will never send a transaction for it, so it
+    /// has to work through a `staticcall` and cost effectively nothing.
+    function test_kind_isStaticcallableOnBoth() public view {
+        (bool okMerkle, bytes memory merkleRet) = address(merkle).staticcall(abi.encodeWithSignature("kind()"));
+        (bool okSnapshot, bytes memory snapshotRet) = address(snapshot).staticcall(abi.encodeWithSignature("kind()"));
+
+        assertTrue(okMerkle);
+        assertTrue(okSnapshot);
+        assertEq(abi.decode(merkleRet, (bytes32)), EpochDistributorKind.MERKLE);
+        assertEq(abi.decode(snapshotRet, (bytes32)), EpochDistributorKind.SNAPSHOT);
+    }
+
+    /// @dev WHY THE PROBE WAS LOAD-BEARING, NOT COSMETIC. Both `Epoch` structs are nine all-static
+    /// fields, so a consumer holding the wrong ABI does not get an exception - it gets numbers.
+    /// This decodes a REAL merkle epoch through the snapshot layout to show the misread is silent,
+    /// then shows the single call that means a consumer is never in that position.
+    function test_kind_isWhatStopsAMerkleEpochBeingReadAsASnapshotEpoch() public {
+        _swap(SWAP_AMOUNT, true);
+        merkle.closeEpoch();
+
+        bytes32 root = keccak256("epoch 0 holder set");
+        vm.prank(GOVERNANCE);
+        merkle.postRoot(0, root, "ipfs://bafkreiepochzero");
+
+        MerkleEpochDistributor.Epoch memory truth = merkle.getEpoch(0);
+
+        (bool ok, bytes memory raw) =
+            address(merkle).staticcall(abi.encodeWithSignature("getEpoch(uint256)", uint256(0)));
+        assertTrue(ok);
+
+        // Nine words in, nine words out. Nothing reverts, nothing is left over, there is no error
+        // for a caller to catch and no length mismatch to notice.
+        SnapshotEpochDistributor.Epoch memory misread = abi.decode(raw, (SnapshotEpochDistributor.Epoch));
+
+        assertEq(misread.totalVotingSupply, uint256(truth.root), "index 4: a root read as a voting supply");
+        assertEq(misread.timepoint, uint48(truth.closedAt), "index 5: closedAt read as a timepoint");
+        assertEq(misread.closedAt, truth.claimableAt, "index 6: claimableAt read as closedAt");
+        // The first four words agree, which is exactly what makes the misread survive a sanity
+        // check: the amounts a reader is most likely to eyeball are correct.
+        assertEq(misread.amount1, truth.amount1);
+        assertEq(misread.claimed1, truth.claimed1);
+
+        // And the damage is not a visibly broken number. `payout = pot * votes / supply` against a
+        // 256-bit root floors to zero for every holder, so the consumer reports "nobody is owed
+        // anything" about an epoch that is fully funded.
+        assertGt(misread.totalVotingSupply, type(uint128).max, "the bogus denominator is astronomically large");
+
+        // One call, made first, and none of the above can happen.
+        assertEq(merkle.kind(), EpochDistributorKind.MERKLE);
     }
 }
