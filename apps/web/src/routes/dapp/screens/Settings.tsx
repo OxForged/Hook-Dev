@@ -8,6 +8,7 @@
 
 import { useMemo } from 'react'
 import { ChainMark } from '../../../components/ChainMark.tsx'
+import { ThemeToggle } from '../../../components/ThemeToggle.tsx'
 import type { ChainRow } from '../../../data/chains.ts'
 import { explorerAddressUrl } from '../../../data/chains.ts'
 import { ChainTag } from '../../../components/ChainTag.tsx'
@@ -77,6 +78,17 @@ export default function Settings() {
       <section className="dapp-card dapp-card--config">
         <h2 className="dapp-card__title dapp-card__title--lg">Preferences</h2>
         <ul className="dapp-prefs">
+          {/* Dapp top-bar placement is a follow-up (see ThemeToggle.tsx) — this
+              row is the only place to reach it inside the dapp for now. */}
+          <li className="dapp-pref">
+            <span className="dapp-pref__copy">
+              <span className="dapp-pref__name" id="dapp-pref-appearance">
+                Appearance
+              </span>
+              <span className="dapp-pref__hint">Light, dark, or match your OS.</span>
+            </span>
+            <ThemeToggle showLabels />
+          </li>
           {data.toggles.map((t) => (
             <li key={t.key} className="dapp-pref">
               <span className="dapp-pref__copy">

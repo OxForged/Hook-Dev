@@ -9,6 +9,7 @@ import { HEADER_SOCIALS, SOCIALS } from './socials'
 import { cx } from './ui'
 import { useFocusTrap, useMediaQuery } from './useDisclosure'
 import { NavIcon } from '../../components/NavIcon'
+import { ThemeToggle } from '../../components/ThemeToggle'
 import { TickerStrip } from '../../components/TickerStrip'
 import { coinGeckoCrypto, finnhubStocks, stocksConfigured, useMarketFeed } from '../../lib/prices'
 
@@ -150,6 +151,10 @@ export function SiteHeader() {
             ))}
           </ul>
 
+          <span className={styles['themeToggleSlot']}>
+            <ThemeToggle />
+          </span>
+
           <Link to={LINKS.app} className={styles['launchPill']}>
             Launch App
           </Link>
@@ -208,6 +213,14 @@ export function SiteHeader() {
             ))}
           </ul>
         </nav>
+
+        {/* Theme lives in the collapsed menu too: the desktop slot hides at
+            the same breakpoint as the socials/nav lists, and this is the
+            visitor's only way to reach it below 860px. */}
+        <div className={styles['menuFoot']}>
+          <p className={styles['menuLabel']}>THEME</p>
+          <ThemeToggle />
+        </div>
 
         {/* All five here, not the header's two: a menu is a place someone has
             chosen to look, so the full set costs nothing and the publishing

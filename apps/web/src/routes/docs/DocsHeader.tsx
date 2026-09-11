@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { ThemeToggle } from '../../components/ThemeToggle'
 
 type Props = {
   /** Label of the section currently being read, shown on the drawer trigger. */
@@ -45,6 +46,9 @@ export default function DocsHeader({ activeLabel, railOpen, onToggleRail }: Prop
           <Link to="/brand" className="dk-nav__link">
             Brand Kit
           </Link>
+          <span className="dk-theme-slot">
+            <ThemeToggle />
+          </span>
           <Link to="/app" className="dk-pill">
             Launch App
             <span className="dk-sheen" aria-hidden="true" />

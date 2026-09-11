@@ -1,0 +1,75 @@
+/* ThemeToggle — Light / System / Dark segmented control.
+   Tokens only, no hardcoded colour: it is meant to look correct in both
+   themes purely because the values it reads (`--switch-ground`,
+   `--switch-border`, `--panel`, `--latch-blue`, `--ink`, `--muted-ink`) swap
+   under `[data-theme="dark"]` / `prefers-color-scheme: dark` without this
+   file changing. See styles/tokens.css for those definitions. */
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--switch-border);
+  border-radius: var(--r-pill);
+  background: var(--switch-ground);
+}
+
+.theme-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted-ink);
+  cursor: pointer;
+  line-height: 1;
+  transition:
+    background-color var(--dur, 320ms) var(--ease, ease),
+    color var(--dur, 320ms) var(--ease, ease),
+    box-shadow var(--dur, 320ms) var(--ease, ease);
+}
+
+.theme-toggle__btn svg {
+  display: block;
+  flex: none;
+}
+
+.theme-toggle__btn:hover {
+  color: var(--ink);
+}
+
+.theme-toggle__btn.is-active {
+  background: var(--panel);
+  color: var(--latch-blue);
+  box-shadow: var(--shadow-1);
+}
+
+.theme-toggle__label {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Matches the header socials' pattern: a real text node, visually hidden,
+   rather than aria-label — see SocialIcons.tsx. */
+.theme-toggle__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle__btn {
+    transition: none;
+  }
+}

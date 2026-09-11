@@ -5,6 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#04060C" />
 
+    <!-- Anti-flash: set data-theme synchronously, before any stylesheet loads.
+         Mirrors lib/theme.ts's storage contract (key `latch-theme`, values
+         light|dark|system) but cannot import it — inline scripts run before
+         any module graph exists. `system` sets nothing: absence of the
+         attribute is what lets tokens.css fall through to its
+         prefers-color-scheme media query, so there is nothing to compute
+         here for that case. Must never throw. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('latch-theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          }
+        } catch (e) {}
+      })();
+    </script>
+
     <title>Latch Protocol</title>
     <meta
       name="description"

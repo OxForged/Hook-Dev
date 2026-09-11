@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { RAIL_GROUPS, TOC } from './content'
+import { ThemeToggle } from '../../components/ThemeToggle'
 
 type Props = {
   /** Section id currently under the reading line, from `useScrollSpy`. */
@@ -135,6 +136,17 @@ export default function LeftRail({ activeId, isDrawer, open, onClose }: Props) {
                   </Link>
                 </li>
               </ul>
+            </div>
+          ) : null}
+
+          {/* The header's toggle hides at this same breakpoint (.dk-theme-slot
+              in docs.css), so the drawer is the only way to reach it here. */}
+          {isDrawer ? (
+            <div className="dk-rail__group">
+              <span className="dk-rail__title" id="rail-theme">
+                THEME
+              </span>
+              <ThemeToggle showLabels />
             </div>
           ) : null}
 
