@@ -22,7 +22,8 @@ import type { ChainKey } from '../../data/chains.ts'
 import type { DappState, Filter, Flags, Range, Screen } from './data/types.ts'
 import { loadDeploy } from './data/deploy.ts'
 import { loadSettings } from './data/settings.ts'
-import { readBlockNumber, SEPOLIA_CHAIN_ID, isDeployed } from '../../lib/chain'
+import { readBlockNumber, ROBINHOOD_CHAIN_ID, isDeployed } from '../../lib/chain'
+import { useAccount } from 'wagmi'
 import type { DeployedChainId } from '../../lib/chain'
 
 /** README § Interactions: "Block ticker — +1 every 4000ms". */
@@ -66,14 +67,36 @@ export function DappStateProvider({ screen, children }: { screen: Screen; childr
   const deployDefaults = useMemo(loadDeploy, [])
   const settingsDefaults = useMemo(loadSettings, [])
 
-  /* Defaults to the one chain with contracts. Not derived from the wallet: a
-     visitor with no wallet must still get a chain to look at. */
-  const [browsingChain, setBrowsingChainRaw] = useState<DeployedChainId>(SEPOLIA_CHAIN_ID)
+  /* WHICH CHAIN THE SCREENS READ.
+
+     This used to be `useState(SEPOLIA_CHAIN_ID)` with a comment saying it was
+     "the one chain with contracts" — true when written, false since Robinhood
+     went live. Worse, `setBrowsingChain` was never called from anywhere, so the
+     value could not change: the top bar's switcher moves the WALLET via wagmi
+     and never touched this. The result was a dapp that could connect to mainnet
+     while every read still went to Sepolia, with nothing on screen admitting it.
+
+     Now it follows the wallet, which is the least surprising rule: what you are
+     connected to is what you see. An explicit `setBrowsingChain` still wins if
+     something ever needs to look at a chain the wallet is not on — but nothing
+     does today, and the wallet is the honest default.
+
+     With no wallet, or a wallet on a chain we have no contracts for, it falls
+     back to the mainnet rather than the testnet. A visitor with no wallet must
+     still get a chain to look at, and that chain should be the real one. */
+  const { chainId: walletChainId } = useAccount()
+  const [override, setOverride] = useState<DeployedChainId | null>(null)
+
+  const browsingChain: DeployedChainId =
+    override ??
+    (walletChainId !== undefined && isDeployed(walletChainId)
+      ? walletChainId
+      : ROBINHOOD_CHAIN_ID)
 
   const setBrowsingChain = useCallback((chainId: DeployedChainId) => {
     // Guard rather than trust: a chain with no DEPLOYMENTS entry has no contracts
     // and no client, so switching to it would turn every read into a throw.
-    if (isDeployed(chainId)) setBrowsingChainRaw(chainId)
+    if (isDeployed(chainId)) setOverride(chainId)
   }, [])
 
   const [range, setRange] = useState<Range>('30D')

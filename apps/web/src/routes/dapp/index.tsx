@@ -19,6 +19,7 @@
      /app/protocol/:poolId/epochs  Revenue Share — the distributor's epochs
      /app/claim                  Claim — what a hook and its distributors owe
      /app/analytics              Analytics
+     /app/governance             Governance — the Safe, both timelocks, ownership, queued ops
      /app/settings               Settings
 
    /app/explorer is not a screen. It is the marketplace's old path, kept purely
@@ -49,6 +50,7 @@ import Dashboard from './screens/Dashboard.tsx'
 import Deploy from './screens/Deploy.tsx'
 import Ecosystem from './screens/Ecosystem.tsx'
 import Explorer from './screens/Explorer.tsx'
+import Governance from './screens/Governance.tsx'
 import LatchDetail from './screens/LatchDetail.tsx'
 import PoolDetail from './screens/PoolDetail.tsx'
 import Portfolio from './screens/Portfolio.tsx'
@@ -78,6 +80,7 @@ const SCREEN_BY_SEGMENT: Record<string, Screen> = {
   protocol: 'protocol',
   claim: 'claim',
   analytics: 'analytics',
+  governance: 'governance',
   settings: 'settings',
 }
 
@@ -161,6 +164,7 @@ function Shell() {
             <Route path="protocol/:poolId/epochs" element={<ProtocolEpochs />} />
             <Route path="claim" element={<Claim />} />
             <Route path="analytics" element={<Analytics />} />
+            <Route path="governance" element={<Governance />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to={DAPP_BASE} replace />} />
           </Routes>

@@ -2962,3 +2962,139 @@ span.dapp-net-chip__mark {
   .lc-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .lc-row__v { text-align: left; }
 }
+
+/* ===========================================================================
+   gov-* · Governance screen
+
+   The Safe, both LatchTimelocks, an owner() chain for every Ownable contract
+   in DEPLOYMENTS, and every operation either timelock has ever queued.
+
+   Reuses rather than reinvents: `.dapp-card`, `.lc-stats`/`.lc-rows` for the
+   Safe's figures and signer list, `.dapp-table` for the ownership grid (its
+   existing @media stacking rule at 720px applies here unchanged — only the
+   column widths below are gov-specific), and `.hx-alert--danger` for the one
+   thing this screen exists to make loud: a contract still owned by an EOA on
+   a chain holding real funds.
+   =========================================================================== */
+
+.gov-screen { margin-top: 0; }
+
+.gov-summary { gap: 12px; }
+.gov-summary__block { margin-left: auto; }
+
+.gov-card { display: grid; gap: 14px; align-content: start; }
+
+.gov-addr {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--signal-blue);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.gov-addr:hover { text-decoration: underline; }
+
+/* Signer rows reuse `.lc-row`/`.lc-row__name` but the left cell is a plain
+   ordinal, not a link — overriding the inherited link colour here (this rule
+   sits after `.lc-row__name` in the cascade, so it wins at equal specificity)
+   is cheaper than a parallel row component. */
+.gov-owner-idx { color: var(--muted-ink); }
+
+.gov-note { margin: 10px 0 0; }
+
+.gov-timelocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.gov-timelock {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-badge);
+  background: var(--panel-alt);
+  align-content: start;
+}
+.gov-timelock__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.gov-timelock__title { font-size: 14px; }
+
+.gov-facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+.gov-facts li { display: flex; gap: 8px; align-items: flex-start; }
+.gov-facts .dapp-dot { margin-top: 5px; }
+
+.gov-alert { margin: 2px 0 0; }
+
+/* ---- ownership table ------------------------------------------------------ */
+
+.gov-table-wrap { margin-top: 12px; }
+
+.gov-table thead th:nth-child(1) { width: 30%; }
+.gov-table thead th:nth-child(2) { width: 48%; }
+.gov-table thead th:nth-child(3) { width: 22%; }
+
+.gov-contract-name { display: block; margin-bottom: 3px; font-size: 13px; color: var(--ink); }
+
+.gov-chain {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.gov-chain__hop { display: inline-flex; align-items: center; gap: 5px; }
+.gov-chain__hop a { color: var(--signal-blue); text-decoration: none; }
+.gov-chain__hop a:hover { text-decoration: underline; }
+.gov-chain__arrow { color: var(--faint-ink); }
+
+.gov-row--danger th,
+.gov-row--danger td { background: color-mix(in srgb, var(--error) 6%, transparent); }
+
+/* ---- queued operations ---------------------------------------------------- */
+
+.gov-ops { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 12px; }
+
+.gov-op {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-badge);
+  background: var(--panel-alt);
+}
+.gov-op__head { display: flex; align-items: center; gap: 10px; }
+.gov-op__tier { color: var(--faint-ink); }
+.gov-op__line { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink); }
+.gov-op__call {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--sky-ink);
+  background: var(--panel);
+  padding: 2px 6px;
+  border-radius: var(--r-micro);
+}
+.gov-op__meta { margin: 0; }
+.gov-op__countdown {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warning);
+}
+.gov-op__countdown--ready { color: var(--success); }
+.gov-op__countdown--done { color: var(--faint-ink); font-weight: 400; }
+
+@media (max-width: 640px) {
+  .gov-summary { flex-wrap: wrap; }
+  .gov-summary__block { margin-left: 0; }
+}

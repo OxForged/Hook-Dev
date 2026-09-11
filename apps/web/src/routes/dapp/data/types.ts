@@ -32,6 +32,7 @@ export type Screen =
   /* Revenue share, the holder's side: /app/claim. */
   | 'claim'
   | 'analytics'
+  | 'governance'
   | 'settings'
 
 /** README § State management: `range` — selects the volume series. */

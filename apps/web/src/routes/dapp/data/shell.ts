@@ -46,6 +46,7 @@ const nav: NavItem[] = [
   { screen: 'protocol', label: 'Revenue Share', path: 'protocol', icon: 'revenue' },
   { screen: 'claim', label: 'Claim', path: 'claim', icon: 'claim' },
   { screen: 'analytics', label: 'Analytics', path: 'analytics', icon: 'analytics' },
+  { screen: 'governance', label: 'Governance', path: 'governance', icon: 'docs' },
   { screen: 'settings', label: 'Settings', path: 'settings', icon: 'settings' },
 ]
 
@@ -69,6 +70,11 @@ const meta: Record<Screen, ScreenMeta> = {
   protocol: { title: 'Revenue share', subtitle: 'RevShareHook · pools, roster, epochs' },
   claim: { title: 'Claim', subtitle: 'What a RevShareHook and its distributors owe an address' },
   analytics: { title: 'Analytics', subtitle: 'Protocol-wide Latch activity' },
+  /* No chain named here on purpose — the Safe, the timelocks and who owns what
+     differ between Sepolia and Robinhood, and a static subtitle cannot say
+     which is true for the chain currently selected without risking the same
+     drift the pool subtitle was fixed for above. */
+  governance: { title: 'Governance', subtitle: 'The Safe, both timelocks, and every queued operation' },
   settings: { title: 'Settings', subtitle: 'Account, network and API access' },
 }
 
