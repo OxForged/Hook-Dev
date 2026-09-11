@@ -654,8 +654,39 @@ start at 8093.
 keeper key buys an attacker nothing they could not already do from any address. It needs gas and
 nothing else.
 
-**The deployer key must never reach that host.** It owns the Vault, and `registerApp` is
-irreversible.
+### One wallet, four roles — decided 2026-09-11
+
+`0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9` is the deployer, the keeper, the guardian and the
+oracle publisher. That is a deliberate decision by the project owner, taken after the exposure
+below was put to them. It is recorded here so nobody re-litigates it, and so the residual risk is
+written down rather than remembered.
+
+**The original objection no longer applies, and the reason is worth keeping.** The rule below used
+to read "the deployer key must never reach that host, it owns the Vault". Under deploy-then-
+transfer that was correct and serious. It is no longer true on Robinhood: the timelocks were
+deployed FIRST and `latch-robinhood.json` names the custody timelock as `poolOwner`, so
+`01_DeployVault` hands ownership over inside the creating transaction. The deployer never owns the
+Vault — not for one block — so there is no Vault-owning key to leak. The ordering removed the
+hazard; the decision did not overrule it.
+
+**What a stolen key from that host actually buys, which is not nothing:**
+
+- **Guardian.** Pause `RevShareHook`, pause the pool managers, flag Latches in the registry. It
+  cannot raise a fee, move funds, or unpause — the guardian can only ever make the protocol take
+  less — so the ceiling is griefing and reputational damage, not theft.
+- **Oracle publisher.** Move `ManualPriceBandOracle`'s reference within `maxPublisherDeviationBps`
+  (10% per update) against a persistent anchor. **Therefore `minPublisherInterval` MUST be set
+  non-zero on any live deployment** — at its default of 0 the per-update bound can be walked across
+  many transactions, and that walk is now reachable from a shared box. This was already a known
+  finding; a shared-host publisher key turns it from theoretical into scheduled.
+- **Keeper.** Nothing. Every call it makes is permissionless.
+- **Deployer.** Nothing, once deployment is complete and ownership sits with the timelocks. During
+  a deployment it is briefly the most valuable key in the system, which is an argument for not
+  running deployments from the same machine that hosts the keeper.
+
+**Mitigations that cost nothing and should be taken:** keep the key funded with gas only; set
+`minPublisherInterval`; and if the guardian is ever compromised, rotating it is a single
+`setGuardian` call from the owner rather than a migration.
 
 
 ---
