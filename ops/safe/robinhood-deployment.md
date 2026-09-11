@@ -61,8 +61,31 @@ which would have left the mainnet Vault on a single hot key for 48 hours.
 ## Not done
 
 - `robinhood-accept-ownership-2.json` — three accepts still to execute
-- Contract source verification. `robinhoodchain.blockscout.com` returns HTTP 403
-  behind a Cloudflare challenge for every programmatic request; the cloud proxy
-  `api.blockscout.com/4663` serves reads but its verification endpoint 500s.
-  Needs either the explorer UI in a browser or an endpoint from the chain team.
+## Source verification — done, 18/18, via Sourcify
+
+All eighteen contracts are verified. Confirmed independently by querying
+`sourcify.dev/server/v2/contract/4663/<address>` for each, not by trusting
+forge's own output.
+
+**The explorer route is a dead end and should not be retried.**
+`robinhoodchain.blockscout.com` answers HTTP 403 behind a Cloudflare challenge
+for every programmatic request, with or without an API key; the cloud proxy
+`api.blockscout.com/4663` serves reads fine but its verification endpoint
+returns `{"error":"Internal server error"}`.
+
+Sourcify sidesteps both — it is chain-agnostic, lists Robinhood as supported,
+and Blockscout pulls verified sources from it. So:
+
+    forge verify-contract <address> <path>:<Contract>       --verifier sourcify --chain-id 4663 --watch
+
+Two things that will bite on a re-run:
+
+- **`packages/periphery` has two compilation profiles** (`default` and
+  `clPosm`), and forge refuses to guess: "Ambiguous compilation profiles found
+  in cache". `FOUNDRY_PROFILE` does NOT fix it — pass
+  `--compilation-profile default` explicitly.
+- **There is no `CLProtocolFeeController` or `BinProtocolFeeController`.** One
+  `ProtocolFeeController` is deployed twice, so both addresses verify against
+  `src/ProtocolFeeController.sol:ProtocolFeeController`. Guessing the split
+  names reports a misleading "compiler version mismatch".
 - Handover from the Safe to the two timelocks.
