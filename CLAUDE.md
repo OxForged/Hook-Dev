@@ -494,6 +494,57 @@ from the deployed contracts, and there is no mainnet deployment.
 
 ---
 
+## Deployment: the host is shared. Touch only the `latch` stack.
+
+`40.160.136.124` (user `ubuntu`, host `vps-a2de2ecb`) is **not a dedicated box**. It runs several
+unrelated production stacks belonging to other projects:
+
+| Not ours | |
+|---|---|
+| `peddles`, `peddles-quest`, `peddlepro` | three compose projects, 20+ containers |
+| `peddles-caddy-1` | owns **:80 and :443 for every stack on the host** |
+
+**Never stop, kill, restart or reconfigure anything outside `latch`.** Not to free a port, not to
+reclaim memory, not to tidy up. A stray `docker compose down` from the wrong directory takes down
+somebody else's live service, and an edit to the shared Caddyfile takes down all of them at once.
+Reclaiming resources is never a reason — report what is consuming them and let the user decide.
+
+### What is ours
+
+```
+project    latch          pinned by `name:` so it cannot inherit a directory name
+network    latch_net
+container  latch-keeper
+directory  ~/latch
+ports      none published — the keeper dials out
+```
+
+Always `docker compose -p latch ...` from `~/latch/keeper`, so a bare command cannot reach a
+neighbour. Ports 8090-8092 belong to peddlepro; if this stack ever needs one, bind `127.0.0.1` and
+start at 8093.
+
+### Consequences to plan around, not work around
+
+- **`latch.guru` needs a route in the shared Caddy.** That is the one file we must not edit. Hand
+  the user the exact block and let them apply it.
+- **A crash-looping neighbour is worth flagging, never worth touching.** `peddlepro-liquidity` has
+  been restarting every ~20s for hours. On a disk at 82% that is a slow fill risk — say so, do
+  nothing.
+- **SSH needs `ConnectTimeout` around 120s.** At 15-30s it times out and presents exactly like a
+  dead host: TCP 22 accepting while the handshake hangs. It was healthy the whole time.
+
+### Secrets on that box
+
+`KEEPER_PRIVATE_KEY` is safe there: every function the keeper calls is permissionless, so a stolen
+keeper key buys an attacker nothing they could not already do from any address. It needs gas and
+nothing else.
+
+**The deployer key must never reach that host.** It owns the Vault, and `registerApp` is
+irreversible.
+
+
+---
+
 ## Secrets — never commit, never print, never push
 
 Non-negotiable. This repo will hold deployer keys and RPC credentials for a protocol that
