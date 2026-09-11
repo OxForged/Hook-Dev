@@ -145,7 +145,9 @@ export function HookProvenance({ hook }: { hook: HookRef }) {
       Reading <Addr value={hook.address} /> on {CHAIN.name}
       {hook.source === 'url'
         ? ' — address taken from the ?hook= parameter in this URL, not from a protocol deployment record.'
-        : ' — the build-time default from VITE_REVSHARE_HOOK.'}
+        : hook.source === 'build'
+          ? ' — the build-time default from VITE_REVSHARE_HOOK, not the deployment record.'
+          : ' — the canonical deployment for this chain.'}
     </p>
   )
 }

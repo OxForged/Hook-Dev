@@ -100,7 +100,7 @@ export const SPLIT_DENOMINATOR = 10_000
 
 export interface HookRef {
   address: Address
-  source: 'url' | 'build'
+  source: 'url' | 'build' | 'deployment'
 }
 
 const ENV_HOOK = ((): Address | null => {
@@ -109,13 +109,35 @@ const ENV_HOOK = ((): Address | null => {
   return getAddress(raw.trim())
 })()
 
-/** Resolve the hook to read. `urlParam` is the `?hook=` search param, if any. */
+/* The canonical hook for this build's chain, when one is deployed. Added after
+   RevShareHook went live on Robinhood: the address sat in DEPLOYMENTS while
+   this resolver still only knew about `?hook=` and the env var, so all four
+   revenue screens reported "no RevShareHook to read" on a chain that had one. */
+const DEPLOYED_HOOK = ((): Address | null => {
+  const raw = (DEPLOYMENTS[ACTIVE_CHAIN_ID] as { revShareHook?: string }).revShareHook
+  if (typeof raw !== 'string' || !isAddress(raw, { strict: false })) return null
+  return getAddress(raw)
+})()
+
+/**
+ * Resolve the hook to read, most specific first.
+ *
+ *   ?hook=0x…            an operator inspecting a hook that is not ours
+ *   VITE_REVSHARE_HOOK   a build-time override
+ *   DEPLOYMENTS          the canonical hook for this chain
+ *
+ * The URL wins over the build so somebody can look at their own deployment
+ * without rebuilding, and the env var wins over DEPLOYMENTS so a staging build
+ * can point somewhere else. Absence is still a real state: a chain with no hook
+ * renders "not deployed on this chain" rather than reading zeros off nothing.
+ */
 export function resolveHook(urlParam: string | null | undefined): HookRef | null {
   const trimmed = urlParam?.trim() ?? ''
   if (trimmed !== '' && isAddress(trimmed, { strict: false })) {
     return { address: getAddress(trimmed), source: 'url' }
   }
   if (ENV_HOOK) return { address: ENV_HOOK, source: 'build' }
+  if (DEPLOYED_HOOK) return { address: DEPLOYED_HOOK, source: 'deployment' }
   return null
 }
 

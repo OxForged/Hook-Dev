@@ -42,7 +42,8 @@
    has no public RPC. See the header of `./definitions.ts`.
 
    IMPORTANT — presence here means "EIP-1153 verified target", NOT "Latch is
-   live". Latch Protocol is deployed on Ethereum Sepolia and nowhere else.
+   live". Latch Protocol is deployed on Robinhood Chain (mainnet) and Ethereum
+   Sepolia, and nowhere else.
    `LATCH_DEPLOYED_CHAIN_IDS` is the list a write path may actually use.
    ============================================================================ */
 
@@ -147,16 +148,24 @@ export const LATCH_UNLISTED_CHAINS = [
 ] as const satisfies readonly Chain[]
 
 /**
- * The only chain Latch contracts are actually deployed on today.
+ * Chains Latch contracts are actually deployed on.
  *
  * A write path must check against this, not against `LATCH_CHAINS`. Sending a
  * transaction to a Latch address on a chain with no deployment burns gas on a
  * call to an empty account, which succeeds silently rather than reverting.
+ *
+ * Robinhood Chain (4663) is the FIRST MAINNET, live 2026-09-11 — 19 contracts,
+ * all verified on Sourcify. Until it was added here the chain switcher filed it
+ * under "Coming soon" and a wallet connected to it read "Unsupported network",
+ * because this list — not the presence of a chain in LATCH_CHAINS — is what
+ * decides whether a chain is usable.
+ *
+ * Mainnet first: this order is what the switcher shows.
  */
-export const LATCH_DEPLOYED_CHAIN_IDS: readonly number[] = [sepolia.id]
+export const LATCH_DEPLOYED_CHAIN_IDS: readonly number[] = [robinhood.id, sepolia.id]
 
-/** Default chain for a fresh session: the one chain with live contracts. */
-export const LATCH_DEFAULT_CHAIN: Chain = sepolia
+/** Default chain for a fresh session. The mainnet, not the testnet. */
+export const LATCH_DEFAULT_CHAIN: Chain = robinhood
 
 /** Lookup by id across the whole Latch list. */
 export function latchChainById(chainId: number): Chain | undefined {

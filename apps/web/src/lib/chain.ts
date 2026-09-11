@@ -236,7 +236,7 @@ export function rpcsFor(chainId: DeployedChainId): readonly string[] {
  * order and avoids viem's background re-ranking traffic, which would spend the same
  * per-minute budget we are trying to conserve.
  */
-export function client(chainId: DeployedChainId = SEPOLIA_CHAIN_ID): PublicClient {
+export function client(chainId: DeployedChainId = ACTIVE_CHAIN_ID): PublicClient {
   const hit = clients.get(chainId)
   if (hit) return hit
 
@@ -323,7 +323,7 @@ export interface ProtocolStatus {
 
 /** Live protocol state. Every field is read from chain. */
 export async function readProtocolStatus(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<ProtocolStatus> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
@@ -379,7 +379,7 @@ export interface VaultHolding {
  * There is no per-pool contract to enumerate.
  */
 export async function readVaultHoldings(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<VaultHolding[]> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
@@ -432,7 +432,7 @@ export interface SwapRecord {
  * Scoped by emitting address deliberately — see the topic0 note above.
  */
 export async function readRecentSwaps(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
   limit = 25,
 ): Promise<SwapRecord[]> {
   const d = DEPLOYMENTS[chainId]
@@ -514,7 +514,7 @@ export interface GovernanceStatus {
  * listed. That is shown as zero, not padded with examples.
  */
 export async function readGovernanceStatus(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<GovernanceStatus> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
@@ -560,7 +560,7 @@ export interface PoolRecord {
 
 /** Every pool ever initialized on the CL manager, from logs. */
 export async function readPools(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<PoolRecord[]> {
   const d = DEPLOYMENTS[chainId]
   const logs = await client(chainId).getLogs({
@@ -621,7 +621,7 @@ const abs = (v: bigint) => (v < 0n ? -v : v)
  * a price to make a dashboard look busy would be the exact failure this avoids.
  */
 export async function readProtocolMetrics(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<ProtocolMetrics> {
   const [pools, swaps, tvl, latestBlock] = await Promise.all([
     readPools(chainId),
@@ -771,7 +771,7 @@ export function capabilityClaims(hook: RegisteredLatch): string[] {
  * how a user ends up trusting a hook the chain would have warned them about.
  */
 export async function readRegisteredLatches(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<RegisteredLatch[]> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
@@ -864,7 +864,7 @@ export type LatchLookup =
 
 export async function readRegisteredLatch(
   address: Address,
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<LatchLookup> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
@@ -928,7 +928,7 @@ export interface ActivityEvent {
  * only 22 unique signatures, so a topic0-only filter merges CL and Bin activity.
  */
 export async function readActivity(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
   limit = 12,
 ): Promise<ActivityEvent[]> {
   const d = DEPLOYMENTS[chainId]
@@ -989,7 +989,7 @@ export async function readActivity(
 
 /** Current head of the chain. Used by the dapp shell's block chip. */
 export async function readBlockNumber(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<bigint> {
   return client(chainId).getBlockNumber()
 }
