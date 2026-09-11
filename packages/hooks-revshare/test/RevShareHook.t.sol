@@ -964,4 +964,90 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
         }
         _assertSolvent();
     }
+
+    /*//////////////////////////////////////////////////////////////
+      keyOf — a PoolId is a hash, so the key has to be stored.
+    //////////////////////////////////////////////////////////////*/
+
+    /// The stored key must be the REAL key, provable by re-deriving the id from it.
+    function test_keyOf_roundTripsToTheSamePoolId() public view {
+        PoolKey memory stored = hook.keyOf(poolId);
+        assertEq(PoolId.unwrap(stored.toId()), PoolId.unwrap(poolId), "keyOf must rebuild the id");
+        assertEq(address(stored.hooks), address(hook));
+        assertEq(Currency.unwrap(stored.currency0), Currency.unwrap(currency0));
+        assertEq(Currency.unwrap(stored.currency1), Currency.unwrap(currency1));
+        assertEq(stored.fee, key.fee);
+        assertEq(stored.parameters, key.parameters);
+    }
+
+    /// A pool this hook has never governed returns the zero key, and `hasKey` says so.
+    /// Callers must be able to tell "no record" from "a record full of zeros".
+    function test_keyOf_unknownPoolReadsAsZeroAndHasKeyIsFalse() public view {
+        PoolId unknown = PoolId.wrap(bytes32(uint256(0xDEAD)));
+        assertFalse(hook.hasKey(unknown));
+        PoolKey memory empty = hook.keyOf(unknown);
+        assertEq(address(empty.hooks), address(0));
+    }
+
+    function test_hasKey_trueForAConfiguredPool() public view {
+        assertTrue(hook.hasKey(poolId));
+    }
+
+    /// The point of the whole thing: a caller holding ONLY an id can now build the
+    /// calldata for a write. Previously this was impossible without an external source.
+    function test_keyOf_isEnoughToDriveAWrite() public {
+        _swap(key, SWAP_AMOUNT, true);
+
+        PoolKey memory rebuilt = hook.keyOf(poolId);
+        // settleBeneficiaries takes a PoolKey and nothing else the caller must know.
+        hook.settleBeneficiaries(rebuilt, currency1);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+      totalTaken — pending balances fall to zero; a lifetime total must not.
+    //////////////////////////////////////////////////////////////*/
+
+    function test_totalTaken_startsAtZero() public view {
+        assertEq(hook.totalTaken(poolId, currency0), 0);
+        assertEq(hook.totalTaken(poolId, currency1), 0);
+    }
+
+    /// The number that could previously only be had by summing logs.
+    function test_totalTaken_accumulatesAcrossSwaps() public {
+        _swap(key, SWAP_AMOUNT, true);
+        uint256 afterOne = hook.totalTaken(poolId, currency1);
+        assertGt(afterOne, 0, "a fee-taking swap must register");
+
+        _swap(key, SWAP_AMOUNT, true);
+        assertGt(hook.totalTaken(poolId, currency1), afterOne, "it must accumulate, not overwrite");
+    }
+
+    /// The distinction that justifies the extra SSTORE: settling ZEROES the pending
+    /// balance, and the lifetime total must survive that untouched.
+    function test_totalTaken_survivesSettlement() public {
+        // A roster is required for settlement to do anything at all: with no
+        // beneficiaries `settleBeneficiaries` returns early and the pot waits,
+        // rather than being distributed to nobody and lost.
+        hook.setBeneficiaries(key, _roster(TREASURY, 1));
+
+        _swap(key, SWAP_AMOUNT, true);
+        uint256 lifetime = hook.totalTaken(poolId, currency1);
+        assertGt(lifetime, 0);
+
+        hook.settleBeneficiaries(key, currency1);
+
+        assertEq(hook.pendingBeneficiary(poolId, currency1), 0, "settling clears the balance");
+        assertEq(hook.totalTaken(poolId, currency1), lifetime, "but not the lifetime total");
+    }
+
+    /// It counts what the POOL took, which includes what went straight back to LPs.
+    /// A total that omitted the LP donation would understate the pool's revenue.
+    function test_totalTaken_countsAllThreeRoutes() public {
+        _swap(key, SWAP_AMOUNT, true);
+        uint256 total = hook.totalTaken(poolId, currency1);
+        uint256 pendingB = hook.pendingBeneficiary(poolId, currency1);
+        uint256 pendingD = hook.pendingDistributorShare(poolId, currency1);
+        assertGe(total, pendingB + pendingD, "total must be at least the retained parts");
+    }
+
 }

@@ -43,8 +43,8 @@ export const wagmiConfig = createLatchConfig({
   chains: WALLET_CHAINS,
   appName: 'Latch Protocol',
   appDescription: 'Hooks platform for AMMs, launchpads, stock pairs and revenue share.',
-  appUrl: 'https://latch.xyz',
-  appIcon: 'https://latch.xyz/brand/icon-512.png',
+  appUrl: 'https://latch.guru',
+  appIcon: 'https://latch.guru/brand/app-icon-512.png',
 })
 
 /** The chain a fresh connection targets. */

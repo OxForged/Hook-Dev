@@ -8,7 +8,7 @@ import { defineConfig } from 'vite'
 // The default is the canonical production origin, which is also the domain printed
 // on the brand OG artwork itself. Override with VITE_SITE_URL on a preview deploy so
 // its cards point at that deploy rather than at production.
-const SITE_URL = (process.env.VITE_SITE_URL ?? 'https://latch.xyz').replace(/\/+$/, '')
+const SITE_URL = (process.env.VITE_SITE_URL ?? 'https://latch.guru').replace(/\/+$/, '')
 
 // https://vite.dev/config/
 export default defineConfig({

@@ -330,6 +330,22 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// @dev Set only for the duration of this contract's own `vault.lock` call.
     bool private _lockCallbackArmed;
 
+    /**
+     * The full `PoolKey` for every pool this hook governs.
+     *
+     * Written once, when `configure` first claims the pool. It exists because a
+     * `PoolId` is a HASH of the key and nothing can invert it: every owner and
+     * maintenance call on this contract takes `PoolKey calldata`, but the hook
+     * indexes by `PoolId` and no event carried the key, so a caller holding only a
+     * pool id could not build a transaction at all. Front ends were reconstructing
+     * it from the pool manager's `Initialize` log, or from a distributor that
+     * happened to store it — neither of which exists for every pool.
+     *
+     * Five slots, paid once per pool at configuration time, to delete an entire
+     * class of off-chain reconstruction. See `keyOf`.
+     */
+    mapping(PoolId poolId => PoolKey) private _keys;
+
     mapping(PoolId poolId => PoolConfig) private _configs;
     mapping(PoolId poolId => PendingConfig) private _pending;
     mapping(PoolId poolId => address) private _distributors;
@@ -342,6 +358,20 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
 
     /// @notice Route-3 pot: accrued, waiting for the distributor to pull.
     mapping(PoolId poolId => mapping(Currency currency => uint256)) public pendingDistributor;
+
+    /**
+     * Lifetime fees taken by a pool, per currency, across all three routes.
+     *
+     * `pendingBeneficiary` and `pendingDistributor` are BALANCES: they fall to zero
+     * when settled, so neither can answer "how much has this pool ever earned".
+     * That number was previously only obtainable by summing `RevShareTaken` logs,
+     * which is bounded by however far back an RPC serves them — an approximation
+     * presented as a total, and one that silently shrinks as logs age out.
+     *
+     * One SSTORE per fee-taking swap, per currency, buys a figure a reader can
+     * verify in a single `eth_call`.
+     */
+    mapping(PoolId poolId => mapping(Currency currency => uint256)) public totalTaken;
 
     /// @notice Per-recipient claimable balance, produced by `settleBeneficiaries`.
     mapping(address recipient => mapping(Currency currency => uint256)) public claimable;
@@ -439,6 +469,10 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
 
         if (owner_ == address(0)) {
             config.owner = msg.sender;
+            // First sight of the full key. `_validateKey` has already confirmed it
+            // hashes to `poolId` and names this hook, so what is stored here is the
+            // real key and not a caller's assertion about one.
+            _keys[poolId] = key;
             emit PoolClaimed(poolId, msg.sender);
         } else {
             if (msg.sender != owner_) revert NotPoolOwner(poolId, msg.sender);
@@ -642,6 +676,33 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
                                  VIEWS
     //////////////////////////////////////////////////////////////*/
 
+    /**
+     * The full `PoolKey` for a pool, or a zeroed key if this hook has never
+     * governed it.
+     *
+     * A `PoolId` is `keccak256(abi.encode(key))`, so it cannot be inverted. Every
+     * write on this contract — `settleBeneficiaries`, `proposeConfig`,
+     * `applyPendingConfig`, `setBeneficiaries`, `transferPoolOwnership` — takes the
+     * key, which meant anything holding only an id had to find the key elsewhere or
+     * give up. This is that elsewhere.
+     *
+     * Check `key.hooks == address(this)` to distinguish a real record from the zero
+     * value; a pool that was never configured returns the latter.
+     */
+    function keyOf(PoolId poolId) external view returns (PoolKey memory) {
+        return _keys[poolId];
+    }
+
+    /**
+     * True when this hook holds the key for `poolId` — i.e. the pool has been
+     * configured here at least once.
+     *
+     * Saves a caller comparing struct fields to spot the zero value.
+     */
+    function hasKey(PoolId poolId) external view returns (bool) {
+        return address(_keys[poolId].hooks) == address(this);
+    }
+
     function getConfig(PoolId poolId) external view returns (PoolConfig memory) {
         return _configs[poolId];
     }
@@ -789,6 +850,15 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
             // ERC-6909 claim, not `take`: no ERC20 transfer inside the swap path, and no change to
             // the vault's ERC20 balance between a router's `sync` and its `settle`.
             vault.mint(address(this), currency, retained);
+        }
+
+        // Cumulative, so a reader never has to sum logs to get a lifetime figure.
+        // Sums the three routes rather than the retained amount: an LP donation is
+        // revenue the pool took, it simply went straight back out to liquidity.
+        unchecked {
+            // Bounded by the pool's own throughput; each term is a fraction of a
+            // swap already accounted in uint256 above.
+            totalTaken[poolId][currency] += lpAmount + beneficiaryAmount + distributorAmount;
         }
 
         emit RevShareTaken(poolId, currency, lpAmount, beneficiaryAmount, distributorAmount);
