@@ -16,120 +16,24 @@
    `ColumnChart`, `BarList`, `Donut` and `DonutLegend` are the primitives fed by
    real chain reads (Analytics, the dashboard activity mix), so each datum is a
    real focusable control that states its own exact value. `Sparkline`,
-   `AreaChart` and `FeeChart` are still driven by the typed sample data in
+   `Sparkline`, `AreaChart` and `FeeChart` were DELETED rather than left unused.
+   Their only inputs were the invented series in
    `data/pool.ts`; they are left inert on purpose. Hover affordances on invented
    numbers invite the reader to inspect them, which is exactly the wrong
    invitation to extend to a placeholder.
    ============================================================================ */
 
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useChartTip } from '../../../charts/useChartTip'
 import type { TipContent } from '../../../charts/tip'
 import type { DonutSegment, LabelledBar, SeriesColor } from '../data/types.ts'
-import { donutArcs, gridLines, linePath } from '../lib/chart.ts'
+import { donutArcs } from '../lib/chart.ts'
 import { SERIES_VAR } from '../lib/series.ts'
 
 /** Percentages arrive as ints from some sources and 2dp floats from others. */
 function pct(v: number): string {
   return Number.isInteger(v) ? `${v}%` : `${v.toFixed(2)}%`
-}
-
-/* ---------- KPI sparkline: 12 bars rising on a .03s stagger --------------- */
-
-export function Sparkline({ values, label }: { values: number[]; label: string }) {
-  return (
-    <div className="dapp-spark" role="img" aria-label={label}>
-      {values.map((v, i) => (
-        <span
-          key={i}
-          className={i === values.length - 1 ? 'dapp-spark__bar is-last' : 'dapp-spark__bar'}
-          style={{ height: `${v}%`, animationDelay: `${(i * 0.03).toFixed(2)}s` }}
-        />
-      ))}
-    </div>
-  )
-}
-
-/* ---------- Volume area chart --------------------------------------------- */
-
-const AREA_W = 720
-const AREA_H = 210
-const AREA_PAD = 12
-
-export function AreaChart({
-  pts,
-  labels,
-  title,
-}: {
-  pts: number[]
-  labels: string[]
-  title: string
-}) {
-  const gradientId = useId()
-  const { line, area } = linePath(pts, AREA_W, AREA_H, AREA_PAD)
-  return (
-    <>
-      <svg
-        className="dapp-area"
-        viewBox={`0 0 ${AREA_W} ${AREA_H}`}
-        preserveAspectRatio="none"
-        role="img"
-        aria-label={title}
-      >
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--latch-blue)" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="var(--latch-blue)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {gridLines(AREA_H).map((y) => (
-          <line key={y} x1="0" x2={AREA_W} y1={y} y2={y} className="dapp-grid-line" />
-        ))}
-        <path d={area} fill={`url(#${gradientId})`} />
-        {/* keyed by the path so a range change replays the draw-on */}
-        <path key={line} d={line} className="dapp-line dapp-line--draw" />
-      </svg>
-      <div className="dapp-axis">
-        {labels.map((l) => (
-          <span key={l}>{l}</span>
-        ))}
-      </div>
-    </>
-  )
-}
-
-/* ---------- Pool detail: fee line + dashed volatility line ---------------- */
-
-const FEE_W = 720
-const FEE_H = 200
-
-export function FeeChart({
-  fee,
-  volatility,
-  title,
-}: {
-  fee: number[]
-  volatility: number[]
-  title: string
-}) {
-  const feePath = linePath(fee, FEE_W, FEE_H, AREA_PAD)
-  const volPath = linePath(volatility, FEE_W, AREA_H, AREA_PAD)
-  return (
-    <svg
-      className="dapp-area dapp-area--fee"
-      viewBox={`0 0 ${FEE_W} ${FEE_H}`}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label={title}
-    >
-      {gridLines(AREA_H).map((y) => (
-        <line key={y} x1="0" x2={FEE_W} y1={y} y2={y} className="dapp-grid-line" />
-      ))}
-      <path d={feePath.line} className="dapp-line dapp-line--fee dapp-line--draw" />
-      <path d={volPath.line} className="dapp-line dapp-line--vol" />
-    </svg>
-  )
 }
 
 /* ---------- Analytics column chart ----------------------------------------

@@ -443,6 +443,57 @@ something to hand an autonomous process.
 
 ---
 
+## No invented data in the UI. Ever.
+
+The landing page and the dapp render **only** what was read from chain, measured from the
+repo, or derived from a contract this repository contains. There is no placeholder data
+left in either surface, and none may be added back.
+
+This is not a style preference. Every screen here exists to help somebody decide whether
+to trust a contract that will sit in their swap path. A number that looks real and is not
+poisons that judgement, and the reader has no way to tell which numbers to discount.
+
+### The rule
+
+**If you cannot read it, do not render it.** Say what is missing and why.
+
+- **No mock modules.** `data/pool.ts`, the `loadPortfolio` mock, the invented analytics
+  series and the fake API key were DELETED, not disabled behind a flag. A mock seam that
+  still compiles is a mock seam somebody will wire back up.
+- **No unused primitives fed by invented series.** `Sparkline`, `AreaChart` and the
+  sample-data `FeeChart` were removed for this reason alone — they rendered nothing, but a
+  chart component whose only input was fiction is a loaded gun.
+- **No dollar figures for unpriced tokens.** ltUSD and ltETH are testnet tokens nothing
+  prices. Token units with a symbol, always. Inventing a price to produce a dollar
+  headline is the specific failure that started this rule.
+- **Static copy must not state anything that can change on chain.** A shell subtitle read
+  "ETH / USDC · 0.05%" above a screen rendering "ltUSD / ltETH · 0.30%" from the pool
+  itself. If it can move, read it.
+- **Four states, visually distinct: loading, error, empty, not-configured.** On error say
+  the chain is unreachable. Never fall back to an example.
+- **An honest empty beats a dishonest chart.** Two swaps cannot make a time series.
+  Analytics, Pool Detail and the landing Activity panel all say the count and explain why
+  there is no series — copy that pattern rather than inventing one.
+- **Label the provenance.** "Summed from logs since block N" is not a caveat to be tidied
+  away; it is the difference between a total and an estimate. `RevShareHook` keeps no
+  cumulative counter, so the UI must not imply one.
+- **Third-party marks come from the owner.** `apps/web/public/chains/SOURCES.md` admits
+  only assets taken as-is from a network's own site, CDN or GitHub org. Equity tickers are
+  typographic for this reason: AAPL and TSLA publish no kit for this use, and an
+  aggregator's copy is not a source. Never draw an approximation of somebody's logo.
+
+### Before claiming a surface is live
+
+Grep it. `MOCK SEAM`, `placeholder`, `sample data`, `latch_sk_`, and any hardcoded chain
+id in a link. A stale disclaimer is its own kind of lie: the header chip claimed PARTLY
+LIVE and named two screens as sample data for a while after both had become real.
+
+The chip now reads **LIVE · TESTNET** — both halves load-bearing. Every figure is read
+from the deployed contracts, and there is no mainnet deployment.
+
+
+---
+
 ## Secrets — never commit, never print, never push
 
 Non-negotiable. This repo will hold deployer keys and RPC credentials for a protocol that

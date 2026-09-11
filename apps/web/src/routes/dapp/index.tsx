@@ -22,11 +22,14 @@
    /app/explorer is not a screen. It is the marketplace's old path, kept purely
    as a redirect to /app/marketplace so shipped links do not break.
 
-   Every figure rendered here is placeholder data from `./data/*`. Latch
-   Protocol's only deployment is on Ethereum Sepolia (chain 11155111); the other
-   ten target chains carry no contracts at all. The header carries a SAMPLE DATA
-   chip plus a network chip stating the selected chain's deployment status, and
-   the sidebar a matching note, so no visitor reads these as live metrics.
+   EVERY FIGURE RENDERED HERE IS READ FROM CHAIN. There is no placeholder data
+   left in this dapp — the mock modules that used to back Pool Detail, Portfolio,
+   Analytics and Settings are deleted, not disabled. If a screen cannot reach the
+   chain it says so; it does not fall back to an example.
+
+   Latch Protocol's only deployment is on Ethereum Sepolia (chain 11155111); the
+   other target chains are endpoint-verified but carry no contracts. The header
+   chip says LIVE · TESTNET for exactly that pair of reasons.
    ============================================================================ */
 
 import { useEffect, useMemo, useState } from 'react'

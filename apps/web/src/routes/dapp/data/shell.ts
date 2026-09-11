@@ -1,9 +1,15 @@
 /* ============================================================================
-   Dapp shell data — nav, header meta, sponsor credits, wallet, block height.
+   Dapp shell — nav rows and per-screen header titles.
    SCREENS.md § C (shell + per-screen header table).
 
-   MOCK SEAM: `loadShell()` is the only entry point. Replace its body with the
-   real session/registry calls; the returned shape is the contract.
+   NOT a mock seam any more, and not a data source. What survives here is static
+   CHROME: the nav labels, their routes and icons, and a title/subtitle per
+   screen. Every figure the shell displays — block height, network, wallet — is
+   read live by the components that render it.
+
+   A subtitle here must not state anything that can change on chain. One did:
+   "ETH / USDC · 0.05%" sat above a Pool Detail screen rendering "ltUSD / ltETH ·
+   0.30%" read from the pool itself. Static copy cannot describe live data.
    ============================================================================ */
 
 import type { Screen } from './types.ts'

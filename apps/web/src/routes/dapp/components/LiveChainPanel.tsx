@@ -20,7 +20,8 @@ import {
  * The only panel in the dapp showing REAL on-chain state.
  *
  * Every other surface runs on the typed mock modules in `data/`, which is why the
- * shell carries a SAMPLE DATA chip. This one reads the deployed Sepolia contracts
+ * shell carried a SAMPLE DATA chip. There is no such chip any more, because there
+ * is no sample data left. This one reads the deployed Sepolia contracts
  * directly and is labelled LIVE so the distinction is never ambiguous.
  *
  * On failure it says so and shows nothing. A dashboard that silently falls back to
