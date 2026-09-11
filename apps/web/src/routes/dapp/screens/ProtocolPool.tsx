@@ -33,6 +33,7 @@
 import { Link, useParams } from 'react-router-dom'
 
 import { DEPLOYMENTS } from '../../../lib/chain'
+import { PoolOwnerActions } from '../components/PoolOwnerActions'
 import { REV_SHARE_HOOK_ABI } from '../lib/revshareAbi'
 import {
   REVSHARE_CHAIN_ID,
@@ -149,7 +150,7 @@ export default function ProtocolPool() {
       )}
 
       {state.k === 'ready' && state.data.k === 'ready' && (
-        <PoolBody o={state.data.o} withHook={withHook} />
+        <PoolBody o={state.data.o} withHook={withHook} onChanged={reload} />
       )}
     </>
   )
@@ -157,7 +158,15 @@ export default function ProtocolPool() {
 
 /* -------------------------------------------------------------------------- */
 
-function PoolBody({ o, withHook }: { o: PoolOverview; withHook: (p: string) => string }) {
+function PoolBody({
+  o,
+  withHook,
+  onChanged,
+}: {
+  o: PoolOverview
+  withHook: (p: string) => string
+  onChanged: () => void
+}) {
   const resolved = o.resolution
   const keyBlocked =
     resolved === null
@@ -334,12 +343,18 @@ function PoolBody({ o, withHook }: { o: PoolOverview; withHook: (p: string) => s
         </dl>
 
         <p className="live-note" style={{ marginTop: 10 }}>
-          Owner-only actions — <code>configure</code>, <code>proposeConfig</code>,{' '}
-          <code>reduceFee</code>, <code>disable</code>, <code>freezeConfig</code>,{' '}
-          <code>setBeneficiaries</code>, <code>transferPoolOwnership</code> — are shown here as state
-          and are not wired to a button on this screen. Only the permissionless calls are.
+          Owner-only actions — <code>proposeConfig</code>, <code>reduceFee</code>,{' '}
+          <code>disable</code>, <code>freezeConfig</code>, <code>setBeneficiaries</code>,{' '}
+          <code>transferPoolOwnership</code> — appear in their own panel below, and only when the
+          connected wallet is this pool's owner. For everybody else they are state, shown here and
+          not actionable.
         </p>
       </section>
+
+      {/* ------------------------------------------------ OWNER ACTIONS
+          Renders nothing at all unless the connected wallet owns this pool or
+          has been nominated to. */}
+      <PoolOwnerActions o={o} onConfirmed={onChanged} />
 
       {/* --------------------------------------------------- KEY SOURCE */}
       <section className={resolved ? 'dapp-card' : 'dapp-card hx-alert hx-alert--danger'}>

@@ -2209,3 +2209,262 @@ span.chainMark {
   line-height: 1.55;
   color: var(--label-ink);
 }
+
+/* ===========================================================================
+   A4 · Liquidity flow
+
+   The page's centrepiece: a Sankey-ish diagram of where a swap's value goes,
+   driven by sliders bounded by the contract's real constants.
+
+   Colour never appears here as a literal. Each edge, node and slider row
+   carries a tone class (.tonePrimary etc, top of this file) which sets --tone,
+   and everything below reads var(--tone). That is what lets one set of rules
+   serve six differently-coloured paths.
+
+   All motion is a CSS animation, so the global prefers-reduced-motion block
+   collapses it. With motion off the diagram still reads completely: the edges
+   keep their proportional widths and every number is printed as text.
+   =========================================================================== */
+
+.flowSection {
+  padding: clamp(56px, 8vw, 104px) 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.flowHead {
+  max-width: 62ch;
+  margin-bottom: clamp(28px, 4vw, 44px);
+}
+
+.flowGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
+  gap: clamp(20px, 3vw, 40px);
+  align-items: start;
+}
+
+.flowCanvas {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: clamp(14px, 2vw, 22px);
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  background: var(--panel);
+}
+
+.flowSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* ------------------------------------------------------------------ edges */
+
+.flowEdge {
+  color: var(--tone);
+  transition: opacity 220ms ease;
+}
+.flowEdge[data-dim='true'] { opacity: 0.18; }
+
+.flowEdgeBase {
+  fill: none;
+  stroke: var(--tone);
+  stroke-opacity: 0.16;
+  stroke-linecap: round;
+}
+
+/* The travelling dash. pathLength=100 on the element normalises the pattern so
+   a short edge and a long one animate at the same visual cadence. */
+.flowEdgeFlow {
+  fill: none;
+  stroke: var(--tone);
+  stroke-opacity: 0.9;
+  stroke-linecap: round;
+  stroke-dasharray: 6 94;
+  animation: flowDash 2.6s linear infinite;
+}
+.flowEdge[data-on='true'] .flowEdgeFlow { animation-duration: 1.4s; }
+.flowEdge[data-on='true'] .flowEdgeBase { stroke-opacity: 0.34; }
+
+@keyframes flowDash {
+  from { stroke-dashoffset: 100; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* ------------------------------------------------------------------ nodes */
+
+.flowNode { color: var(--tone); }
+
+.flowNodeBox,
+.flowNodeBoxOn {
+  fill: var(--panel-alt, rgb(255 255 255 / 4%));
+  stroke: var(--tone);
+  stroke-opacity: 0.5;
+}
+.flowNodeBoxOn {
+  stroke-opacity: 0.95;
+  stroke-width: 1.5;
+}
+
+.flowNodeLabel {
+  fill: var(--tone);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+.flowNodeValue {
+  fill: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------------------- key */
+
+.flowKey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flowKeyBtn {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease;
+}
+.flowKeyBtn:hover,
+.flowKeyBtn:focus-visible {
+  border-color: var(--tone);
+  color: var(--ink);
+}
+.flowKeyBtn strong { color: var(--tone); }
+
+.flowKeySwatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--tone);
+  flex: none;
+}
+
+/* --------------------------------------------------------------- controls */
+
+.flowControls {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  padding: clamp(16px, 2vw, 24px);
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  background: var(--panel);
+}
+
+.flowField { display: grid; gap: 9px; min-width: 0; }
+
+.flowLabel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  color: var(--eyebrow-blue);
+}
+.flowLabel strong {
+  letter-spacing: 0;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.flowPresets { display: flex; flex-wrap: wrap; gap: 7px; }
+
+.flowPreset {
+  padding: 7px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease;
+}
+.flowPreset:hover { border-color: var(--latch-blue); color: var(--ink); }
+.flowPresetOn {
+  border-color: var(--latch-blue);
+  background: color-mix(in srgb, var(--latch-blue) 14%, transparent);
+  color: var(--ink);
+}
+
+.flowRange {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--tone, var(--latch-blue));
+  cursor: pointer;
+}
+
+.flowHint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--faint-ink);
+}
+.flowHint code { font-size: 11px; }
+
+.flowSplit { display: grid; gap: 12px; min-width: 0; }
+
+.flowSplitRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  gap: 4px 10px;
+  align-items: center;
+  min-width: 0;
+}
+.flowSplitRow .flowRange { grid-column: 1 / -1; }
+
+.flowSplitName {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--muted-ink);
+}
+
+.flowSplitOut {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--tone);
+  text-align: right;
+}
+
+.flowProvenance {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.7;
+  letter-spacing: 0.04em;
+  color: var(--faint-ink);
+}
+
+@media (max-width: 900px) {
+  .flowGrid { grid-template-columns: minmax(0, 1fr); }
+}

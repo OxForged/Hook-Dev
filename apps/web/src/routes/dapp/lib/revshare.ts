@@ -1040,6 +1040,35 @@ const ERROR_COPY: Record<string, (args: readonly unknown[]) => string> = {
   InsufficientBackedBalance: (args) =>
     `The hook cannot cover this payout in ${String(args[0])}: ${String(args[1])} needed, ${String(args[2])} available.`,
   InvalidRecipient: () => 'The recipient cannot be the zero address.',
+
+  /* Owner-gated calls. These reach the UI only from `PoolOwnerActions`, and
+     each one is a state the owner can act on, so say what to change. */
+  NotPoolOwner: (args) =>
+    `${String(args[1])} does not own this pool, so the hook refuses the call. ` +
+    'Connect the owner address shown in the configuration card above.',
+  ConfigFrozen: () =>
+    'This pool is frozen. `freezeConfig` is one-way and permanent — the fee, the split and the ' +
+    'roster can never change again, by anyone, including the owner.',
+  PoolAlreadyConfigured: () =>
+    'The pool is already initialised, so it cannot be reconfigured in place. Raising the take goes ' +
+    'through `proposeConfig` and the block delay; lowering it goes through `reduceFee` immediately.',
+  FeeTooHigh: ([feePips]) =>
+    `${String(feePips)} pips exceeds MAX_FEE_PIPS (100000 = 10%). The cap is a constant and cannot be raised.`,
+  SplitMustSumToDenominator: ([sum]) =>
+    `The three split weights sum to ${String(sum)}, not 10000. The check is exact, not a ceiling — ` +
+    'a split summing to less would quietly shrink the cut rather than erroring.',
+  DistributorRequired: () =>
+    'A non-zero distributor share needs a distributor address. Either set the address or move that ' +
+    'share to the LPs or the roster.',
+  FeeNotReduced: (args) =>
+    `\`reduceFee\` only ever lowers the take: it is at ${String(args[0])} pips and ${String(args[1])} ` +
+    'is not below that. An increase must go through `proposeConfig` and wait out the delay.',
+  InvalidBeneficiaries: () =>
+    'The roster was rejected. Every entry needs a non-zero address and a non-zero weight, there can ' +
+    'be at most 8 entries, and the weights must sum to at most 1e18.',
+  PoolMustUseStaticFee: () =>
+    'This hook refuses pools with a dynamic LP fee — it never overrides the fee, so a pool whose fee ' +
+    'can move underneath it cannot be served honestly.',
 }
 
 export function decodeRevShareFailure(error: unknown): DecodedFailure | null {

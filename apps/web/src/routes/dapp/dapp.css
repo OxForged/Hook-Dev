@@ -1715,6 +1715,113 @@ span.dapp-net-chip__mark {
 .dp-caps-card { display: grid; gap: 10px; }
 .dp-gap { margin-top: 0; }
 
+/* ---------------------------------------------------------------------------
+   Pool-owner actions (po-*)
+
+   The only surface in the dapp that writes an owner-gated call, so it is
+   deliberately set apart from the read cards around it: a left rule in the
+   primary tone, and each action in its own hairlined block. The danger block
+   and the danger button are the only red affordances on the screen — nothing
+   else here is irreversible, and `freezeConfig` is.
+   --------------------------------------------------------------------------- */
+
+.po-card { border-left: 3px solid var(--latch-blue); }
+
+.po-block {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-sm);
+  background: var(--panel-alt);
+}
+.po-block--danger {
+  border-color: var(--dapp-badge-danger-border);
+  background: var(--dapp-badge-danger-bg);
+}
+.po-block__title { margin: 0; font-size: 14px; font-weight: 500; color: var(--ink); }
+.po-block--danger .po-block__title { color: var(--error); }
+
+.po-action { display: grid; gap: 0; margin-top: 12px; }
+.po-action + .po-action {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline-blue);
+}
+
+.po-rows { display: grid; gap: 10px; }
+.po-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 64px auto;
+  gap: 10px;
+  align-items: end;
+}
+.po-share {
+  padding-bottom: 11px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted-ink);
+  text-align: right;
+}
+.po-rowactions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.po-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.po-field { display: grid; gap: 6px; min-width: 0; }
+.po-field--wide { grid-column: 1 / -1; }
+.po-field--narrow { min-width: 0; }
+
+/* Same visual contract as .dp-input; kept separate so the owner surface can
+   diverge without disturbing the deploy form. */
+.po-input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-chip);
+  background: var(--code-ground);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.po-input::placeholder { color: var(--faint-ink); }
+.po-input:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 1px;
+  border-color: var(--latch-blue);
+}
+
+.po-check {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  grid-column: 1 / -1;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+.po-check input { margin-top: 2px; }
+
+.po-btn--danger {
+  border-color: var(--dapp-badge-danger-border);
+  background: var(--dapp-badge-danger-bg);
+  color: var(--error);
+}
+.po-btn--danger:hover:not(:disabled) { transform: translateY(-2px); }
+
+/* Used by the owner surface for "this is allowed but read it first". */
+.dp-hint--warn { color: var(--warning); }
+
+@media (max-width: 620px) {
+  .po-row { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .po-share { padding-bottom: 0; text-align: left; }
+}
+
 .dp-tx { display: grid; gap: 8px; }
 .dp-tx__row { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 13px; color: var(--dapp-ink-data); }
 .dp-tx__hash { margin: 0; font-family: var(--font-mono); font-size: 11.5px; overflow-wrap: anywhere; }

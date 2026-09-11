@@ -85,6 +85,59 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   'error NativeNotAccepted()',
 ])
 
+/* ============================================================================
+   Owner-only writes. A SEPARATE const, deliberately.
+
+   `REV_SHARE_HOOK_ABI` above says "writes (permissionless, every one)" and that
+   claim is load-bearing: `PermissionlessAction` can only call what its caller
+   passes, so keeping the two ABIs apart means a permissionless surface cannot
+   reach an owner-gated function by typo. Import this one only from a component
+   that gates on `poolOwner`.
+
+   Every function here reverts `NotPoolOwner(poolId, caller)` for the wrong
+   sender, which is why `OwnerAction` MUST pass `account` when it simulates.
+   Simulating without one runs from the zero address and every button would
+   read "you are not the owner" even for the owner.
+
+   `configure` is NOT here. It claims an unclaimed pool or reconfigures an
+   uninitialised one — a deploy-time action, not a management one, and offering
+   it beside the others invites someone to try it on a live pool and collect a
+   `PoolAlreadyConfigured` revert.
+   ============================================================================ */
+
+const POOL_KEY_ARG =
+  '(address currency0, address currency1, address hooks, address poolManager, uint24 fee, bytes32 parameters) key'
+
+export const REV_SHARE_OWNER_ABI = parseAbi([
+  `function proposeConfig(${POOL_KEY_ARG}, (uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, address distributor, bool enabled) params)`,
+  `function cancelPendingConfig(${POOL_KEY_ARG})`,
+  `function reduceFee(${POOL_KEY_ARG}, uint24 feePips)`,
+  `function disable(${POOL_KEY_ARG})`,
+  `function freezeConfig(${POOL_KEY_ARG})`,
+  `function transferPoolOwnership(${POOL_KEY_ARG}, address newOwner)`,
+  `function setBeneficiaries(${POOL_KEY_ARG}, (address recipient, uint96 weight)[] roster)`,
+
+  /* Not owner-gated — gated on being the INCOMING owner. It lives here because
+     it belongs to the handover flow and to no other surface. */
+  `function acceptPoolOwnership(${POOL_KEY_ARG})`,
+
+  /* Errors these can produce that the permissionless ABI never sees. Without
+     them a revert decodes to a raw selector instead of a sentence. */
+  'error NotPoolOwner(bytes32 poolId, address caller)',
+  'error ConfigFrozen(bytes32 poolId)',
+  'error FeeTooHigh(uint24 feePips)',
+  'error SplitMustSumToDenominator(uint256 sum)',
+  'error DistributorRequired()',
+  'error FeeNotReduced(uint24 current, uint24 proposed)',
+  'error InvalidBeneficiaries()',
+  'error NoPendingConfig(bytes32 poolId)',
+  'error PoolAlreadyConfigured(bytes32 poolId)',
+  'error HookMismatch(address declared)',
+  'error PoolManagerMismatch(address declared)',
+  'error PoolMustUseStaticFee()',
+  'error InsufficientBackedBalance(address currency, uint256 needed, uint256 available)',
+])
+
 /** `SnapshotEpochDistributor`. Field 5 of the epoch is `totalVotingSupply`. */
 export const SNAPSHOT_DISTRIBUTOR_ABI = parseAbi([
   'function poolKey() view returns ((address currency0, address currency1, address hooks, address poolManager, uint24 fee, bytes32 parameters))',
