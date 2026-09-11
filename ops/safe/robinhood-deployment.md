@@ -7,10 +7,10 @@ script's own log. Owners are as of the last verification.
 |---|---|---|
 | Create3Factory | `0x6ffdf9a3df7e9dd55bad2e60c7405cd181005633` | deployer (utility, no authority over the protocol) |
 | **Vault** | `0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c` | **Safe** |
-| CLPoolManager | `0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66` | CLPoolManagerOwner |
-| BinPoolManager | `0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979` | BinPoolManagerOwner |
-| CLPoolManagerOwner | `0x5D7111d6c624e9a08aE63d342E4baE5878989a67` | pending → Safe |
-| BinPoolManagerOwner | `0x98920e33313257Ffd942f94379A7ced216462665` | pending → Safe |
+| CLPoolManager | `0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66` | CLPoolManagerOwner → **Safe** |
+| BinPoolManager | `0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979` | BinPoolManagerOwner → **Safe** |
+| CLPoolManagerOwner | `0x5D7111d6c624e9a08aE63d342E4baE5878989a67` | **Safe** |
+| BinPoolManagerOwner | `0x98920e33313257Ffd942f94379A7ced216462665` | **Safe** |
 | CLProtocolFeeController | `0xb1cC5BDBADD19a2430131EaE332afD72fF6be64B` | **Safe** |
 | BinProtocolFeeController | `0x320feB54e940741AeB037E3944F2C95afAEE84af` | **Safe** |
 | LatchProtocolFeeController | `0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c` | **Safe** (guardian: ops key) |
@@ -22,7 +22,7 @@ script's own log. Owners are as of the last verification.
 | BinPositionManager | `0x990f395003c35a0ab390e10b003972407f882399` | — |
 | CLQuoter | `0xdfd14247f87d1e4fc82f0f441fb43bc8aa466114` | — |
 | BinQuoter | `0xbee22c7edf206b3f24fa0e86ccdd2f35738eb28c` | — |
-| UniversalRouter | `0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c` | pending → Safe |
+| UniversalRouter | `0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c` | **Safe** |
 
 External, not deployed by us — both confirmed by reading code at the address:
 
@@ -58,9 +58,37 @@ The Safe holds these as an INTERIM step. Destination:
 The Safe goes first because a timelock can only accept through a queued proposal,
 which would have left the mainnet Vault on a single hot key for 48 hours.
 
+## Every contract is Safe-owned
+
+Both accept batches executed. No contract on Robinhood mainnet answers to a hot
+key. Verified by reading `owner()` back per address at Safe nonce 3.
+
+### A Safe queue lesson that cost several rounds
+
+Safe executes strictly in NONCE ORDER, and a failed execution does NOT consume
+the nonce — `execTransaction` reverts wholesale with GS013 when the inner call
+fails and `safeTxGas` is 0. So one un-executable transaction blocks everything
+behind it, permanently, and retrying reproduces the identical failure.
+
+Here the blocker was a DUPLICATE of an already-executed batch: `acceptOwnership`
+reverts once there is nothing pending. Worse, TWO transactions can share a
+nonce, both fully signed, and the UI will let you execute either — so "Execution
+failed" was the correct answer to the wrong transaction.
+
+Clearing it needs an ON-CHAIN REJECTION at that exact nonce: a 0-value call from
+the Safe to itself, which is a Safe transaction like any other and therefore
+needs the full 2-of-3 threshold before it can execute. A rejection created at
+the wrong nonce does nothing.
+
+**The only source of truth is `cast call <safe> "nonce()(uint256)"`.** The UI
+showing a signed transaction is not evidence that anything happened; that number
+moves only on execution.
+
 ## Not done
 
-- `robinhood-accept-ownership-2.json` — three accepts still to execute
+- Two duplicate batches still sit at nonces 3 and 4 and will revert. Harmless to
+  the protocol — everything is already transferred — but each will block the
+  next real Safe transaction until rejected, and the timelock handover is next.
 ## Source verification — done, 18/18, via Sourcify
 
 All eighteen contracts are verified. Confirmed independently by querying
