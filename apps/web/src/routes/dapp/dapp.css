@@ -900,10 +900,10 @@
 .dapp-step {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: var(--s3);
   flex: 1 1 0;
   min-width: 0;
-  padding: 16px 18px;
+  padding: var(--s4);
   border-right: 1px solid var(--hairline);
   background: transparent;
   transition: background 0.3s;
@@ -929,14 +929,14 @@
   color: var(--sky-ink);
   background: var(--dapp-step-num-bg);
 }
-.dapp-step__body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dapp-step__body { min-width: 0; display: flex; flex-direction: column; gap: var(--s1); }
 .dapp-step__name { font-size: 13px; font-weight: 500; }
 .dapp-step__hint { font-family: var(--font-mono); font-size: 10px; color: var(--label-ink); }
 
-.dapp-fields { display: flex; flex-direction: column; gap: 16px; margin-top: 20px; }
+.dapp-fields { display: flex; flex-direction: column; gap: var(--s4); margin-top: 20px; }
 .dapp-readout {
-  margin: 8px 0 0;
-  padding: 12px 14px;
+  margin: var(--s2) 0 0;
+  padding: var(--s3) var(--s4);
   border: 1px solid var(--hairline-blue);
   border-radius: var(--r-chip);
   background: var(--code-ground);
@@ -945,7 +945,7 @@
   color: var(--dapp-ink-soft);
   overflow-wrap: anywhere;
 }
-.dapp-field__head { display: flex; justify-content: space-between; gap: 12px; }
+.dapp-field__head { display: flex; justify-content: space-between; gap: var(--s3); }
 .dapp-field__value {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -953,7 +953,7 @@
   color: var(--sky-ink);
 }
 
-.dapp-budget { position: relative; margin-top: 12px; }
+.dapp-budget { position: relative; margin-top: var(--s3); }
 .dapp-budget__track { height: 6px; border-radius: var(--r-pill); background: var(--dapp-track); overflow: hidden; }
 .dapp-budget__fill {
   display: block;
@@ -987,7 +987,7 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 12px 16px;
+  padding: var(--s3) var(--s4);
   border-bottom: 1px solid var(--hairline);
   background: var(--panel);
 }
@@ -1001,7 +1001,7 @@
 .dapp-console__body {
   display: flex;
   flex-direction: column;
-  padding: 16px 18px;
+  padding: var(--s4) 18px;
   font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 2;
@@ -1013,8 +1013,8 @@
 .dapp-console__line.is-shown { opacity: 1; }
 .dapp-console__line.is-staggered { animation: dapp-fade 0.4s ease both; }
 
-.dapp-checks { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
-.dapp-checks__row { display: flex; align-items: center; gap: 11px; }
+.dapp-checks { list-style: none; margin: var(--s4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--s3); }
+.dapp-checks__row { display: flex; align-items: center; gap: var(--s3); }
 .dapp-checks__name { font-size: 13px; color: var(--dapp-ink-data); }
 .dapp-checks__value {
   margin-left: auto;
@@ -1134,7 +1134,14 @@
 }
 .dapp-table tbody tr:last-child th,
 .dapp-table tbody tr:last-child td { border-bottom: none; }
-.dapp-pos { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.dapp-pos { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
+
+/* The connected address is shown in full, deliberately — this is the one card
+   where truncating it would undercut the point. At 390px the flex row wraps
+   (`.dapp-card__bar` already does), but the address itself is one unbroken
+   string long enough to force the row wider than the viewport unless it can
+   break internally too. */
+.pf-addr { min-width: 0; overflow-wrap: anywhere; word-break: break-all; }
 .dapp-pos__token {
   width: 26px;
   height: 26px;
@@ -1154,13 +1161,13 @@
    chain genuinely has nothing — an empty state has to look deliberate, or it
    reads as a panel that failed to load. */
 
-.an-badge { display: inline-flex; align-items: center; gap: 6px; }
+.an-badge { display: inline-flex; align-items: center; gap: var(--s2); }
 
 .an-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 14px;
-  margin: 16px 0 0;
+  gap: var(--s4);
+  margin: var(--s4) 0 0;
 }
 .an-stats > div { min-width: 0; }
 .an-stats dt {
@@ -1169,7 +1176,7 @@
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--label-ink);
-  margin-bottom: 5px;
+  margin-bottom: var(--s1);
 }
 .an-stats dd {
   margin: 0;
@@ -1180,8 +1187,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-.an-note { margin-top: 12px; line-height: 1.55; }
-.dapp-card__donut-body .an-note { margin-top: 10px; }
+.an-note { margin-top: var(--s3); line-height: 1.55; }
+.dapp-card__donut-body .an-note { margin-top: var(--s3); }
 
 .an-empty {
   margin-top: 14px;
@@ -1198,19 +1205,19 @@
 }
 .an-empty .live-note { margin: 0; line-height: 1.55; }
 
-.an-hooks { margin-top: 14px; }
+.an-hooks { margin-top: var(--s4); }
 
 /* ---- 7. Settings --------------------------------------------------------- */
 
-.dapp-prefs { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; }
+.dapp-prefs { list-style: none; margin: var(--s4) 0 0; padding: 0; display: flex; flex-direction: column; }
 .dapp-pref {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 15px 0;
+  gap: var(--s4);
+  padding: var(--s4) 0;
   border-bottom: 1px solid var(--hairline-soft);
 }
-.dapp-pref__copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dapp-pref__copy { min-width: 0; display: flex; flex-direction: column; gap: var(--s1); }
 .dapp-pref__name { font-size: 13.5px; color: var(--ink); }
 .dapp-pref__hint { font-size: 12px; color: var(--dapp-ink-sub); }
 .dapp-toggle {
@@ -1242,9 +1249,9 @@
 .dapp-apikey {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  padding: 12px 14px;
+  gap: var(--s3);
+  margin-top: var(--s4);
+  padding: var(--s3) var(--s4);
   border: 1px solid var(--hairline-blue);
   border-radius: var(--r-chip);
   background: var(--code-ground);
@@ -1264,20 +1271,20 @@
    which, today, is true of Ethereum Sepolia and of nothing else.
    -------------------------------------------------------------------------- */
 
-.dapp-net-group { margin: 18px 0 8px; }
+.dapp-net-group { margin: var(--s4) 0 var(--s2); }
 
 .dapp-netgrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(228px, 1fr));
-  gap: 8px;
+  gap: var(--s2);
 }
 
 .dapp-netchip {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--s3);
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--s3);
   border: 1px solid var(--hairline);
   border-radius: var(--r-chip);
   background: var(--panel-alt);
@@ -1309,18 +1316,18 @@ span.dapp-netchip__mark {
   color: var(--sky-ink);
 }
 
-.dapp-netchip__body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.dapp-netchip__body { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
 .dapp-netchip__name { font-size: 12.5px; }
 .dapp-netchip__id { font-family: var(--font-mono); font-size: 10.5px; color: var(--dapp-ink-sub); }
 .dapp-netchip .dapp-badge { margin-left: auto; }
 
-.dapp-netfacts { margin: 12px 0 0; display: grid; gap: 8px; }
+.dapp-netfacts { margin: var(--s3) 0 0; display: grid; gap: var(--s2); }
 .dapp-netfact {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 2px 12px;
+  gap: var(--s1) var(--s3);
 }
 .dapp-netfact dt {
   font-family: var(--font-mono);
@@ -1336,13 +1343,13 @@ span.dapp-netchip__mark {
   color: var(--dapp-ink-data);
 }
 
-.dapp-contracts { margin: 14px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.dapp-contracts { margin: var(--s4) 0 0; padding: 0; list-style: none; display: grid; gap: var(--s2); }
 .dapp-contract {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 10px;
-  padding: 8px 10px;
+  gap: var(--s1) var(--s3);
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--hairline-soft);
   border-radius: var(--r-micro);
   background: var(--void);
@@ -1672,7 +1679,7 @@ span.dapp-net-chip__mark {
    Nothing paints a success colour that the chain has not confirmed.
    -------------------------------------------------------------------------- */
 
-.dp-lede { margin: 10px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-ink); }
+.dp-lede { margin: var(--s3) 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-ink); }
 .dp-lede a { color: var(--signal-blue); }
 .dp-lede code,
 .dp-gap code,
@@ -1680,9 +1687,9 @@ span.dapp-net-chip__mark {
 
 .dp-gate {
   display: grid;
-  gap: 8px;
+  gap: var(--s2);
   justify-items: start;
-  margin-top: 16px;
+  margin-top: var(--s4);
   padding: 14px;
   border: 1px solid var(--hairline-blue);
   border-radius: var(--r-sm);
@@ -1699,7 +1706,7 @@ span.dapp-net-chip__mark {
 .dp-field { display: grid; gap: 6px; }
 .dp-input {
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--s3);
   border: 1px solid var(--hairline-blue);
   border-radius: var(--r-chip);
   background: var(--code-ground);
@@ -1718,8 +1725,8 @@ span.dapp-net-chip__mark {
 .dp-hint--err { color: var(--error); }
 
 .dp-ok {
-  margin: 14px 0 0;
-  padding: 9px 11px;
+  margin: var(--s4) 0 0;
+  padding: var(--s2) var(--s3);
   border-left: 3px solid var(--success);
   border-radius: 0 var(--r-micro) var(--r-micro) 0;
   background: var(--dapp-badge-ok-bg);
@@ -1729,7 +1736,7 @@ span.dapp-net-chip__mark {
 }
 .dp-ok a { color: var(--signal-blue); }
 
-.dp-failure { display: grid; gap: 5px; margin-top: 14px; }
+.dp-failure { display: grid; gap: var(--s1); margin-top: var(--s4); }
 .dp-failure__name { margin: 0; font-family: var(--font-mono); font-size: 12px; font-weight: 500; }
 .dp-failure__body { margin: 0; font-size: 12.5px; line-height: 1.55; }
 .dp-failure__raw {
@@ -1741,7 +1748,7 @@ span.dapp-net-chip__mark {
   overflow-wrap: anywhere;
 }
 
-.dp-caps-card { display: grid; gap: 10px; }
+.dp-caps-card { display: grid; gap: var(--s3); }
 .dp-gap { margin-top: 0; }
 
 /* ---------------------------------------------------------------------------

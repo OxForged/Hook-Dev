@@ -517,7 +517,7 @@ export default function Portfolio() {
         <div className="dapp-card__bar">
           <span className="dapp-microlabel dapp-microlabel--tight">ADDRESS</span>
           <a
-            className="hx-addr"
+            className="hx-addr pf-addr"
             href={explorerAddress(browsingChain, address)}
             target="_blank"
             rel="noopener noreferrer"
