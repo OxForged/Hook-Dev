@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { SEPOLIA_CHAIN_ID, explorerTx, readActivity, type ActivityEvent } from '../../../lib/chain'
+import { ACTIVE_CHAIN_ID, explorerTx, readActivity, type ActivityEvent } from '../../../lib/chain'
 
 /**
  * Real protocol activity, replacing the design spec's invented "LIVE HOOK FEED".
@@ -39,7 +39,7 @@ export function LiveActivityFeed() {
 
   useEffect(() => {
     let off = false
-    readActivity(SEPOLIA_CHAIN_ID, 10)
+    readActivity(ACTIVE_CHAIN_ID, 10)
       .then((events) => !off && setState({ k: 'ready', events }))
       .catch(
         (e) =>
@@ -94,7 +94,7 @@ export function LiveActivityFeed() {
               </span>
               <a
                 className="dapp-feed__ago"
-                href={explorerTx(SEPOLIA_CHAIN_ID, e.txHash)}
+                href={explorerTx(ACTIVE_CHAIN_ID, e.txHash)}
                 target="_blank"
                 rel="noopener noreferrer"
                 data-hit

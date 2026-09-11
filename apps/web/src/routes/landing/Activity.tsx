@@ -1,3 +1,4 @@
+import { IS_TESTNET_BUILD } from '../../lib/chain'
 import { useEffect, useState } from 'react'
 import { MEASURED_GAS, NETWORK_REACH, TEST_COVERAGE } from './data'
 import { SEPOLIA_CHAIN_ID, readActivity, type ActivityEvent } from '../../lib/chain'
@@ -146,7 +147,8 @@ function LiveState() {
             <FeeMeter />
           </div>
           <p className={styles['deployCaption']}>
-            Block {s.m.latestBlock.toString()} · testnet only, no mainnet deployment. No USD figure:
+            Block {s.m.latestBlock.toString()}
+            {IS_TESTNET_BUILD ? ' · testnet only, no mainnet deployment' : ''}. No USD figure:
             these are unpriced testnet tokens, and inventing a price to produce a dollar headline is
             the failure this section replaced.
           </p>

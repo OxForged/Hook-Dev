@@ -16,6 +16,7 @@
    Escape closes, and it is `inert` while closed so nothing inside is tabbable.
    ============================================================================ */
 
+import { ACTIVE_CHAIN_ID, DEPLOYMENTS, IS_TESTNET_BUILD } from '../../../lib/chain'
 import { useRef } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import type { ShellData } from '../data/shell.ts'
@@ -86,7 +87,8 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
 
         <div className="dapp-sidebar__foot">
           <p className="dapp-sample-note">
-            Live on Sepolia · testnet only
+            Live on {DEPLOYMENTS[ACTIVE_CHAIN_ID].name}
+            {IS_TESTNET_BUILD ? ' · testnet only' : ''}
           </p>
           {/* The wallet control moved to the header (TopBar). It sat here, below
               seven nav rows, where nobody looked for it — and a second copy would

@@ -32,7 +32,7 @@ import { useEffect, useState } from 'react'
 
 import {
   DEPLOYMENTS,
-  SEPOLIA_CHAIN_ID,
+  ACTIVE_CHAIN_ID,
   explorerAddress,
   explorerTx,
   formatUnits,
@@ -56,7 +56,7 @@ interface LiveData {
 
 type State = { k: 'loading' } | { k: 'error'; message: string } | { k: 'ready'; d: LiveData }
 
-const D = DEPLOYMENTS[SEPOLIA_CHAIN_ID]
+const D = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
 function useLiveChain(): State {
   const [state, setState] = useState<State>({ k: 'loading' })
@@ -68,7 +68,7 @@ function useLiveChain(): State {
         const [status, holdings, swaps, gov] = await Promise.all([
           readProtocolStatus(),
           readVaultHoldings(),
-          readRecentSwaps(SEPOLIA_CHAIN_ID, 5),
+          readRecentSwaps(ACTIVE_CHAIN_ID, 5),
           readGovernanceStatus(),
         ])
         if (!cancelled) setState({ k: 'ready', d: { status, holdings, swaps, gov } })
@@ -213,9 +213,9 @@ export function GovernanceCard({ state }: { state: State }) {
       state={state}
       note={
         <p className="live-note lc-note">
-          Timelocks are deployed and enforce their floors. On Sepolia the Vault is still owned by an
-          EOA, so it stays iterable — that transfer is the last thing standing between here and
-          mainnet.
+          Timelocks are deployed and enforce their floors. Whether they OWN anything differs by
+          chain and is not assumed here — the Governance screen reads every owner() live and says
+          so, including flagging anything still held by an EOA.
         </p>
       }
     >
@@ -240,7 +240,7 @@ export function GovernanceCard({ state }: { state: State }) {
             label="REGISTRY"
             value={
               <a
-                href={explorerAddress(SEPOLIA_CHAIN_ID, d.gov.registry)}
+                href={explorerAddress(ACTIVE_CHAIN_ID, d.gov.registry)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="lc-link"
@@ -276,7 +276,7 @@ export function VaultHoldingsCard({ state }: { state: State }) {
             {d.holdings.map((h) => (
               <Row
                 key={h.token}
-                href={explorerAddress(SEPOLIA_CHAIN_ID, h.token)}
+                href={explorerAddress(ACTIVE_CHAIN_ID, h.token)}
                 name={h.symbol}
                 value={formatUnits(h.balance, h.decimals, 4)}
               />
@@ -301,7 +301,7 @@ export function RecentSwapsCard({ state }: { state: State }) {
               return (
                 <Row
                   key={s.txHash}
-                  href={explorerTx(SEPOLIA_CHAIN_ID, s.txHash)}
+                  href={explorerTx(ACTIVE_CHAIN_ID, s.txHash)}
                   name={`Block ${s.blockNumber.toString()}`}
                   value={`${s.feePips} pips · ${s.protocolFeePips} protocol + ${lpPips} LP`}
                 />

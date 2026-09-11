@@ -57,7 +57,7 @@ import {
 
 import {
   DEPLOYMENTS,
-  SEPOLIA_CHAIN_ID,
+  ACTIVE_CHAIN_ID,
   client,
   formatUnits,
   type DeployedChainId,
@@ -73,7 +73,7 @@ import {
   SNAPSHOT_DISTRIBUTOR_ABI,
 } from './revshareAbi'
 
-export const REVSHARE_CHAIN_ID: DeployedChainId = SEPOLIA_CHAIN_ID
+export const REVSHARE_CHAIN_ID: DeployedChainId = ACTIVE_CHAIN_ID
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
 
 /** `PIPS_DENOMINATOR` on the hook. A fee of 3_000 pips is 0.3%. */
@@ -84,11 +84,12 @@ export const SPLIT_DENOMINATOR = 10_000
 /* ---------------------------------------------------------------------------
    Which hook are we looking at?
 
-   `DEPLOYMENTS` in lib/chain.ts has no RevShareHook entry, because none is
-   deployed on Sepolia. Rather than hardcode a placeholder address — which
-   would make every screen below read from nowhere and render zeros — the
-   address is resolved from configuration, and its ABSENCE is a first-class
-   state the screens render as "not deployed on this chain".
+   `DEPLOYMENTS` now carries a `revShareHook` per chain, but this resolver stays
+   because an operator may point these screens at their OWN hook rather than the
+   canonical one. Absence remains a first-class state — a chain with no hook
+   renders "not deployed on this chain" rather than reading from nowhere and
+   showing zeros, which would be indistinguishable from a hook that took
+   nothing.
 
    Two sources, in order:
      ?hook=0x…                    a specific hook, for an operator running

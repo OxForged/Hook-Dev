@@ -12,6 +12,7 @@
    0.30%" read from the pool itself. Static copy cannot describe live data.
    ============================================================================ */
 
+import { ACTIVE_CHAIN_ID, DEPLOYMENTS, IS_TESTNET_BUILD } from '../../../lib/chain'
 import type { Screen } from './types.ts'
 
 export interface NavItem {
@@ -52,7 +53,10 @@ const nav: NavItem[] = [
 
 /** SCREENS.md § C: header title + subtitle per screen. */
 const meta: Record<Screen, ScreenMeta> = {
-  dashboard: { title: 'Dashboard', subtitle: 'Live from Ethereum Sepolia · testnet only' },
+  dashboard: {
+    title: 'Dashboard',
+    subtitle: `Live from ${DEPLOYMENTS[ACTIVE_CHAIN_ID].name}${IS_TESTNET_BUILD ? ' · testnet only' : ''}`,
+  },
   marketplace: { title: 'Latch Marketplace', subtitle: 'On-chain registry · Sepolia' },
   /* Not a chain read and the subtitle says so — the one screen in the dapp whose
      data is a curated file, submitted by the projects themselves. */

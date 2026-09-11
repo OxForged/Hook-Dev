@@ -18,12 +18,16 @@
 import { createLatchConfig, hasWalletConnect, robinhood, sepolia } from '@latchprotocol/connect'
 import type { Chain } from 'viem'
 
-import { DEPLOYMENTS, SEPOLIA_CHAIN_ID } from './chain'
+import { ACTIVE_CHAIN_ID, IS_TESTNET_BUILD, SEPOLIA_CHAIN_ID } from './chain'
 
-/** Chains the wallet may connect to. Must stay in step with `DEPLOYMENTS`.
-    Robinhood first: it is the mainnet, and the list order is what the switcher
-    shows. Sepolia stays because the protocol is still exercised there. */
-export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = [robinhood, sepolia]
+/** Chains the wallet may connect to — EXACTLY ONE, the network this build is.
+    A mainnet build must never offer Sepolia: a testnet chain in a mainnet
+    switcher is an invitation to read testnet contracts under mainnet chrome,
+    and no amount of labelling makes that safe. The Sepolia site is a separate
+    build (`VITE_NETWORK=testnet`) of this same codebase. */
+export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = IS_TESTNET_BUILD
+  ? [sepolia]
+  : [robinhood]
 
 /**
  * Guard against the two lists drifting apart. Cheap, runs once at module load,
@@ -31,7 +35,7 @@ export const WALLET_CHAINS: readonly [Chain, ...Chain[]] = [robinhood, sepolia]
  * during development.
  */
 if (import.meta.env.DEV) {
-  const deployed = Object.keys(DEPLOYMENTS).map(Number).sort()
+  const deployed = [ACTIVE_CHAIN_ID]
   const offered = WALLET_CHAINS.map((c) => c.id).sort()
   if (deployed.join() !== offered.join()) {
     console.warn(
@@ -52,7 +56,7 @@ export const wagmiConfig = createLatchConfig({
 /** The chain a fresh connection targets. Robinhood, because it is the mainnet
     and that is what the product should present by default. Sepolia stays in the
     switcher and is still where the protocol gets exercised. */
-export const DEFAULT_CHAIN: Chain = robinhood
+export const DEFAULT_CHAIN: Chain = IS_TESTNET_BUILD ? sepolia : robinhood
 
 export { SEPOLIA_CHAIN_ID }
 

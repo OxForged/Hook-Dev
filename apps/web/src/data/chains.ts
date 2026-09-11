@@ -108,6 +108,8 @@ const BRAND_OF: Record<ChainKey, BrandKey> = {
   arcTestnet: 'arc',
 }
 
+import { ACTIVE_CHAIN_ID } from '../lib/chain'
+
 /* ---------------------------------------------------------------- deployment */
 
 export interface DeployedContract {
@@ -198,10 +200,13 @@ function toRow(chain: SdkChain): ChainRow {
 
 export const CHAIN_ROWS: readonly ChainRow[] = SDK_CHAINS.map(toRow)
 
-/** Chains Latch is actually deployed on, mainnet first — the order the landing
-    page presents them in. A target chain with no contracts is not in here. */
-export const DEPLOYED_CHAINS: readonly ChainRow[] = CHAIN_ROWS.filter((c) => c.deployed).sort(
-  (a, b) => (a.network === b.network ? 0 : a.network === 'mainnet' ? -1 : 1),
+/** Chains this BUILD presents as deployed — exactly the one network it serves.
+    A mainnet site listing Sepolia contracts is a testnet address under mainnet
+    chrome, which is the same class of error as an invented figure: it reads as
+    authoritative and is not. The Sepolia site is a separate build of the same
+    codebase (`VITE_NETWORK=testnet`). */
+export const DEPLOYED_CHAINS: readonly ChainRow[] = CHAIN_ROWS.filter(
+  (c) => c.deployed && c.chainId === ACTIVE_CHAIN_ID,
 )
 
 export const MAINNET_CHAINS: readonly ChainRow[] = CHAIN_ROWS.filter(

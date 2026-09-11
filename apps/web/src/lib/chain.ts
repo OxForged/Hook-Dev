@@ -147,6 +147,28 @@ export const DEPLOYMENTS = {
   },
 } as const
 
+/* ============================================================================
+   WHICH NETWORK THIS BUILD IS.
+
+   One build serves one network. `VITE_NETWORK=testnet` produces the Sepolia
+   site; anything else produces the mainnet site. Two deployments of the same
+   codebase, not one site trying to be both.
+
+   The alternative — shipping every chain everywhere and letting a switcher sort
+   it out — is what we had, and it put Sepolia contracts on a page headed
+   "mainnet". A testnet address rendered under a mainnet chrome is the same
+   class of error as an invented number: it looks authoritative and is not.
+
+   Everything downstream reads ACTIVE_CHAIN_ID. Nothing should import
+   SEPOLIA_CHAIN_ID or ROBINHOOD_CHAIN_ID to decide what to READ — those two
+   names are for identifying a chain, never for choosing one.
+   ============================================================================ */
+
+export const IS_TESTNET_BUILD = import.meta.env['VITE_NETWORK'] === 'testnet'
+
+/** The one chain this build reads and writes. */
+export const ACTIVE_CHAIN_ID = IS_TESTNET_BUILD ? SEPOLIA_CHAIN_ID : ROBINHOOD_CHAIN_ID
+
 export type DeployedChainId = keyof typeof DEPLOYMENTS
 
 export function isDeployed(chainId: number): chainId is DeployedChainId {

@@ -23,7 +23,7 @@
    this component holds no timers of its own.
    ============================================================================ */
 
-import { DEPLOYMENTS, SEPOLIA_CHAIN_ID, explorerAddress } from '../../../lib/chain'
+import { DEPLOYMENTS, ACTIVE_CHAIN_ID, explorerAddress } from '../../../lib/chain'
 import {
   DEFAULT_POLL_MS,
   coinGeckoCrypto,
@@ -138,7 +138,7 @@ function headline(reason: string): string {
    --------------------------------------------------------------------------- */
 
 function PoolCard({ pools, crypto }: { pools: PoolPriceState; crypto: MarketFeedState }) {
-  const d = DEPLOYMENTS[SEPOLIA_CHAIN_ID]
+  const d = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
   return (
     <section className="dapp-card" aria-labelledby="pool-price-h">
@@ -191,7 +191,7 @@ function PoolCard({ pools, crypto }: { pools: PoolPriceState; crypto: MarketFeed
       <p className="dapp-note">
         A ratio between two testnet tokens that nothing prices &mdash; not a USD value. Read from{' '}
         <code>getSlot0</code> on the{' '}
-        <a href={explorerAddress(SEPOLIA_CHAIN_ID, d.clPoolManager)} target="_blank" rel="noopener noreferrer" data-hit>
+        <a href={explorerAddress(ACTIVE_CHAIN_ID, d.clPoolManager)} target="_blank" rel="noopener noreferrer" data-hit>
           CL pool manager
         </a>{' '}
         every {POLL_SECONDS}s while this tab is visible.
@@ -235,11 +235,11 @@ function PoolBlock({
         <div>
           <dt>Pair</dt>
           <dd>
-            <a href={explorerAddress(SEPOLIA_CHAIN_ID, pool.token0)} target="_blank" rel="noopener noreferrer" data-hit>
+            <a href={explorerAddress(ACTIVE_CHAIN_ID, pool.token0)} target="_blank" rel="noopener noreferrer" data-hit>
               {pool.symbol0}
             </a>
             {' / '}
-            <a href={explorerAddress(SEPOLIA_CHAIN_ID, pool.token1)} target="_blank" rel="noopener noreferrer" data-hit>
+            <a href={explorerAddress(ACTIVE_CHAIN_ID, pool.token1)} target="_blank" rel="noopener noreferrer" data-hit>
               {pool.symbol1}
             </a>
           </dd>
@@ -481,7 +481,7 @@ function ReferenceCard({ crypto, stocks }: { crypto: MarketFeedState; stocks: Ma
    --------------------------------------------------------------------------- */
 
 export function PoolPriceCard() {
-  const pools = useLatchPoolPrices(SEPOLIA_CHAIN_ID)
+  const pools = useLatchPoolPrices(ACTIVE_CHAIN_ID)
   const crypto = useMarketFeed(coinGeckoCrypto)
   const stocks = useMarketFeed(finnhubStocks)
 

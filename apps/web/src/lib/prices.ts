@@ -40,7 +40,7 @@ import {
   client,
   DEPLOYMENTS,
   readPools,
-  SEPOLIA_CHAIN_ID,
+  ACTIVE_CHAIN_ID,
   type DeployedChainId,
 } from './chain'
 
@@ -432,7 +432,7 @@ function tokenMeta(
  * caller must render that as "no pools yet", never pad it.
  */
 export async function readLatchPoolPrices(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<PoolPrice[]> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
@@ -657,7 +657,7 @@ export type PoolPriceState =
 
 /** Latch pool prices, polled off the RPC. */
 export function useLatchPoolPrices(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
   intervalMs: number = DEFAULT_POLL_MS,
 ): PoolPriceState {
   const [state, setState] = useState<PoolPriceState>({ k: 'loading' })

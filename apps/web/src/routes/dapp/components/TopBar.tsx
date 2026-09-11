@@ -28,6 +28,7 @@
 import { Link } from 'react-router-dom'
 import { LatchChainSwitcher, LatchConnectButton } from '@latchprotocol/connect'
 import { ChainMark } from '../../../components/ChainMark.tsx'
+import { IS_TESTNET_BUILD } from '../../../lib/chain'
 import { TickerStrip } from '../../../components/TickerStrip.tsx'
 import { CHAIN_ROWS, type ChainRow } from '../../../data/chains.ts'
 import {
@@ -88,11 +89,13 @@ export function TopBar({
           <div className="dapp-header__status">
             <p
               className="dapp-sample-chip"
-              title="Every figure in this dapp is read from the deployed Ethereum Sepolia contracts. Nothing here is sample data. Testnet only — there is no mainnet deployment."
+              title={`Every figure in this dapp is read from the deployed ${net.name} contracts. Nothing here is sample data.`}
             >
-              <span aria-hidden="true">LIVE · TESTNET</span>
+              <span aria-hidden="true">{IS_TESTNET_BUILD ? 'LIVE · TESTNET' : 'LIVE · MAINNET'}</span>
               <span className="dapp-sr">
-                Live. Every figure in this dapp is read from the deployed Ethereum Sepolia contracts, and nothing here is sample data. Testnet only — there is no mainnet deployment.
+                Live. Every figure in this dapp is read from the deployed {net.name} contracts,
+                and nothing here is sample data.
+                {IS_TESTNET_BUILD ? ' Testnet only.' : ''}
               </span>
             </p>
 

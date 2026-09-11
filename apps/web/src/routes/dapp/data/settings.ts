@@ -10,6 +10,7 @@
    the two build-time variables that switch real features on.
    ============================================================================ */
 
+import { IS_TESTNET_BUILD } from '../../../lib/chain'
 import type { ChainKey, ChainRow } from '../../../data/chains.ts'
 import { CHAIN_ROWS, MAINNET_CHAINS, TESTNET_CHAINS } from '../../../data/chains.ts'
 import type { Flags } from './types.ts'
@@ -61,7 +62,10 @@ export function loadSettings(): SettingsData {
     testnets: TESTNET_CHAINS,
     /* Sepolia, because it is the only chain Latch is actually deployed on.
        Defaulting to a mainnet would put the app on a chain with no contracts. */
-    defaultNetwork: 'sepolia',
+    /* Follows the build, not a literal. A mainnet build defaulting to a
+       testnet chain is how the header ends up saying Sepolia over mainnet
+       data. See ACTIVE_CHAIN_ID in lib/chain.ts. */
+    defaultNetwork: IS_TESTNET_BUILD ? 'sepolia' : 'robinhood',
     /* The README's default has `testnet` off. It is on here for the same reason:
        with Sepolia the only deployment, hiding testnets hides everything real. */
     defaultFlags: { sim: true, alerts: true, testnet: true, autoGas: true },
