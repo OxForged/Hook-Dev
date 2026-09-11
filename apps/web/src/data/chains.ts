@@ -116,8 +116,10 @@ export interface DeployedContract {
 }
 
 /**
- * The only Latch deployment that exists. Verified on Sepolia Etherscan.
- * Do not add a chain here until its contracts are live and verified.
+ * Contracts per chain. Add a chain here only once its contracts are live AND
+ * verified — this list is what the landing page and Settings present as "these
+ * exist", so an address here that nobody can read the source of is a claim the
+ * reader cannot check.
  */
 export const SEPOLIA_CONTRACTS: readonly DeployedContract[] = [
   { name: 'Vault', address: '0xCe3d133eb486b448A53437A5073619FbE424d01B' },
@@ -127,12 +129,49 @@ export const SEPOLIA_CONTRACTS: readonly DeployedContract[] = [
   { name: 'Create3Factory', address: '0x76473D174Aa17C23FBE49CAb50aAc4ED4d8c678F' },
 ]
 
-/** Ethereum Sepolia — the one chain Latch is actually deployed on. */
-export const SEPOLIA_CHAIN_ID = 11155111
+/**
+ * Robinhood Chain — the FIRST MAINNET, live 2026-09-11. All nineteen contracts
+ * are verified on Sourcify; see ops/safe/robinhood-deployment.md.
+ *
+ * Longer than the Sepolia list on purpose: this is the full protocol, and the
+ * governance contracts are listed because on this chain they are load-bearing.
+ * On Sepolia the timelocks own nothing, so listing them there would imply a
+ * governance model that is not actually in force.
+ */
+export const ROBINHOOD_CONTRACTS: readonly DeployedContract[] = [
+  { name: 'Vault', address: '0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c' },
+  { name: 'CLPoolManager', address: '0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66' },
+  { name: 'BinPoolManager', address: '0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979' },
+  { name: 'CLPoolManagerOwner', address: '0x5D7111d6c624e9a08aE63d342E4baE5878989a67' },
+  { name: 'BinPoolManagerOwner', address: '0x98920e33313257Ffd942f94379A7ced216462665' },
+  { name: 'LatchProtocolFeeController', address: '0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c' },
+  { name: 'LatchRegistry', address: '0xE4395085De89365440A6Ee25cE24BE2bAD66AC86' },
+  { name: 'RevShareHook', address: '0x23CE34E8199927DD270dddd8579c947542bDE446' },
+  { name: 'LatchTimelock · custody 48h', address: '0x63F08A697Cc003d5eA61787712C34438559a7428' },
+  { name: 'LatchTimelock · policy 6h', address: '0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A' },
+  { name: 'UniversalRouter', address: '0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c' },
+  { name: 'CLPositionManager', address: '0x957cc13b24a563cc92253213d9d5e6954c8db6a7' },
+  { name: 'BinPositionManager', address: '0x990f395003c35a0ab390e10b003972407f882399' },
+  { name: 'Create3Factory', address: '0x6ffdf9a3df7e9dd55bad2e60c7405cd181005633' },
+]
 
-/** Block-explorer address link, where we have a verified explorer for the chain. */
+export const SEPOLIA_CHAIN_ID = 11155111
+export const ROBINHOOD_CHAIN_ID = 4663
+
+/** Which contracts exist on a chain. Empty means "Latch is not deployed here". */
+const CONTRACTS_BY_CHAIN: Record<number, readonly DeployedContract[]> = {
+  [SEPOLIA_CHAIN_ID]: SEPOLIA_CONTRACTS,
+  [ROBINHOOD_CHAIN_ID]: ROBINHOOD_CONTRACTS,
+}
+
+/** Block-explorer address link, where we have a verified explorer for the chain.
+    Returns null rather than guessing a URL pattern: a dead explorer link reads
+    as "this contract does not exist", which is worse than no link. */
 export function explorerAddressUrl(chainId: number, address: string): string | null {
   if (chainId === SEPOLIA_CHAIN_ID) return `https://sepolia.etherscan.io/address/${address}`
+  if (chainId === ROBINHOOD_CHAIN_ID) {
+    return `https://robinhoodchain.blockscout.com/address/${address}`
+  }
   return null
 }
 
@@ -140,22 +179,30 @@ export function explorerAddressUrl(chainId: number, address: string): string | n
 
 export interface ChainRow extends SdkChain {
   readonly brand: ChainBrand
-  /** True only where Latch contracts are live. Today: Sepolia alone. */
+  /** True only where Latch contracts are live. Today: Robinhood and Sepolia. */
   readonly deployed: boolean
   readonly contracts: readonly DeployedContract[]
 }
 
 function toRow(chain: SdkChain): ChainRow {
-  const deployed = chain.chainId === SEPOLIA_CHAIN_ID
+  /* Derived from the contract table rather than a hardcoded chain id, so
+     adding a deployment is one edit instead of two that can disagree. */
+  const contracts = CONTRACTS_BY_CHAIN[chain.chainId] ?? []
   return {
     ...chain,
     brand: BRANDS[BRAND_OF[chain.key]],
-    deployed,
-    contracts: deployed ? SEPOLIA_CONTRACTS : [],
+    deployed: contracts.length > 0,
+    contracts,
   }
 }
 
 export const CHAIN_ROWS: readonly ChainRow[] = SDK_CHAINS.map(toRow)
+
+/** Chains Latch is actually deployed on, mainnet first — the order the landing
+    page presents them in. A target chain with no contracts is not in here. */
+export const DEPLOYED_CHAINS: readonly ChainRow[] = CHAIN_ROWS.filter((c) => c.deployed).sort(
+  (a, b) => (a.network === b.network ? 0 : a.network === 'mainnet' ? -1 : 1),
+)
 
 export const MAINNET_CHAINS: readonly ChainRow[] = CHAIN_ROWS.filter(
   (c) => c.network === 'mainnet',

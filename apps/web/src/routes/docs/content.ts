@@ -267,30 +267,43 @@ export const BITMAP_SHELL = `[[cmd:latch]] bitmap beforeSwap
 [[com:bitmap    0x0040 · decimal 64 · callbacks beforeSwap]]
 [[com:pool key  0x00000000000000000000000000000000000000000000000000000000003c0040]]`
 
-export const DEPLOY_SHELL = `[[com:# Latch on Sepolia · chain 11155111]]
+/* Two chains now, and the mainnet is listed first. A developer copying from
+   here will paste whichever CL_POOL_MANAGER they see, so the one they see first
+   should be the one they most likely want. */
+export const DEPLOY_SHELL = `[[com:# Robinhood Chain · 4663 · MAINNET]]
+[[com:#   Vault           0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c]]
+[[com:#   CLPoolManager   0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66]]
+[[com:#   BinPoolManager  0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979]]
+[[com:#   LatchRegistry   0xE4395085De89365440A6Ee25cE24BE2bAD66AC86]]
+[[com:#   RevShareHook    0x23CE34E8199927DD270dddd8579c947542bDE446]]
+[[com:#   Create3Factory  0x6ffdf9a3df7e9dd55bad2e60c7405cd181005633]]
+
+[[com:# Ethereum Sepolia · 11155111 · testnet]]
 [[com:#   Vault           0xCe3d133eb486b448A53437A5073619FbE424d01B]]
+[[com:#   CLPoolManager   0xb7C8a11E0B359616eD06256783aF57114841F738]]
 [[com:#   BinPoolManager  0xdBA93F91BA5B8535AE2b38be6a3A6CdcfDE6f6f3]]
-[[com:#   FeeController   0xc1b7A4e61A4B6ceBA3e308425dc2390c2CE57ea9]]
 [[com:#   Create3Factory  0x76473D174Aa17C23FBE49CAb50aAc4ED4d8c678F]]
 
-[[com:# the two the generated script actually reads]]
+[[com:# the two the generated script actually reads — mainnet shown]]
 [[cmd:export]] PRIVATE_KEY=0x...
-[[cmd:export]] CL_POOL_MANAGER=0xb7C8a11E0B359616eD06256783aF57114841F738
+[[cmd:export]] CL_POOL_MANAGER=0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66
 
 [[cmd:forge]] test
-[[cmd:forge]] script script/DeployFeeLatch.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast`
+[[cmd:forge]] script script/DeployFeeLatch.s.sol --rpc-url $ROBINHOOD_RPC_URL --broadcast`
 
 /* ------------------------------------------------------------- registry */
 
 /**
- * The deployed LatchRegistry — `DEPLOYMENTS[11155111].registry` in
- * src/lib/chain.ts, redeployed 2026-09-10. Everything the Latch Marketplace
- * shows is read from it and `/app/deploy` writes to it. Spelled out here so a
- * reader can paste it into a block explorer without opening the app.
+ * The deployed LatchRegistry on each chain — `DEPLOYMENTS[id].registry` in
+ * src/lib/chain.ts. Everything the Latch Marketplace shows is read from one of
+ * these and `/app/deploy` writes to it. Spelled out so a reader can paste an
+ * address into a block explorer without opening the app.
  *
- * The previous address, 0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE, still
- * answers but is retired: it holds the original listing and nothing reads it.
+ * Sepolia's was redeployed 2026-09-10; the previous
+ * 0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE still answers but is retired — it
+ * holds the original listing and nothing reads it.
  */
+export const REGISTRY_ADDRESS_ROBINHOOD = '0xE4395085De89365440A6Ee25cE24BE2bAD66AC86'
 export const REGISTRY_ADDRESS_SEPOLIA = '0xB504da43C6ED342a511f3e5849f53035F2C807d1'
 
 /**

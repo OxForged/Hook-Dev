@@ -4,9 +4,8 @@ import { ChainMark } from '../../components/ChainMark.tsx'
 import type { ChainRow } from '../../data/chains.ts'
 import {
   CHAIN_ROWS,
+  DEPLOYED_CHAINS,
   MAINNET_CHAINS,
-  SEPOLIA_CHAIN_ID,
-  SEPOLIA_CONTRACTS,
   TESTNET_CHAINS,
   explorerAddressUrl,
 } from '../../data/chains.ts'
@@ -189,38 +188,47 @@ export function Chains() {
         ))}
       </ul>
 
-      <div className={styles['deployPanel']}>
-        <div className={styles['deployHead']}>
-          <span className={styles['chainBadgeLive']}>DEPLOYED</span>
-          <h3 className={styles['deployTitle']}>Live on Ethereum Sepolia</h3>
-          <p className={styles['deployNote']}>
-            Chain ID 11155111 · verified on Etherscan. No other chain carries Latch contracts yet.
-          </p>
+      {/* One panel per deployed chain, driven by CHAIN_ROWS rather than a
+          hardcoded Sepolia list. Until today there was exactly one deployment
+          and the panel said so in its heading; now there are two and the
+          mainnet leads. Adding a third is a data edit, not a JSX edit. */}
+      {DEPLOYED_CHAINS.map((chain) => (
+        <div className={styles['deployPanel']} key={chain.key}>
+          <div className={styles['deployHead']}>
+            <span className={styles['chainBadgeLive']}>DEPLOYED</span>
+            <h3 className={styles['deployTitle']}>Live on {chain.name}</h3>
+            <p className={styles['deployNote']}>
+              Chain ID {chain.chainId} · {chain.contracts.length} contracts, source verified.
+              {chain.network === 'testnet'
+                ? ' Testnet — the protocol is exercised here.'
+                : ' Mainnet.'}
+            </p>
+          </div>
+          <ul className={styles['deployList']}>
+            {chain.contracts.map((contract) => {
+              const href = explorerAddressUrl(chain.chainId, contract.address)
+              return (
+                <li key={contract.name} className={styles['deployRow']}>
+                  <span className={styles['deployName']}>{contract.name}</span>
+                  {href ? (
+                    <a
+                      className={styles['deployAddr']}
+                      href={href}
+                      rel="noreferrer noopener"
+                      data-hit
+                      aria-label={`${contract.name} on ${chain.name}: ${contract.address}`}
+                    >
+                      {contract.address}
+                    </a>
+                  ) : (
+                    <span className={styles['deployAddr']}>{contract.address}</span>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
         </div>
-        <ul className={styles['deployList']}>
-          {SEPOLIA_CONTRACTS.map((contract) => {
-            const href = explorerAddressUrl(SEPOLIA_CHAIN_ID, contract.address)
-            return (
-              <li key={contract.name} className={styles['deployRow']}>
-                <span className={styles['deployName']}>{contract.name}</span>
-                {href ? (
-                  <a
-                    className={styles['deployAddr']}
-                    href={href}
-                    rel="noreferrer noopener"
-                    data-hit
-                    aria-label={`${contract.name} on Sepolia Etherscan: ${contract.address}`}
-                  >
-                    {contract.address}
-                  </a>
-                ) : (
-                  <span className={styles['deployAddr']}>{contract.address}</span>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      </div>
+      ))}
     </section>
   )
 }
