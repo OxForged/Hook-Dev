@@ -1,5 +1,12 @@
 /* ============================================================================
-   The dapp's first WRITE path: registering a Latch with LatchHookRegistry.
+   The dapp's first WRITE path: registering a Latch with LatchRegistry.
+
+   NAME: the contract is `LatchRegistry`. It was renamed from
+   `LatchHookRegistry` and redeployed on 2026-09-10; the old address still
+   answers `hookCount()` and still holds the original listing, so naming the old
+   contract in UI copy points a Latch author at a registry nothing reads. Every
+   user-visible mention of it derives from `REGISTRY_ADDRESS` /
+   `REGISTRY_CHAIN_NAME` below rather than from a literal.
 
    Everything a reader needs to trust about this module:
 
@@ -8,7 +15,7 @@
         reached, the caller gets a thrown error or a `null`, never a guess.
 
      2. THE PRE-FLIGHT IS THE CONTRACT'S OWN LOGIC, NOT A REIMPLEMENTATION.
-        `LatchHookRegistry.register` rejects on six conditions, and re-deriving
+        `LatchRegistry.register` rejects on six conditions, and re-deriving
         them in TypeScript is how the UI ends up disagreeing with the chain. So:
         the hook's bitmap is read off the hook, and every judgement about that
         bitmap (`isValidBitmap`, `classify`, `takesSwapCut`, `canBlockSwaps`,
@@ -25,6 +32,14 @@
    above `register` in packages/registry/src/LatchRegistry.sol. It is also
    IRREVERSIBLE: there is no `unregister`, by design. That is the reason this
    module works so hard to fail before the signature rather than after it.
+
+   WHY `DraftIssue` CARRIES A `kind`. Callers need to say WHICH KIND of problem
+   a field has, and the obvious proxy — "any issue whose field is not `hook`" —
+   is wrong in a way that looks right: an empty required name is such an issue,
+   so the pre-flight row rendered "over limit" on a blank form, the exact
+   opposite of the truth, red before anybody had typed. A panel that cries wolf
+   on load is a panel people stop reading. The discriminant makes the
+   distinction explicit instead of inferable.
    ============================================================================ */
 
 import {
@@ -41,16 +56,26 @@ import {
 import { registryAbi } from '../../../lib/abi/registry'
 import {
   DEPLOYMENTS,
-  SEPOLIA_CHAIN_ID,
+  ACTIVE_CHAIN_ID,
   capabilityClaims,
   client,
   type RegisteredLatch,
   type RiskClass,
 } from '../../../lib/chain'
 
-export const REGISTRY_CHAIN_ID = SEPOLIA_CHAIN_ID
-export const REGISTRY_ADDRESS: Address = DEPLOYMENTS[SEPOLIA_CHAIN_ID].registry
-export const REGISTRY_CHAIN_NAME = DEPLOYMENTS[SEPOLIA_CHAIN_ID].name
+export const REGISTRY_CHAIN_ID = ACTIVE_CHAIN_ID
+export const REGISTRY_ADDRESS: Address = DEPLOYMENTS[ACTIVE_CHAIN_ID].registry
+export const REGISTRY_CHAIN_NAME = DEPLOYMENTS[ACTIVE_CHAIN_ID].name
+
+/**
+ * Every chain in the deployment table. Each entry carries its own `registry`
+ * address — the type makes that mandatory, so the table IS the registry list.
+ *
+ * Derived, because the copy used to assert "the only chain it is deployed on"
+ * and that stopped being true the day a second registry went live. A sentence
+ * counted from the table cannot go stale the way a literal does.
+ */
+export const REGISTRY_CHAIN_NAMES: readonly string[] = Object.values(DEPLOYMENTS).map((d) => d.name)
 
 /**
  * The one function on an untrusted hook that the registry calls. Declared here
@@ -60,9 +85,11 @@ export const REGISTRY_CHAIN_NAME = DEPLOYMENTS[SEPOLIA_CHAIN_ID].name
 const HOOK_BITMAP_ABI = parseAbi(['function getHooksRegistrationBitmap() view returns (uint16)'])
 
 /**
- * Field order of `ILatchHookRegistry.DecodedPermissions`. Used only to turn the
- * struct the chain returns into an ordered list of names — the booleans are the
- * chain's, never recomputed from the bitmap here.
+ * Field order of `ILatchRegistry.DecodedPermissions`, which is also the BIT
+ * ORDER: `ICLHooks.sol` assigns `HOOKS_BEFORE_INITIALIZE_OFFSET = 0` through
+ * `HOOKS_AFTER_REMOVE_LIQUIDIY_RETURNS_DELTA_OFFSET = 13` in exactly this
+ * sequence. Used only to turn the struct the chain returns into an ordered list
+ * of names — the booleans are the chain's, never recomputed from the bitmap.
  */
 const CALLBACK_FIELDS = [
   'beforeInitialize',
@@ -80,6 +107,36 @@ const CALLBACK_FIELDS = [
   'afterAddLiquidityReturnsDelta',
   'afterRemoveLiquidityReturnsDelta',
 ] as const
+
+/** What running at each point lets a hook do. One line, in the reader's terms. */
+const BIT_NOTES: Record<(typeof CALLBACK_FIELDS)[number], string> = {
+  beforeInitialize: 'Runs once, before the pool exists. Can refuse to let it be created.',
+  afterInitialize: 'Runs once, after the pool exists. Cannot undo the creation.',
+  beforeAddLiquidity: 'Runs before liquidity is added. Can refuse the deposit.',
+  afterAddLiquidity: 'Runs after liquidity is added.',
+  beforeRemoveLiquidity: 'Runs before liquidity is withdrawn. Can refuse the withdrawal.',
+  afterRemoveLiquidity: 'Runs after liquidity is withdrawn.',
+  beforeSwap: 'Runs before every swap. Can refuse it, or change its price.',
+  afterSwap: 'Runs after every swap.',
+  beforeDonate: 'Runs before a donation. Can refuse it.',
+  afterDonate: 'Runs after a donation.',
+  beforeSwapReturnsDelta: 'Takes a cut of the swap before it executes.',
+  afterSwapReturnsDelta: 'Takes a cut of the swap after it executes.',
+  afterAddLiquidityReturnsDelta: 'Takes a cut of a deposit.',
+  afterRemoveLiquidityReturnsDelta: 'Takes a cut of a withdrawal.',
+}
+
+/**
+ * The 14 assigned bits of `getHooksRegistrationBitmap()`, for rendering.
+ *
+ * Built by mapping `CALLBACK_FIELDS`, so the bit position IS the array index
+ * and the two lists cannot drift apart — the failure mode being a grid that
+ * confidently labels the wrong lifecycle point. Bits 14-15 are reserved and
+ * deliberately absent: the registry rejects a bitmap that sets them, so there
+ * is no such thing as a hook whose reserved bit is a capability.
+ */
+export const HOOK_BITS: readonly { bit: number; name: string; note: string }[] =
+  CALLBACK_FIELDS.map((name, bit) => ({ bit, name, note: BIT_NOTES[name] }))
 
 /* ---------------------------------------------------------------------------
    Metadata draft — what the form holds before it becomes calldata.
@@ -99,9 +156,9 @@ export const EMPTY_DRAFT: MetadataDraft = {
   description: '',
   sourceURI: '',
   auditURI: '',
-  /* Sepolia — the chain this registry is on and therefore the only claim we can
+  /* The chain this build's registry is on, and therefore the only claim we can
      make on the submitter's behalf without inventing one. Editable. */
-  chainIdsText: String(SEPOLIA_CHAIN_ID),
+  chainIdsText: String(ACTIVE_CHAIN_ID),
 }
 
 /** The struct `register` takes. Field order matches `HookMetadata`. */
@@ -307,9 +364,28 @@ export async function probeHook(raw: Address): Promise<HookProbe> {
 
 export type DraftField = 'hook' | 'name' | 'description' | 'sourceURI' | 'auditURI' | 'chainIds'
 
+/**
+ * WHAT kind of problem, not just which field.
+ *
+ *   required  nothing was entered and the registry needs something
+ *   format    something was entered and it is not the right shape
+ *   limit     something was entered, is well formed, and is too big
+ *
+ * A caller that wants "is any field over its byte limit" must be able to ask
+ * that question directly. Inferring it from the field name reads the blank
+ * form as an oversized one.
+ */
+export type IssueKind = 'required' | 'format' | 'limit'
+
 export interface DraftIssue {
   field: DraftField
+  kind: IssueKind
   message: string
+}
+
+/** True when a field is over one of the registry's byte / count bounds. */
+export function hasLimitIssue(issues: readonly DraftIssue[]): boolean {
+  return issues.some((i) => i.kind === 'limit')
 }
 
 /** The contract bounds BYTES, not characters. A 30-emoji name is not 30 bytes. */
@@ -360,15 +436,23 @@ export function validateDraft(
   const trimmed = hookAddress.trim()
 
   if (trimmed === '') {
-    issues.push({ field: 'hook', message: 'Enter the address of the deployed Latch contract.' })
+    issues.push({
+      field: 'hook',
+      kind: 'required',
+      message: 'Enter the address of the deployed Latch contract.',
+    })
   } else if (!isAddress(trimmed, { strict: false })) {
-    issues.push({ field: 'hook', message: 'Not a 20-byte hex address.' })
+    issues.push({ field: 'hook', kind: 'format', message: 'Not a 20-byte hex address.' })
   } else if (/^0x0{40}$/i.test(trimmed)) {
-    issues.push({ field: 'hook', message: 'The registry rejects the zero address.' })
+    issues.push({ field: 'hook', kind: 'format', message: 'The registry rejects the zero address.' })
   }
 
   if (draft.name.trim() === '') {
-    issues.push({ field: 'name', message: 'A name is required — the registry reverts EmptyName.' })
+    issues.push({
+      field: 'name',
+      kind: 'required',
+      message: 'A name is required — the registry reverts EmptyName.',
+    })
   }
 
   if (limits) {
@@ -377,6 +461,7 @@ export function validateDraft(
       if (size > max) {
         issues.push({
           field,
+          kind: 'limit',
           message: `${label} is ${size} bytes; the registry's limit is ${max}.`,
         })
       }
@@ -389,15 +474,46 @@ export function validateDraft(
 
   const chains = parseChainIds(draft.chainIdsText)
   if (chains.error) {
-    issues.push({ field: 'chainIds', message: chains.error })
+    issues.push({ field: 'chainIds', kind: 'format', message: chains.error })
   } else if (limits && chains.ids.length > limits.maxChains) {
     issues.push({
       field: 'chainIds',
+      kind: 'limit',
       message: `${chains.ids.length} chain ids; the registry accepts at most ${limits.maxChains}.`,
     })
   }
 
   return issues
+}
+
+/* ---------------------------------------------------------------------------
+   How much of each byte budget the draft has spent.
+
+   The four bounded fields against the four constants read off the registry.
+   Both halves are real — the reader's own input on one side, a deployed
+   constant on the other — so charting it turns a `StringTooLong` revert into
+   something visible before anybody is asked to sign.
+   --------------------------------------------------------------------------- */
+
+export interface FieldBudget {
+  field: DraftField
+  label: string
+  bytes: number
+  max: number
+  over: boolean
+}
+
+export function metadataBudget(draft: MetadataDraft, limits: RegistryLimits): FieldBudget[] {
+  const row = (field: DraftField, label: string, value: string, max: number): FieldBudget => {
+    const bytes = byteLength(value)
+    return { field, label, bytes, max, over: bytes > max }
+  }
+  return [
+    row('name', 'Name', draft.name, limits.maxNameBytes),
+    row('description', 'Description', draft.description, limits.maxDescriptionBytes),
+    row('sourceURI', 'Source URI', draft.sourceURI, limits.maxUriBytes),
+    row('auditURI', 'Audit URI', draft.auditURI, limits.maxUriBytes),
+  ]
 }
 
 /** The draft as the struct `register` takes. Only call once `validateDraft` is clean. */

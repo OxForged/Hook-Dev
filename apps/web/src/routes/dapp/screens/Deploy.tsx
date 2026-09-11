@@ -8,10 +8,25 @@
    "Register on Base ✓". Nothing was signed, nothing was submitted, and Base is
    not a chain Latch is deployed on. All of it is gone.
 
-   What it does now: takes a deployed Latch address plus the five `HookMetadata`
-   fields and calls `LatchHookRegistry.register` on Ethereum Sepolia. Listing is
-   permissionless, free and has no allowlist — anyone can list any Latch — and it
-   is also IRREVERSIBLE, because the registry has no `unregister` by design.
+   What it does now: takes a deployed Latch address plus the five `LatchMetadata`
+   fields and calls `LatchRegistry.register` on whichever chain this build
+   serves. Listing is permissionless, free and has no allowlist — anyone can
+   list any Latch — and it is also IRREVERSIBLE, because the registry has no
+   `unregister` by design.
+
+   THE CONTRACT IS `LatchRegistry`, NOT `LatchHookRegistry`. The old name still
+   has a deployed contract behind it that answers `hookCount()` and that nothing
+   reads; copy naming it sends a Latch author to a dead registry. Both the name
+   and the chain come from the deployment table via `registryWrite.ts` — the
+   registry is deployed on more than one chain, so "the only chain it is on" is
+   not a claim this screen may make.
+
+   TWO CHARTS, both fed by reads that were already happening. The permission
+   bitmap is drawn as a `BitGrid` rather than a row of chips, because an UNSET
+   bit is as much a fact about a stranger's hook as a set one and the chips
+   could only show what was on. The four byte-bounded metadata fields are drawn
+   against the registry's own constants, so `StringTooLong` is visible before
+   the signature rather than after it.
 
    Three rules this screen is built around:
 
@@ -26,6 +41,9 @@
         that comes back is decoded and named — HookAlreadyRegistered,
         HookHasNoCode, PermissionsUnreadable, ReservedBitsSet,
         PermissionDependencyMissing, ZeroAddress, and the metadata bounds.
+        `validateDraft`'s issues carry a `kind` so that "over limit" means over
+        a limit; testing `field !== 'hook'` instead made a blank required field
+        render as an oversized one, red on load.
 
      3. CAPABILITY IS READ OFF THE LATCH, NEVER TYPED IN. There is deliberately
         no field for permissions. The bitmap is read from the Latch's own
@@ -42,15 +60,22 @@ import { getAddress, type Address } from 'viem'
 
 import { registryAbi } from '../../../lib/abi/registry'
 import { RISK_LABEL, explorerAddress, explorerTx } from '../../../lib/chain'
+import { BarList } from '../components/charts.tsx'
+import { BitGrid } from '../components/series-charts.tsx'
 import { DOT_BY_STATE, loadDeploy, type CheckState, type PreflightCheck } from '../data/deploy.ts'
+import type { LabelledBar } from '../data/types.ts'
 import {
   EMPTY_DRAFT,
+  HOOK_BITS,
   REGISTRY_ADDRESS,
   REGISTRY_CHAIN_ID,
   REGISTRY_CHAIN_NAME,
+  REGISTRY_CHAIN_NAMES,
   decodeRegistryFailure,
   formatBitmap,
+  hasLimitIssue,
   isHookAddressValid,
+  metadataBudget,
   parseChainIds,
   probeHook,
   readRegistryLimits,
@@ -157,6 +182,19 @@ export default function Deploy() {
   const metadata = useMemo(() => toMetadataArg(draft), [draft])
   const parsedChains = useMemo(() => parseChainIds(draft.chainIdsText), [draft.chainIdsText])
 
+  /* The reader's own input against constants read off the registry. `pct` is
+     clamped so an over-budget field cannot draw past its track; the row's own
+     value keeps the exact byte count, and the amber series says it is over. */
+  const budgetBars: LabelledBar[] = useMemo(() => {
+    if (!limits) return []
+    return metadataBudget(draft, limits).map((b) => ({
+      name: b.label,
+      value: `${num(b.bytes)} / ${num(b.max)} B`,
+      pct: Math.min(100, (b.bytes / b.max) * 100),
+      color: b.over ? 'amber' : 'primary',
+    }))
+  }, [draft, limits])
+
   const onRegistryChain = chainId === REGISTRY_CHAIN_ID
   const formClean = issues.length === 0 && hookAddress !== null
 
@@ -245,7 +283,11 @@ export default function Deploy() {
 
   const acceptedState: CheckState = !probe || !probe.bitmapReadable ? 'idle' : probe.bitmapValid ? 'ok' : 'fail'
 
-  const metadataState: CheckState = limits === null ? 'pending' : issues.some((i) => i.field !== 'hook') ? 'fail' : 'ok'
+  /* Limits only. A missing required field is a different problem with a
+     different remedy, and reporting it here as "over limit" said the opposite
+     of what was wrong — see the header note on `DraftIssue.kind`. */
+  const overLimit = hasLimitIssue(issues)
+  const metadataState: CheckState = limits === null ? 'pending' : overLimit ? 'fail' : 'ok'
 
   const simState: CheckState = !simulationEnabled
     ? 'idle'
@@ -281,11 +323,7 @@ export default function Deploy() {
     {
       name: 'Metadata within limits',
       value:
-        limits === null
-          ? 'reading limits…'
-          : issues.some((i) => i.field !== 'hook')
-            ? 'over limit'
-            : `name ≤ ${limits.maxNameBytes}B`,
+        limits === null ? 'reading limits…' : overLimit ? 'over limit' : `name ≤ ${limits.maxNameBytes}B`,
       state: metadataState,
     },
     {
@@ -423,26 +461,37 @@ export default function Deploy() {
         <section className="dapp-card dapp-card--config">
           <h2 className="dapp-card__title dapp-card__title--lg">Register a Latch</h2>
           <p className="dp-lede">
-            Listing is permissionless, free and has no allowlist. It is also permanent — the
-            registry has no <code>unregister</code>, deliberately, so that a warning about a Latch
-            can never be deleted by whoever it warns about. Registering writes to{' '}
+            Permissionless, free, and permanent. Writes to{' '}
             <a
               href={explorerAddress(REGISTRY_CHAIN_ID, REGISTRY_ADDRESS)}
               target="_blank"
               rel="noopener noreferrer"
             >
-              LatchHookRegistry
+              LatchRegistry
             </a>{' '}
-            on {REGISTRY_CHAIN_NAME}, the only chain it is deployed on.
+            on {REGISTRY_CHAIN_NAME}.
           </p>
+          <details className="dapp-method">
+            <summary>Why listing cannot be undone</summary>
+            <div className="dapp-method__body">
+              <p>
+                The registry has no <code>unregister</code>, deliberately, so that a warning about a
+                Latch can never be deleted by whoever it warns about. A curator can reassign the
+                steward; nobody can remove the record.
+              </p>
+              <p>
+                Each chain has its own registry ({REGISTRY_CHAIN_NAMES.join(' and ')}), and a
+                listing exists only on the chain it was written to.
+              </p>
+            </div>
+          </details>
 
           {/* Wallet state is a first-class part of the form, never a dead button. */}
           {!isConnected && (
             <div className="dp-gate">
               <p className="dp-gate__title">Connect a wallet to register</p>
               <p className="dp-gate__body">
-                Registration is a transaction you sign. Nothing on this screen is submitted for you,
-                and reading the Latch below costs nothing and needs no wallet.
+                Registration is a transaction you sign. Reading the Latch below needs no wallet.
               </p>
               <LatchConnectButton variant="inline" label="Connect wallet" />
             </div>
@@ -452,9 +501,10 @@ export default function Deploy() {
             <div className="dp-gate dp-gate--warn">
               <p className="dp-gate__title">Wrong network</p>
               <p className="dp-gate__body">
-                LatchHookRegistry exists only on {REGISTRY_CHAIN_NAME} (chain {REGISTRY_CHAIN_ID}).
-                Your wallet is on chain {chainId ?? 'unknown'}, where that address holds no contract
-                — a transaction sent from there would be signed and then fail.
+                This build writes to LatchRegistry on {REGISTRY_CHAIN_NAME} (chain{' '}
+                {REGISTRY_CHAIN_ID}). Your wallet is on chain {chainId ?? 'unknown'}, where that
+                address holds no contract — a transaction sent from there would be signed and then
+                fail.
               </p>
               <button
                 type="button"
@@ -606,9 +656,8 @@ export default function Deploy() {
 
           {!hookAddress && (
             <p className="dapp-empty dp-gap">
-              Enter a Latch address above. Its permission bitmap is read from its own
-              <code> getHooksRegistrationBitmap()</code> — a submitter cannot declare permissions
-              their code does not have.
+              Enter a Latch address above. Permissions are read from its own
+              <code> getHooksRegistrationBitmap()</code>, never declared here.
             </p>
           )}
 
@@ -632,9 +681,9 @@ export default function Deploy() {
 
           {probe && probe.hasCode && !probe.bitmapReadable && (
             <p className="hx-alert hx-alert--danger dp-gap">
-              This contract did not answer <code>getHooksRegistrationBitmap()</code> with one clean
-              uint16 inside the registry&rsquo;s probe budget. Core makes the same call when a pool
-              is initialised, so a Latch it cannot read can never back a pool.
+              No clean uint16 came back from <code>getHooksRegistrationBitmap()</code> within the
+              registry&rsquo;s probe budget. Core makes the same call at pool initialisation, so
+              this Latch can never back a pool.
             </p>
           )}
 
@@ -671,15 +720,18 @@ export default function Deploy() {
                 </ul>
               </div>
 
-              {probe.callbacks.length > 0 && (
-                <p className="dapp-tags dp-gap">
-                  {probe.callbacks.map((c) => (
-                    <span key={c} className="dapp-tag">
-                      {c}
-                    </span>
-                  ))}
-                </p>
-              )}
+              {/* The chips this replaces could only show bits that were SET, so
+                  "does not run before swap" — the answer a reader most often
+                  wants about a stranger's Latch — was never on screen. */}
+              <BitGrid
+                bitmap={probe.permissions ?? 0}
+                bits={HOOK_BITS}
+                label={`Permission bitmap of ${short(probe.address)}, one cell per assigned bit`}
+              />
+              <p className="dp-hint">
+                {probe.callbacks.length} of {HOOK_BITS.length} assigned bits set. Bits 14-15 are
+                reserved; a bitmap that sets them is rejected.
+              </p>
 
               <div className="dapp-latch__foot">
                 <span className="dapp-stat">
@@ -706,6 +758,17 @@ export default function Deploy() {
             </>
           )}
         </section>
+
+        {budgetBars.length > 0 && (
+          <section className="dapp-card">
+            <h2 className="dapp-microlabel">METADATA BYTE BUDGET</h2>
+            <BarList items={budgetBars} valueLabel="Used" shareLabel="of this field's limit" />
+            <p className="dp-hint">
+              Your text against the registry&rsquo;s own <code>MAX_*_BYTES</code> constants, read
+              from the contract. It counts bytes, not characters — one emoji is four.
+            </p>
+          </section>
+        )}
 
         <section className="dapp-console">
           <div className="dapp-console__bar">

@@ -1,4 +1,17 @@
 import type { IconName } from '../../components/NavIcon'
+import { ACTIVE_CHAIN_ID, DEPLOYMENTS } from '../../lib/chain'
+
+/**
+ * The chain THIS BUILD talks to.
+ *
+ * The page as a whole documents both deployments — a developer reading it may
+ * be targeting either, and the address tables list both — but anything that
+ * describes what the app in front of the reader will do (which network the
+ * deploy form wants, which chain a wallet must be on) has to name the chain
+ * that build actually serves. Those strings are derived; the address tables,
+ * which are historical fact about two chains, are not.
+ */
+const ACTIVE = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 /**
  * Docs page content.
  *
@@ -24,8 +37,8 @@ import type { IconName } from '../../components/NavIcon'
  * run against the real Vault + CLPoolManager stack. See the report accompanying
  * this change for the proof harness.
  *
- * REGISTRY AND MARKETPLACE CONTENT describes the contract that is actually
- * deployed on Sepolia at the `registry` address in src/lib/chain.ts — the one
+ * REGISTRY AND MARKETPLACE CONTENT describes the contract deployed at the
+ * `registry` address in src/lib/chain.ts on BOTH chains — the one
  * `/app/deploy` writes to and `/verify/:hookAddress` reads from. As of the
  * 2026-09-10 redeploy that contract is `LatchRegistry` (ABI in
  * src/lib/abi/registry.ts, generated from packages/registry). Probed with
@@ -152,7 +165,9 @@ export const RAIL_GROUPS: RailGroup[] = [
     icon: 'settings',
     items: [
       { label: 'Local devnet', href: '#install', spy: false },
-      { label: 'Sepolia deployment', href: '#deploy', spy: false },
+      /* Was "Sepolia deployment", which named one of the two chains #deploy
+         actually lists. The section is plural now; so is the row. */
+      { label: 'Deployments', href: '#deploy', spy: false },
       { label: 'Keeper', href: '#keeper', spy: true },
       { label: 'Target chains', href: '#chains', spy: true },
       { label: 'Audits', href: '#verify', spy: false },
@@ -182,16 +197,21 @@ export const TOC: TocItem[] = [
 
 /**
  * packages/cli/package.json pins node >= 20; every contract here is solc 0.8.26
- * exactly. "LIVE ON" is the one entry in `DEPLOYMENTS` (src/lib/chain.ts).
+ * exactly. "LIVE ON" is every entry in `DEPLOYMENTS` (src/lib/chain.ts) —
+ * plural since 2026-09-11, and it said "Ethereum Sepolia" for a day after that.
  * "TARGET CHAINS" is the key count of `CHAIN_RPCS` in
  * packages/sdk/src/chains/endpoints.ts — see `CHAINS` below, which is that
  * table transcribed. A target chain is one the SDK carries probed RPCs for; it
  * is not a deployment.
  */
+const LIVE_ON = Object.values(DEPLOYMENTS)
+  .map((d) => d.name)
+  .join(' · ')
+
 export const FACTS: { label: string; value: string }[] = [
   { label: 'TOOLCHAIN', value: 'Foundry + Node ≥ 20' },
   { label: 'SOLIDITY', value: '0.8.26' },
-  { label: 'LIVE ON', value: 'Ethereum Sepolia' },
+  { label: 'LIVE ON', value: LIVE_ON },
   { label: 'TARGET CHAINS', value: '15' },
   { label: 'TIME TO FIRST LATCH', value: '~20 min' },
 ]
@@ -267,6 +287,16 @@ export const BITMAP_SHELL = `[[cmd:latch]] bitmap beforeSwap
 [[com:bitmap    0x0040 · decimal 64 · callbacks beforeSwap]]
 [[com:pool key  0x00000000000000000000000000000000000000000000000000000000003c0040]]`
 
+/**
+ * The same bitmap as a number, so the page can DRAW it.
+ *
+ * One constant, three renderings: `FEE_LATCH_SOL` returns `BEFORE_SWAP`,
+ * `BITMAP_SHELL` prints `0x0040`, and the grid in the deploy section lights bit
+ * 6. Exported rather than written into the JSX so those three cannot drift into
+ * describing different Latches.
+ */
+export const FEE_LATCH_BITMAP = 0x0040
+
 /* Two chains now, and the mainnet is listed first. A developer copying from
    here will paste whichever CL_POOL_MANAGER they see, so the one they see first
    should be the one they most likely want. */
@@ -339,7 +369,7 @@ export const REGISTER_SHELL = `[[com:# LatchRegistry on Sepolia — the contract
 export const REGISTER_STEPS: LifecycleStep[] = [
   {
     step: '01',
-    name: 'Connect on Sepolia',
+    name: `Connect on ${ACTIVE.name}`,
     note: 'Browser wallets, plus WalletConnect where the app is configured for it. On any other network the form offers a switch and nothing else.',
   },
   {
@@ -387,7 +417,7 @@ export const REGISTRY_REJECTIONS: DocError[] = [
   },
   {
     code: 'LatchHasNoCode(address hook)',
-    fix: 'No bytecode at that address on Sepolia — an EOA, a typo, or a contract deployed on a different chain.',
+    fix: 'No bytecode at that address on the chain the registry is on — an EOA, a typo, or a contract deployed on a different chain.',
   },
   {
     code: 'EmptyName()',
@@ -442,7 +472,7 @@ export const SURFACES: Surface[] = [
   },
   {
     route: '/app/deploy',
-    wallet: 'required · Sepolia',
+    wallet: `required · ${ACTIVE.name}`,
     reads: 'Probes the Latch, simulates register(), then signs it.',
   },
   {
@@ -760,14 +790,14 @@ export const CHAINS: ChainRow[] = [
   { name: 'Base', chainId: '8453', rpcs: '5' },
   { name: 'BNB Smart Chain', chainId: '56', rpcs: '5' },
   { name: 'Linea', chainId: '59144', rpcs: '5 · zkEVM, see note' },
-  { name: 'Robinhood Chain', chainId: '4663', rpcs: '5 · five operators' },
+  { name: 'Robinhood Chain', chainId: '4663', rpcs: '5 · the mainnet deployment' },
   { name: 'Ink', chainId: '57073', rpcs: '5' },
   { name: 'X Layer', chainId: '196', rpcs: '4 · thin, zkEVM' },
   { name: 'HyperEVM', chainId: '999', rpcs: '5' },
   { name: 'Monad', chainId: '143', rpcs: '5' },
   { name: 'Plasma', chainId: '9745', rpcs: '3 · thin' },
   { name: 'Stable', chainId: '988', rpcs: '4 · thin' },
-  { name: 'Ethereum Sepolia', chainId: '11155111', rpcs: '5 · the live deployment' },
+  { name: 'Ethereum Sepolia', chainId: '11155111', rpcs: '5 · the testnet deployment' },
   { name: 'Monad Testnet', chainId: '10143', rpcs: '5' },
   { name: 'Stable Testnet', chainId: '2201', rpcs: '3 · thin' },
   { name: 'Arc Testnet', chainId: '5042002', rpcs: '5 · five operators' },

@@ -23,6 +23,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChainTag } from '../../../components/ChainTag.tsx'
 import { DEPLOYMENTS, explorerAddress, explorerTx } from '../../../lib/chain'
+import { BarList } from '../components/charts.tsx'
+import { Gauge } from '../components/series-charts.tsx'
+import type { LabelledBar, SeriesColor } from '../data/types.ts'
 import {
   fmtCountdown,
   fmtHours,
@@ -33,6 +36,7 @@ import {
   shortAddr,
   type GovernanceData,
   type OperationStatus,
+  type OwnerKind,
   type OwnershipRow,
   type QueuedOperation,
   type TimelockStatus,
@@ -161,8 +165,8 @@ function TimelockBlock({ t, chainId }: { t: TimelockStatus; chainId: GovernanceD
         <li>
           <span className={`dapp-dot dapp-dot--sm ${adminIsClean ? 'dapp-dot--success' : 'dapp-dot--error'}`} aria-hidden="true" />
           {adminIsClean
-            ? `DEFAULT_ADMIN_ROLE is held only by the timelock itself (self-administering${t.selfAdmin ? '' : ' — though the self-grant read back false, worth a second look'}), never by the Safe or address(0).`
-            : 'DEFAULT_ADMIN_ROLE reached an address it should not — this is a permanent backdoor around every delay this contract enforces.'}
+            ? `DEFAULT_ADMIN_ROLE is held only by the timelock itself, never by the Safe or address(0)${t.selfAdmin ? '.' : ' — though the self-grant read back false, worth a second look.'}`
+            : 'DEFAULT_ADMIN_ROLE reached an address it should not — a permanent backdoor around every delay this contract enforces.'}
         </li>
       </ul>
       {!adminIsClean && (
@@ -217,9 +221,54 @@ function OwnerChainCell({ row, chainId }: { row: OwnershipRow; chainId: Governan
   )
 }
 
+/* ============================================================================
+   Ownership, counted — the table above as one shape.
+
+   FED BY THE SAME READS AS THE TABLE. Each bar counts the LAST hop of a real
+   `owner()` chain, the one `followOwnerChain` walked hop by hop from the
+   contract itself. Nothing is assumed from the deployment record: a row lands
+   in the Safe bucket because `owner()` answered with the Safe's address, and in
+   the EOA bucket because the final address has no code.
+
+   WHY NON-OWNABLE CONTRACTS ARE NOT A BAR. `LatchRegistry` is AccessControl,
+   not Ownable, so it has no owner to count and a sixth "not Ownable" bar would
+   put a contract that cannot be owned next to five that can. It stays in the
+   table, which says so in words, and the caption below states how many rows the
+   bars actually cover so the two totals can be reconciled.
+
+   WHY THE EOA BAR IS DRAWN AT ZERO. Every other empty bucket is dropped, but
+   "nothing answers to an EOA" is the single most reassuring reading this screen
+   can produce, and it has no other voice — the red banner above appears only
+   when the answer is the opposite. A dropped row would leave the good news
+   indistinguishable from a bucket nobody thought to check.
+   ============================================================================ */
+const OWNER_BUCKETS: ReadonlyArray<{ kind: OwnerKind; label: string; color: SeriesColor }> = [
+  { kind: 'safe', label: 'Governance Safe', color: 'success' },
+  { kind: 'custody-timelock', label: 'Custody timelock', color: 'primary' },
+  { kind: 'policy-timelock', label: 'Policy timelock', color: 'signal' },
+  { kind: 'contract', label: 'Unrecognized contract', color: 'violet' },
+  { kind: 'eoa', label: 'EOA', color: 'amber' },
+]
+
+function ownerBars(rows: readonly OwnershipRow[]): { bars: LabelledBar[]; counted: number } {
+  const finals = rows
+    .map((r) => r.chain[r.chain.length - 1]?.kind)
+    .filter((k): k is OwnerKind => k !== undefined)
+  const denom = finals.length || 1
+
+  const bars = OWNER_BUCKETS.flatMap(({ kind, label, color }) => {
+    const n = finals.filter((k) => k === kind).length
+    if (n === 0 && kind !== 'eoa') return []
+    return [{ name: label, value: String(n), pct: (n / denom) * 100, color }]
+  })
+
+  return { bars, counted: finals.length }
+}
+
 function OwnershipCard({ d }: { d: GovernanceData }) {
   const eoaOwned = d.ownership.filter((row) => row.isEOAOwned)
   const pending = d.ownership.filter((row) => row.pendingOwner !== null)
+  const { bars, counted } = useMemo(() => ownerBars(d.ownership), [d.ownership])
 
   return (
     <section className="dapp-card gov-card">
@@ -232,17 +281,26 @@ function OwnershipCard({ d }: { d: GovernanceData }) {
         <p className="hx-alert hx-alert--danger gov-alert" role="alert">
           {eoaOwned.length} contract{eoaOwned.length === 1 ? '' : 's'} on {DEPLOYMENTS[d.chainId].name} still{' '}
           {eoaOwned.length === 1 ? 'answers' : 'answer'} to an EOA: {eoaOwned.map((r) => r.contractName).join(', ')}.
-          {' '}On a chain holding real funds, this is the thing worth noticing.
         </p>
       )}
 
       {pending.length > 0 && (
         <p className="live-note live-note--err gov-note">
-          {pending.length} transfer{pending.length === 1 ? '' : 's'} nominated but not yet accepted:{' '}
-          {pending.map((r) => r.contractName).join(', ')} — the previous owner still has full control until
+          {pending.length} transfer{pending.length === 1 ? '' : 's'} nominated but not accepted:{' '}
+          {pending.map((r) => r.contractName).join(', ')} — the previous owner keeps full control until
           acceptOwnership() is called.
         </p>
       )}
+
+      <BarList
+        items={bars}
+        valueLabel="contracts"
+        shareLabel="of the contracts that expose owner()"
+      />
+      <p className="live-note gov-note">
+        Counted from the last hop of each <code>owner()</code> chain — {counted} of{' '}
+        {d.ownership.length} tracked contracts answer <code>owner()</code> at all.
+      </p>
 
       <div className="dapp-table-wrap gov-table-wrap">
         <table className="dapp-table gov-table">
@@ -291,6 +349,40 @@ const STATUS_BADGE: Record<OperationStatus, string> = {
   unknown: 'dapp-badge--mute',
 }
 
+/* ============================================================================
+   How far through its delay one queued operation is.
+
+   BOTH NUMBERS ARE READ, THE SUBTRACTION IS NOT AN ESTIMATE. `max` is the
+   `delay` field of this operation's own `CallScheduled` log; `readyAtSec` is
+   `getTimestamp(id)` off the timelock. Elapsed is `delay - (readyAt - now)`,
+   which reduces to `now - scheduledAt` — wall-clock against a chain timestamp,
+   the one comparison this screen cannot avoid making and the reason the clock
+   ticks locally while the chain data does not.
+
+   ONLY FOR A PENDING OPERATION. A ready one has elapsed PAST its ceiling, and
+   `Gauge` renders anything over its max in the error colour with "above the
+   cap" — correct for a fee that exceeded a bound, a lie about an operation that
+   simply matured. Ready and done keep the plain line they already had.
+   ============================================================================ */
+function DelayGauge({ op, remaining }: { op: QueuedOperation; remaining: number }) {
+  const delay = Number(op.delaySec)
+  /* Clamped at zero only against clock skew between the browser and the chain;
+     it is not a floor on a real reading. */
+  const elapsed = Math.max(0, delay - remaining)
+
+  return (
+    <Gauge
+      value={elapsed}
+      max={delay}
+      color="amber"
+      label={`Time elapsed of the ${op.tier} tier delay`}
+      valueText={fmtHours(BigInt(Math.floor(elapsed)))}
+      maxText={fmtHours(op.delaySec)}
+      caption="elapsed since this operation was queued"
+    />
+  )
+}
+
 function OperationRow({ op, chainId, nowSec }: { op: QueuedOperation; chainId: GovernanceData['chainId']; nowSec: number }) {
   const targetName = nameForAddress(chainId, op.target)
   const remaining = secondsRemaining(op.readyAtSec, nowSec)
@@ -322,7 +414,16 @@ function OperationRow({ op, chainId, nowSec }: { op: QueuedOperation; chainId: G
           </>
         )}
       </p>
-      {op.status === 'pending' && <p className="gov-op__countdown tabular">{fmtCountdown(remaining)}</p>}
+      {op.status === 'pending' && (
+        <>
+          <DelayGauge op={op} remaining={remaining} />
+          {/* The local clock can cross readyAt before the next chain read
+              reclassifies the operation. Saying so beats "ready now remaining". */}
+          <p className="gov-op__countdown tabular">
+            {remaining <= 0 ? 'delay elapsed — status not re-read yet' : `${fmtCountdown(remaining)} remaining`}
+          </p>
+        </>
+      )}
       {op.status === 'ready' && <p className="gov-op__countdown gov-op__countdown--ready">ready to execute</p>}
       {op.status === 'done' && <p className="gov-op__countdown gov-op__countdown--done">executed</p>}
     </li>

@@ -3,8 +3,26 @@
    The network picker is no longer a list of plausible-sounding chain names. It
    is the SDK's own target list (src/data/chains.ts, generated from
    packages/sdk/src/chains/endpoints.ts), and each chip states whether Latch is
-   actually deployed there. Ten of the eleven are targets with no contracts;
-   showing them as selectable without saying so would be a lie. */
+   actually deployed there. Most are targets with no contracts; showing them as
+   selectable without saying so would be a lie.
+
+   WHICH CHAINS ARE DEPLOYED IS COUNTED, NOT ASSERTED. This screen used to state
+   "Latch contracts exist on Ethereum Sepolia only", which was false the day a
+   second deployment went live — and false in the worst direction, on a mainnet
+   build, naming a testnet. The sentence is now assembled from the same contract
+   table the chips are, so it cannot disagree with them.
+
+   THE PREFERENCE SWITCHES ARE GONE. Four toggles that read nothing and wrote
+   nothing, captioned with simulation, alerting and gas-sponsorship features
+   this project does not have. See the header of data/settings.ts. Appearance
+   stays: it is the one control here that does what it says.
+
+   THE ENDPOINT CHARTS ARE MEASUREMENTS. `endpointCount`, `supportsEip1153`,
+   `singlePointOfFailure` and `belowTarget` are all results of live probes run
+   before shipping, recorded in the generated chain list. A gauge against the
+   SDK's five-endpoint target says how much rate-limit headroom the selected
+   chain has; the bar list says which chain degrades first. Neither adds a
+   number the probe did not produce. */
 
 import { useMemo } from 'react'
 import { ChainMark } from '../../../components/ChainMark.tsx'
@@ -15,8 +33,20 @@ import { ChainTag } from '../../../components/ChainTag.tsx'
 import { rpcsFor } from '../../../lib/chain'
 import { walletConnectEnabled } from '../../../lib/wallet.ts'
 import { stocksConfigured } from '../../../lib/prices.ts'
+import { BarList } from '../components/charts.tsx'
+import { Gauge } from '../components/series-charts.tsx'
 import { loadSettings } from '../data/settings.ts'
+import type { LabelledBar } from '../data/types.ts'
 import { useDapp } from '../state.tsx'
+
+/**
+ * The SDK's endpoint target per chain. Five verified public RPCs is the point
+ * at which one provider rate-limiting does not degrade the app; below it the
+ * chain still fails over, with less room. It is a target, not a cap — nothing
+ * in the generated list exceeds it, and `Gauge` would draw an overrun in the
+ * error colour if one ever did.
+ */
+const ENDPOINT_TARGET = 5
 
 function NetworkGroup({
   id,
@@ -66,12 +96,30 @@ function NetworkGroup({
 
 export default function Settings() {
   const data = useMemo(loadSettings, [])
-  const { flags, toggleFlag, net, setNet, browsingChain } = useDapp()
+  const { net, setNet, browsingChain } = useDapp()
   const endpoints = useMemo(() => rpcsFor(browsingChain), [browsingChain])
   const selected = useMemo(
     () => data.networks.find((c) => c.key === net) ?? data.networks[0],
     [data.networks, net],
   )
+
+  /* Ordered worst-first: the reading a reader wants from this is "which chain
+     degrades first when a public provider rate-limits me", and that is the top
+     of the list, not the bottom. */
+  const endpointBars: LabelledBar[] = useMemo(
+    () =>
+      [...data.networks]
+        .sort((a, b) => a.endpointCount - b.endpointCount || a.name.localeCompare(b.name))
+        .map((c) => ({
+          name: c.name,
+          value: String(c.endpointCount),
+          pct: Math.min(100, (c.endpointCount / ENDPOINT_TARGET) * 100),
+          color: c.singlePointOfFailure ? 'amber' : c.belowTarget ? 'signal' : 'success',
+        })),
+    [data.networks],
+  )
+
+  const deployedNames = data.deployed.map((c) => c.name)
 
   return (
     <div className="dapp-grid dapp-grid--settings">
@@ -89,27 +137,10 @@ export default function Settings() {
             </span>
             <ThemeToggle showLabels />
           </li>
-          {data.toggles.map((t) => (
-            <li key={t.key} className="dapp-pref">
-              <span className="dapp-pref__copy">
-                <span className="dapp-pref__name" id={`dapp-pref-${t.key}`}>
-                  {t.name}
-                </span>
-                <span className="dapp-pref__hint">{t.hint}</span>
-              </span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={flags[t.key]}
-                aria-labelledby={`dapp-pref-${t.key}`}
-                className={flags[t.key] ? 'dapp-toggle is-on' : 'dapp-toggle'}
-                onClick={() => toggleFlag(t.key)}
-              >
-                <span className="dapp-toggle__knob" aria-hidden="true" />
-              </button>
-            </li>
-          ))}
         </ul>
+        <p className="dapp-note">
+          The only preference this app keeps. It stores no account and no other setting.
+        </p>
       </section>
 
       <div className="dapp-stack">
@@ -119,8 +150,8 @@ export default function Settings() {
           </h2>
           <p className="dapp-note">
             {data.networks.length} target chains, each confirmed to support EIP-1153 by a live
-            TSTORE probe. Latch contracts exist on Ethereum Sepolia only — the rest are targets,
-            so selecting one gives you an RPC, not a deployment.
+            TSTORE probe. {deployedNames.length} of them carry Latch contracts (
+            {deployedNames.join(', ')}); selecting any other gives you an RPC, not a deployment.
           </p>
 
           <NetworkGroup
@@ -137,6 +168,20 @@ export default function Settings() {
             net={net}
             onPick={(chain) => setNet(chain.key)}
           />
+
+          <p className="dapp-microlabel dapp-microlabel--tight" style={{ marginTop: 18 }}>
+            VERIFIED PUBLIC RPCS PER CHAIN
+          </p>
+          <BarList
+            items={endpointBars}
+            valueLabel="Endpoints"
+            shareLabel={`of the ${ENDPOINT_TARGET}-endpoint target`}
+          />
+          <p className="dapp-note">
+            Counted, not estimated: every endpoint answered <code>eth_chainId</code> with the
+            expected id and served <code>eth_blockNumber</code> before shipping. A chain below the
+            target still fails over, with less headroom when providers rate-limit.
+          </p>
         </section>
 
         {selected ? (
@@ -151,18 +196,25 @@ export default function Settings() {
                 <dt>EIP-1153</dt>
                 <dd>{selected.supportsEip1153 ? 'Verified by TSTORE probe' : 'Unsupported'}</dd>
               </div>
-              <div className="dapp-netfact">
-                <dt>Verified public RPCs</dt>
-                <dd className="tabular">
-                  {selected.endpointCount}
-                  {selected.singlePointOfFailure
-                    ? ' · no failover'
-                    : selected.belowTarget
-                      ? ' · below the 5-endpoint target'
-                      : ''}
-                </dd>
-              </div>
             </dl>
+
+            <Gauge
+              value={selected.endpointCount}
+              max={ENDPOINT_TARGET}
+              label={`Verified public RPCs for ${selected.name}`}
+              valueText={String(selected.endpointCount)}
+              maxText={`${ENDPOINT_TARGET} target`}
+              color={
+                selected.singlePointOfFailure ? 'amber' : selected.belowTarget ? 'signal' : 'success'
+              }
+              caption={
+                selected.singlePointOfFailure
+                  ? 'One endpoint — a fallback transport cannot fail over.'
+                  : selected.belowTarget
+                    ? 'Fails over, with less headroom than the target.'
+                    : 'Verified public RPCs, at the target.'
+              }
+            />
 
             {selected.contracts.length > 0 ? (
               <ul className="dapp-contracts">
@@ -177,7 +229,7 @@ export default function Settings() {
                           href={href}
                           rel="noreferrer noopener"
                           data-hit
-                          aria-label={`${contract.name} on Sepolia Etherscan: ${contract.address}`}
+                          aria-label={`${contract.name} on the ${selected.name} explorer: ${contract.address}`}
                         >
                           {contract.address}
                         </a>
@@ -220,11 +272,9 @@ export default function Settings() {
             ))}
           </ol>
           <p className="dapp-note">
-            Tried in this order. Each is probed before shipping — it answered{' '}
-            <code>eth_chainId</code> with the expected id and served{' '}
-            <code>eth_blockNumber</code>. A rate-limited endpoint falls straight through to the
-            next rather than being retried, so one pass asks all of them before any is asked
-            twice. None carries an API key.
+            Tried in this order. None carries an API key. A rate-limited endpoint falls straight
+            through to the next rather than being retried, so one pass asks all of them before any
+            is asked twice.
           </p>
         </section>
 
@@ -245,14 +295,19 @@ export default function Settings() {
             </li>
           </ul>
           <p className="dapp-note">
-            Both are read at build time from the environment and neither is required.
-            Without a WalletConnect project id the connect modal offers browser wallets only,
-            rather than showing rows that cannot complete. Without a Finnhub key the equities
-            ticker says it is unconfigured instead of showing a price it does not have.
+            Read at build time from the environment; neither is required. There is no Latch API key
+            — the app reads chain directly and keeps no account.
           </p>
-          <p className="dapp-note">
-            There is no Latch API key. The app reads chain directly and keeps no account.
-          </p>
+          <details className="dapp-method">
+            <summary>What is missing when one is not set</summary>
+            <div className="dapp-method__body">
+              <p>
+                Without a WalletConnect project id the connect modal offers browser wallets only,
+                rather than showing rows that cannot complete. Without a Finnhub key the equities
+                ticker says it is unconfigured instead of showing a price it does not have.
+              </p>
+            </div>
+          </details>
         </section>
       </div>
     </div>

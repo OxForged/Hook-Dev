@@ -7,15 +7,21 @@ import { LiveActivityFeed } from '../components/LiveActivityFeed'
 import { SwapVolumeCard, ActivityMixCard } from '../components/ProtocolCharts'
 
 /**
- * Real KPI tiles, read from the deployed Sepolia contracts.
+ * Real KPI tiles, read from whichever deployment this build targets.
  *
  * The design spec put $48.2M TVL / 412,905 hook calls / $186.4K fees here. Those
- * were placeholders and are gone. What replaces them is a fresh testnet: one pool,
- * two swaps, a few thousandths of a token in fees.
+ * were placeholders and are gone. What replaces them is a young deployment: one
+ * pool, a handful of swaps, a few thousandths of a token in fees.
  *
- * No USD. ltUSD and ltETH are unpriced testnet tokens; a fabricated price to make
- * a dollar headline is the exact failure this replaces. Sparklines are gone too: a rising
+ * No USD. The pool tokens are unpriced; a fabricated price to make a dollar
+ * headline is the exact failure this replaces. Sparklines are gone too — a rising
  * sparkline is a visual claim, and there is no history behind one here.
+ *
+ * THE SECOND LINE OF A TILE NAMES ITS SOURCE, NEVER A RATE. Two of these read
+ * "0.1%" and "0.3%", hardcoded: static copy asserting a fee that lives on chain
+ * and can be changed by the fee controller. Whether that claim was true depended
+ * on the chain nobody had checked. It now says where the figure came from, which
+ * cannot go stale.
  */
 function liveKpis(m: import('../../../lib/chain').ProtocolMetrics): { label: string; value: string; trend: string }[] {
   const t0 = m.tvl[0]
@@ -24,7 +30,7 @@ function liveKpis(m: import('../../../lib/chain').ProtocolMetrics): { label: str
     {
       label: `VAULT TVL · ${t0?.symbol ?? 'TOKEN'}`,
       value: t0 ? fmtToken(t0.balance, t0.decimals, 2) : '0',
-      trend: 'live',
+      trend: 'balanceOf(vault)',
     },
     {
       label: 'SWAPS EXECUTED',
@@ -34,12 +40,12 @@ function liveKpis(m: import('../../../lib/chain').ProtocolMetrics): { label: str
     {
       label: `PROTOCOL FEES · ${t0?.symbol ?? 'TOKEN'}`,
       value: t0 ? fmtToken(m.protocolFees0, t0.decimals, 6) : '0',
-      trend: '0.1%',
+      trend: 'summed per swap',
     },
     {
       label: `LP FEES · ${t1?.symbol ?? 'TOKEN'}`,
       value: t1 ? fmtToken(m.lpFees1, t1.decimals, 6) : '0',
-      trend: '0.3%',
+      trend: 'summed per swap',
     },
   ]
 }

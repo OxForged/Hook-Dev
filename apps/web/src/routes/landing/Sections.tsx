@@ -21,9 +21,13 @@ import {
   ORACLES,
   MARKET_KINDS,
 } from './data'
+import { ACTIVE_CHAIN_ID, DEPLOYMENTS } from '../../lib/chain.ts'
 import { CodePanel } from './CodePanel'
 import styles from './landing.module.css'
 import { cx } from './ui'
+
+/** Named, never spelled. One build serves one chain; the copy must follow it. */
+const ACTIVE_CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
 /** A5. Use cases — four cards that lift 4px on hover. */
 export function UseCases() {
@@ -166,8 +170,8 @@ export function Chains() {
       </h2>
       <p className={styles['chainLede']}>
         {CHAIN_ROWS.length} target chains, every one confirmed to support EIP-1153 by executing a
-        transient-storage probe against the live network — not read off a spec sheet. Latch
-        contracts are live on Ethereum Sepolia only; the rest are targets, not deployments.
+        transient-storage probe against the live network — not read off a spec sheet. Contracts are
+        live on {ACTIVE_CHAIN.name} ({ACTIVE_CHAIN_ID}); the rest are targets, not deployments.
       </p>
 
       <h3 className={styles['chainGroup']} id="chains-mainnet">

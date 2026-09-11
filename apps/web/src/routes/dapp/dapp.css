@@ -3105,3 +3105,224 @@ span.dapp-net-chip__mark {
   .gov-summary { flex-wrap: wrap; }
   .gov-summary__block { margin-left: 0; }
 }
+
+/* ===========================================================================
+   series-charts.tsx — SeriesChart, StackedBar, Gauge, BitGrid.
+
+   Every animation below is declared here rather than in JS so the global
+   prefers-reduced-motion block in tokens.css can switch all of it off. The
+   line uses a 2400-unit dasharray (the shared dapp-draw keyframe) which is
+   longer than any path this viewBox can produce, so the draw-on reads as a
+   single left-to-right stroke at every data length.
+   =========================================================================== */
+
+/* ---- 1 · SeriesChart ---- */
+
+.dapp-series {
+  width: 100%;
+  height: 180px;
+  display: block;
+  overflow: visible;
+  margin-top: 4px;
+}
+.dapp-series__grid {
+  stroke: var(--dapp-track);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+}
+.dapp-series__line {
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 2400;
+  animation: dapp-draw 1.45s var(--dapp-ease, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+.dapp-series__area {
+  animation: dapp-fade 0.9s 0.35s var(--dapp-ease, ease-out) both;
+}
+.dapp-series__cross {
+  stroke: var(--latch-blue);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.55;
+}
+.dapp-series__dot {
+  cursor: pointer;
+  opacity: 0;
+  transition: r 0.16s ease, opacity 0.16s ease;
+  animation: dapp-fade 0.4s 1.1s var(--dapp-ease, ease-out) forwards;
+}
+.dapp-series:hover .dapp-series__dot,
+.dapp-series__dot:focus-visible,
+.dapp-series__dot[data-on='true'] { opacity: 1; }
+.dapp-series__dot[data-on='true'] { r: 6; }
+.dapp-series__dot:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 2px; }
+.dapp-series[data-active='true'] .dapp-series__line { opacity: 0.75; }
+
+/* ---- 2 · StackedBar ---- */
+
+.dapp-splitbar { margin-top: 12px; }
+.dapp-splitbar__track {
+  display: flex;
+  height: 22px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--dapp-track);
+}
+.dapp-splitbar__seg {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: var(--series);
+  transition: width 1s var(--dapp-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 0.18s ease, filter 0.18s ease;
+}
+.dapp-splitbar__seg + .dapp-splitbar__seg { box-shadow: inset 1px 0 0 var(--dapp-scrim, rgba(0, 0, 0, 0.25)); }
+.dapp-splitbar__seg:hover,
+.dapp-splitbar__seg[data-on='true'] { filter: brightness(1.22); }
+.dapp-splitbar__seg[data-dim='true'] { opacity: 0.34; }
+.dapp-splitbar__seg:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 2px; }
+.dapp-splitbar__short {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--dapp-track) 0 5px,
+    color-mix(in srgb, var(--error) 40%, transparent) 5px 10px
+  );
+}
+.dapp-legend--row { flex-direction: row; flex-wrap: wrap; gap: 7px 18px; }
+.dapp-legend--row .dapp-legend__pct { margin-left: 5px; }
+
+/* ---- 3 · Gauge ---- */
+
+.dapp-gauge { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.dapp-gauge svg { width: 132px; height: 132px; overflow: visible; }
+.dapp-gauge__track { stroke: var(--dapp-track); }
+.dapp-gauge__fill {
+  transition: stroke-dasharray 1.1s var(--dapp-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+.dapp-gauge__v {
+  font-family: var(--font-mono);
+  font-size: 19px;
+  fill: var(--dapp-ink-data);
+}
+.dapp-gauge__m { font-size: 10px; fill: var(--dapp-ink-sub); letter-spacing: 0.04em; }
+.dapp-gauge__cap {
+  font-size: 12px;
+  color: var(--dapp-ink-sub);
+  text-align: center;
+  max-width: 24ch;
+  line-height: 1.45;
+}
+.dapp-gauge__over { color: var(--error); }
+
+/* ---- 4 · BitGrid ---- */
+
+.dapp-bitgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(146px, 1fr));
+  gap: 7px;
+  margin-top: 14px;
+}
+.dapp-bitgrid__cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 11.5px;
+  color: var(--dapp-ink-sub);
+  opacity: 0;
+  animation: dapp-fade 0.45s var(--dapp-ease, ease-out) forwards;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+.dapp-bitgrid__cell[data-set='true'] {
+  color: var(--dapp-ink-data);
+  border-color: color-mix(in srgb, var(--latch-blue) 45%, transparent);
+  background: color-mix(in srgb, var(--latch-blue) 8%, transparent);
+}
+.dapp-bitgrid__cell:hover,
+.dapp-bitgrid__cell[data-on='true'] { border-color: var(--latch-blue); }
+.dapp-bitgrid__cell:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 2px; }
+.dapp-bitgrid__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--dapp-track);
+}
+.dapp-bitgrid__cell[data-set='true'] .dapp-bitgrid__dot {
+  background: var(--latch-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--latch-blue) 22%, transparent);
+}
+.dapp-bitgrid__name { line-height: 1.3; }
+
+@media (max-width: 640px) {
+  .dapp-series { height: 150px; }
+  .dapp-bitgrid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); }
+}
+
+/* ===========================================================================
+   Disclosure — the home for methodology the reader did not ask for.
+
+   WHY THIS EXISTS. Several screens carried five-sentence notes explaining how
+   a figure was counted: what an ERC-721 position is, which logs were scanned,
+   what is deliberately not shown. Every one of those facts is TRUE and some
+   change how the number should be read, so deleting them would trade an
+   honesty problem for a different honesty problem. But a reader who wants the
+   balance should not have to walk past a paragraph to reach it.
+
+   So the fact stays in the open and the method moves in here. Native
+   <details>: no JS, keyboard-operable and announced as a disclosure for free,
+   and the browser find-in-page in modern engines can still reach closed
+   content. A custom accordion would have given up all four.
+   =========================================================================== */
+
+.dapp-method {
+  margin-top: 10px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 9px;
+}
+.dapp-method > summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--dapp-ink-sub);
+  border-radius: 5px;
+  transition: color 0.16s ease;
+}
+.dapp-method > summary::-webkit-details-marker { display: none; }
+.dapp-method > summary:hover { color: var(--dapp-ink-data); }
+.dapp-method > summary:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 3px; }
+
+/* The caret is drawn rather than a glyph so it can rotate. `transform` on a
+   pseudo-element animates on the compositor and is reachable by the global
+   prefers-reduced-motion block; a swapped character would be neither. */
+.dapp-method > summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 0.18s var(--dapp-ease, ease-out);
+}
+.dapp-method[open] > summary::before { transform: rotate(90deg); }
+
+.dapp-method__body {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--dapp-ink-sub);
+  animation: dapp-fade 0.28s var(--dapp-ease, ease-out) both;
+}
+.dapp-method__body p { margin: 0 0 7px; }
+.dapp-method__body p:last-child { margin-bottom: 0; }
+.dapp-method__body code { font-family: var(--font-mono); font-size: 11.5px; }

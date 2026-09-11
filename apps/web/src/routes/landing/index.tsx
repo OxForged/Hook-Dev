@@ -26,7 +26,8 @@ import styles from './landing.module.css'
  * one hook family and belong in the docs, and a roadmap is a promise, which is
  * the one kind of content this project has decided not to render.
  *
- * Figures are NOT placeholders — `StatsStrip` and `Activity` read Sepolia, and
+ * Figures are NOT placeholders — `StatsStrip` and `Activity` read whichever
+ * chain this build serves (`ACTIVE_CHAIN_ID`, never a spelled-out name), and
  * `LiquidityFlow` is a calculator over the contracts' own constants and says so
  * in the panel. See CLAUDE.md § "No invented data in the UI. Ever."
  *

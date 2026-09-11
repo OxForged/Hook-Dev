@@ -13,8 +13,15 @@
      <Empty>         the read succeeded and the answer is nothing.
 
    `<Money>` is the other rule: an amount is always printed with its token
-   symbol, never converted to a currency. Sepolia tokens are unpriced, so a
-   dollar figure on this surface would be invented.
+   symbol, never converted to a currency. These tokens are unpriced, so a dollar
+   figure on this surface would be invented.
+
+   THE STATE CARDS SAY WHAT HAPPENED, THEN GET OUT OF THE WAY. Each one used to
+   open with a paragraph justifying itself — why a placeholder is not shown, why
+   absence is a first-class state — which is a decision the reader did not ask
+   about, printed above the answer they did. The justification now sits in a
+   <details>, or here in this comment where it belongs. No caveat that changes
+   how a figure should be read was dropped; only the essay around it.
    ============================================================================ */
 
 import { Link } from 'react-router-dom'
@@ -80,9 +87,8 @@ export function Unreachable({ message, onRetry }: { message: string; onRetry: ()
     <section className="dapp-card hx-state hx-state--err">
       <h2 className="dapp-card__title">{CHAIN.name} is unreachable</h2>
       <p className="live-note">
-        The RPC did not answer, so this screen has nothing to show. It will not fall back to
-        placeholder figures — an unreachable chain and an empty result are different answers, and
-        only one of them is about your pools.
+        The RPC did not answer. No figures are shown — an unreachable chain and an empty result are
+        different answers, and only one of them is about your pools.
       </p>
       <p className="dp-failure__raw" style={{ marginTop: 8 }}>
         {message}
@@ -104,8 +110,8 @@ export function Empty({ title, children }: { title: string; children: React.Reac
 }
 
 /**
- * No hook address anywhere. The honest default on Sepolia today — the protocol
- * is deployed there, a RevShareHook is not.
+ * No hook address anywhere. The honest default today — the protocol's own
+ * contracts are deployed on this chain, a RevShareHook on top of them is not.
  */
 export function NotDeployed({ malformed }: { malformed: boolean }) {
   return (
@@ -114,26 +120,30 @@ export function NotDeployed({ malformed }: { malformed: boolean }) {
       <p className="live-note">
         {malformed
           ? 'The ?hook= parameter in this URL is not a 20-byte address, so it was ignored.'
-          : `This build has no RevShareHook address for ${CHAIN.name}, and there is no registry of hooks by type to discover one from.`}{' '}
-        The protocol&rsquo;s own contracts — vault, pool managers, registry — are deployed and live;
-        a revenue-share hook on top of them is not. Rather than read zeros off an address that does
-        not exist, these screens show nothing.
+          : `This build has no RevShareHook address for ${CHAIN.name}.`}
       </p>
       <ul className="live-list" style={{ marginTop: 10 }}>
         <li>
-          <span>Point them at a deployment</span>
+          <span>Point these screens at one</span>
           <span className="live-fee">add ?hook=0x… to the URL</span>
         </li>
         <li>
-          <span>Or set a default for the whole build</span>
+          <span>Or set a build default</span>
           <span className="live-fee">VITE_REVSHARE_HOOK</span>
         </li>
       </ul>
-      <p className="live-note" style={{ marginTop: 10 }}>
-        The contract read from is <code>RevShareHook</code> in{' '}
-        <code>packages/hooks-revshare</code>. Everything on these four screens is a call to it or to
-        the epoch distributor it names.
-      </p>
+      <details className="dapp-method">
+        <summary>Why nothing is shown instead of zeros</summary>
+        <div className="dapp-method__body">
+          <p>
+            There is no registry of hooks by type to discover one from, and reading zeros off an
+            address that holds no contract is indistinguishable from a hook that has taken nothing.
+            The contract these screens call is <code>RevShareHook</code> in{' '}
+            <code>packages/hooks-revshare</code>; everything on all four is a call to it or to the
+            epoch distributor it names.
+          </p>
+        </div>
+      </details>
     </section>
   )
 }
@@ -155,10 +165,10 @@ export function HookProvenance({ hook }: { hook: HookRef }) {
 /**
  * A pool id lookup.
  *
- * Screen B is public — anyone may inspect a pool&rsquo;s revenue share without a
+ * Screen B is public — anyone may inspect a pool's revenue share without a
  * wallet — so the not-connected state of screen A offers this rather than a
  * dead end. It validates the id shape locally; whether the pool exists is the
- * chain&rsquo;s answer, given on the next screen.
+ * chain's answer, given on the next screen.
  */
 export function PoolIdLookup({ withHook }: { withHook: (path: string) => string }) {
   const [value, setValue] = useState('')

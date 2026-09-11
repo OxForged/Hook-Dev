@@ -41,14 +41,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { ChainMark } from '../../../components/ChainMark.tsx'
 import { ChainTag } from '../../../components/ChainTag.tsx'
-import { chainByKey } from '../../../data/chains.ts'
 import {
   DEPLOYMENTS,
   LISTING_LABEL,
   RISK_LABEL,
-  SEPOLIA_CHAIN_ID,
+  ACTIVE_CHAIN_ID,
   VERIFICATION_LABEL,
   explorerAddress,
   readRegisteredLatches,
@@ -56,6 +54,8 @@ import {
   type RiskClass,
   type VerificationLevel,
 } from '../../../lib/chain'
+import { Donut, DonutLegend } from '../components/charts.tsx'
+import type { DonutSegment, SeriesColor } from '../data/types.ts'
 import { CapabilityLedger, LatchAlerts, Ribbon, TrustStrip } from '../components/LatchSignals.tsx'
 import {
   LISTING_BADGE,
@@ -237,6 +237,69 @@ function LatchCard({ hook, index }: { hook: RegisteredLatch; index: number }) {
   )
 }
 
+/* ============================================================================
+   Composition of the registry, by capability class.
+
+   WHAT IT IS FED BY. `RegisteredLatch.risk` — the `uint8` the registry's own
+   pure `classify()` returned for each listing's bitmap, read in
+   `readRegisteredLatches`. Nothing is re-derived here and nothing is
+   interpolated: the three counts are counts, and they sum to the number of
+   listings the grid below is showing.
+
+   WHY ALL THREE CLASSES ARE DRAWN, INCLUDING THE EMPTY ONES. "No
+   value-extracting Latch is listed" is a reading, and a donut that omits its
+   zero classes quietly turns that reading into a gap the eye fills in. Each
+   zero arc draws nothing and its legend row says 0.00%.
+
+   WHY THE COLOURS ARE NOT THE BADGE COLOURS. The data-series palette carries
+   no error red — `SeriesColor` is five tokens and none of them is `--error`.
+   So severity is NOT encoded here; the badges and the card tone stay the only
+   authority on that, exactly as the header of this file requires. This chart
+   answers "how many of each", and the legend directly above it says what each
+   class means.
+   ============================================================================ */
+const RISK_SERIES: Readonly<Record<RiskClass, SeriesColor>> = {
+  0: 'signal',
+  1: 'violet',
+  2: 'amber',
+}
+
+function classSegments(hooks: readonly RegisteredLatch[]): DonutSegment[] {
+  const total = hooks.length || 1
+  return RISK_VALUES.map((r) => ({
+    name: RISK_LABEL[r],
+    pct: (hooks.filter((h) => h.risk === r).length / total) * 100,
+    color: RISK_SERIES[r],
+  }))
+}
+
+function ClassMix({ hooks, flaggedCount }: { hooks: readonly RegisteredLatch[]; flaggedCount: number }) {
+  const [slice, setSlice] = useState<string | null>(null)
+  const segments = useMemo(() => classSegments(hooks), [hooks])
+
+  return (
+    <section className="dapp-card lx-rail__card" aria-labelledby="lx-mix-h">
+      <h2 id="lx-mix-h" className="dapp-card__title">
+        What is listed
+      </h2>
+      <Donut
+        segments={segments}
+        label="Listed Latches by capability class"
+        unit="of listings"
+        selected={slice}
+        onSelect={setSlice}
+      />
+      <DonutLegend segments={segments} unit="of listings" selected={slice} onSelect={setSlice} />
+      <p className="live-note">
+        {hooks.length === 1 ? '1 listing' : `${hooks.length} listings`}, classified by the
+        registry&rsquo;s own <code>classify()</code>.
+        {flaggedCount > 0 &&
+          ` The ${flaggedCount === 1 ? '1 flagged listing is' : `${flaggedCount} flagged listings are`} counted separately, below the grid.`}
+      </p>
+    </section>
+  )
+}
+
 /** The legend. Every row is an on-chain enum value, not an editorial rating. */
 function SignalLegend() {
   return (
@@ -245,7 +308,7 @@ function SignalLegend() {
         Reading the signals
       </h2>
       <p className="live-note">
-        Three enums, all stored on the registry. Each card shows all three in this order.
+        Three enums stored on the registry, shown on every card in this order.
       </p>
 
       <p className="dapp-microlabel dapp-microlabel--tight lx-legend__head">VERIFICATION</p>
@@ -326,8 +389,7 @@ export default function Explorer() {
     [listable, q, verification, risk],
   )
 
-  const d = DEPLOYMENTS[SEPOLIA_CHAIN_ID]
-  const sepolia = chainByKey('sepolia')
+  const d = DEPLOYMENTS[ACTIVE_CHAIN_ID]
   const filtersOn = verification !== 'all' || risk !== 'all' || q !== ''
 
   /* One card, unfiltered, and it is the whole registry. It is laid out wide —
@@ -367,12 +429,13 @@ export default function Explorer() {
               LIVE
             </span>
           </div>
+          {/* Two sentences, and the second is the caveat that changes how every
+              card is read: half of a listing is unverified prose. Cutting it to
+              one would have cut the half that matters. */}
           <p className="live-note">
-            Listing is permissionless: anyone can add a Latch, and nobody curates this page. What
-            makes it readable is that the dangerous part cannot be self-declared — capabilities
-            are decoded from each Latch&rsquo;s own bytecode by the registry, so a submitter
-            cannot claim permissions their code does not have. Names, descriptions and links{' '}
-            <em>are</em> submitter-supplied.
+            Listing is permissionless and nobody curates this page. Capabilities are decoded from
+            each Latch&rsquo;s own bytecode and cannot be self-declared; names, descriptions and
+            links <em>are</em> submitter-supplied.
           </p>
         </section>
 
@@ -484,13 +547,13 @@ export default function Explorer() {
           <p className="dapp-empty hx-state">
             No Latches are listed yet. The registry is deployed at{' '}
             <a
-              href={explorerAddress(SEPOLIA_CHAIN_ID, d.registry)}
+              href={explorerAddress(ACTIVE_CHAIN_ID, d.registry)}
               target="_blank"
               rel="noopener noreferrer"
             >
               {short(d.registry)}
             </a>{' '}
-            and is genuinely empty — shown as empty rather than padded with examples.
+            and is empty, not padded with examples.
           </p>
         )}
 
@@ -556,6 +619,14 @@ export default function Explorer() {
       <aside className="lx-rail" aria-label="How to read this page">
         <SignalLegend />
 
+        {/* Only once the registry has actually answered. A donut over an
+            unfinished read would be a shape drawn from nothing, and a donut
+            over zero listings is three empty arcs saying less than the empty
+            state already says in words. */}
+        {state.k === 'ready' && listable.length > 0 && (
+          <ClassMix hooks={listable} flaggedCount={flagged.length} />
+        )}
+
         <section className="dapp-card lx-rail__card" aria-labelledby="lx-reg-h">
           <h2 id="lx-reg-h" className="dapp-card__title">
             The registry
@@ -565,7 +636,7 @@ export default function Explorer() {
               <dt>Contract</dt>
               <dd>
                 <a
-                  href={explorerAddress(SEPOLIA_CHAIN_ID, d.registry)}
+                  href={explorerAddress(ACTIVE_CHAIN_ID, d.registry)}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -575,9 +646,12 @@ export default function Explorer() {
             </div>
             <div>
               <dt>Chain</dt>
+              {/* The chain the registry was actually read from — ACTIVE_CHAIN_ID,
+                  never a named network. This row said "Sepolia" from a
+                  `chainByKey` lookup while every listing above it was being read
+                  from Robinhood Chain. */}
               <dd className="lx-rail__chain">
-                <ChainMark brand={sepolia.brand} size={16} className="lx-rail__mark" />
-                {sepolia.name}
+                <ChainTag chainId={ACTIVE_CHAIN_ID} size={16} />
               </dd>
             </div>
             <div>
@@ -588,9 +662,8 @@ export default function Explorer() {
             </div>
           </dl>
           <p className="live-note lx-rail__note">
-            Registration is permissionless and free, and it is permanent — the registry has no{' '}
-            <code>unregister</code>. A Latch listed here can be deprecated or flagged, never
-            deleted.
+            Registration is free, open and permanent — there is no <code>unregister</code>. A
+            listing can be deprecated or flagged, never deleted.
           </p>
           <Link to={dappPath('deploy')} className="dapp-btn dapp-btn--ghost lx-rail__cta">
             List a Latch

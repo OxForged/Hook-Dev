@@ -1,11 +1,17 @@
 /**
  * Landing-page content and figures.
  *
- * EVERY FIGURE IN THIS FILE IS A PLACEHOLDER. Latch is deployed to Sepolia
- * (chain 11155111) only, so none of these are live protocol metrics — the UI
- * labels the stats strip and the activity section accordingly. This module is
- * the seam: replace the bodies below with indexer / subgraph reads and the
- * components need no changes.
+ * NOTHING IN THIS FILE IS A PLACEHOLDER, and the header that used to say the
+ * opposite was itself the stalest thing on the page. Every figure below is
+ * either a repo measurement (gas observed in an executed transaction, test
+ * counts from suites that run) or is DERIVED FROM `DEPLOYMENTS` — so it names
+ * whichever chain this build serves rather than restating a chain name that was
+ * true when it was typed. Live protocol metrics are not here at all: they are
+ * read from chain by the components that show them.
+ *
+ * The rule that produces that split: a constant that can move on chain does not
+ * belong in a constants file. A chain name can move — a build flag chooses it —
+ * so it is derived; a gas figure from a receipt cannot, so it is written down.
  *
  * LAYOUT AND ORDERING follow "latch design/SCREENS.md" § A. Landing page.
  *
@@ -27,7 +33,19 @@
  * the report accompanying this change.
  */
 
+import { ACTIVE_CHAIN_ID, DEPLOYMENTS, IS_TESTNET_BUILD } from '../../lib/chain'
+import { CHAIN_ROWS, DEPLOYED_CHAINS } from '../../data/chains'
 import { GITHUB_URL } from './socials'
+
+/**
+ * The one chain this build reads, writes and talks about.
+ *
+ * Imported rather than spelled, because "Ethereum Sepolia" was written into six
+ * user-visible strings across this page and every one of them became a lie the
+ * day Robinhood Chain went live. A build flag picks the chain; the copy follows
+ * it or the copy is wrong.
+ */
+const ACTIVE = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
 /* ------------------------------------------------------------------ tones */
 
@@ -149,14 +167,29 @@ export const MEASURED_GAS: readonly { name: string; gas: string }[] = [
 ]
 
 /**
- * Contracts exist on exactly one network. The other ten are targets, and the
- * chain switcher, the dapp network chip and this row all say so identically —
- * a visitor should never have to reconcile two different answers.
+ * Where the contracts are, counted rather than asserted.
+ *
+ * Every value is derived: the chain name from `DEPLOYMENTS`, the target count
+ * from `CHAIN_ROWS` minus the chains that actually carry contracts. The row
+ * that used to read "Mainnet · None yet" is gone because it stopped being true
+ * — replaced by the build's own network type, which cannot go stale for the
+ * same reason.
  */
+const TARGET_ONLY_COUNT = CHAIN_ROWS.filter((c) => !c.deployed).length
+
 export const NETWORK_REACH: readonly FactRow[] = [
-  { name: 'Deployed', value: 'Ethereum Sepolia', toneClass: 'toneSuccess' },
-  { name: 'Targeted, no contracts', value: '10 networks', toneClass: 'toneMuted' },
-  { name: 'Mainnet', value: 'None yet', toneClass: 'toneMuted' },
+  { name: 'Deployed', value: ACTIVE.name, toneClass: 'toneSuccess' },
+  { name: 'Chain ID', value: String(ACTIVE_CHAIN_ID), toneClass: 'toneMuted' },
+  {
+    name: 'Network type',
+    value: IS_TESTNET_BUILD ? 'Testnet' : 'Mainnet',
+    toneClass: IS_TESTNET_BUILD ? 'toneAmber' : 'toneSuccess',
+  },
+  {
+    name: 'Targeted, no contracts',
+    value: `${TARGET_ONLY_COUNT} networks`,
+    toneClass: 'toneMuted',
+  },
 ]
 
 /**
@@ -337,14 +370,17 @@ export interface RoadmapItem {
 
 /**
  * Dates beyond the first row are indicative and the section says so. The first
- * row is not a plan — it is what is deployed today, all five contracts verified
- * on Sepolia (11155111); the addresses are listed on the docs page.
+ * row is not a plan — it is what is deployed today, counted off the same
+ * contract table the Chains section lists address by address, so the count and
+ * the list cannot disagree.
  */
+const ACTIVE_CONTRACT_COUNT = DEPLOYED_CHAINS[0]?.contracts.length ?? 0
+
 export const ROADMAP: readonly RoadmapItem[] = [
   {
     when: 'Q3 2026',
-    name: 'Sepolia deployment',
-    desc: 'Vault, both pool managers, the fee controller and Create3Factory live and verified.',
+    name: `${ACTIVE.name} deployment`,
+    desc: `${ACTIVE_CONTRACT_COUNT} contracts live and source verified; every address is listed below.`,
   },
   {
     when: 'Q4 2026',

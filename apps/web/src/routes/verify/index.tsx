@@ -60,7 +60,7 @@ import {
   DEPLOYMENTS,
   LISTING_LABEL,
   RISK_LABEL,
-  SEPOLIA_CHAIN_ID,
+  ACTIVE_CHAIN_ID,
   VERIFICATION_LABEL,
   capabilityClaims,
   explorerAddress,
@@ -71,6 +71,7 @@ import {
   type RiskClass,
   type VerificationLevel,
 } from '../../lib/chain'
+import { BitGrid, type BitDef } from '../dapp/components/series-charts'
 import landing from '../landing/landing.module.css'
 import { SiteFooter } from '../landing/SiteFooter'
 import { SiteHeader } from '../landing/SiteHeader'
@@ -82,7 +83,7 @@ const RISK_VALUE_EXTRACTING = 2 satisfies RiskClass
 const VERIFICATION_SOURCE = 1 satisfies VerificationLevel
 const VERIFICATION_AUDITED = 2 satisfies VerificationLevel
 
-const CHAIN = DEPLOYMENTS[SEPOLIA_CHAIN_ID]
+const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
 /** Tone drives colour and nothing else — never the other way round. */
 type Tone = 'ok' | 'info' | 'mute' | 'warn' | 'danger'
@@ -95,6 +96,57 @@ const toneClass = (tone: Tone) => styles[`tone-${tone}`]
 const VERIFICATION_TONE: Record<VerificationLevel, Tone> = { 0: 'mute', 1: 'info', 2: 'ok' }
 const RISK_TONE: Record<RiskClass, Tone> = { 0: 'mute', 1: 'warn', 2: 'danger' }
 const LISTING_TONE: Record<ListingState, Tone> = { 0: 'ok', 1: 'warn', 2: 'danger' }
+
+/* ===========================================================================
+   The permission bitmap, as a grid.
+
+   ORDER IS THE CONTRACT. Bit n here is bit n in
+   packages/core/src/pool-cl/interfaces/ICLHooks.sol — beforeInitialize 0x0001
+   through afterRemoveLiquidityReturnsDelta 0x2000 — and it is the SAME order,
+   position for position, as `CALLBACK_FIELDS` in lib/chain.ts, which is the
+   order the registry's own `decodePermissions` returns. That is not a
+   coincidence to be relied on quietly: `VerifiedHook` cross-checks the two and
+   refuses to let them disagree in silence, because two components describing
+   one bitmap two ways is how a reader ends up trusting a Latch the chain would
+   have warned them about.
+
+   Unset bits are drawn, dimmed, rather than omitted. "This Latch does NOT run
+   before a swap" is as much a reading as the inverse, and a grid showing only
+   what is on hides the shape of what is off.
+   =========================================================================== */
+
+const HOOK_BITS: readonly BitDef[] = [
+  { bit: 0, name: 'beforeInitialize', note: 'Can reject a pool before it exists.' },
+  { bit: 1, name: 'afterInitialize', note: 'Runs once, after the pool is created.' },
+  { bit: 2, name: 'beforeAddLiquidity', note: 'Can refuse a deposit.' },
+  { bit: 3, name: 'afterAddLiquidity', note: 'Runs after a deposit settles.' },
+  { bit: 4, name: 'beforeRemoveLiquidity', note: 'Can refuse a withdrawal.' },
+  { bit: 5, name: 'afterRemoveLiquidity', note: 'Runs after a withdrawal settles.' },
+  { bit: 6, name: 'beforeSwap', note: 'Can block a swap, or override the fee.' },
+  { bit: 7, name: 'afterSwap', note: 'Runs once the swap has executed.' },
+  { bit: 8, name: 'beforeDonate', note: 'Can refuse a donation to in-range liquidity.' },
+  { bit: 9, name: 'afterDonate', note: 'Runs after a donation settles.' },
+  { bit: 10, name: 'beforeSwapReturnsDelta', note: 'Lets beforeSwap resize the swap amount.' },
+  { bit: 11, name: 'afterSwapReturnsDelta', note: 'Lets afterSwap take a cut of the output.' },
+  { bit: 12, name: 'afterAddLiquidityReturnsDelta', note: 'Lets it take a cut of a deposit.' },
+  { bit: 13, name: 'afterRemoveLiquidityReturnsDelta', note: 'Lets it take a cut of a withdrawal.' },
+]
+
+/**
+ * Does the grid's own reading of the bitmap agree with the registry's?
+ *
+ * `hook.callbacks` comes from the chain — the registry's `decodePermissions`
+ * over the bitmap it read off the Latch. The grid derives the same set locally,
+ * from the same integer. They must match; if they ever do not, the local
+ * derivation is the one that is wrong, and the page says so instead of drawing
+ * a second opinion next to the chain's.
+ */
+function gridAgreesWithChain(hook: RegisteredLatch): boolean {
+  const derived = HOOK_BITS.filter((b) => (hook.permissions & (1 << b.bit)) !== 0).map((b) => b.name)
+  return (
+    derived.length === hook.callbacks.length && derived.every((n, i) => n === hook.callbacks[i])
+  )
+}
 
 /**
  * Format-only address check.
@@ -162,6 +214,25 @@ function Alert({
   )
 }
 
+/**
+ * Methodology, one click away.
+ *
+ * The distinction this enforces: a caveat that changes how a figure should be
+ * READ stays in the paragraph, because a reader who skips it misreads the page.
+ * An explanation of WHY the registry behaves as it does is worth having and is
+ * not worth four lines above the thing it explains. `<details>` keeps it
+ * findable, keyboard-reachable and searchable by the browser's own find, with
+ * no state for this page to manage.
+ */
+function Disclosure({ summary, children }: { summary: string; children: ReactNode }) {
+  return (
+    <details className={styles['more']}>
+      <summary>{summary}</summary>
+      <p>{children}</p>
+    </details>
+  )
+}
+
 /** Full address, monospace, with copy and an explorer link. Never truncated here. */
 function AddressRow({ label, address }: { label: string; address: Address }) {
   const [copied, setCopied] = useState(false)
@@ -190,7 +261,7 @@ function AddressRow({ label, address }: { label: string; address: Address }) {
         </button>
         <a
           className={styles['addrBtn']}
-          href={explorerAddress(SEPOLIA_CHAIN_ID, address)}
+          href={explorerAddress(ACTIVE_CHAIN_ID, address)}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -205,9 +276,9 @@ function AddressRow({ label, address }: { label: string; address: Address }) {
 function Provenance({ checkedAtBlock }: { checkedAtBlock: bigint | null }) {
   return (
     <p className={styles['provenance']}>
-      Read live from the LatchHookRegistry at{' '}
+      Read live from the LatchRegistry at{' '}
       <a
-        href={explorerAddress(SEPOLIA_CHAIN_ID, CHAIN.registry)}
+        href={explorerAddress(ACTIVE_CHAIN_ID, CHAIN.registry)}
         target="_blank"
         rel="noopener noreferrer"
       >
@@ -231,11 +302,9 @@ function InvalidAddress({ raw }: { raw: string }) {
         That is not a valid address
       </h1>
       <p className={styles['verdictBody']}>
-        A Latch is identified by a 20-byte EVM address: <code>0x</code> followed by exactly 40
-        hexadecimal characters. The URL carried{' '}
-        {raw ? <code className={styles['raw']}>{raw}</code> : <em>nothing</em>}, which is not
-        one, so nothing was looked up. This is a problem with the link, not a verdict about any
-        Latch.
+        The URL carried {raw ? <code className={styles['raw']}>{raw}</code> : <em>nothing</em>},
+        which is not a 20-byte EVM address (<code>0x</code> and exactly 40 hex characters), so
+        nothing was looked up. A problem with the link, not a verdict about any Latch.
       </p>
       <p className={styles['verdictBody']}>
         <Link className={styles['inlineLink']} to="/app/marketplace">
@@ -307,7 +376,7 @@ function NotRegistered({
           {hasCode ? (
             <>
               A contract exists at this address on {CHAIN.name}, but{' '}
-              <strong>nobody has ever listed it</strong> in the LatchHookRegistry. It has no
+              <strong>nobody has ever listed it</strong> in the LatchRegistry. It has no
               verification level, no risk class and no listing status, because it has no record
               — not because those values are zero.
             </>
@@ -336,7 +405,7 @@ function NotRegistered({
             Read the bytecode and transaction history yourself on{' '}
             <a
               className={styles['inlineLink']}
-              href={explorerAddress(SEPOLIA_CHAIN_ID, address)}
+              href={explorerAddress(ACTIVE_CHAIN_ID, address)}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -418,6 +487,7 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredLatch; checked
   const source = safeHttpUrl(hook.sourceURI)
   const audit = safeHttpUrl(hook.auditURI)
   const dangerous = hook.takesSwapCut || hook.canTrapLiquidity
+  const gridAgrees = gridAgreesWithChain(hook)
 
   return (
     <>
@@ -497,33 +567,44 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredLatch; checked
         <p className={styles['panelKicker']}>READ FROM THE LATCH&rsquo;S OWN CONTRACT</p>
         <h2 className={styles['panelTitle']}>What this Latch can do</h2>
         <p className={styles['panelNote']}>
-          The registry reads this bitmap by calling{' '}
-          <code>getHooksRegistrationBitmap()</code> on the Latch itself. There is no parameter
-          through which a submitter can declare, suggest or influence it, and the capability class
-          is derived from it by a <code>pure</code> function on chain. This is the part of the
-          page nobody can fake.
+          The registry reads this bitmap by calling <code>getHooksRegistrationBitmap()</code> on the
+          Latch itself. No submitter can influence it. This is the part of the page nobody can fake.
         </p>
         <ul className={styles['claims']}>
           {claims.map((c) => (
             <li key={c}>{c}</li>
           ))}
         </ul>
-        {hook.callbacks.length > 0 ? (
-          <>
-            <p className={styles['panelKicker']}>CALLBACKS DECLARED</p>
-            <p className={styles['tags']}>
-              {hook.callbacks.map((c) => (
-                <span key={c} className={styles['tag']}>
-                  {c}
-                </span>
-              ))}
-            </p>
-          </>
-        ) : (
-          <p className={styles['panelNote']}>
-            The bitmap is empty: core never calls this contract during a pool&rsquo;s lifecycle.
-          </p>
+
+        {!gridAgrees && (
+          <Alert tone="warn" title="The grid below disagrees with the registry">
+            The list above is the chain&rsquo;s and stands. The grid is drawn from the same bitmap
+            by this page, and the two should be identical; treat the cells as unreliable and read
+            the capability list instead.
+          </Alert>
         )}
+
+        {/* The badge row above already prints the bitmap as hex; this is the
+            same number decoded, so the kicker does not repeat it. */}
+        <p className={styles['panelKicker']}>CALLBACKS DECLARED</p>
+        <div className={styles['hostedBits']}>
+          <BitGrid
+            bitmap={hook.permissions}
+            bits={HOOK_BITS}
+            label="Permission bitmap: the fourteen points in a pool's lifecycle this Latch may run at"
+          />
+        </div>
+        <p className={styles['panelNote']}>
+          {hook.callbacks.length > 0 ? (
+            <>
+              Lit cells are the {hook.callbacks.length} point
+              {hook.callbacks.length === 1 ? '' : 's'} core will call this contract at. A dim cell
+              is a reading too: it does not run there.
+            </>
+          ) : (
+            <>The bitmap is empty: core never calls this contract during a pool&rsquo;s lifecycle.</>
+          )}
+        </p>
       </section>
 
       {/* --------------------------------------------- supplied by a stranger */}
@@ -531,11 +612,14 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredLatch; checked
         <p className={styles['panelKicker']}>SUBMITTER-SUPPLIED — NOT VERIFIED</p>
         <h2 className={styles['panelTitle']}>What the submitter says about it</h2>
         <p className={styles['panelNote']}>
-          Everything in this block is free text written by whoever listed the Latch, stored
-          verbatim on chain. It is <strong>never</strong> a capability claim, and no part of it
-          has been checked against the code above. A steward edit resets verification to
-          unverified precisely because these strings can be repointed after a badge is granted.
+          Free text written by whoever listed the Latch and stored verbatim on chain.{' '}
+          <strong>Never</strong> a capability claim, and never checked against the code above.
         </p>
+        <Disclosure summary="Why an edit here costs a badge">
+          These strings can be repointed after a badge is granted — a source link that pointed at
+          the audited code when a curator looked at it can point somewhere else tomorrow. A steward
+          edit therefore resets verification to Unverified.
+        </Disclosure>
 
         <dl className={styles['meta']}>
           <div className={styles['metaRow']}>
@@ -610,9 +694,8 @@ function VerifiedHook({ hook, checkedAtBlock }: { hook: RegisteredLatch; checked
         <p className={styles['panelKicker']}>ON CHAIN</p>
         <h2 className={styles['panelTitle']}>Who listed it</h2>
         <p className={styles['panelNote']}>
-          The address that sent the <code>register</code> transaction. It is a fact about the
-          listing and not an endorsement of the Latch — registration is permissionless, so this
-          need not be the author, and stewardship can since have moved to someone else.
+          The address that sent <code>register</code>. Permissionless, so it need not be the
+          author, and it is not an endorsement.
         </p>
         <AddressRow label="Submitter" address={hook.submitter} />
       </section>

@@ -10,6 +10,16 @@
    A subtitle here must not state anything that can change on chain. One did:
    "ETH / USDC · 0.05%" sat above a Pool Detail screen rendering "ltUSD / ltETH ·
    0.30%" read from the pool itself. Static copy cannot describe live data.
+
+   A CHAIN NAME IS SUCH A THING. The marketplace subtitle read "· Sepolia" while
+   the live deployment moved to Robinhood Chain, so it is derived from
+   DEPLOYMENTS[ACTIVE_CHAIN_ID] like the dashboard's already was. Never write a
+   chain name as a literal in this file.
+
+   THE FAKE WALLET IS GONE. `wallet: { address: '0x8f2c…41ba' }` was an invented
+   address that no component read. Nothing rendered it, which is exactly why it
+   survived — an unused fiction is a fiction somebody wires up later. The real
+   address comes from wagmi, at the component that shows it.
    ============================================================================ */
 
 import { ACTIVE_CHAIN_ID, DEPLOYMENTS, IS_TESTNET_BUILD } from '../../../lib/chain'
@@ -32,8 +42,6 @@ export interface ScreenMeta {
 export interface ShellData {
   nav: NavItem[]
   meta: Record<Screen, ScreenMeta>
-  wallet: { address: string }
-  /** Starting block height; the shell ticks it +1 every 4000ms (README). */
 }
 
 /** SCREENS.md § C: sidebar nav order. */
@@ -57,7 +65,10 @@ const meta: Record<Screen, ScreenMeta> = {
     title: 'Dashboard',
     subtitle: `Live from ${DEPLOYMENTS[ACTIVE_CHAIN_ID].name}${IS_TESTNET_BUILD ? ' · testnet only' : ''}`,
   },
-  marketplace: { title: 'Latch Marketplace', subtitle: 'On-chain registry · Sepolia' },
+  marketplace: {
+    title: 'Latch Marketplace',
+    subtitle: `On-chain registry · ${DEPLOYMENTS[ACTIVE_CHAIN_ID].name}`,
+  },
   /* Not a chain read and the subtitle says so — the one screen in the dapp whose
      data is a curated file, submitted by the projects themselves. */
   ecosystem: { title: 'Ecosystem', subtitle: 'Projects building on Latch · self-submitted, not verified' },
@@ -68,9 +79,9 @@ const meta: Record<Screen, ScreenMeta> = {
      rendered a few pixels below it. */
   pool: { title: 'Pool detail', subtitle: 'Live pool state, read from chain' },
   portfolio: { title: 'Portfolio', subtitle: 'Positions held by the connected address' },
-  /* Read live off a RevShareHook. No hook is deployed on Sepolia yet, so the
-     default state of both screens is an honest "nothing to read" rather than a
-     zeroed dashboard — see lib/useHookRef.ts. */
+  /* Read live off a RevShareHook. No hook is deployed on the active chain yet,
+     so the default state of both screens is an honest "nothing to read" rather
+     than a zeroed dashboard — see lib/useHookRef.ts. */
   protocol: { title: 'Revenue share', subtitle: 'RevShareHook · pools, roster, epochs' },
   claim: { title: 'Claim', subtitle: 'What a RevShareHook and its distributors owe an address' },
   analytics: { title: 'Analytics', subtitle: 'Protocol-wide Latch activity' },
@@ -79,13 +90,11 @@ const meta: Record<Screen, ScreenMeta> = {
      which is true for the chain currently selected without risking the same
      drift the pool subtitle was fixed for above. */
   governance: { title: 'Governance', subtitle: 'The Safe, both timelocks, and every queued operation' },
-  settings: { title: 'Settings', subtitle: 'Account, network and API access' },
+  /* Not "Account and API access": there is no account system and no Latch API.
+     The screen itself says so — a subtitle promising both contradicted it. */
+  settings: { title: 'Settings', subtitle: 'Networks, RPC endpoints and build configuration' },
 }
 
 export function loadShell(): ShellData {
-  return {
-    nav,
-    meta,
-    wallet: { address: '0x8f2c…41ba' },
-  }
+  return { nav, meta }
 }

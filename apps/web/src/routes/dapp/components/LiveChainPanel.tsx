@@ -26,10 +26,27 @@
    back to placeholders when the chain is unreachable is worse than one that
    admits it — the reader cannot tell the difference, and that is exactly when
    they would most want to.
+
+   THREE OF THE FOUR CARDS NOW DRAW WHAT THEY USED TO STATE. Each chart is fed
+   by a reading the card was already making, and each one says something a bare
+   figure cannot:
+
+     · The protocol fee against `MAX_PROTOCOL_FEE`. "0.30%" does not tell you
+       how much room is left; a gauge against a ceiling that is a constant in
+       deployed code does.
+     · A token's Vault balance against the CL pool manager's reserve in it.
+       Both sides are the SAME token, which is the only reason the comparison
+       is legitimate — nothing prices these tokens, so a chart comparing one
+       token's balance to another's would need a rate that does not exist.
+     · A swap's fee, split. `protocolFee` and the remainder are both shares of
+       the same input amount and add to exactly `fee`, so the bar cannot be
+       short or renormalised.
    ============================================================================ */
 
 import { useEffect, useState } from 'react'
 
+import { Gauge, StackedBar } from './series-charts.tsx'
+import { Methodology } from './ProtocolCharts.tsx'
 import {
   DEPLOYMENTS,
   ACTIVE_CHAIN_ID,
@@ -184,23 +201,47 @@ function Row({
    The four cards
    -------------------------------------------------------------------------- */
 
+/** pips of PIPS_DENOMINATOR (1e6) as a percentage. 4000 pips → "0.4%". */
+const pipsPct = (pips: number, places = 2) => `${(pips / 10_000).toFixed(places)}%`
+
 export function ChainStatusCard({ state }: { state: State }) {
   return (
     <LiveCard title={`Live on ${D.name}`} state={state} badge="ON CHAIN">
       {(d) => (
-        <dl className="lc-stats">
-          <Stat label="BLOCK" value={<span className="tabular">{d.status.blockNumber.toString()}</span>} />
-          <Stat
-            label="PROTOCOL FEE"
-            value={<span className="tabular">{(d.status.defaultFeePips / 10_000).toFixed(2)}%</span>}
-            sub={`of ${(d.status.maxFeePips / 10_000).toFixed(1)}% cap`}
+        <>
+          {/* Both numbers are read: DEFAULT_FEE_PIPS and MAX_PROTOCOL_FEE off
+              the fee controller. The ceiling is the point — it is what says
+              how much of the protocol's headroom is in use. */}
+          <Gauge
+            value={d.status.defaultFeePips}
+            max={d.status.maxFeePips}
+            label="Default protocol fee against the protocol fee cap"
+            valueText={pipsPct(d.status.defaultFeePips)}
+            maxText={pipsPct(d.status.maxFeePips, 1)}
+            color={d.status.feesDisabled ? 'amber' : 'primary'}
+            caption={
+              d.status.feesDisabled ? (
+                <>
+                  <code>DEFAULT_FEE_PIPS</code> of <code>MAX_PROTOCOL_FEE</code> — but the guardian
+                  has fees <strong>disabled</strong>, so pools are charged nothing.
+                </>
+              ) : (
+                <>
+                  <code>DEFAULT_FEE_PIPS</code> of <code>MAX_PROTOCOL_FEE</code>, the cap compiled
+                  into the controller.
+                </>
+              )
+            }
           />
-          <Stat
-            label="POOL MANAGERS"
-            value={d.status.clRegistered && d.status.binRegistered ? 'CL + Bin' : 'not registered'}
-          />
-          <Stat label="FEES" value={d.status.feesDisabled ? 'DISABLED' : 'Active'} />
-        </dl>
+          <dl className="lc-stats" style={{ marginTop: 12 }}>
+            <Stat label="BLOCK" value={<span className="tabular">{d.status.blockNumber.toString()}</span>} />
+            <Stat
+              label="POOL MANAGERS"
+              value={d.status.clRegistered && d.status.binRegistered ? 'CL + Bin' : 'not registered'}
+            />
+            <Stat label="FEES" value={d.status.feesDisabled ? 'DISABLED' : 'Active'} />
+          </dl>
+        </>
       )}
     </LiveCard>
   )
@@ -213,9 +254,8 @@ export function GovernanceCard({ state }: { state: State }) {
       state={state}
       note={
         <p className="live-note lc-note">
-          Timelocks are deployed and enforce their floors. Whether they OWN anything differs by
-          chain and is not assumed here — the Governance screen reads every owner() live and says
-          so, including flagging anything still held by an EOA.
+          Delays are read from the timelocks. Owning something is a separate question — the
+          Governance screen reads every <code>owner()</code> live.
         </p>
       }
     >
@@ -256,35 +296,162 @@ export function GovernanceCard({ state }: { state: State }) {
   )
 }
 
+/**
+ * One token's Vault balance, split by what the CL pool manager has reserved.
+ *
+ * Shares are computed in basis points with bigint arithmetic and the bar is
+ * given a total of 10,000 — converting two 18-decimal balances to doubles first
+ * would round the split before drawing it.
+ *
+ * A reserve LARGER than the balance is not clamped into a full bar. It would
+ * mean the Vault owes an app more of a token than it holds, which is the single
+ * most important thing this card could report, so it is reported in words.
+ */
+function HoldingSplit({ h }: { h: VaultHolding }) {
+  const amount = formatUnits(h.balance, h.decimals, 4)
+
+  if (h.balance === 0n) {
+    return (
+      <p className="live-note">
+        {h.symbol}: the Vault holds none, so there is no balance to split.
+      </p>
+    )
+  }
+  if (h.clReserve > h.balance) {
+    return (
+      <p className="live-note live-note--err">
+        {h.symbol}: <code>reservesOfApp</code> ({formatUnits(h.clReserve, h.decimals, 4)}) exceeds
+        the Vault&rsquo;s balance ({amount}). Not drawn — a bar past its own total would hide the
+        discrepancy rather than show it.
+      </p>
+    )
+  }
+
+  /* The reserve's share is floored; the remainder takes whatever is left of
+     10,000 rather than being floored too. Two floors would leave the bar a
+     basis point short, and `StackedBar` draws a shortfall as an unallocated
+     sliver — which is the right behaviour for a split that genuinely does not
+     add up, and a lie about one that does. Both `value` strings stay exact. */
+  const bps = (v: bigint) => Number((v * 10_000n) / h.balance)
+  const reserveBps = bps(h.clReserve)
+  const rest = h.balance - h.clReserve
+
+  return (
+    <StackedBar
+      total={10_000}
+      unit={`of the Vault's ${h.symbol}`}
+      label={`${h.symbol}: ${amount} held by the Vault, of which the CL pool manager has reserved ${formatUnits(h.clReserve, h.decimals, 4)}`}
+      segments={[
+        {
+          name: `${h.symbol} · CL pool manager`,
+          amount: reserveBps,
+          value: formatUnits(h.clReserve, h.decimals, 4),
+          color: 'primary',
+        },
+        {
+          name: `${h.symbol} · unreserved`,
+          amount: 10_000 - reserveBps,
+          value: formatUnits(rest, h.decimals, 4),
+          color: 'violet',
+        },
+      ]}
+    />
+  )
+}
+
 export function VaultHoldingsCard({ state }: { state: State }) {
   return (
     <LiveCard
       title="Vault holdings"
       state={state}
       note={
-        <p className="live-note lc-note">
-          The Vault custodies every token; pool managers hold nothing. These balances are the
-          protocol&rsquo;s TVL. No dollar figure — ltUSD and ltETH are testnet tokens nothing prices.
-        </p>
+        <Methodology label="Why token units and why this split">
+          <p className="live-note">
+            The Vault custodies every token and the pool managers hold nothing, so these balances
+            are the protocol&rsquo;s TVL. No dollar figure: the pool tokens are unpriced, which is
+            also why each bar splits a token against ITSELF —{' '}
+            <code>reservesOfApp(clPoolManager, token)</code> against{' '}
+            <code>balanceOf(vault)</code> — rather than one token against another.
+          </p>
+        </Methodology>
       }
     >
       {(d) =>
         d.holdings.length === 0 ? (
           <p className="live-note">The Vault holds no tracked tokens on this deployment.</p>
         ) : (
-          <ul className="lc-rows">
+          <>
+            <ul className="lc-rows">
+              {d.holdings.map((h) => (
+                <Row
+                  key={h.token}
+                  href={explorerAddress(ACTIVE_CHAIN_ID, h.token)}
+                  name={h.symbol}
+                  value={formatUnits(h.balance, h.decimals, 4)}
+                />
+              ))}
+            </ul>
             {d.holdings.map((h) => (
-              <Row
-                key={h.token}
-                href={explorerAddress(ACTIVE_CHAIN_ID, h.token)}
-                name={h.symbol}
-                value={formatUnits(h.balance, h.decimals, 4)}
-              />
+              <HoldingSplit key={`split-${h.token}`} h={h} />
             ))}
-          </ul>
+          </>
         )
       }
     </LiveCard>
+  )
+}
+
+/**
+ * The newest swap's fee, decomposed.
+ *
+ * The two segments are shares of the SAME input amount and add to exactly
+ * `fee`, because `fee - protocolFee` is precisely the LP's share of the gross:
+ * the protocol takes its cut first and the LP rate applies to the remainder, so
+ * total = p + l − p·l/1e6 and total − p = l·(1 − p/1e6). Charting `protocolFee`
+ * and `lpPips` side by side instead would sum past 100% of the fee and draw a
+ * bar wider than its own total.
+ */
+function SwapFeeSplit({ s }: { s: SwapRecord }) {
+  const { lpPips } = splitFee(s.feePips, s.protocolFeePips)
+  const lpOfGross = s.feePips - s.protocolFeePips
+
+  if (s.feePips === 0) {
+    return <p className="live-note">The newest swap charged no fee, so there is nothing to split.</p>
+  }
+
+  return (
+    <>
+      <StackedBar
+        total={s.feePips}
+        unit="of the fee charged"
+        label={`Newest swap, block ${s.blockNumber.toString()}: ${s.feePips} pips of the input, split between the protocol and liquidity providers`}
+        segments={[
+          {
+            name: 'Protocol',
+            amount: s.protocolFeePips,
+            value: `${s.protocolFeePips} pips`,
+            color: 'primary',
+          },
+          {
+            name: 'Liquidity providers',
+            amount: lpOfGross,
+            value: `${lpOfGross} pips`,
+            color: 'violet',
+          },
+        ]}
+      />
+      <p className="live-note" style={{ marginTop: 8 }}>
+        Newest swap, block {s.blockNumber.toString()}: {s.feePips} pips of the input amount.
+      </p>
+      <Methodology label="Why the LP bar is not the LP rate">
+        <p className="live-note">
+          The pool&rsquo;s LP fee is {lpPips} pips, but it applies to what is left AFTER the
+          protocol&rsquo;s {s.protocolFeePips}, so the LP&rsquo;s share of the gross input is{' '}
+          {lpOfGross} pips. Both segments are shares of the same amount and add to exactly the{' '}
+          {s.feePips} the <code>Swap</code> event reports.
+        </p>
+      </Methodology>
+    </>
   )
 }
 
@@ -292,22 +459,25 @@ export function RecentSwapsCard({ state }: { state: State }) {
   return (
     <LiveCard title="Recent swaps" state={state}>
       {(d) =>
-        d.swaps.length === 0 ? (
+        d.swaps.length === 0 || !d.swaps[0] ? (
           <p className="live-note">No swaps recorded on this deployment yet.</p>
         ) : (
-          <ul className="lc-rows">
-            {d.swaps.map((s) => {
-              const { lpPips } = splitFee(s.feePips, s.protocolFeePips)
-              return (
-                <Row
-                  key={s.txHash}
-                  href={explorerTx(ACTIVE_CHAIN_ID, s.txHash)}
-                  name={`Block ${s.blockNumber.toString()}`}
-                  value={`${s.feePips} pips · ${s.protocolFeePips} protocol + ${lpPips} LP`}
-                />
-              )
-            })}
-          </ul>
+          <>
+            <ul className="lc-rows">
+              {d.swaps.map((s) => {
+                const { lpPips } = splitFee(s.feePips, s.protocolFeePips)
+                return (
+                  <Row
+                    key={s.txHash}
+                    href={explorerTx(ACTIVE_CHAIN_ID, s.txHash)}
+                    name={`Block ${s.blockNumber.toString()}`}
+                    value={`${s.feePips} pips · ${s.protocolFeePips} protocol + ${lpPips} LP`}
+                  />
+                )
+              })}
+            </ul>
+            <SwapFeeSplit s={d.swaps[0]} />
+          </>
         )
       }
     </LiveCard>

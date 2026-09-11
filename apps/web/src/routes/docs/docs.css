@@ -666,6 +666,30 @@
 
 /* ----------------------------------------------- B7. callback reference */
 
+/* ---------------------------------------------- charts hosted on this surface
+
+   `BitGrid` and `Gauge` are mounted here from routes/dapp/components, exactly
+   as the landing page mounts `BarList`: they already draw what this page needs,
+   and a docs-local reimplementation would be a second place for the two to
+   disagree about what bit 6 means.
+
+   Their own styling is global, out of dapp.css. These hosts supply only what
+   the `.dapp` shell would have supplied and this page does not: the easing
+   custom property that file scopes to its own root, and the docs rhythm.
+   -------------------------------------------------------------------------- */
+
+.dk-bits {
+  --dapp-ease: var(--ease);
+  margin-top: 18px;
+}
+
+.dk-gauge {
+  --dapp-ease: var(--ease);
+  display: flex;
+  justify-content: center;
+  margin: 24px 0 8px;
+}
+
 .dk-tablewrap {
   border: 1px solid var(--hairline);
   border-radius: var(--r-sm);

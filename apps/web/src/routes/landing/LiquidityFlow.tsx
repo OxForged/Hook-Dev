@@ -8,9 +8,9 @@
 
    WHY THIS IS NOT INVENTED DATA, WHICH IS A FAIR THING TO ASK.
 
-   Every other figure on this page is a measurement — read from Sepolia, or not
-   shown. This panel is a MODEL, and it says so in the surface itself. The
-   distinction that makes it legitimate:
+   Every other figure on this page is a measurement — read from whichever chain
+   this build serves, or not shown at all. This panel is a MODEL, and it says so
+   in the surface itself. The distinction that makes it legitimate:
 
      · The SHAPE of the flow is not a guess. It is the control flow of
        `RevShareHook._afterSwap` and `settleBeneficiaries`, which live in this
@@ -38,8 +38,14 @@
 
 import { useId, useMemo, useState } from 'react'
 
+import { ACTIVE_CHAIN_ID, DEPLOYMENTS } from '../../lib/chain'
+import { StackedBar } from '../dapp/components/series-charts'
+import type { StackSegment } from '../dapp/components/series-charts'
 import styles from './landing.module.css'
 import { cx } from './ui'
+
+/** One build, one chain. The provenance line names it rather than spelling it. */
+const ACTIVE_CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
 /* Contract constants. Named after the constant, and each one is the real value
    from the Solidity — a mirror, so a change is greppable from either side.
@@ -57,9 +63,9 @@ interface Split {
   dist: number
 }
 
-/* The live Sepolia pool's configuration, as a starting point rather than a
-   claim. It is the shape a real deployment takes; the reader immediately
-   overwrites it by dragging anything. */
+/* The live demo pool's fee, as a starting point rather than a claim — 3,000
+   pips is `demoPool.lpFee` on both deployments. The reader overwrites it by
+   dragging anything. */
 const START_FEE_PIPS = 3_000
 const START_SPLIT: Split = { lp: 2_000, ben: 5_000, dist: 3_000 }
 
@@ -144,6 +150,17 @@ export function LiquidityFlow() {
       dist: (take * split.dist) / SPLIT_DENOMINATOR,
     }
   }, [swap, feePips, split])
+
+  /* The split as stack segments. Amounts are the bps themselves rather than the
+     token figures, so the bar reads as the SPLIT — which is what the contract
+     constrains — and stays identical whatever swap size is selected. The token
+     amount each share produces is on the tooltip, where a reader who wants it
+     will look. */
+  const splitSegments: StackSegment[] = [
+    { name: 'Back to LPs', amount: split.lp, value: amount(f.lp), color: 'success' },
+    { name: 'Beneficiary roster', amount: split.ben, value: amount(f.ben), color: 'violet' },
+    { name: 'Epoch distributor', amount: split.dist, value: amount(f.dist), color: 'amber' },
+  ]
 
   /* Edge width is proportional to share, floored so a 0% edge is still visible
      as a hairline — an edge that vanishes reads as "this path does not exist",
@@ -358,17 +375,31 @@ export function LiquidityFlow() {
               onChange={(v) => setShare('dist', v)}
             />
 
+            {/* The same three numbers as one bar, because the constraint is the
+                point: `_validateParams` reverts unless they sum to exactly
+                SPLIT_DENOMINATOR. Three sliders look like three independent
+                dials; one track shows there is no slack. `total` is stated, so
+                a split that failed to fill it would show a striped remainder
+                rather than silently renormalising. */}
+            <div className={styles['hostedStack']}>
+              <StackedBar
+                segments={splitSegments}
+                total={SPLIT_DENOMINATOR}
+                label="How the Latch take divides, three ways"
+                unit="of the Latch take"
+              />
+            </div>
+
             <p className={styles['flowHint']}>
-              Move one and the other two rebalance, because{' '}
-              <code>SplitMustSumToDenominator</code> is an exact check rather than a ceiling — a
-              split summing to less would quietly shrink the cut instead of erroring.
+              Move one and the other two rebalance: <code>SplitMustSumToDenominator</code> is an
+              exact check, not a ceiling.
             </p>
           </div>
 
           <p className={styles['flowProvenance']}>
-            A MODEL, NOT A MEASUREMENT — this panel computes the contract&rsquo;s own arithmetic over
-            an amount you chose. It is not volume, TVL or revenue. Every measured figure on this page
-            is read from Ethereum Sepolia and labelled as such.
+            A MODEL, NOT A MEASUREMENT — the contract&rsquo;s own arithmetic over an amount you
+            chose, not volume, TVL or revenue. Measured figures on this page are read from{' '}
+            {ACTIVE_CHAIN.name} and labelled as such.
           </p>
         </div>
       </div>

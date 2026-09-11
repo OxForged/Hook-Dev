@@ -35,6 +35,7 @@
    card and in the page header.
    ============================================================================ */
 
+import { ACTIVE_CHAIN_ID, DEPLOYMENTS } from '../../../lib/chain'
 import { GITHUB_URL } from '../../landing/socials.ts'
 
 /* ---- the Latch families a project can say it uses ------------------------- */
@@ -173,6 +174,35 @@ export function chainsListed(projects: readonly EcosystemProject[]): number[] {
   return [...ids].sort((a, b) => a - b)
 }
 
+export interface ChainCount {
+  readonly chainId: number
+  readonly count: number
+}
+
+/**
+ * How many listings name each chain, most first.
+ *
+ * A COUNT OF CLAIMS, NOT OF DEPLOYMENTS. A project appears against every chain
+ * it listed, so the counts sum to more than `projects.length` whenever one
+ * integration spans several networks — and none of them was checked against
+ * that chain. The surface's provenance line (`LISTING_PROVENANCE`) is what
+ * qualifies it, and any caller rendering these numbers has to carry that line
+ * too.
+ *
+ * Only chains somebody actually named appear. There is no zero row for a chain
+ * this repo happens to deploy to: nobody submitted it, and drawing it at zero
+ * would put a reading where there is no submission.
+ */
+export function chainCounts(projects: readonly EcosystemProject[]): ChainCount[] {
+  const counts = new Map<number, number>()
+  for (const p of projects) {
+    for (const id of p.chains) counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([chainId, count]) => ({ chainId, count }))
+    .sort((a, b) => b.count - a.count || a.chainId - b.chainId)
+}
+
 /**
  * A typographic monogram from the project's name — the equity-ticker
  * precedent: when no official asset is available, letters in the design
@@ -249,7 +279,10 @@ function fallbackBody(name: string, url: string): string {
     '- If "Their own Latch": contract address or Marketplace link: ',
     '',
     '## Chains',
-    'EIP-155 chain ids the integration is live on (for example `11155111` for Sepolia): ',
+    /* The example is the chain this build actually reads from. It was pinned to
+       Sepolia, which asked every submitter on a Robinhood Chain deployment to
+       copy an id for a network the app was not talking to. */
+    `EIP-155 chain ids the integration is live on (for example \`${ACTIVE_CHAIN_ID}\` for ${DEPLOYMENTS[ACTIVE_CHAIN_ID].name}): `,
     '',
     '## Confirmations',
     '- [ ] I represent this project and am authorised to list it.',

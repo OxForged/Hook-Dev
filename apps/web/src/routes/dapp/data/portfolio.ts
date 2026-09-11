@@ -3,9 +3,10 @@
 
    This used to be a mock seam: five invented pairs, dollar values and a
    "FEES 30D" column for a wallet that did not exist. It is now a live reader,
-   in the same shape as lib/chain.ts: every figure comes from Ethereum Sepolia,
-   and if a read fails it THROWS. The screen decides what to show; it never
-   substitutes a placeholder.
+   in the same shape as lib/chain.ts: every figure comes from the chain being
+   browsed — `chainId` is a parameter here, never a literal — and if a read
+   fails it THROWS. The screen decides what to show; it never substitutes a
+   placeholder.
 
    What can genuinely be read for an address today:
 
@@ -17,7 +18,7 @@
         tick info and fee-growth globals — the current token amounts and the
         fees earned since last touch, computed exactly as the pool credits them.
      2. Wallet balances of the protocol's known tokens (ltUSD, ltETH).
-     3. Hooks the address has listed in the LatchHookRegistry as submitter.
+     3. Hooks the address has listed in LatchRegistry as submitter.
 
    What is NOT read, and is said so on screen rather than faked:
      - Bin (ERC-1155) positions from BinPositionManager.
@@ -37,7 +38,7 @@ import {
 
 import {
   DEPLOYMENTS,
-  SEPOLIA_CHAIN_ID,
+  ACTIVE_CHAIN_ID,
   client,
   readRegisteredLatches,
   type DeployedChainId,
@@ -322,7 +323,7 @@ async function readWalletBalances(
  */
 export async function readPortfolio(
   address: Address,
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<Portfolio> {
   const c = client(chainId)
   const tokenCache = new Map<string, Promise<TokenMeta>>()

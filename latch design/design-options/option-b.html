@@ -1,0 +1,1323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Latch — Design Option B · Canvas</title>
+<link rel="icon" href="/brand/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================================
+   DESIGN OPTION B · CANVAS
+   A spatial, calm counterpart to Option A's terminal grid.
+
+   SPACING SCALE — 4px base, ten stops. Every margin, padding, gap, and
+   positional offset in this file is one of these tokens (or 0):
+     --s1  4px     --s6  32px
+     --s2  8px     --s7  48px
+     --s3  12px    --s8  64px
+     --s4  16px    --s9  96px
+     --s5  24px    --s10 128px
+   Line-heights sit on the same 4px grid (16/20/24/28/32/40/48/56/72).
+   Radii: 4 (tiny cells) / 8 / 12 / 16 / 24 / pill.
+   Type: Inter (UI), Instrument Serif italic (display accents), JetBrains
+   Mono (numbers, code). Numeric columns use tabular figures.
+   Colour: warm paper ground, white layered surfaces, one brand blue.
+   The three RevShareHook shares carry three hues validated for CVD
+   separation (blue / violet / aqua) and are always labelled in text.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px;
+  --s6: 32px; --s7: 48px; --s8: 64px; --s9: 96px; --s10: 128px;
+
+  --r1: 8px; --r2: 12px; --r3: 16px; --r4: 24px; --rp: 999px;
+
+  --ground: #F4F3EF;
+  --surface: #FFFFFF;
+  --surface-2: #F9F8F5;
+  --surface-3: #EFEEE9;
+  --ink: #12151A;
+  --ink-2: #4A5163;
+  --ink-3: #858B9B;
+  --line: #E7E5DF;
+  --line-2: #D8D6CF;
+
+  --accent: #2D5BFF;
+  --accent-ink: #1E43D6;
+  --accent-soft: #E9EEFF;
+
+  --lp: #2A78D6;   --lp-soft: #E3EEFB;
+  --ben: #4A3AA7;  --ben-soft: #E8E5F6;
+  --hold: #1BAF7A; --hold-soft: #DDF4EA;
+  --path: #D8D6CF;
+
+  --good: #1E8E3E;
+  --warn: #B26A00;
+
+  --shadow-1: 0 1px 2px rgba(18,21,26,.04), 0 4px 16px rgba(18,21,26,.05);
+  --shadow-2: 0 2px 4px rgba(18,21,26,.05), 0 24px 64px rgba(18,21,26,.09);
+  --shadow-inset: inset 0 1px 0 rgba(255,255,255,.7);
+
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --dur: 320ms;
+
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --serif: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  --wrap: 1200px;
+  --gutter: var(--s5);
+  --topbar: 64px;
+}
+@media (min-width: 900px) { :root { --gutter: var(--s7); } }
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 24px;
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+img, svg { display: block; max-width: 100%; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+a { color: inherit; text-decoration: none; }
+code, pre, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.num { font-variant-numeric: tabular-nums; }
+h1, h2, h3, h4, p, figure { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r1); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+.wrap { width: 100%; max-width: var(--wrap); margin-inline: auto; padding-inline: var(--gutter); }
+
+/* ---------- Top bar: brand · view tabs · option chip ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  height: var(--topbar);
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  padding-inline: var(--gutter);
+  background: rgba(244,243,239,.82);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: inline-flex; align-items: center; gap: var(--s3); font-weight: 600; letter-spacing: -0.01em; }
+.brand img { width: 28px; height: 28px; }
+.brand span { font-size: 16px; }
+.tabs { display: inline-flex; padding: var(--s1); gap: var(--s1); background: var(--surface-3); border-radius: var(--rp); }
+.tab {
+  height: 32px; padding-inline: var(--s4);
+  border-radius: var(--rp);
+  font-size: 14px; font-weight: 500; line-height: 32px; color: var(--ink-2);
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); }
+.tab .k { display: inline-block; width: 20px; height: 20px; margin-right: var(--s2); border-radius: var(--r1); font-size: 12px; line-height: 20px; text-align: center; background: var(--surface-3); color: var(--ink-3); vertical-align: -2px; }
+.tab[aria-selected="true"] .k { background: var(--accent-soft); color: var(--accent-ink); }
+.option-chip { justify-self: end; display: inline-flex; align-items: center; gap: var(--s2); height: 28px; padding-inline: var(--s3); border-radius: var(--rp); border: 1px solid var(--line-2); font-size: 12px; line-height: 16px; color: var(--ink-2); background: var(--surface); white-space: nowrap; }
+.option-chip i { width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, var(--lp), var(--hold)); }
+@media (max-width: 720px) {
+  .brand span, .option-chip { display: none; }
+  .topbar { grid-template-columns: auto 1fr; }
+  .tabs { justify-self: end; }
+}
+
+.view[hidden] { display: none; }
+
+/* ---------- Generic primitives ---------- */
+.eyebrow { font-size: 13px; line-height: 20px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.display { font-family: var(--serif); font-weight: 400; letter-spacing: -0.015em; }
+.display em { font-style: italic; color: var(--accent-ink); }
+.lede { font-size: 18px; line-height: 28px; color: var(--ink-2); max-width: 36em; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
+  height: 48px; padding-inline: var(--s5);
+  border-radius: var(--rp);
+  font-size: 15px; font-weight: 500; line-height: 24px;
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.btn-primary { background: var(--ink); color: #fff; box-shadow: 0 8px 24px rgba(18,21,26,.16); }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(18,21,26,.2); }
+.btn-ghost { background: var(--surface); border: 1px solid var(--line-2); color: var(--ink); }
+.btn-ghost:hover { border-color: var(--ink-3); }
+.btn-sm { height: 36px; padding-inline: var(--s4); font-size: 14px; }
+.btn-accent { background: var(--accent); color: #fff; }
+.btn-accent:hover { background: var(--accent-ink); }
+.chip { display: inline-flex; align-items: center; gap: var(--s2); height: 24px; padding-inline: var(--s3); border-radius: var(--rp); font-size: 12px; line-height: 16px; font-weight: 500; white-space: nowrap; }
+.chip-illus { background: #FFF4DC; color: #7A4B00; border: 1px solid #F3E0B4; }
+.chip-illus::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+.chip-live { background: #E3F4E8; color: #14602B; border: 1px solid #BFE4CB; }
+.chip-live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+.chip-neutral { background: var(--surface-3); color: var(--ink-2); }
+.chip-accent { background: var(--accent-soft); color: var(--accent-ink); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r4); box-shadow: var(--shadow-1); }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.dot-lp { background: var(--lp); } .dot-ben { background: var(--ben); } .dot-hold { background: var(--hold); }
+
+/* ---------- Landing · hero ---------- */
+.hero { padding-block: var(--s8) var(--s9); position: relative; isolation: isolate; }
+.hero::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 720px; z-index: -1;
+  background:
+    radial-gradient(60% 50% at 20% 10%, rgba(45,91,255,.10), transparent 70%),
+    radial-gradient(50% 45% at 85% 20%, rgba(27,175,122,.10), transparent 70%),
+    radial-gradient(40% 40% at 60% 90%, rgba(74,58,167,.08), transparent 70%);
+}
+.hero-head { display: grid; gap: var(--s5); max-width: 880px; margin-bottom: var(--s7); }
+.hero h1 { font-size: clamp(40px, 6.4vw, 72px); line-height: 1.05; }
+.hero-meta { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; }
+
+.flow-card { padding: var(--s5); border-radius: var(--r4); background: linear-gradient(180deg, #FFFFFF 0%, #FBFBF9 100%); box-shadow: var(--shadow-2), var(--shadow-inset); border: 1px solid var(--line); }
+@media (min-width: 900px) { .flow-card { padding: var(--s6); } }
+.flow-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--s3); margin-bottom: var(--s4); }
+.flow-top h2 { font-size: 15px; line-height: 24px; font-weight: 600; }
+.flow-top .legend { display: flex; flex-wrap: wrap; gap: var(--s4); font-size: 13px; line-height: 20px; color: var(--ink-2); }
+.flow-top .legend span { display: inline-flex; align-items: center; gap: var(--s2); }
+.flow-scroll { overflow-x: auto; overflow-y: hidden; border-radius: var(--r3); background: var(--surface-2); border: 1px solid var(--line); }
+.flow-scroll::-webkit-scrollbar { height: 8px; } .flow-scroll::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: var(--rp); }
+.flow { width: 100%; min-width: 960px; height: auto; display: block; font-family: var(--font); }
+.flow text { fill: var(--ink); font-size: 13px; font-weight: 500; }
+.flow text.sub { fill: var(--ink-3); font-weight: 400; font-size: 12px; }
+.flow text.mono { font-family: var(--mono); font-size: 12px; fill: var(--ink-2); font-weight: 400; }
+.flow .node rect { fill: var(--surface); stroke: var(--line-2); stroke-width: 1; }
+.flow .node-pool rect.body { fill: var(--surface); stroke: var(--line-2); filter: drop-shadow(0 8px 16px rgba(18,21,26,.06)); }
+.flow .node-latch rect { fill: var(--accent-soft); stroke: var(--accent); }
+.flow .node-latch text { fill: var(--accent-ink); }
+.flow .rail { fill: none; stroke: var(--path); stroke-linecap: round; }
+.flow .branch path { fill: none; stroke-linecap: round; transition: opacity var(--dur) var(--ease), stroke-width var(--dur) var(--ease); }
+.flow .branch.lp path { stroke: var(--lp); } .flow .branch.ben path { stroke: var(--ben); } .flow .branch.hold path { stroke: var(--hold); }
+.flow .branch .hit { stroke: transparent; stroke-width: 28px; cursor: pointer; transition: none; }
+.flow .branch rect { transition: stroke var(--dur) var(--ease), fill var(--dur) var(--ease); }
+.flow .branch.lp rect { stroke: var(--lp); fill: var(--lp-soft); } .flow .branch.ben rect { stroke: var(--ben); fill: var(--ben-soft); } .flow .branch.hold rect { stroke: var(--hold); fill: var(--hold-soft); }
+.flow .branch.zero path.line { stroke-dasharray: 2 8; }
+.flow.has-focus .branch:not(.is-focus) { opacity: .28; }
+.flow .branch { transition: opacity var(--dur) var(--ease); }
+.flow .particles circle { pointer-events: none; }
+.flow .particles.rail-dots circle { fill: var(--ink-3); }
+.flow .particles.lp circle { fill: var(--lp); } .flow .particles.ben circle { fill: var(--ben); } .flow .particles.hold circle { fill: var(--hold); }
+.flow .junction { fill: var(--ink); }
+.flow .feelabel rect { fill: var(--ink); }
+.flow .feelabel text { fill: #fff; font-family: var(--mono); font-size: 12px; font-weight: 500; }
+.flow-tip { position: absolute; pointer-events: none; z-index: 5; padding: var(--s2) var(--s3); background: var(--ink); color: #fff; border-radius: var(--r2); font-size: 12px; line-height: 16px; box-shadow: var(--shadow-2); opacity: 0; transform: translate(-50%, calc(-100% - var(--s3))) translateY(4px); transition: opacity 160ms var(--ease), transform 160ms var(--ease); white-space: nowrap; }
+.flow-tip.show { opacity: 1; transform: translate(-50%, calc(-100% - var(--s3))); }
+.flow-tip b { display: block; font-weight: 600; }
+.flow-wrap { position: relative; }
+
+.flow-controls { display: grid; gap: var(--s5); margin-top: var(--s5); }
+@media (min-width: 900px) { .flow-controls { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--s6); margin-top: var(--s6); } }
+.ctl { display: grid; gap: var(--s3); align-content: start; }
+.ctl-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); }
+.ctl-head h3 { font-size: 14px; line-height: 20px; font-weight: 600; }
+.ctl-head .val { font-family: var(--mono); font-size: 14px; line-height: 20px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.ctl-foot { font-size: 13px; line-height: 20px; color: var(--ink-3); }
+.ctl-foot code { font-size: 12px; background: var(--surface-3); padding: 0 var(--s1); border-radius: var(--s1); }
+
+/* Fee range */
+.range { -webkit-appearance: none; appearance: none; width: 100%; height: 32px; background: transparent; margin: 0; }
+.range::-webkit-slider-runnable-track { height: 8px; border-radius: var(--rp); background: linear-gradient(90deg, var(--ink) var(--pct, 3%), var(--line) var(--pct, 3%)); }
+.range::-moz-range-track { height: 8px; border-radius: var(--rp); background: var(--line); }
+.range::-moz-range-progress { height: 8px; border-radius: var(--rp); background: var(--ink); }
+.range::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; margin-top: -8px; border-radius: 50%; background: #fff; border: 2px solid var(--ink); box-shadow: var(--shadow-1); transition: transform 160ms var(--ease); }
+.range::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 2px solid var(--ink); box-shadow: var(--shadow-1); }
+.range:hover::-webkit-slider-thumb { transform: scale(1.08); }
+.range:focus-visible { outline: none; }
+.range:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Split bar with two draggable thumbs */
+.split { position: relative; height: 48px; touch-action: none; user-select: none; }
+.split-track { position: absolute; inset: var(--s4) 0; height: 16px; border-radius: var(--rp); overflow: hidden; display: flex; background: var(--line); }
+.split-track i { display: block; height: 100%; transition: width 60ms linear; }
+.split-track i + i { border-left: 2px solid var(--surface); }
+.split-track .lp { background: var(--lp); } .split-track .ben { background: var(--ben); } .split-track .hold { background: var(--hold); }
+.thumb { position: absolute; top: var(--s2); width: 32px; height: 32px; margin-left: -16px; border-radius: 50%; background: #fff; border: 2px solid var(--ink); box-shadow: var(--shadow-1); cursor: grab; display: grid; place-items: center; transition: transform 160ms var(--ease), box-shadow 160ms var(--ease); }
+.thumb::after { content: ''; width: 2px; height: 12px; border-radius: 1px; background: var(--ink); box-shadow: 4px 0 0 var(--ink), -4px 0 0 var(--ink); }
+.thumb:hover, .thumb.drag { transform: scale(1.06); box-shadow: var(--shadow-2); cursor: grabbing; }
+.thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 50%; }
+.split-read { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); }
+.split-read button { text-align: left; display: grid; gap: var(--s1); padding: var(--s3); border-radius: var(--r2); border: 1px solid var(--line); background: var(--surface); transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease); }
+.split-read button:hover { border-color: var(--line-2); background: var(--surface-2); }
+.split-read .name { display: inline-flex; align-items: center; gap: var(--s2); font-size: 13px; line-height: 20px; font-weight: 500; }
+.split-read .bps { font-family: var(--mono); font-size: 20px; line-height: 24px; font-variant-numeric: tabular-nums; }
+.split-read .pc { font-size: 12px; line-height: 16px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) { .split-read { grid-template-columns: 1fr; } }
+.sum { display: inline-flex; align-items: center; gap: var(--s2); font-size: 13px; line-height: 20px; color: var(--good); }
+.sum::before { content: '✓'; }
+
+/* ---------- Landing · sections ---------- */
+.section { padding-block: var(--s9); }
+.section + .section { border-top: 1px solid var(--line); }
+.section-head { display: grid; gap: var(--s4); max-width: 720px; margin-bottom: var(--s8); }
+.section-head h2 { font-size: clamp(32px, 4vw, 48px); line-height: 1.1; }
+.section-head p { font-size: 18px; line-height: 28px; color: var(--ink-2); }
+
+.facts { display: grid; gap: var(--s5); }
+@media (min-width: 900px) { .facts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.fact { padding: var(--s6); display: grid; gap: var(--s5); align-content: start; transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.fact:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); }
+.fact .art { height: 128px; border-radius: var(--r3); background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; overflow: hidden; }
+.fact h3 { font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; }
+.fact p { color: var(--ink-2); font-size: 15px; line-height: 24px; }
+.fact code { font-size: 13px; background: var(--surface-3); padding: 0 var(--s1); border-radius: var(--s1); }
+.bits { display: grid; grid-template-columns: repeat(14, 12px); gap: var(--s1); }
+.bits i { width: 12px; height: 12px; border-radius: var(--s1); background: var(--line-2); }
+.bits i.on { background: var(--accent); }
+.art-clock { display: flex; gap: var(--s5); align-items: center; }
+.art-clock .t { text-align: center; }
+.art-clock .t b { display: block; font-family: var(--mono); font-size: 28px; line-height: 32px; font-weight: 500; }
+.art-clock .t span { font-size: 12px; line-height: 16px; color: var(--ink-3); }
+
+/* Guided path */
+.path { display: grid; gap: var(--s7); }
+@media (min-width: 1000px) { .path { grid-template-columns: 280px minmax(0, 1fr); gap: var(--s9); } }
+.path-rail { position: sticky; top: calc(var(--topbar) + var(--s6)); align-self: start; display: grid; gap: var(--s1); }
+@media (max-width: 999px) { .path-rail { position: static; display: flex; overflow-x: auto; gap: var(--s2); padding-bottom: var(--s1); } }
+.rail-item { display: flex; align-items: center; gap: var(--s3); height: 48px; padding-inline: var(--s3); border-radius: var(--r2); font-size: 15px; font-weight: 500; color: var(--ink-2); white-space: nowrap; transition: background var(--dur) var(--ease), color var(--dur) var(--ease); }
+.rail-item:hover { background: var(--surface); color: var(--ink); }
+.rail-item.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); }
+.rail-item .n { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line-2); display: grid; place-items: center; font-family: var(--mono); font-size: 13px; color: var(--ink-3); flex: none; transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+.rail-item.active .n { background: var(--ink); color: #fff; border-color: var(--ink); }
+.steps { display: grid; gap: var(--s7); }
+.step { display: grid; gap: var(--s5); scroll-margin-top: calc(var(--topbar) + var(--s6)); }
+.step-head { display: grid; gap: var(--s3); max-width: 600px; }
+.step-head .eyebrow { color: var(--accent-ink); }
+.step-head h3 { font-size: 28px; line-height: 32px; font-weight: 600; letter-spacing: -0.015em; }
+.step-head p { color: var(--ink-2); }
+.code { border-radius: var(--r3); border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-1); overflow: hidden; }
+.code-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); height: 44px; padding-inline: var(--s4); border-bottom: 1px solid var(--line); background: var(--surface-2); font-size: 13px; color: var(--ink-3); }
+.code-bar span { font-family: var(--mono); font-size: 12px; }
+.code-bar button { height: 28px; padding-inline: var(--s3); border-radius: var(--rp); border: 1px solid var(--line-2); font-size: 12px; font-weight: 500; color: var(--ink-2); background: var(--surface); transition: border-color var(--dur) var(--ease); }
+.code-bar button:hover { border-color: var(--ink-3); color: var(--ink); }
+.code pre { margin: 0; padding: var(--s4) var(--s5); overflow-x: auto; font-size: 13px; line-height: 20px; color: var(--ink); tab-size: 2; }
+.code .c { color: var(--ink-3); } .code .k { color: #8A3FC8; } .code .t { color: #1E43D6; } .code .s { color: #0F7B5F; } .code .n { color: #B25A00; } .code .f { color: #12151A; font-weight: 500; } .code .live { background: #FFF4DC; border-radius: var(--s1); padding-inline: var(--s1); }
+
+/* Chains */
+.chains { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s3); }
+.chain { display: flex; align-items: center; gap: var(--s3); height: 64px; padding-inline: var(--s4); border-radius: var(--r3); background: var(--surface); border: 1px solid var(--line); transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease); }
+.chain:hover { border-color: var(--line-2); transform: translateY(-1px); }
+.chain img, .chain .mono-mark { width: 28px; height: 28px; border-radius: 50%; flex: none; }
+.chain .mono-mark { display: grid; place-items: center; background: var(--ink); color: #fff; font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+.chain .meta { display: grid; min-width: 0; }
+.chain .meta b { font-size: 14px; line-height: 20px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chain .meta span { font-size: 12px; line-height: 16px; color: var(--ink-3); font-family: var(--mono); }
+.chain .state { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); flex: none; }
+.chain.live .state { background: var(--good); box-shadow: 0 0 0 4px #E3F4E8; }
+.chain.next .state { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.chain-key { display: flex; flex-wrap: wrap; gap: var(--s5); margin-top: var(--s5); font-size: 13px; line-height: 20px; color: var(--ink-2); }
+.chain-key span { display: inline-flex; align-items: center; gap: var(--s2); }
+.chain-key i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); }
+
+/* Close */
+.close { padding-block: var(--s10); text-align: center; }
+.close h2 { font-size: clamp(36px, 5vw, 64px); line-height: 1.05; max-width: 16em; margin-inline: auto; }
+.close p { margin: var(--s5) auto 0; }
+.close .cta-row { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s3); margin-top: var(--s7); }
+.footer { border-top: 1px solid var(--line); padding-block: var(--s6); font-size: 13px; line-height: 20px; color: var(--ink-3); }
+.footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s3); }
+.cta-row { display: flex; flex-wrap: wrap; gap: var(--s3); }
+
+/* ---------- DAPP ---------- */
+.app { display: grid; grid-template-columns: minmax(0, 1fr); min-height: calc(100vh - var(--topbar)); }
+@media (min-width: 960px) { .app { grid-template-columns: 248px minmax(0, 1fr); } }
+.side { min-width: 0; background: var(--surface); border-right: 1px solid var(--line); padding: var(--s5) var(--s4); display: flex; flex-direction: column; gap: var(--s6); }
+@media (min-width: 960px) { .side { position: sticky; top: var(--topbar); height: calc(100vh - var(--topbar)); } }
+@media (max-width: 959px) { .side { border-right: 0; border-bottom: 1px solid var(--line); padding: var(--s3) var(--gutter); gap: var(--s3); } .side .side-foot, .side .side-brand { display: none; } }
+.side-brand { display: flex; align-items: center; gap: var(--s3); padding-inline: var(--s2); font-weight: 600; }
+.side-brand img { width: 24px; height: 24px; }
+.side-brand small { font-weight: 400; color: var(--ink-3); font-size: 12px; }
+.nav { display: grid; gap: var(--s1); min-width: 0; }
+@media (max-width: 959px) { .nav { display: flex; overflow-x: auto; gap: var(--s1); } }
+.nav-label { padding: var(--s2) var(--s3) var(--s1); font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+@media (max-width: 959px) { .nav-label { display: none; } }
+.nav-item { display: flex; align-items: center; gap: var(--s3); height: 40px; padding-inline: var(--s3); border-radius: var(--r2); font-size: 14px; font-weight: 500; color: var(--ink-2); white-space: nowrap; transition: background var(--dur) var(--ease), color var(--dur) var(--ease); }
+.nav-item:hover { background: var(--surface-2); color: var(--ink); }
+.nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--accent-ink); }
+.nav-item svg { width: 18px; height: 18px; flex: none; }
+.nav-item .cnt { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.side-foot { margin-top: auto; padding: var(--s4); border-radius: var(--r3); background: var(--surface-2); border: 1px solid var(--line); display: grid; gap: var(--s2); font-size: 13px; line-height: 20px; color: var(--ink-2); }
+.side-foot b { display: flex; align-items: center; gap: var(--s2); color: var(--ink); font-weight: 500; }
+.side-foot b::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+
+.main { display: grid; align-content: start; gap: var(--s6); padding: var(--s5) var(--gutter) var(--s9); min-width: 0; }
+.appbar { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.appbar h1 { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.015em; margin-right: auto; }
+.search { display: flex; align-items: center; gap: var(--s2); height: 40px; padding-inline: var(--s3); border-radius: var(--rp); background: var(--surface); border: 1px solid var(--line); color: var(--ink-3); font-size: 14px; min-width: 0; }
+.search input { border: 0; outline: 0; background: transparent; width: 160px; min-width: 0; color: var(--ink); }
+.search input::placeholder { color: var(--ink-3); }
+.search kbd { font-family: var(--mono); font-size: 11px; padding: 0 var(--s1); border: 1px solid var(--line-2); border-radius: 4px; line-height: 16px; }
+.pill { display: inline-flex; align-items: center; gap: var(--s2); height: 40px; padding-inline: var(--s3) var(--s4); border-radius: var(--rp); background: var(--surface); border: 1px solid var(--line); font-size: 14px; font-weight: 500; transition: border-color var(--dur) var(--ease); }
+.pill:hover { border-color: var(--ink-3); }
+.pill img { width: 20px; height: 20px; border-radius: 50%; }
+.pill .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+.pill.wallet { background: var(--ink); color: #fff; border-color: var(--ink); }
+.pill.wallet:hover { background: #22262E; }
+.pill.wallet i { width: 20px; height: 20px; border-radius: 50%; background: conic-gradient(from 90deg, var(--lp), var(--hold), var(--ben), var(--lp)); }
+.pill .mono { font-size: 13px; }
+@media (max-width: 720px) { .search { display: none; } }
+
+.kpis { display: grid; gap: var(--s4); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 1100px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .kpis { grid-template-columns: 1fr; } }
+.kpi { padding: var(--s5); display: grid; gap: var(--s3); align-content: start; }
+.kpi .lab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--s2); font-size: 13px; line-height: 20px; color: var(--ink-2); font-weight: 500; }
+.kpi .v { font-family: var(--mono); font-size: 28px; line-height: 32px; white-space: nowrap; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.kpi .v small { display: block; font-family: var(--font); font-size: 13px; line-height: 16px; color: var(--ink-3); font-weight: 400; margin-top: var(--s1); }
+.kpi .src { font-size: 12px; line-height: 16px; color: var(--ink-3); }
+
+.grid-2 { display: grid; gap: var(--s4); }
+@media (min-width: 1100px) { .grid-2 { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); } }
+.panel { padding: var(--s5); display: grid; gap: var(--s5); align-content: start; }
+.panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--s3); }
+.panel-head h2 { font-size: 16px; line-height: 24px; font-weight: 600; }
+.panel-head p { font-size: 13px; line-height: 20px; color: var(--ink-3); }
+.legend { display: flex; flex-wrap: wrap; gap: var(--s4); font-size: 13px; line-height: 20px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: var(--s2); }
+
+.chart-wrap { position: relative; }
+.chart { width: 100%; height: auto; display: block; font-family: var(--font); }
+.chart .grid line { stroke: var(--line); }
+.chart .axis text { fill: var(--ink-3); font-size: 11px; font-family: var(--mono); }
+.chart .bar rect { transition: opacity var(--dur) var(--ease); }
+.chart .bar.dim rect { opacity: .35; }
+.chart .bar .hit { fill: transparent; cursor: pointer; }
+.chart-tip { position: absolute; pointer-events: none; z-index: 3; padding: var(--s2) var(--s3); background: var(--ink); color: #fff; border-radius: var(--r2); font-size: 12px; line-height: 16px; box-shadow: var(--shadow-2); opacity: 0; transform: translate(-50%, calc(-100% - var(--s2))); transition: opacity 160ms var(--ease); white-space: nowrap; }
+.chart-tip.show { opacity: 1; }
+.chart-tip b { display: block; font-weight: 600; margin-bottom: var(--s1); }
+.chart-tip .row { display: flex; justify-content: space-between; gap: var(--s4); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.chart-tip .row i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: var(--s2); }
+.chart-foot { font-size: 12px; line-height: 16px; color: var(--ink-3); }
+
+/* Marketplace card */
+.listing { display: grid; gap: var(--s5); }
+.listing-top { display: flex; align-items: flex-start; gap: var(--s4); }
+.listing-icon { width: 48px; height: 48px; border-radius: var(--r2); background: linear-gradient(135deg, var(--accent-soft), #F4F1FF); border: 1px solid var(--line); display: grid; place-items: center; flex: none; }
+.listing-icon img { width: 28px; height: 28px; }
+.listing h3 { font-size: 18px; line-height: 24px; font-weight: 600; }
+.listing .by { font-size: 13px; line-height: 20px; color: var(--ink-3); }
+.listing .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.listing p { font-size: 14px; line-height: 20px; color: var(--ink-2); }
+.spec { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3) var(--s4); }
+.spec div { display: grid; gap: var(--s1); }
+.spec dt { font-size: 12px; line-height: 16px; color: var(--ink-3); margin: 0; }
+.spec dd { margin: 0; font-family: var(--mono); font-size: 14px; line-height: 20px; font-variant-numeric: tabular-nums; }
+.bitmap { display: grid; gap: var(--s2); }
+.bitmap .cells { display: grid; grid-template-columns: repeat(14, 1fr); gap: var(--s1); }
+.bitmap .cells button { aspect-ratio: 1; border-radius: 4px; background: var(--surface-3); transition: transform 160ms var(--ease), background var(--dur) var(--ease); }
+.bitmap .cells button.on { background: var(--accent); }
+.bitmap .cells button:hover { transform: scale(1.12); }
+.bitmap .cells button:focus-visible { outline-offset: 1px; }
+.bitmap .read { display: flex; justify-content: space-between; gap: var(--s3); font-size: 12px; line-height: 16px; color: var(--ink-3); font-family: var(--mono); }
+.bitmap .read b { color: var(--ink); font-weight: 500; }
+.mini-split { display: flex; height: 8px; border-radius: var(--rp); overflow: hidden; background: var(--line); }
+.mini-split i { display: block; height: 100%; }
+.mini-split i + i { border-left: 2px solid var(--surface); }
+.listing-cta { display: flex; gap: var(--s2); flex-wrap: wrap; }
+
+/* Table */
+.table-wrap { overflow-x: auto; border-radius: var(--r3); border: 1px solid var(--line); }
+table { width: 100%; min-width: 760px; border-collapse: separate; border-spacing: 0; font-size: 14px; line-height: 20px; }
+thead th { position: sticky; top: 0; text-align: left; font-weight: 500; font-size: 12px; line-height: 16px; letter-spacing: .02em; color: var(--ink-3); background: var(--surface-2); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); white-space: nowrap; }
+thead th.r, tbody td.r { text-align: right; }
+tbody td { padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr { transition: background var(--dur) var(--ease); }
+tbody tr:hover { background: var(--surface-2); }
+tbody tr:focus-within { background: var(--accent-soft); }
+td.mono, th.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13px; }
+.pair { display: inline-flex; align-items: center; gap: var(--s3); }
+.pair .coins { display: inline-flex; }
+.pair .coins i { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--surface); background: linear-gradient(135deg, #DDE6FF, #C4D2FF); }
+.pair .coins i + i { margin-left: -8px; background: linear-gradient(135deg, #E2E2E2, #C8CCD4); }
+.pair a { font-weight: 500; }
+.pair a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.split-cell { display: inline-flex; align-items: center; gap: var(--s2); }
+.split-cell .mini-split { width: 96px; }
+.status { display: inline-flex; align-items: center; gap: var(--s2); font-size: 13px; }
+.status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+.status.pending::before { background: var(--warn); }
+.status.off::before { background: var(--line-2); }
+.row-act { height: 28px; padding-inline: var(--s3); border-radius: var(--rp); border: 1px solid var(--line-2); font-size: 12px; font-weight: 500; background: var(--surface); color: var(--ink-2); transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+.row-act:hover { border-color: var(--ink-3); color: var(--ink); }
+.table-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s3); font-size: 12px; line-height: 16px; color: var(--ink-3); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============================ TOP BAR ============================ -->
+<header class="topbar">
+  <a class="brand" href="#landing" data-goto="landing">
+    <img src="/brand/latch-mark-transparent.png" alt="Latch">
+    <span>Latch</span>
+  </a>
+  <div class="tabs" role="tablist" aria-label="Prototype views">
+    <button class="tab" role="tab" id="tab-landing" aria-selected="true" aria-controls="landing" data-view="landing"><span class="k">1</span>Landing</button>
+    <button class="tab" role="tab" id="tab-dapp" aria-selected="false" aria-controls="dapp" data-view="dapp" tabindex="-1"><span class="k">2</span>Dapp</button>
+  </div>
+  <div class="option-chip"><i></i>Design Option B · Canvas</div>
+</header>
+
+<!-- ============================ VIEW 1 · LANDING ============================ -->
+<main id="landing" class="view" role="tabpanel" aria-labelledby="tab-landing">
+
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-head">
+        <p class="eyebrow">A hooks platform · forked from PancakeSwap Infinity</p>
+        <h1 class="display">Every swap, <em>split the way you designed.</em></h1>
+        <div class="hero-meta">
+          <span class="chip chip-live">Live on Ethereum Sepolia</span>
+          <span class="chip chip-neutral">No mainnet deployment yet</span>
+        </div>
+      </div>
+
+      <figure class="flow-card" aria-labelledby="flow-title">
+        <div class="flow-top">
+          <h2 id="flow-title">One swap through a pool with a Latch attached</h2>
+          <div class="legend" aria-hidden="true">
+            <span><i class="dot dot-lp"></i>Back to LPs</span>
+            <span><i class="dot dot-ben"></i>Beneficiary roster</span>
+            <span><i class="dot dot-hold"></i>Token holders</span>
+            <span class="chip chip-illus">Illustrative amounts</span>
+          </div>
+        </div>
+
+        <div class="flow-wrap">
+          <div class="flow-scroll">
+            <svg class="flow" id="flow" viewBox="0 0 1200 520" role="img" aria-describedby="flow-desc">
+              <desc id="flow-desc">A swap enters a pool. The Latch attached to the pool takes a fee in pips, then splits that fee three ways: back to the pool's LPs, to a weighted roster of up to eight beneficiaries, and to an epoch distributor for token holders. The three shares are in basis points and sum to exactly 10,000.</desc>
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+                  <path d="M1,1 L8,5 L1,9" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </marker>
+              </defs>
+
+              <!-- rails: swap in -> pool -> trader -->
+              <path id="p-in" class="rail" d="M200,124 H400" stroke-width="14" marker-end="url(#arrow)"/>
+              <path id="p-out" class="rail" d="M640,124 C 790,124 830,72 980,72" stroke-width="14" marker-end="url(#arrow)"/>
+
+              <!-- fee take: latch -> junction -->
+              <path id="p-fee" class="rail" d="M520,188 C 520,300 610,300 740,300" stroke-width="14" stroke="#B9B7AF" marker-end="url(#arrow)"/>
+
+              <!-- branches -->
+              <g class="branch lp" data-k="lp" tabindex="0" role="button" aria-label="Share back to LPs">
+                <path class="line" id="p-lp" d="M740,300 C 860,300 860,212 980,212" stroke-width="8" marker-end="url(#arrow)"/>
+                <path class="hit" d="M740,300 C 860,300 860,212 980,212"/>
+                <rect x="980" y="184" width="180" height="56" rx="16"/>
+                <text x="1000" y="207">Back to LPs</text>
+                <text class="mono" x="1000" y="227" data-out="lp-node">6 000 bps · 60.00%</text>
+              </g>
+              <g class="branch ben" data-k="ben" tabindex="0" role="button" aria-label="Share to beneficiary roster">
+                <path class="line" id="p-ben" d="M740,300 C 860,300 860,324 980,324" stroke-width="8" marker-end="url(#arrow)"/>
+                <path class="hit" d="M740,300 C 860,300 860,324 980,324"/>
+                <rect x="980" y="296" width="180" height="56" rx="16"/>
+                <text x="1000" y="319">Beneficiary roster</text>
+                <text class="mono" x="1000" y="339" data-out="ben-node">2 500 bps · 25.00%</text>
+              </g>
+              <g class="branch hold" data-k="hold" tabindex="0" role="button" aria-label="Share to token holders">
+                <path class="line" id="p-hold" d="M740,300 C 860,300 860,436 980,436" stroke-width="8" marker-end="url(#arrow)"/>
+                <path class="hit" d="M740,300 C 860,300 860,436 980,436"/>
+                <rect x="980" y="408" width="180" height="56" rx="16"/>
+                <text x="1000" y="431">Token holders</text>
+                <text class="mono" x="1000" y="451" data-out="hold-node">1 500 bps · 15.00%</text>
+              </g>
+
+              <!-- particles (decorative; hidden under reduced motion) -->
+              <g class="particles rail-dots" data-for="p-in" aria-hidden="true"></g>
+              <g class="particles rail-dots" data-for="p-out" aria-hidden="true"></g>
+              <g class="particles rail-dots" data-for="p-fee" aria-hidden="true"></g>
+              <g class="particles lp" data-for="p-lp" aria-hidden="true"></g>
+              <g class="particles ben" data-for="p-ben" aria-hidden="true"></g>
+              <g class="particles hold" data-for="p-hold" aria-hidden="true"></g>
+
+              <!-- nodes -->
+              <g class="node node-in">
+                <rect x="40" y="96" width="160" height="56" rx="16"/>
+                <text class="sub" x="60" y="118">Swap in</text>
+                <text class="mono" x="60" y="139" data-out="amount">1 000.00 ltUSD</text>
+              </g>
+              <g class="node node-pool">
+                <rect class="body" x="400" y="80" width="240" height="88" rx="20"/>
+                <text class="sub" x="424" y="106">Pool</text>
+                <text x="424" y="128" style="font-size:16px">ltUSD / ltETH</text>
+                <text class="sub" x="424" y="150">Vault custodies every token</text>
+              </g>
+              <g class="node node-latch">
+                <rect x="436" y="168" width="168" height="40" rx="20"/>
+                <text x="458" y="193" style="font-size:13px">Latch · RevShareHook</text>
+              </g>
+              <g class="node node-out">
+                <rect x="980" y="44" width="180" height="56" rx="16"/>
+                <text class="sub" x="1000" y="66">Trader receives</text>
+                <text x="1000" y="87">Swap output, net of fee</text>
+              </g>
+
+              <circle class="junction" cx="740" cy="300" r="6"/>
+              <g class="feelabel">
+                <rect x="556" y="248" width="196" height="28" rx="14"/>
+                <text x="654" y="266" text-anchor="middle" data-out="fee-pill">fee 3 000 pips · 0.30%</text>
+              </g>
+              <text class="mono" x="724" y="340" text-anchor="end" data-out="fee-amt">3.00 ltUSD split three ways</text>
+            </svg>
+          </div>
+          <div class="flow-tip" id="flow-tip" role="status" aria-live="polite"></div>
+        </div>
+
+        <div class="flow-controls">
+          <div class="ctl">
+            <div class="ctl-head">
+              <h3>Fee on each swap</h3>
+              <span class="val"><span data-out="fee-val">3 000 pips · 0.30%</span></span>
+            </div>
+            <label class="sr-only" for="fee">Fee in pips</label>
+            <input class="range" id="fee" type="range" min="0" max="100000" step="500" value="3000" aria-valuetext="3,000 pips, 0.30 percent">
+            <p class="ctl-foot">Hard cap <code>MAX_FEE_PIPS = 100 000</code> of <code>PIPS_DENOMINATOR = 1 000 000</code> — never more than 10%. Path widths show the split, not the rate.</p>
+          </div>
+          <div class="ctl">
+            <div class="ctl-head">
+              <h3>How the fee is split — drag the handles</h3>
+              <span class="sum" data-out="sum">10 000 bps</span>
+            </div>
+            <div class="split" id="split">
+              <div class="split-track" aria-hidden="true"><i class="lp" data-seg="lp"></i><i class="ben" data-seg="ben"></i><i class="hold" data-seg="hold"></i></div>
+              <div class="thumb" id="thumb-a" role="slider" tabindex="0" aria-label="Boundary between LPs and beneficiaries" aria-valuemin="0" aria-valuemax="10000" aria-valuenow="6000" aria-valuetext="LPs 6,000 bps"></div>
+              <div class="thumb" id="thumb-b" role="slider" tabindex="0" aria-label="Boundary between beneficiaries and token holders" aria-valuemin="0" aria-valuemax="10000" aria-valuenow="8500" aria-valuetext="Beneficiaries 2,500 bps"></div>
+            </div>
+            <div class="split-read">
+              <button type="button" data-focus="lp"><span class="name"><i class="dot dot-lp"></i>Back to LPs</span><span class="bps" data-out="lp-bps">6 000</span><span class="pc" data-out="lp-amt">60.00% · 1.80 ltUSD</span></button>
+              <button type="button" data-focus="ben"><span class="name"><i class="dot dot-ben"></i>Beneficiaries</span><span class="bps" data-out="ben-bps">2 500</span><span class="pc" data-out="ben-amt">25.00% · 0.75 ltUSD</span></button>
+              <button type="button" data-focus="hold"><span class="name"><i class="dot dot-hold"></i>Token holders</span><span class="bps" data-out="hold-bps">1 500</span><span class="pc" data-out="hold-amt">15.00% · 0.45 ltUSD</span></button>
+            </div>
+            <p class="ctl-foot">Three shares in bps that must sum to exactly <code>SPLIT_DENOMINATOR = 10 000</code>, or <code>configure</code> reverts. The roster holds at most 8 beneficiaries, weighted.</p>
+          </div>
+        </div>
+      </figure>
+
+      <div class="hero-head" style="margin-top: var(--s8); margin-bottom: 0;">
+        <p class="lede">A Latch is a hook contract attached to a liquidity pool. Attach one, and a share of every swap flows exactly where you point it — to the people providing liquidity, to a roster you choose, to the holders of your token. Nothing else in the protocol touches that money.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#path">Start integrating</a>
+          <button class="btn btn-ghost" data-goto="dapp">Open the dapp</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- What a Latch is ---------- -->
+  <section class="section" id="latch">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">What a Latch is</p>
+        <h2 class="display">Three things to know before one sits in your swap path.</h2>
+        <p>The mechanism is small enough to hold in your head. That is deliberate.</p>
+      </div>
+      <div class="facts">
+        <article class="fact card">
+          <div class="art" aria-hidden="true">
+            <svg width="200" height="96" viewBox="0 0 200 96">
+              <rect x="60" y="16" width="80" height="64" rx="16" fill="#fff" stroke="#D8D6CF"/>
+              <rect x="84" y="40" width="32" height="24" rx="6" fill="#2D5BFF"/>
+              <path d="M92,40 v-8 a8,8 0 0 1 16,0 v8" fill="none" stroke="#2D5BFF" stroke-width="3"/>
+              <circle cx="24" cy="48" r="8" fill="#E7E5DF"/><circle cx="176" cy="48" r="8" fill="#E7E5DF"/>
+              <path d="M32,48 H60 M140,48 H168" stroke="#D8D6CF" stroke-width="2" stroke-dasharray="2 4"/>
+            </svg>
+          </div>
+          <h3>Custody sits in one place.</h3>
+          <p>The Vault custodies every token; pool managers hold nothing. <code>registerApp</code> is irreversible — once an app can move funds against the Vault, it always can — so it sits behind a multisig and a timelock, never an EOA.</p>
+        </article>
+        <article class="fact card">
+          <div class="art" aria-hidden="true">
+            <div style="display:grid;gap:var(--s3);justify-items:center">
+              <div class="bits"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i></div>
+              <span class="mono" style="font-size:12px;line-height:16px;color:var(--ink-3)">bits 0 · 7 · 11 = RevShareHook</span>
+            </div>
+          </div>
+          <h3>A Latch declares what it does.</h3>
+          <p>Every Latch answers <code>getHooksRegistrationBitmap()</code> with a 14-bit map over the pool callbacks. The LatchRegistry reads that map, classifies it, and lists it. A listing is what the bitmap says — it is not an audit.</p>
+        </article>
+        <article class="fact card">
+          <div class="art" aria-hidden="true">
+            <div class="art-clock">
+              <div class="t"><b>48h</b><span>custody</span></div>
+              <svg width="1" height="48" aria-hidden="true"><line x1="0" y1="0" x2="0" y2="48" stroke="#D8D6CF"/></svg>
+              <div class="t"><b>6h</b><span>policy</span></div>
+            </div>
+          </div>
+          <h3>Two clocks on governance.</h3>
+          <p>Anything that touches custody — the Vault, the pool managers — waits 48 hours behind a timelock. Fee policy, set by a replaceable controller, waits six. Both are long enough to read the transaction before it lands.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- Guided path ---------- -->
+  <section class="section" id="path">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">For developers</p>
+        <h2 class="display">Four steps, <em>one afternoon.</em></h2>
+        <p>Install the SDK, write the contract, configure the split, attach it to a pool. The code below follows the handles in the diagram above.</p>
+      </div>
+      <div class="path">
+        <nav class="path-rail" aria-label="Integration steps">
+          <a class="rail-item active" href="#step-1"><span class="n">1</span>Install</a>
+          <a class="rail-item" href="#step-2"><span class="n">2</span>Write the Latch</a>
+          <a class="rail-item" href="#step-3"><span class="n">3</span>Configure the split</a>
+          <a class="rail-item" href="#step-4"><span class="n">4</span>Attach and list</a>
+        </nav>
+        <div class="steps">
+          <article class="step" id="step-1">
+            <div class="step-head">
+              <p class="eyebrow">Step 1</p>
+              <h3>Install the SDK and read the registry.</h3>
+              <p>The SDK is MIT-licensed and independently authored, so building against Latch never pulls GPL code into your project. Your first read is a single view call.</p>
+            </div>
+            <div class="code">
+              <div class="code-bar"><span>terminal · then read.ts</span><button type="button" data-copy="code-1">Copy</button></div>
+              <pre id="code-1"><span class="c">$</span> npm install @latchprotocol/sdk viem
+
+<span class="k">import</span> { createPublicClient, http, parseAbi } <span class="k">from</span> <span class="s">'viem'</span>
+<span class="k">import</span> { sepolia } <span class="k">from</span> <span class="s">'viem/chains'</span>
+
+<span class="c">// LatchRegistry on Ethereum Sepolia — the only live deployment today</span>
+<span class="k">const</span> REGISTRY = <span class="s">'0xB504da43C6ED342a511f3e5849f53035F2C807d1'</span>
+
+<span class="k">const</span> client = <span class="f">createPublicClient</span>({ chain: sepolia, transport: <span class="f">http</span>() })
+<span class="k">const</span> count = <span class="k">await</span> client.<span class="f">readContract</span>({
+  address: REGISTRY,
+  abi: <span class="f">parseAbi</span>([<span class="s">'function latchCount() view returns (uint256)'</span>]),
+  functionName: <span class="s">'latchCount'</span>,
+})</pre>
+            </div>
+          </article>
+
+          <article class="step" id="step-2">
+            <div class="step-head">
+              <p class="eyebrow">Step 2</p>
+              <h3>Write the Latch. Declare only the callbacks you use.</h3>
+              <p>The bitmap is the contract's promise to the pool. RevShareHook needs three bits: it validates at initialize, and it takes its delta after the swap — so it never sits in front of one.</p>
+            </div>
+            <div class="code">
+              <div class="code-bar"><span>src/MyLatch.sol</span><button type="button" data-copy="code-2">Copy</button></div>
+              <pre id="code-2"><span class="c">// SPDX-License-Identifier: MIT</span>
+<span class="k">pragma solidity</span> ^<span class="n">0.8.26</span>;
+
+<span class="k">import</span> { BaseCLHook } <span class="k">from</span> <span class="s">"@latchprotocol/hooks/BaseCLHook.sol"</span>;
+
+<span class="k">contract</span> <span class="t">MyLatch</span> <span class="k">is</span> <span class="t">BaseCLHook</span> {
+    <span class="c">/// The registry reads this bitmap by calling it on the Latch itself.</span>
+    <span class="k">function</span> <span class="f">getHooksRegistrationBitmap</span>() <span class="k">public pure override returns</span> (<span class="t">uint16</span>) {
+        <span class="k">return</span> BEFORE_INITIALIZE | AFTER_SWAP | AFTER_SWAP_RETURNS_DELTA;
+    }
+
+    <span class="k">function</span> <span class="f">_afterSwap</span>(<span class="c">/* … */</span>) <span class="k">internal override returns</span> (<span class="t">bytes4</span>, <span class="t">int128</span> hookDelta) {
+        <span class="c">// take the fee here; bit 11 requires bit 7 and the base contract re-checks it</span>
+    }
+}</pre>
+            </div>
+          </article>
+
+          <article class="step" id="step-3">
+            <div class="step-head">
+              <p class="eyebrow">Step 3</p>
+              <h3>Configure the split. It must sum to 10 000.</h3>
+              <p>Four numbers per pool. The highlighted values are bound to the handles in the hero — drag them and this call changes with you. Anything that does not sum to <code>SPLIT_DENOMINATOR</code> reverts.</p>
+            </div>
+            <div class="code">
+              <div class="code-bar"><span>script/Configure.s.sol</span><button type="button" data-copy="code-3">Copy</button></div>
+              <pre id="code-3">latch.<span class="f">configure</span>(key, RevShareHook.<span class="t">ConfigParams</span>({
+    feePips:        <span class="n live" data-out="code-fee">3_000</span>,   <span class="c">// of PIPS_DENOMINATOR = 1_000_000, cap 100_000</span>
+    lpDonateBps:    <span class="n live" data-out="code-lp">6_000</span>,   <span class="c">// back to the pool's LPs</span>
+    beneficiaryBps: <span class="n live" data-out="code-ben">2_500</span>,   <span class="c">// weighted roster, max 8</span>
+    distributorBps: <span class="n live" data-out="code-hold">1_500</span>    <span class="c">// epoch distributor for token holders</span>
+}));
+<span class="c">// lpDonateBps + beneficiaryBps + distributorBps == SPLIT_DENOMINATOR (10_000)</span></pre>
+            </div>
+          </article>
+
+          <article class="step" id="step-4">
+            <div class="step-head">
+              <p class="eyebrow">Step 4</p>
+              <h3>Attach it to a pool, then list it.</h3>
+              <p>The pool key names the Latch; initializing the pool validates the bitmap against the contract. Registering makes it discoverable in the marketplace, with its capabilities read straight from chain.</p>
+            </div>
+            <div class="code">
+              <div class="code-bar"><span>script/Deploy.s.sol</span><button type="button" data-copy="code-4">Copy</button></div>
+              <pre id="code-4"><span class="t">PoolKey</span> <span class="k">memory</span> key = <span class="t">PoolKey</span>({
+    currency0:   ltUSD,
+    currency1:   ltETH,
+    hooks:       <span class="t">IHooks</span>(<span class="k">address</span>(latch)),   <span class="c">// the Latch, attached</span>
+    poolManager: poolManager,
+    fee:         lpFee,
+    parameters:  params
+});
+poolManager.<span class="f">initialize</span>(key, sqrtPriceX96);   <span class="c">// validates the bitmap</span>
+
+registry.<span class="f">register</span>(<span class="k">address</span>(latch), metadata);  <span class="c">// now it is a listing</span></pre>
+            </div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- Chains ---------- -->
+  <section class="section" id="chains">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Where it runs</p>
+        <h2 class="display">Fifteen target chains. <em>Live on one.</em></h2>
+        <p>Latch targets chains where Uniswap v4 is not deployed. Today the contracts are live on Ethereum Sepolia only. Robinhood Chain is the intended first mainnet.</p>
+      </div>
+      <div class="chains">
+        <div class="chain live"><img src="/chains/ethereum.svg" alt=""><div class="meta"><b>Ethereum Sepolia</b><span>11155111</span></div><i class="state"></i></div>
+        <div class="chain next"><span class="mono-mark" aria-hidden="true">RH</span><div class="meta"><b>Robinhood Chain</b><span>4663</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/ethereum.svg" alt=""><div class="meta"><b>Ethereum</b><span>1</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/base.svg" alt=""><div class="meta"><b>Base</b><span>8453</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/bnb.svg" alt=""><div class="meta"><b>BNB Smart Chain</b><span>56</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/linea.svg" alt=""><div class="meta"><b>Linea</b><span>59144</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/ink.svg" alt=""><div class="meta"><b>Ink</b><span>57073</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/xlayer.svg" alt=""><div class="meta"><b>X Layer</b><span>196</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/hyperevm.svg" alt=""><div class="meta"><b>HyperEVM</b><span>999</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/monad.svg" alt=""><div class="meta"><b>Monad</b><span>143</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/plasma.svg" alt=""><div class="meta"><b>Plasma</b><span>9745</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/stable.svg" alt=""><div class="meta"><b>Stable</b><span>988</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/monad.svg" alt=""><div class="meta"><b>Monad Testnet</b><span>10143</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/stable.svg" alt=""><div class="meta"><b>Stable Testnet</b><span>2201</span></div><i class="state"></i></div>
+        <div class="chain"><img src="/chains/arc.svg" alt=""><div class="meta"><b>Arc Testnet</b><span>5042002</span></div><i class="state"></i></div>
+      </div>
+      <div class="chain-key">
+        <span><i style="background:var(--good)"></i>Live now</span>
+        <span><i style="background:var(--accent)"></i>Intended first mainnet</span>
+        <span><i></i>Target</span>
+        <span style="color:var(--ink-3)">Robinhood Chain is set in type: it publishes no brand kit, and an approximation of a logo is not a source.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- Close ---------- -->
+  <section class="close">
+    <div class="wrap">
+      <h2 class="display">Nothing is on mainnet yet. <em>That is why you are seeing this now.</em></h2>
+      <p class="lede" style="text-align:center">The core is GPL-2.0-or-later and anyone may fork it. What cannot be forked is a Latch we wrote, running where the users are. Come build one before the first mainnet lands.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#path">Read the four steps</a>
+        <button class="btn btn-ghost" data-goto="dapp">Browse the marketplace</button>
+      </div>
+    </div>
+  </section>
+  <footer class="footer">
+    <div class="wrap">
+      <span>Latch · core GPL-2.0-or-later · SDK MIT · forked from PancakeSwap Infinity</span>
+      <span>Design Option B · Canvas — a prototype. Figures marked illustrative are not measured.</span>
+    </div>
+  </footer>
+</main>
+
+<!-- ============================ VIEW 2 · DAPP ============================ -->
+<div id="dapp" class="view app" role="tabpanel" aria-labelledby="tab-dapp" hidden>
+  <aside class="side">
+    <div class="side-brand"><img src="/brand/latch-mark-transparent.png" alt=""><span>Latch</span><small>app</small></div>
+    <nav class="nav" aria-label="Application">
+      <div class="nav-label">Protocol</div>
+      <a class="nav-item" href="#dapp" aria-current="page" data-nav><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/></svg>Overview</a>
+      <a class="nav-item" href="#dapp" data-nav><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="10" r="4.5"/><circle cx="13" cy="10" r="4.5"/></svg>Pools<span class="cnt">2</span></a>
+      <a class="nav-item" href="#dapp" data-nav><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8l7-4 7 4-7 4-7-4z"/><path d="M3 12l7 4 7-4"/></svg>Marketplace<span class="cnt">3</span></a>
+      <a class="nav-item" href="#dapp" data-nav><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="9" width="12" height="8" rx="2"/><path d="M7 9V6a3 3 0 0 1 6 0v3"/></svg>My Latches</a>
+      <div class="nav-label">Govern</div>
+      <a class="nav-item" href="#dapp" data-nav><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/></svg>Timelocks</a>
+      <a class="nav-item" href="#dapp" data-nav><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h12M4 10h12M4 15h8"/></svg>Docs</a>
+    </nav>
+    <div class="side-foot">
+      <b>Ethereum Sepolia</b>
+      <span>The only live deployment. Reads in the real app come from chain; every figure on this prototype is illustrative.</span>
+    </div>
+  </aside>
+
+  <section class="main">
+    <div class="appbar">
+      <h1>Overview</h1>
+      <label class="search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg><input type="search" placeholder="Search pools, Latches, addresses"><kbd>/</kbd></label>
+      <button class="pill" type="button"><img src="/chains/ethereum.svg" alt="">Ethereum Sepolia<span class="live-dot" aria-label="connected"></span></button>
+      <button class="pill wallet" type="button"><i aria-hidden="true"></i><span class="mono">0x8f3C…a41e</span></button>
+    </div>
+
+    <div class="kpis">
+      <article class="kpi card">
+        <div class="lab">Fees routed · epoch 12<span class="chip chip-illus">Illustrative</span></div>
+        <div class="v num">1 284.20<small>ltUSD</small></div>
+        <div class="src">Summed from swap logs since block 6 812 004 — a total, not a counter.</div>
+      </article>
+      <article class="kpi card">
+        <div class="lab">Latches registered<span class="chip chip-illus">Illustrative</span></div>
+        <div class="v num">3</div>
+        <div class="src">LatchRegistry · <span class="mono">latchCount()</span></div>
+      </article>
+      <article class="kpi card">
+        <div class="lab">Pools with a Latch<span class="chip chip-illus">Illustrative</span></div>
+        <div class="v num">2</div>
+        <div class="src">Pools whose key names a registered Latch.</div>
+      </article>
+      <article class="kpi card">
+        <div class="lab">Epoch closes in<span class="chip chip-illus">Illustrative</span></div>
+        <div class="v num" id="kpi-clock">06:42:10</div>
+        <div class="src">Anyone may call <span class="mono">closeEpoch()</span>. The keeper holds no role.</div>
+      </article>
+    </div>
+
+    <div class="grid-2">
+      <article class="panel card">
+        <div class="panel-head">
+          <div><h2>Fee routing by epoch</h2><p>ltUSD per epoch, by destination</p></div>
+          <span class="chip chip-illus">Illustrative series</span>
+        </div>
+        <div class="legend" aria-hidden="true">
+          <span><i class="dot dot-lp"></i>Back to LPs</span>
+          <span><i class="dot dot-ben"></i>Beneficiary roster</span>
+          <span><i class="dot dot-hold"></i>Token holders</span>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="chart" viewBox="0 0 640 280" role="img" aria-label="Stacked bars of fees routed per epoch, split into LPs, beneficiaries and token holders. Illustrative."></svg>
+          <div class="chart-tip" id="chart-tip"></div>
+        </div>
+        <p class="chart-foot">The real app renders only measured swaps and says so when two swaps cannot make a series. This chart exists to show the form.</p>
+      </article>
+
+      <article class="panel card listing">
+        <div class="panel-head">
+          <h2>From the marketplace</h2>
+          <span class="chip chip-live">Read from chain in the real app</span>
+        </div>
+        <div class="listing-top">
+          <div class="listing-icon"><img src="/brand/latch-mark-transparent.png" alt=""></div>
+          <div>
+            <h3>RevShareHook</h3>
+            <div class="by">by Latch · Ethereum Sepolia</div>
+          </div>
+        </div>
+        <div class="chips">
+          <span class="chip chip-neutral">Value-extracting</span>
+          <span class="chip chip-accent">Source verified</span>
+          <span class="chip chip-neutral">Returns delta</span>
+        </div>
+        <p>Takes a fee in pips on each swap, capped at 10%, and splits it three ways. Beneficiaries settle off the swap path; token holders claim by epoch.</p>
+        <div class="bitmap">
+          <div class="cells" id="bitmap" role="group" aria-label="14-bit capability bitmap"></div>
+          <div class="read"><span>getHooksRegistrationBitmap()</span><b>0x0881 · bits 0 7 11</b></div>
+        </div>
+        <dl class="spec">
+          <div><dt>Fee cap</dt><dd>100 000 pips · 10%</dd></div>
+          <div><dt>Roster</dt><dd>max 8 · weighted</dd></div>
+          <div><dt>Split</dt><dd data-out="mkt-split">6 000 / 2 500 / 1 500</dd></div>
+          <div><dt>Risk class</dt><dd>ValueExtracting</dd></div>
+        </dl>
+        <div class="mini-split" aria-hidden="true"><i class="lp" data-seg="lp" style="width:60%;background:var(--lp)"></i><i data-seg="ben" style="width:25%;background:var(--ben)"></i><i data-seg="hold" style="width:15%;background:var(--hold)"></i></div>
+        <div class="listing-cta">
+          <button class="btn btn-accent btn-sm" type="button">Deploy a Latch</button>
+          <button class="btn btn-ghost btn-sm" type="button">View source</button>
+        </div>
+      </article>
+    </div>
+
+    <article class="panel card">
+      <div class="panel-head">
+        <div><h2>Pools</h2><p>Every pool whose key names a Latch</p></div>
+        <span class="chip chip-illus">Illustrative rows</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Pool</th>
+              <th>Latch</th>
+              <th class="r">Fee (pips)</th>
+              <th class="r">Fee %</th>
+              <th>Split · LP / roster / holders</th>
+              <th class="r">Epoch</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="pair"><span class="coins"><i></i><i></i></span><a href="#dapp">ltUSD / ltETH</a></span></td>
+              <td>RevShareHook</td>
+              <td class="r mono">3 000</td>
+              <td class="r mono">0.30%</td>
+              <td><span class="split-cell"><span class="mini-split"><i style="width:60%;background:var(--lp)"></i><i style="width:25%;background:var(--ben)"></i><i style="width:15%;background:var(--hold)"></i></span><span class="mono">6 000 / 2 500 / 1 500</span></span></td>
+              <td class="r mono">12</td>
+              <td><span class="status">Active</span></td>
+              <td class="r"><button class="row-act" type="button">Open</button></td>
+            </tr>
+            <tr>
+              <td><span class="pair"><span class="coins"><i></i><i></i></span><a href="#dapp">ltETH / ltUSD</a></span></td>
+              <td>RevShareHook</td>
+              <td class="r mono">1 000</td>
+              <td class="r mono">0.10%</td>
+              <td><span class="split-cell"><span class="mini-split"><i style="width:80%;background:var(--lp)"></i><i style="width:10%;background:var(--ben)"></i><i style="width:10%;background:var(--hold)"></i></span><span class="mono">8 000 / 1 000 / 1 000</span></span></td>
+              <td class="r mono">12</td>
+              <td><span class="status pending">Config pending · 6h</span></td>
+              <td class="r"><button class="row-act" type="button">Open</button></td>
+            </tr>
+            <tr>
+              <td><span class="pair"><span class="coins"><i></i><i></i></span><a href="#dapp">AAPL / ltUSD</a></span></td>
+              <td>StockPairHook</td>
+              <td class="r mono">—</td>
+              <td class="r mono">—</td>
+              <td><span class="mono" style="color:var(--ink-3)">no split · market-hours gate</span></td>
+              <td class="r mono">—</td>
+              <td><span class="status off">Closed · outside hours</span></td>
+              <td class="r"><button class="row-act" type="button">Open</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-foot">
+        <span>3 rows · illustrative. The live app lists what the registry returns and nothing more.</span>
+        <span class="mono">LatchRegistry 0xB504…07d1</span>
+      </div>
+    </article>
+  </section>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+
+  /* ---------------- View tabs ---------------- */
+  const views = { landing: $('#landing'), dapp: $('#dapp') };
+  const tabs = $$('.tab');
+  function show(name, push = true) {
+    if (!views[name]) name = 'landing';
+    for (const k in views) views[k].hidden = k !== name;
+    tabs.forEach(t => {
+      const on = t.dataset.view === name;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+    });
+    if (push && location.hash.replace('#', '') !== name) history.replaceState(null, '', '#' + name);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    document.body.dataset.view = name;
+  }
+  tabs.forEach(t => {
+    t.addEventListener('click', () => show(t.dataset.view));
+    t.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const i = tabs.indexOf(t), n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+      n.focus(); show(n.dataset.view);
+    });
+  });
+  $$('[data-goto]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); show(b.dataset.goto); }));
+  const initial = location.hash.replace('#', '');
+  show(views[initial] ? initial : 'landing', false);
+  window.addEventListener('hashchange', () => { const h = location.hash.replace('#', ''); if (views[h]) show(h, false); });
+
+  /* ---------------- Formatting ---------------- */
+  const grp = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const pct = (bps, d = 2) => (bps / 100).toFixed(d) + '%';
+  const amt = n => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/,/g, ' ');
+  const sol = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '_');
+
+  /* ---------------- Flow state ---------------- */
+  const state = { pips: 3000, a: 6000, b: 8500, amount: 1000 };
+  const STEP = 50, DEN = 10000, RAIL_W = 14;
+  const outs = {};
+  $$('[data-out]').forEach(el => (outs[el.dataset.out] = outs[el.dataset.out] || []).push(el));
+  const set = (k, v) => (outs[k] || []).forEach(el => (el.textContent = v));
+
+  const svg = $('#flow');
+  const branches = { lp: $('.branch.lp', svg), ben: $('.branch.ben', svg), hold: $('.branch.hold', svg) };
+  const lines = { lp: $('#p-lp'), ben: $('#p-ben'), hold: $('#p-hold') };
+  const thumbA = $('#thumb-a'), thumbB = $('#thumb-b'), split = $('#split');
+  const feeInput = $('#fee');
+  const names = { lp: 'Back to LPs', ben: 'Beneficiary roster', hold: 'Token holders' };
+
+  function shares() {
+    return { lp: state.a, ben: state.b - state.a, hold: DEN - state.b };
+  }
+  function render() {
+    const s = shares();
+    const fee = state.amount * state.pips / 1e6;
+    set('amount', amt(state.amount) + ' ltUSD');
+    set('fee-pill', 'fee ' + grp(state.pips) + ' pips · ' + (state.pips / 1e4).toFixed(2) + '%');
+    set('fee-val', grp(state.pips) + ' pips · ' + (state.pips / 1e4).toFixed(2) + '%');
+    set('fee-amt', amt(fee) + ' ltUSD split three ways');
+    set('code-fee', sol(state.pips));
+    feeInput.style.setProperty('--pct', (state.pips / 1000) + '%');
+    feeInput.setAttribute('aria-valuetext', grp(state.pips) + ' pips, ' + (state.pips / 1e4).toFixed(2) + ' percent');
+    for (const k of ['lp', 'ben', 'hold']) {
+      const bps = s[k], frac = bps / DEN;
+      set(k + '-bps', grp(bps));
+      set(k + '-amt', pct(bps) + ' · ' + amt(fee * frac) + ' ltUSD');
+      set(k + '-node', grp(bps) + ' bps · ' + pct(bps));
+      set('code-' + k, sol(bps));
+      lines[k].setAttribute('stroke-width', bps === 0 ? 1.5 : Math.max(3, RAIL_W * frac).toFixed(2));
+      branches[k].classList.toggle('zero', bps === 0);
+      $$('[data-seg="' + k + '"]').forEach(el => (el.style.width = (frac * 100) + '%'));
+    }
+    set('mkt-split', grp(s.lp) + ' / ' + grp(s.ben) + ' / ' + grp(s.hold));
+    set('sum', grp(s.lp + s.ben + s.hold) + ' bps');
+    thumbA.style.left = (state.a / DEN * 100) + '%';
+    thumbB.style.left = (state.b / DEN * 100) + '%';
+    thumbA.setAttribute('aria-valuenow', state.a);
+    thumbA.setAttribute('aria-valuetext', 'LPs ' + grp(s.lp) + ' bps');
+    thumbB.setAttribute('aria-valuenow', state.b);
+    thumbB.setAttribute('aria-valuetext', 'Beneficiaries ' + grp(s.ben) + ' bps');
+    syncParticleCounts();
+    if (tipKey) showTip(tipKey);
+  }
+
+  feeInput.addEventListener('input', () => { state.pips = +feeInput.value; render(); });
+
+  /* Split bar: pointer + keyboard */
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const snap = v => Math.round(v / STEP) * STEP;
+  function setThumb(which, v) {
+    v = snap(clamp(v, 0, DEN));
+    if (which === 'a') state.a = clamp(v, 0, state.b);
+    else state.b = clamp(v, state.a, DEN);
+    render();
+  }
+  function bindThumb(el, which) {
+    el.addEventListener('pointerdown', e => {
+      el.setPointerCapture(e.pointerId); el.classList.add('drag'); el.focus({ preventScroll: true });
+      const r = split.getBoundingClientRect();
+      const move = ev => setThumb(which, (ev.clientX - r.left) / r.width * DEN);
+      const up = () => { el.classList.remove('drag'); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); };
+      el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+      move(e);
+    });
+    el.addEventListener('keydown', e => {
+      const cur = which === 'a' ? state.a : state.b;
+      const big = e.shiftKey ? STEP * 10 : STEP;
+      const map = { ArrowLeft: cur - big, ArrowDown: cur - big, ArrowRight: cur + big, ArrowUp: cur + big, Home: 0, End: DEN, PageDown: cur - STEP * 10, PageUp: cur + STEP * 10 };
+      if (!(e.key in map)) return;
+      e.preventDefault(); setThumb(which, map[e.key]);
+    });
+  }
+  bindThumb(thumbA, 'a'); bindThumb(thumbB, 'b');
+  /* Click on the track moves the nearest thumb */
+  split.addEventListener('pointerdown', e => {
+    if (e.target.classList.contains('thumb')) return;
+    const r = split.getBoundingClientRect();
+    const v = (e.clientX - r.left) / r.width * DEN;
+    setThumb(Math.abs(v - state.a) <= Math.abs(v - state.b) ? 'a' : 'b', v);
+  });
+
+  /* Hover / focus a branch */
+  const tip = $('#flow-tip');
+  let tipKey = null;
+  function focusBranch(k) {
+    svg.classList.toggle('has-focus', !!k);
+    for (const j in branches) branches[j].classList.toggle('is-focus', j === k);
+  }
+  function showTip(k) {
+    const s = shares(), fee = state.amount * state.pips / 1e6;
+    tip.innerHTML = '<b>' + names[k] + '</b>' + grp(s[k]) + ' bps · ' + pct(s[k]) + ' of the fee · ' + amt(fee * s[k] / DEN) + ' ltUSD';
+    const wrap = $('.flow-wrap'), wr = wrap.getBoundingClientRect(), nr = $('rect', branches[k]).getBoundingClientRect();
+    const x = clamp(nr.left + nr.width / 2 - wr.left, 96, wr.width - 96);
+    tip.style.left = x + 'px'; tip.style.top = (nr.top - wr.top) + 'px';
+    tip.classList.add('show');
+  }
+  function hideTip() { tip.classList.remove('show'); }
+  for (const k in branches) {
+    const g = branches[k];
+    g.addEventListener('pointerenter', () => { tipKey = k; focusBranch(k); showTip(k); });
+    g.addEventListener('pointerleave', () => { tipKey = null; focusBranch(null); hideTip(); });
+    g.addEventListener('focus', () => { tipKey = k; focusBranch(k); showTip(k); });
+    g.addEventListener('blur', () => { tipKey = null; focusBranch(null); hideTip(); });
+  }
+  $$('.split-read [data-focus]').forEach(b => {
+    b.addEventListener('pointerenter', () => focusBranch(b.dataset.focus));
+    b.addEventListener('pointerleave', () => focusBranch(null));
+    b.addEventListener('focus', () => focusBranch(b.dataset.focus));
+    b.addEventListener('blur', () => focusBranch(null));
+    b.addEventListener('click', () => branches[b.dataset.focus].focus());
+  });
+
+  /* ---------------- Particles (decoration only) ---------------- */
+  const groups = $$('.particles', svg).map(g => {
+    const path = $('#' + g.dataset.for);
+    return { g, path, len: path.getTotalLength(), dots: [], key: g.dataset.for.replace('p-', '') };
+  });
+  const SPEED = 110; // user units per second
+  function wantCount(gr) {
+    const s = shares();
+    if (gr.key === 'in') return 6;
+    if (gr.key === 'out') return 5;
+    if (gr.key === 'fee') return 4;
+    const bps = s[gr.key];
+    return bps === 0 ? 0 : Math.max(1, Math.round(6 * bps / DEN));
+  }
+  function syncParticleCounts() {
+    if (reduced.matches) return;
+    for (const gr of groups) {
+      const n = wantCount(gr);
+      while (gr.dots.length < n) {
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('r', '3.5'); gr.g.appendChild(c);
+        gr.dots.push({ el: c, t: Math.random() });
+      }
+      while (gr.dots.length > n) gr.dots.pop().el.remove();
+      gr.dots.forEach((d, i) => { if (!d.placed) { d.t = i / n; d.placed = true; } });
+    }
+  }
+  let raf = 0, last = 0, visible = true;
+  function frame(ts) {
+    const dt = last ? Math.min(0.05, (ts - last) / 1000) : 0; last = ts;
+    for (const gr of groups) {
+      for (const d of gr.dots) {
+        d.t = (d.t + dt * SPEED / gr.len) % 1;
+        const p = gr.path.getPointAtLength(d.t * gr.len);
+        d.el.setAttribute('cx', p.x.toFixed(1)); d.el.setAttribute('cy', p.y.toFixed(1));
+        const ease = Math.min(1, Math.min(d.t, 1 - d.t) * 12);
+        d.el.setAttribute('opacity', (0.25 + 0.75 * ease).toFixed(2));
+      }
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  function startStop() {
+    const run = !reduced.matches && visible && !views.landing.hidden && !document.hidden;
+    if (run && !raf) { last = 0; raf = requestAnimationFrame(frame); }
+    if (!run && raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (reduced.matches) groups.forEach(gr => { gr.dots.forEach(d => d.el.remove()); gr.dots = []; });
+  }
+  new IntersectionObserver(es => { visible = es[0].isIntersecting; startStop(); }, { threshold: 0.05 }).observe(svg);
+  document.addEventListener('visibilitychange', startStop);
+  reduced.addEventListener('change', () => { syncParticleCounts(); startStop(); });
+  new MutationObserver(startStop).observe(views.landing, { attributes: true, attributeFilter: ['hidden'] });
+
+  render(); startStop();
+
+  /* ---------------- Guided path rail ---------------- */
+  const railItems = $$('.rail-item'), steps = $$('.step');
+  const io = new IntersectionObserver(es => {
+    es.forEach(en => {
+      if (!en.isIntersecting) return;
+      railItems.forEach(r => r.classList.toggle('active', r.getAttribute('href') === '#' + en.target.id));
+    });
+  }, { rootMargin: '-40% 0px -50% 0px' });
+  steps.forEach(s => io.observe(s));
+  railItems.forEach(r => r.addEventListener('click', e => {
+    e.preventDefault();
+    const t = $(r.getAttribute('href'));
+    t.scrollIntoView({ behavior: reduced.matches ? 'auto' : 'smooth', block: 'start' });
+  }));
+
+  /* Copy buttons */
+  $$('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+    const text = $('#' + b.dataset.copy).innerText;
+    try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+    catch { b.textContent = 'Select to copy'; }
+    setTimeout(() => (b.textContent = 'Copy'), 1600);
+  }));
+
+  /* ---------------- Dapp: nav, bitmap, chart, clock ---------------- */
+  $$('[data-nav]').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    $$('[data-nav]').forEach(n => n.removeAttribute('aria-current'));
+    a.setAttribute('aria-current', 'page');
+  }));
+
+  const BITS = ['beforeInitialize', 'afterInitialize', 'beforeAddLiquidity', 'afterAddLiquidity', 'beforeRemoveLiquidity', 'afterRemoveLiquidity', 'beforeSwap', 'afterSwap', 'beforeDonate', 'afterDonate', 'beforeSwapReturnsDelta', 'afterSwapReturnsDelta', 'afterAddLiquidityReturnsDelta', 'afterRemoveLiquidityReturnsDelta'];
+  const ON = new Set([0, 7, 11]);
+  const bm = $('#bitmap');
+  BITS.forEach((name, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = ON.has(i) ? 'on' : '';
+    b.title = 'bit ' + i + ' · ' + name + (ON.has(i) ? ' · set' : ' · clear');
+    b.setAttribute('aria-label', b.title);
+    b.setAttribute('aria-pressed', String(ON.has(i)));
+    b.addEventListener('click', () => { $('.bitmap .read b').textContent = 'bit ' + i + ' · ' + name + (ON.has(i) ? ' · set' : ' · clear'); });
+    bm.appendChild(b);
+  });
+
+  /* Stacked bars — illustrative series, labelled as such in the panel */
+  const EPOCHS = [5, 6, 7, 8, 9, 10, 11, 12];
+  const TOTAL = [312.4, 418.9, 388.1, 502.6, 611.0, 574.3, 690.8, 1284.2];
+  const SPLIT = { lp: .6, ben: .25, hold: .15 };
+  const COL = { lp: 'var(--lp)', ben: 'var(--ben)', hold: 'var(--hold)' };
+  const chart = $('#chart'), ctip = $('#chart-tip');
+  (function drawChart() {
+    const W = 640, H = 280, L = 48, R = 16, T = 16, B = 32;
+    const iw = W - L - R, ih = H - T - B;
+    const max = 1400, ticks = [0, 350, 700, 1050, 1400];
+    const ns = 'http://www.w3.org/2000/svg';
+    const mk = (t, a) => { const e = document.createElementNS(ns, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+    const grid = mk('g', { class: 'grid' }), axis = mk('g', { class: 'axis' });
+    ticks.forEach(v => {
+      const y = T + ih - v / max * ih;
+      grid.appendChild(mk('line', { x1: L, x2: W - R, y1: y, y2: y }));
+      const tx = mk('text', { x: L - 8, y: y + 4, 'text-anchor': 'end' }); tx.textContent = v ? grp(v) : '0'; axis.appendChild(tx);
+    });
+    chart.appendChild(grid);
+    const bw = Math.min(40, iw / EPOCHS.length * 0.5), gap = 2;
+    EPOCHS.forEach((ep, i) => {
+      const cx = L + iw / EPOCHS.length * (i + 0.5);
+      const g = mk('g', { class: 'bar', 'data-i': i });
+      let y = T + ih;
+      const order = ['lp', 'ben', 'hold'];
+      order.forEach((k, j) => {
+        const h = TOTAL[i] * SPLIT[k] / max * ih;
+        const top = j === order.length - 1;
+        const hh = Math.max(0, h - (j ? gap : 0));
+        y -= h;
+        const r = mk(top ? 'path' : 'rect', top
+          ? { d: roundTop(cx - bw / 2, y, bw, hh, 4), fill: COL[k] }
+          : { x: cx - bw / 2, y: y, width: bw, height: hh, fill: COL[k] });
+        g.appendChild(r);
+      });
+      const hit = mk('rect', { class: 'hit', x: cx - iw / EPOCHS.length / 2, y: T, width: iw / EPOCHS.length, height: ih });
+      g.appendChild(hit);
+      const lab = mk('text', { x: cx, y: H - 12, 'text-anchor': 'middle' }); lab.textContent = 'e' + ep; axis.appendChild(lab);
+      chart.appendChild(g);
+      const enter = () => {
+        $$('.bar', chart).forEach(b => b.classList.toggle('dim', b !== g));
+        ctip.innerHTML = '<b>Epoch ' + ep + ' · ' + amt(TOTAL[i]) + ' ltUSD</b>' + order.map(k => '<div class="row"><span><i style="background:' + COL[k] + '"></i>' + names[k] + '</span><span>' + amt(TOTAL[i] * SPLIT[k]) + '</span></div>').join('');
+        const cr = chart.getBoundingClientRect();
+        const sx = cr.width / W;
+        ctip.style.left = clamp(cx * sx, 110, cr.width - 110) + 'px';
+        ctip.style.top = (y * sx) + 'px';
+        ctip.classList.add('show');
+      };
+      const leave = () => { $$('.bar', chart).forEach(b => b.classList.remove('dim')); ctip.classList.remove('show'); };
+      g.addEventListener('pointerenter', enter); g.addEventListener('pointerleave', leave);
+      g.setAttribute('tabindex', '0'); g.addEventListener('focus', enter); g.addEventListener('blur', leave);
+    });
+    chart.appendChild(axis);
+    function roundTop(x, y, w, h, r) {
+      r = Math.min(r, h / 2, w / 2);
+      return 'M' + x + ',' + (y + h) + ' V' + (y + r) + ' a' + r + ',' + r + ' 0 0 1 ' + r + ',' + (-r) + ' H' + (x + w - r) + ' a' + r + ',' + r + ' 0 0 1 ' + r + ',' + r + ' V' + (y + h) + ' Z';
+    }
+  })();
+
+  /* Epoch countdown — an illustrative clock, ticks so the tile reads as live UI */
+  let secs = 6 * 3600 + 42 * 60 + 10;
+  const clock = $('#kpi-clock');
+  setInterval(() => {
+    if (reduced.matches) return;
+    secs = Math.max(0, secs - 1);
+    const h = String(Math.floor(secs / 3600)).padStart(2, '0'), m = String(Math.floor(secs % 3600 / 60)).padStart(2, '0'), s = String(secs % 60).padStart(2, '0');
+    clock.textContent = h + ':' + m + ':' + s;
+  }, 1000);
+})();
+</script>
+</body>
+</html>

@@ -4,7 +4,8 @@
    Five states, each visually distinct, none of them a table of sample rows:
 
      not connected   what connecting would show, plus the connect button
-     wrong network   contracts exist only on Sepolia; offer the switch
+     wrong network   a notice, not a gate — reads do not need the wallet's
+                     chain, so this only offers the switch a SEND would need
      loading         reading, named address, named chain
      error           chain unreachable — say so, offer retry, show no figures
      ready           positions table, or an honest empty state that names what
@@ -18,6 +19,21 @@
 
    READ ONLY. Connecting a wallet here signs nothing and sends nothing; the
    address is used only to know whose positions to look up.
+
+   WHERE THE METHODOLOGY WENT. The empty state used to open with a paragraph
+   about ERC-721s, log scanning and ownership confirmation before it reached the
+   sentence the reader came for. The fact — no positions, at this block — is now
+   the first line, and every word of method sits behind a <details> disclosure.
+   Nothing was deleted: a caveat that changes how a figure should be READ (Bin
+   positions are not counted; collected fees are not recoverable) is still there,
+   because a reader who does not know what is excluded is reading the wrong
+   number. It is one click away instead of in front of the answer.
+
+   THE CHARTS ONLY APPEAR WITH SOMETHING TO COMPARE. Bars are drawn per TOKEN,
+   never across tokens: ltUSD and ltETH are unpriced, so a bar putting 100 of one
+   beside 0.5 of the other asserts a ranking nothing on chain supports. A token
+   held by a single position is skipped too — one bar at 100% is a picture of
+   nothing.
    ============================================================================ */
 
 import { LatchConnectButton } from '@latchprotocol/connect'
@@ -26,13 +42,15 @@ import { useAccount, useSwitchChain } from 'wagmi'
 
 import {
   DEPLOYMENTS,
-  SEPOLIA_CHAIN_ID,
+  ACTIVE_CHAIN_ID,
   explorerAddress,
   formatUnits,
   isDeployed,
   type DeployedChainId,
 } from '../../../lib/chain'
+import { BarList } from '../components/charts.tsx'
 import type { LpPosition, Portfolio as PortfolioData, TokenMeta } from '../data/portfolio'
+import type { LabelledBar, SeriesColor } from '../data/types.ts'
 import { MIN_TICK, MAX_TICK } from '../lib/portfolioMath'
 import { useDapp } from '../state.tsx'
 import { usePortfolio } from '../lib/usePortfolio'
@@ -110,18 +128,15 @@ function Header({ chainName }: { chainName: string }) {
         </span>
       </div>
       <p className="live-note">
-        Read from the deployed contracts on {chainName}: liquidity position NFTs from the
-        CL position manager, wallet balances of the protocol&rsquo;s tokens, and Latches listed
-        under your address in the registry. Amounts are shown in token units — these are
-        unpriced testnet tokens, so there is no dollar figure. Read only; connecting signs
-        nothing.
+        Positions, wallet balances and registry listings for the connected address, read from{' '}
+        {chainName}. Token units only — nothing prices these tokens. Read only.
       </p>
     </section>
   )
 }
 
 function NotConnected() {
-  const d = DEPLOYMENTS[SEPOLIA_CHAIN_ID]
+  const d = DEPLOYMENTS[ACTIVE_CHAIN_ID]
   return (
     <section className="dapp-card" aria-labelledby="pf-nc">
       <h3 id="pf-nc" className="dapp-card__title">
@@ -146,10 +161,7 @@ function NotConnected() {
           <span className="live-fee">matched on submitter address</span>
         </li>
       </ul>
-      <p className="dapp-note">
-        Nothing is signed. The address is only used to look up what it holds. Contracts are
-        deployed on {d.name} and nowhere else yet.
-      </p>
+      <p className="dapp-note">Nothing is signed. The address is only used to look up what it holds.</p>
       <div style={{ marginTop: 16 }}>
         <LatchConnectButton variant="inline" label="Connect wallet" />
       </div>
@@ -174,7 +186,7 @@ function WrongNetwork({
   browsingChainName: string
 }) {
   const { switchChain, isPending, error } = useSwitchChain()
-  const d = DEPLOYMENTS[SEPOLIA_CHAIN_ID]
+  const d = DEPLOYMENTS[ACTIVE_CHAIN_ID]
   return (
     <section className="dapp-card" aria-labelledby="pf-wn">
       <div className="dapp-card__head">
@@ -184,9 +196,8 @@ function WrongNetwork({
         <span className="dapp-badge dapp-badge--mute">READ ONLY</span>
       </div>
       <p className="dapp-note">
-        Your wallet is on chain {chainId ?? '—'}, and the positions below are read from{' '}
-        {browsingChainName}. That is fine for looking — reading an address needs no
-        particular network. Switch to {d.name} when you want to send a transaction.
+        Your wallet is on chain {chainId ?? '—'}; everything below is read from{' '}
+        {browsingChainName} regardless. Switch to {d.name} only to send a transaction.
       </p>
       <div className="dapp-toolbar" style={{ marginTop: 16 }}>
         <button
@@ -194,7 +205,7 @@ function WrongNetwork({
           className="dapp-btn dapp-btn--primary dapp-btn--sm"
           data-busy={isPending ? 'true' : undefined}
           disabled={isPending}
-          onClick={() => switchChain({ chainId: SEPOLIA_CHAIN_ID })}
+          onClick={() => switchChain({ chainId: ACTIVE_CHAIN_ID })}
         >
           {isPending ? 'Confirm in wallet…' : `Switch to ${d.name}`}
         </button>
@@ -375,36 +386,170 @@ function NoPositions({ p }: { p: PortfolioData }) {
   const d = DEPLOYMENTS[p.chainId]
   return (
     <div className="an-empty" role="status">
-      <p className="an-empty__title">No liquidity positions for {short(p.address)} on {d.name}</p>
-      <p className="live-note">
-        A position here is an ERC-721 minted by the CL position manager at{' '}
-        <a href={explorerAddress(p.chainId, d.clPositionManager)} target="_blank" rel="noopener noreferrer">
-          {short(d.clPositionManager)}
-        </a>{' '}
-        when liquidity is added to a pool. This address holds none as of block{' '}
-        {p.checkedAtBlock.toLocaleString('en-US')} — checked by scanning every position NFT ever
-        transferred to it and confirming current ownership on chain.
-        {d.demoPool === null ? (
-          /* No pool has been initialised on this chain yet, so there is nothing
-             to point at. Saying so beats naming a pool from a different chain,
-             which is the mistake this branch exists to prevent. */
-          <> No pool has been initialised on {d.name} yet, so there is nothing here to hold.</>
-        ) : (
-          <>
-            {' '}The one live pool is{' '}
-            <a href={dappPath('pool')}>
-              {d.demoPool.symbol0} / {d.demoPool.symbol1}{' '}
-              {(d.demoPool.lpFee / 10_000).toFixed(2)}%
+      <p className="an-empty__title">
+        No liquidity positions for {short(p.address)} as of block{' '}
+        {p.checkedAtBlock.toLocaleString('en-US')}.
+      </p>
+
+      {/* The one actionable next step, or the reason there isn't one. Naming a
+          pool from a different chain is the mistake this branch prevents. */}
+      {d.demoPool === null ? (
+        <p className="live-note">No pool has been initialised on {d.name} yet.</p>
+      ) : (
+        <p className="live-note">
+          Add liquidity to{' '}
+          <a href={dappPath('pool')}>
+            {d.demoPool.symbol0} / {d.demoPool.symbol1} {(d.demoPool.lpFee / 10_000).toFixed(2)}%
+          </a>{' '}
+          and it appears here.
+        </p>
+      )}
+
+      <details className="dapp-method">
+        <summary>How this is counted</summary>
+        <div className="dapp-method__body">
+          <p>
+            A position is an ERC-721 minted by the CL position manager at{' '}
+            <a
+              href={explorerAddress(p.chainId, d.clPositionManager)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {short(d.clPositionManager)}
             </a>
-            ; adding liquidity to it would put a row here with its holdings and uncollected fees.
-          </>
-        )}
-      </p>
-      <p className="live-note" style={{ marginTop: 8 }}>
-        Not shown: Bin (ERC-1155) positions, and fees already collected — the protocol does not
-        keep a per-address record of those, and this screen does not estimate one.
-      </p>
+            . Every position NFT ever transferred to this address was scanned, and current
+            ownership confirmed on chain.
+          </p>
+          <p>
+            Not counted: Bin (ERC-1155) positions, and fees already collected. The protocol keeps no
+            per-address record of either, and this screen does not estimate one.
+          </p>
+        </div>
+      </details>
     </div>
+  )
+}
+
+/* ---------------------------------------------------------------- split bars */
+
+const SERIES_CYCLE: readonly SeriesColor[] = ['primary', 'signal', 'violet', 'success', 'amber']
+
+/** Share as a percentage, computed in bigint so a large amount cannot lose precision. */
+function share(v: bigint, total: bigint): number {
+  return total <= 0n ? 0 : Number((v * 10_000n) / total) / 100
+}
+
+interface SplitGroup {
+  token: TokenMeta
+  total: bigint
+  items: LabelledBar[]
+}
+
+/**
+ * Group one measured quantity by token, then by position within that token.
+ *
+ * A token held by fewer than two positions is dropped: its bar would be 100%
+ * and would report nothing the table above has not already said.
+ */
+function splitByToken(
+  positions: LpPosition[],
+  pick: (p: LpPosition) => [TokenMeta, bigint][],
+): SplitGroup[] {
+  const acc = new Map<string, { token: TokenMeta; total: bigint; rows: { id: bigint; v: bigint }[] }>()
+  for (const pos of positions) {
+    for (const [token, v] of pick(pos)) {
+      if (v <= 0n) continue
+      const k = token.address.toLowerCase()
+      const g = acc.get(k) ?? { token, total: 0n, rows: [] }
+      g.total += v
+      g.rows.push({ id: pos.tokenId, v })
+      acc.set(k, g)
+    }
+  }
+  return [...acc.values()]
+    .filter((g) => g.rows.length > 1)
+    .map((g) => ({
+      token: g.token,
+      total: g.total,
+      items: [...g.rows]
+        .sort((a, b) => (a.v < b.v ? 1 : a.v > b.v ? -1 : 0))
+        .map((r, i): LabelledBar => ({
+          name: `token #${r.id.toString()}`,
+          value: fmtAmount(r.v, g.token.decimals),
+          pct: share(r.v, g.total),
+          color: SERIES_CYCLE[i % SERIES_CYCLE.length] ?? 'primary',
+        })),
+    }))
+}
+
+function SplitCard({
+  title,
+  note,
+  groups,
+  valueLabel,
+}: {
+  title: string
+  note: string
+  groups: SplitGroup[]
+  valueLabel: string
+}) {
+  if (groups.length === 0) return null
+  return (
+    <section className="dapp-card">
+      <div className="dapp-card__head">
+        <h3 className="dapp-card__title">{title}</h3>
+      </div>
+      <p className="live-note">{note}</p>
+      {groups.map((g) => (
+        <div key={g.token.address} style={{ marginTop: 14 }}>
+          <p className="dapp-microlabel dapp-microlabel--tight">
+            {g.token.symbol} · {fmtAmount(g.total, g.token.decimals)} total
+          </p>
+          <BarList
+            items={g.items}
+            unit={g.token.symbol}
+            valueLabel={valueLabel}
+            shareLabel={`of your ${g.token.symbol} here`}
+          />
+        </div>
+      ))}
+    </section>
+  )
+}
+
+function Splits({ p }: { p: PortfolioData }) {
+  const holdings = useMemo(
+    () =>
+      splitByToken(p.positions, (x) => [
+        [x.token0, x.amount0],
+        [x.token1, x.amount1],
+      ]),
+    [p.positions],
+  )
+  const fees = useMemo(
+    () =>
+      splitByToken(p.positions, (x) => [
+        [x.token0, x.fees0],
+        [x.token1, x.fees1],
+      ]),
+    [p.positions],
+  )
+
+  return (
+    <>
+      <SplitCard
+        title="Holdings by position"
+        note="What each position would return on full withdrawal, one chart per token. Amounts of different tokens are never compared — nothing prices them against each other."
+        groups={holdings}
+        valueLabel="Would return"
+      />
+      <SplitCard
+        title="Uncollected fees by position"
+        note="Earned since each position was last touched. Fees already collected are not included; the protocol keeps no record of them."
+        groups={fees}
+        valueLabel="Uncollected"
+      />
+    </>
   )
 }
 
@@ -421,8 +566,7 @@ function HooksCard({ p }: { p: PortfolioData }) {
       </div>
       {p.submittedHooks.length === 0 ? (
         <p className="dapp-note">
-          None. A Latch you list in the LatchHookRegistry — with your address as submitter — will
-          appear here with its verification level and on-chain capability class.
+          None. A Latch listed in LatchRegistry with your address as submitter appears here.
         </p>
       ) : (
         <ul className="live-list" style={{ marginTop: 12 }}>
@@ -461,7 +605,7 @@ export default function Portfolio() {
    *
    * This used to gate the read on `isDeployed(walletChainId)`, so a wallet
    * sitting on Base rendered an empty portfolio — even though the positions were
-   * on Sepolia, and reading them needs no wallet chain at all. An address is an
+   * on the browsing chain, and reading them needs no wallet chain. An address is an
    * address on whichever chain you ask about.
    *
    * The wallet's chain still matters, but only for WRITES, and only at the
@@ -543,9 +687,8 @@ export default function Portfolio() {
 
       {state.k === 'loading' && (
         <p className="dapp-empty hx-state" role="status">
-          Reading positions for {short(address)} on {chainName}&hellip; Position NFTs are found
-          by scanning transfer logs from the deployment block, so this can take a few seconds
-          on the public RPC.
+          Reading positions for {short(address)} on {chainName}&hellip; This scans transfer logs
+          from the deployment block, so it can take a few seconds.
         </p>
       )}
 
@@ -557,8 +700,7 @@ export default function Portfolio() {
           </div>
           <p className="dapp-note dapp-note--warn">{state.message}</p>
           <p className="dapp-note">
-            No figures are shown rather than stale or invented ones. The public Sepolia RPC has a
-            single endpoint and no failover; retrying usually works.
+            No figures are shown rather than stale or invented ones. Retrying usually works.
           </p>
           <div style={{ marginTop: 14 }}>
             <button type="button" className="dapp-btn dapp-btn--primary dapp-btn--sm" onClick={reload}>
@@ -572,7 +714,10 @@ export default function Portfolio() {
         <>
           <Kpis p={state.p} />
           {state.p.positions.length > 0 ? (
-            <PositionsTable p={state.p} />
+            <>
+              <PositionsTable p={state.p} />
+              <Splits p={state.p} />
+            </>
           ) : (
             <NoPositions p={state.p} />
           )}

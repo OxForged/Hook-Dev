@@ -24,11 +24,15 @@
 
 import { Link, useParams } from 'react-router-dom'
 
+import { ColumnChart } from '../components/charts'
+import { Methodology } from '../components/ProtocolCharts'
+import { StackedBar } from '../components/series-charts'
 import {
   MERKLE_DISTRIBUTOR_ABI,
   SNAPSHOT_DISTRIBUTOR_ABI,
 } from '../lib/revshareAbi'
 import {
+  amountWithUnit,
   fmtDuration,
   fmtTimestamp,
   isPoolId,
@@ -39,6 +43,7 @@ import {
   type DistributorState,
   type MerkleEpoch,
   type SnapshotEpoch,
+  type TokenMeta,
 } from '../lib/revshare'
 import {
   Addr,
@@ -235,6 +240,145 @@ function RolloverAction({
   )
 }
 
+/* ============================================================================
+   Per-epoch pots, drawn.
+
+   BOTH DISTRIBUTORS SHARE THIS, and it is the one place they safely can. The
+   two `Epoch` structs disagree in slot five — a voting supply on one, a merkle
+   root on the other — which is why they are decoded by separate ABIs upstream.
+   The four fields used here (`id`, `amount*`, `claimed*`) are at positions the
+   two structs DO agree on, and they arrive already decoded by the right ABI, so
+   nothing is being reinterpreted.
+
+   ONE CHART PER TOKEN. An epoch's pot is two amounts in two tokens and nothing
+   prices either, so there is no rate at which they could be added into a single
+   column. A token with nothing in it across every epoch is omitted rather than
+   drawn as a row of zeros.
+   ============================================================================ */
+
+interface EpochAmounts {
+  readonly id: bigint
+  readonly amount0: bigint
+  readonly amount1: bigint
+  readonly claimed0: bigint
+  readonly claimed1: bigint
+}
+
+function EpochTokenCharts({
+  epochs,
+  token,
+  amountOf,
+  claimedOf,
+}: {
+  readonly epochs: readonly EpochAmounts[]
+  readonly token: TokenMeta
+  readonly amountOf: (e: EpochAmounts) => bigint
+  readonly claimedOf: (e: EpochAmounts) => bigint
+}) {
+  // Oldest first, so the chart reads left to right and `is-last` marks the
+  // newest epoch. `readDistributor` hands them back newest-first for the table.
+  const ordered = [...epochs].reverse()
+  const amounts = ordered.map(amountOf)
+  const potTotal = amounts.reduce((a, b) => a + b, 0n)
+  if (potTotal === 0n) return null
+
+  const max = amounts.reduce((a, b) => (b > a ? b : a), 0n)
+  const claimedTotal = ordered.reduce((a, e) => a + claimedOf(e), 0n)
+  const unclaimed = potTotal > claimedTotal ? potTotal - claimedTotal : 0n
+  /* One floor, one remainder: flooring both shares would leave the bar a basis
+     point short, and a short bar is how `StackedBar` reports a split that
+     genuinely does not add up. The two `value` strings stay exact. */
+  const claimedBps = Number((claimedTotal * 10_000n) / potTotal)
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <h4 className="dapp-microlabel">{token.symbol} · POT BY EPOCH</h4>
+      <ColumnChart
+        label={`Pot closed into each epoch, in ${token.symbol}, across ${ordered.length} epoch${ordered.length === 1 ? '' : 's'}`}
+        points={ordered.map((e) => ({
+          // Share of the largest epoch — the drawn height only. The tooltip and
+          // the accessible name both carry the exact amount.
+          pct: max === 0n ? 0 : Number((amountOf(e) * 100n) / max),
+          value: amountWithUnit(amountOf(e), token),
+          unit: `closed into epoch ${e.id.toString()}`,
+          label: `Epoch ${e.id.toString()}`,
+        }))}
+      />
+      <div className="dapp-axis dapp-axis--tight">
+        <span>epoch {ordered[0]?.id.toString()}</span>
+        <span>{token.symbol}, by epoch</span>
+        <span>epoch {ordered[ordered.length - 1]?.id.toString()}</span>
+      </div>
+
+      {/* Claimed against the pot it came out of — the same token, and the two
+          add to exactly the total, so the bar cannot be short. */}
+      <StackedBar
+        total={10_000}
+        unit={`of the ${token.symbol} closed into these epochs`}
+        label={`${amountWithUnit(claimedTotal, token)} claimed of ${amountWithUnit(potTotal, token)} closed into the epochs listed`}
+        segments={[
+          {
+            name: `${token.symbol} · claimed`,
+            amount: claimedBps,
+            value: amountWithUnit(claimedTotal, token),
+            color: 'success',
+          },
+          {
+            name: `${token.symbol} · unclaimed`,
+            amount: 10_000 - claimedBps,
+            value: amountWithUnit(unclaimed, token),
+            color: 'amber',
+          },
+        ]}
+      />
+    </div>
+  )
+}
+
+function EpochTotalsCard({
+  epochs,
+  common,
+}: {
+  readonly epochs: readonly EpochAmounts[]
+  readonly common: DistributorCommon
+}) {
+  if (epochs.length === 0) return null
+
+  return (
+    <section className="dapp-card">
+      <div className="dapp-card__head">
+        <h3 className="dapp-card__title">Pots by epoch</h3>
+        <span className="dapp-badge dapp-badge--mute">
+          newest {epochs.length} epoch{epochs.length === 1 ? '' : 's'}
+        </span>
+      </div>
+
+      <EpochTokenCharts
+        epochs={epochs}
+        token={common.token0}
+        amountOf={(e) => e.amount0}
+        claimedOf={(e) => e.claimed0}
+      />
+      <EpochTokenCharts
+        epochs={epochs}
+        token={common.token1}
+        amountOf={(e) => e.amount1}
+        claimedOf={(e) => e.claimed1}
+      />
+
+      <Methodology label="What these totals do and do not cover">
+        <p className="live-note">
+          Each column is one <code>getEpoch(id)</code>, so these are the epochs this screen listed —
+          at most the newest 24, while the list is unbounded on chain. Unclaimed is what an epoch
+          still holds now, not what expired: a rolled-over epoch returned its remainder to the
+          carry-over and the next close picks it up. Token units, one chart per token — nothing
+          prices these, so the two pots cannot be added.
+        </p>
+      </Methodology>
+    </section>
+  )
+}
+
 function CommonKpis({ common, epochCount }: { common: DistributorCommon; epochCount: bigint }) {
   return (
     <div className="dapp-kpis">
@@ -274,15 +418,18 @@ function SnapshotView({ d }: { d: Extract<DistributorState, { kind: 'snapshot' }
           {d.clockIsBlockNumber ? 'block-numbered' : 'timestamped'} (<code>clockIsBlockNumber</code>),
           which is what the <code>timepoint</code> column below counts in.
         </p>
-        <p className="live-note" style={{ marginTop: 6 }}>
-          The snapshot is taken at close, i.e. after the fees accrued — an address that buys in the
-          same block an epoch closes still collects a share of fees generated before it held
-          anything. That is inherent to snapshot dividends and is bounded by the minimum epoch
-          duration, not by anything this screen can show.
-        </p>
+        <Methodology label="When the snapshot is taken, and what that lets a buyer do">
+          <p className="live-note">
+            At close, i.e. after the fees accrued — so an address that buys in the same block an
+            epoch closes still collects a share of fees generated before it held anything. That is
+            inherent to snapshot dividends and is bounded by the minimum epoch duration, not by
+            anything this screen can show.
+          </p>
+        </Methodology>
       </section>
 
       <CommonKpis common={common} epochCount={common.epochCount} />
+      <EpochTotalsCard epochs={epochs} common={common} />
       <CloseEpochCard common={common} abi={SNAPSHOT_DISTRIBUTOR_ABI} kindLabel="snapshot" />
 
       <section className="dapp-card">
@@ -373,11 +520,16 @@ function SnapshotTable({ epochs, common }: { epochs: SnapshotEpoch[]; common: Di
         </table>
       </div>
       <p className="live-note" style={{ marginTop: 8 }}>
-        Each row is one <code>getEpoch(id)</code>. Voting supply is{' '}
-        <code>totalVotingSupply</code> at that epoch&rsquo;s <code>timepoint</code>; a holder&rsquo;s
-        share is their <code>getPastVotes</code> at the same timepoint over it. At most the newest
-        24 epochs are listed — the list is unbounded on chain.
+        Each row is one <code>getEpoch(id)</code>. At most the newest 24 are listed; the list is
+        unbounded on chain.
       </p>
+      <Methodology label="How a holder's share is computed">
+        <p className="live-note">
+          Voting supply is <code>totalVotingSupply</code> at that epoch&rsquo;s{' '}
+          <code>timepoint</code>; a holder&rsquo;s share is their <code>getPastVotes</code> at the
+          same timepoint over it.
+        </p>
+      </Methodology>
     </>
   )
 }
@@ -403,21 +555,23 @@ function MerkleView({ d }: { d: Extract<DistributorState, { kind: 'merkle' }> })
       </section>
 
       <CommonKpis common={common} epochCount={common.epochCount} />
+      <EpochTotalsCard epochs={epochs} common={common} />
 
       <section className="dapp-card hx-alert">
         <h3 className="dapp-card__title">Self-service merkle claims are not buildable</h3>
         <p className="live-note">
-          <code>MerkleEpochDistributor.claim</code> takes{' '}
-          <code>(epochId, index, account, amount0, amount1, proof)</code>. The chain stores only the
-          root — <strong>nothing on chain publishes the tree</strong>, and there is no event, no URI
-          field and no registry that carries one. A claim UI here would have to invent a proof
-          source, so there is none: this screen shows root and challenge state, and the claim itself
-          has to come from wherever the operator published the tree.
+          <strong>Nothing on chain publishes the tree</strong>, so a claim has to come from wherever
+          the operator published it. This screen shows root and challenge state only.
         </p>
-        <p className="live-note" style={{ marginTop: 6 }}>
-          <code>claim</code> is deliberately absent from the merkle ABI this app ships, so it cannot
-          be called from here even by accident.
-        </p>
+        <Methodology label="Why a proof cannot be assembled here">
+          <p className="live-note">
+            <code>MerkleEpochDistributor.claim</code> takes{' '}
+            <code>(epochId, index, account, amount0, amount1, proof)</code> and the chain stores only
+            the root — no event, no URI field, no registry carries the tree. A claim UI would have to
+            invent a proof source. <code>claim</code> is also absent from the merkle ABI this app
+            ships, so it cannot be called from here even by accident.
+          </p>
+        </Methodology>
       </section>
 
       <CloseEpochCard common={common} abi={MERKLE_DISTRIBUTOR_ABI} kindLabel="merkle" />

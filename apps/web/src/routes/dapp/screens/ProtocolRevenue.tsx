@@ -21,10 +21,13 @@ import { Link } from 'react-router-dom'
 import { useAccount, useSwitchChain } from 'wagmi'
 
 import { DEPLOYMENTS } from '../../../lib/chain'
+import { BarList } from '../components/charts'
+import { Methodology } from '../components/ProtocolCharts'
 import {
   REVSHARE_CHAIN_ID,
   bpsPct,
   pipsPct,
+  shortHex,
   type OwnedPools,
 } from '../lib/revshare'
 import {
@@ -62,12 +65,14 @@ export default function ProtocolRevenue() {
   return (
     <>
       <ScreenIntro title="Revenue share you operate" hook={hook ?? undefined}>
-        <p>
-          Pools whose RevShareHook configuration is owned by the connected address. Ownership is
-          found in <code>PoolClaimed</code> and <code>PoolOwnerChanged</code> logs and then
-          confirmed against <code>poolOwner(poolId)</code>, which is the only current truth — a
-          pool that appears in the logs but has since been transferred is not listed.
-        </p>
+        <p>Pools whose RevShareHook configuration is owned by the connected address.</p>
+        <Methodology label="How ownership is established">
+          <p className="live-note">
+            Candidates come from <code>PoolClaimed</code> and <code>PoolOwnerChanged</code> logs and
+            are then confirmed against <code>poolOwner(poolId)</code>, which is the only current
+            truth — a pool that appears in the logs but has since been transferred is not listed.
+          </p>
+        </Methodology>
       </ScreenIntro>
 
       {!hook && <NotDeployed malformed={malformed} />}
@@ -137,8 +142,8 @@ export default function ProtocolRevenue() {
             .
           </p>
           <p style={{ marginTop: 8 }}>
-            A pool appears here once its owner calls <code>configure(key, params)</code> on the
-            hook. That is an owner-only action and is not offered from this screen.
+            A pool appears here once its owner calls <code>configure(key, params)</code> — an
+            owner-only action, not offered from this screen.
           </p>
         </Empty>
       )}
@@ -170,6 +175,42 @@ export default function ProtocolRevenue() {
                 head block {state.data.blockNumber.toString()}
               </span>
             </div>
+
+            {/* Pips against pips — the one figure on this screen that compares
+                cleanly across pools, because every pool's cut is a rate on its
+                own input and no token amount is involved. Drawn only with
+                something to compare: a bar list of one row ranks nothing. */}
+            {state.data.pools.length > 1 && (
+              <div style={{ marginBottom: 12 }}>
+                <BarList
+                  items={[...state.data.pools]
+                    .sort((a, b) => b.config.feePips - a.config.feePips)
+                    .map((p) => {
+                      const max = Math.max(...state.data.pools.map((q) => q.config.feePips), 1)
+                      return {
+                        name: shortHex(p.poolId, 10, 6),
+                        value: `${pipsPct(p.config.feePips)} · ${p.config.feePips} pips`,
+                        pct: (p.config.feePips / max) * 100,
+                        color: p.config.enabled ? ('primary' as const) : ('amber' as const),
+                      }
+                    })}
+                  valueLabel="cut of each swap"
+                  shareLabel="of your largest cut"
+                  /* Only the states that actually occur. A "Disabled" toggle
+                     with nothing behind it invites a click that dims the whole
+                     list and says nothing. */
+                  series={[
+                    ...(state.data.pools.some((p) => p.config.enabled)
+                      ? [{ key: 'primary' as const, label: 'Enabled' }]
+                      : []),
+                    ...(state.data.pools.some((p) => !p.config.enabled)
+                      ? [{ key: 'amber' as const, label: 'Disabled' }]
+                      : []),
+                  ]}
+                />
+              </div>
+            )}
+
             <div className="dapp-table-wrap">
               <table className="dapp-table">
                 <thead>
@@ -219,11 +260,18 @@ export default function ProtocolRevenue() {
               </table>
             </div>
             <p className="live-note" style={{ marginTop: 10 }}>
-              Log scan covered blocks {state.data.fromBlock.toString()} →{' '}
-              {state.data.toBlock.toString()}. There is no cumulative index of pools on the hook, so
-              a pool whose <code>PoolClaimed</code> log falls outside what this RPC serves would not
-              appear here.
+              <strong>
+                Log scan covered blocks {state.data.fromBlock.toString()} →{' '}
+                {state.data.toBlock.toString()}
+              </strong>{' '}
+              — a pool claimed outside that range would not appear.
             </p>
+            <Methodology label="Why the scan has a range at all">
+              <p className="live-note">
+                The hook keeps no cumulative index of pools, so the only way to find them is by log,
+                and how far back that reaches is whatever this RPC serves.
+              </p>
+            </Methodology>
           </section>
         </>
       )}

@@ -2,10 +2,15 @@
    Register a Latch — screen data.
 
    THIS IS NO LONGER A MOCK SEAM. The screen it backs signs a real
-   `LatchHookRegistry.register` transaction on Ethereum Sepolia. Everything the
-   user is shown about their Latch — its permission bitmap, its capability class,
-   whether the registry will accept it — is read off chain by
-   `../lib/registryWrite.ts` and never fabricated here.
+   `LatchRegistry.register` transaction on whichever chain the build serves —
+   the registry is deployed on more than one, and its address and chain name
+   both come from the deployment table, never from a literal here. (It was
+   `LatchHookRegistry` until the 2026-09-10 rename; the old contract is still
+   deployed and still answers `hookCount()`, so the stale name in copy pointed
+   authors at a registry nothing reads.) Everything the user is shown about
+   their Latch — its permission bitmap, its capability class, whether the
+   registry will accept it — is read off chain by `../lib/registryWrite.ts` and
+   never fabricated here.
 
    What remains in this module is the parts that genuinely are static screen
    copy: the four step labels and the shape of the pre-flight list. The verdicts

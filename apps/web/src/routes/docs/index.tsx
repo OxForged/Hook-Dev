@@ -7,6 +7,7 @@ import DocsHeader from './DocsHeader'
 import LeftRail from './LeftRail'
 import { FeeChart } from '../../charts/FeeChart'
 import { GasChart } from '../../charts/GasChart'
+import { BitGrid, Gauge, type BitDef } from '../dapp/components/series-charts'
 import {
   BITMAP_SHELL,
   CALLBACKS,
@@ -16,6 +17,7 @@ import {
   DEPLOY_SHELL,
   ERRORS,
   FACTS,
+  FEE_LATCH_BITMAP,
   FEE_LATCH_SOL,
   INSTALL_SHELL,
   KEEPER_JOBS,
@@ -27,6 +29,7 @@ import {
   PYTH_SHELL,
   REGISTER_SHELL,
   REGISTER_STEPS,
+  REGISTRY_ADDRESS_ROBINHOOD,
   REGISTRY_ADDRESS_SEPOLIA,
   REGISTRY_REJECTIONS,
   REVSHARE_EXERCISE_HOOK_SEPOLIA,
@@ -44,6 +47,50 @@ import './docs.css'
  * assertion is the standard escape hatch for `--d` / `--i`.
  */
 const vars = (v: Record<string, string | number>) => v as CSSProperties
+
+/* ===========================================================================
+   The permission bitmap as a grid, DERIVED from the reference table below it.
+
+   `bit` is `log2` of the mask in `CALLBACKS` rather than a second hand-written
+   column, so the grid and the table are the same fourteen rows by construction:
+   add a callback to `CALLBACKS` and it appears here, correctly positioned, or
+   not at all. A hand-kept parallel list is how a reference page ends up
+   claiming bit 6 in a table and bit 7 in a picture.
+
+   The notes say what running at that point LETS THE LATCH DO. That is the
+   question a reader has when they are looking at somebody else's bitmap, and it
+   is the same wording the public /verify permalink uses, so a developer sees
+   one vocabulary across both surfaces.
+   =========================================================================== */
+
+const BIT_EFFECTS: Record<string, string> = {
+  beforeInitialize: 'Can reject a pool before it exists.',
+  afterInitialize: 'Runs once, after the pool is created.',
+  beforeAddLiquidity: 'Can refuse a deposit.',
+  afterAddLiquidity: 'Runs after a deposit settles.',
+  beforeRemoveLiquidity: 'Can refuse a withdrawal.',
+  afterRemoveLiquidity: 'Runs after a withdrawal settles.',
+  beforeSwap: 'Can block a swap, or override the fee.',
+  afterSwap: 'Runs once the swap has executed.',
+  beforeDonate: 'Can refuse a donation to in-range liquidity.',
+  afterDonate: 'Runs after a donation settles.',
+  beforeSwapReturnsDelta: 'Lets beforeSwap resize the swap amount.',
+  afterSwapReturnsDelta: 'Lets afterSwap take a cut of the output.',
+  afterAddLiquidityReturnsDelta: 'Lets it take a cut of a deposit.',
+  afterRemoveLiquidityReturnsDelta: 'Lets it take a cut of a withdrawal.',
+}
+
+const CALLBACK_BITS: BitDef[] = CALLBACKS.map((c) => ({
+  bit: Math.log2(Number(c.bit)),
+  name: c.name,
+  note: BIT_EFFECTS[c.name] ?? `Returns ${c.returns}.`,
+}))
+
+/* The SDK's endpoint target is 5 per chain, so the ceiling this gauge measures
+   against is a real one: 15 chains × 5. 69 of 75 is the whole claim the prose
+   makes — "the list is never padded, and no chain is down to a single
+   endpoint" — as a number rather than as an adjective. */
+const ENDPOINT_CEILING = CHAIN_COUNTS.chains * CHAIN_COUNTS.target
 
 /**
  * Latch Protocol developer docs / quickstart.
@@ -97,8 +144,8 @@ export default function DocsPage() {
               carries that same bitmap in its <code className="dk-icode">parameters</code>. Core
               cross-checks the two when the pool is initialized. Permissions live in the pool key,
               not in the Latch&rsquo;s address, so there is no CREATE2 salt to mine and the same
-              Latch works from any address. This page takes you from an empty directory to a Latch
-              deployed on Sepolia and listed in the Latch Marketplace.
+              Latch works from any address. This page takes you from an empty directory to a
+              deployed Latch listed in the Latch Marketplace.
             </p>
             <dl className="dk-facts">
               {FACTS.map((f) => (
@@ -180,8 +227,29 @@ export default function DocsPage() {
               source={BITMAP_SHELL}
               copyLabel="Copy the bitmap command"
             />
+
+            {/* The same 0x0040 the command above printed, drawn. A bitmap is
+                the one concept on this page that is genuinely hard to read as a
+                number, and the grid answers the question the number cannot:
+                WHICH points in a pool's life this Latch runs at. Unset cells
+                are drawn and dimmed, because "does not run here" is the other
+                half of the reading. */}
+            <div className="dk-bits">
+              <BitGrid
+                bitmap={FEE_LATCH_BITMAP}
+                bits={CALLBACK_BITS}
+                label="FeeLatch's permission bitmap, all fourteen bits"
+              />
+            </div>
             <p className="dk-body dk-body--after">
-              Then run the generated tests and the deploy script. Latch is live on Sepolia; the
+              One cell is lit, because <code className="dk-icode">FeeLatch</code> declares one
+              callback. Every dim cell is a point in the pool&rsquo;s life core will never call it
+              at &mdash; and the same fourteen cells are what{' '}
+              <Link to="/app/marketplace">the Marketplace</Link> and the public{' '}
+              <code className="dk-icode">/verify</code> permalink show for a stranger&rsquo;s Latch.
+            </p>
+            <p className="dk-body dk-body--after">
+              Then run the generated tests and the deploy script. The
               script reads <code className="dk-icode">PRIVATE_KEY</code> and{' '}
               <code className="dk-icode">CL_POOL_MANAGER</code> from your environment, and prints
               the <code className="dk-icode">parameters</code> word to use in your{' '}
@@ -200,21 +268,20 @@ export default function DocsPage() {
             <h2 className="dk-h2">4 · Register the Latch</h2>
             <p className="dk-body">
               The Latch Marketplace at <Link to="/app/marketplace">/app/marketplace</Link> is a
-              view over one contract: the <code className="dk-icode">LatchRegistry</code> at{' '}
+              view over one contract per chain &mdash;{' '}
+              <code className="dk-icode">LatchRegistry</code> at{' '}
+              <code className="dk-icode dk-icode--addr">{REGISTRY_ADDRESS_ROBINHOOD}</code> on
+              Robinhood Chain, and{' '}
               <code className="dk-icode dk-icode--addr">{REGISTRY_ADDRESS_SEPOLIA}</code> on
-              Sepolia, redeployed on 2026-09-10 under that name &mdash; it answers{' '}
-              <code className="dk-icode">latchCount()</code>, and the retired{' '}
-              <code className="dk-icode">LatchHookRegistry</code> before it is no longer read by
-              anything.
-              Registration is <strong>permissionless, free beyond gas, and has no allowlist</strong>
-              : anyone may list any deployed contract that answers{' '}
+              Sepolia. Registration is{' '}
+              <strong>permissionless, free beyond gas, and has no allowlist</strong>: anyone may
+              list any deployed contract that answers{' '}
               <code className="dk-icode">getHooksRegistrationBitmap()</code>. The permissions
-              recorded are read off the Latch itself by the registry &mdash; there is no parameter
-              through which a submitter can declare, suggest or influence them &mdash; and the
-              name, description and links you supply are stored as descriptive text only. Every
-              listing enters as <strong>Unverified &middot; Active</strong>; only a curator moves
-              it up the verification ladder, and a steward edit to the metadata drops it straight
-              back to Unverified.
+              recorded are read off the Latch itself &mdash; no parameter lets a submitter declare
+              them &mdash; while the name, description and links you supply are descriptive text
+              only. Every listing enters as <strong>Unverified &middot; Active</strong>; only a
+              curator moves it up, and a steward edit to the metadata drops it straight back to
+              Unverified.
             </p>
             <div className="dk-callout">
               <span className="dk-callout__dot" aria-hidden="true" />
@@ -763,9 +830,37 @@ export default function DocsPage() {
               <code className="dk-icode">eth_chainId</code> correctly from a config table while
               rejecting <code className="dk-icode">eth_blockNumber</code> and{' '}
               <code className="dk-icode">eth_call</code>: alive to a chain-id check, dead to a real
-              request. A target chain is one the SDK can reach; it is not a deployment. Latch is
-              deployed on <strong>Ethereum Sepolia only</strong>.
+              request. A target chain is one the SDK can reach; it is not a deployment &mdash; Latch
+              contracts exist on{' '}
+              <strong>
+                Robinhood Chain (4663) and Ethereum Sepolia (11155111)
+              </strong>
+              , and nowhere else.
             </p>
+
+            {/* The prose above claims the endpoint list is "never padded". This
+                is that claim as two measured numbers: what was actually probed
+                and kept, against 5 per chain, which is the SDK's own target and
+                therefore a real ceiling rather than a round one. A gauge below
+                its ceiling is the honest shape here — a bare "69 endpoints"
+                cannot say whether that is a lot. */}
+            <div className="dk-gauge">
+              <Gauge
+                value={CHAIN_COUNTS.endpoints}
+                max={ENDPOINT_CEILING}
+                label="Probed endpoints against the five-per-chain target"
+                valueText={String(CHAIN_COUNTS.endpoints)}
+                maxText={String(ENDPOINT_CEILING)}
+                color="signal"
+                caption={
+                  <>
+                    endpoints kept, against {CHAIN_COUNTS.target} per chain across{' '}
+                    {CHAIN_COUNTS.chains}. The shortfall is chains where fewer exist.
+                  </>
+                }
+              />
+            </div>
+
             <div className="dk-tablewrap">
               <table className="dk-table">
                 <colgroup>

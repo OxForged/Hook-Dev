@@ -28,6 +28,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { ChainTag, chainNameFor } from '../../../components/ChainTag.tsx'
+import { BarList } from '../components/charts.tsx'
 import { safeHttpUrl } from '../components/latchModel.ts'
 import {
   ECOSYSTEM_ISSUES_REPO,
@@ -35,6 +36,7 @@ import {
   LATCH_KINDS,
   LATCH_KIND_ORDER,
   LISTING_PROVENANCE,
+  chainCounts,
   chainsListed,
   hostOf,
   listingIssueUrl,
@@ -43,6 +45,7 @@ import {
   type EcosystemProject,
   type LatchKind,
 } from '../data/ecosystem.ts'
+import type { LabelledBar, SeriesColor } from '../data/types.ts'
 import { dappPath } from '../paths.ts'
 
 /** A keystroke should not interrupt the previous announcement (see Explorer). */
@@ -205,8 +208,7 @@ function SubmitPanel() {
         Submit your project
       </h2>
       <p className="live-note">
-        Listing is free and open to any team building on Latch. It is a GitHub issue: fill it in,
-        a maintainer merges it as written.
+        Free and open to any team building on Latch. It is a GitHub issue, merged as written.
       </p>
 
       <div className="eco-field">
@@ -252,8 +254,51 @@ function SubmitPanel() {
         Open listing issue ↗
       </a>
       <p className="live-note eco-submit__note">
-        Opens GitHub in a new tab with the form prefilled. Nothing is sent from this page — the
-        issue is the submission.
+        Nothing is sent from this page — the issue is the submission.
+      </p>
+    </section>
+  )
+}
+
+/* ============================================================================
+   Where the listings say they are live.
+
+   THE ONLY THING ON THIS PAGE THAT CAN BE COUNTED. Nothing here is a chain
+   read — `chainCounts` counts the `chains` field of entries in
+   `data/ecosystem.ts`, which each project wrote itself. So the bars are an
+   honest count of CLAIMS, and the caption says exactly that rather than letting
+   a chart borrow the authority the Marketplace's charts have.
+
+   A project that named three chains is one listing on each of three bars, so
+   the bars can sum past the listing count. The share is a share of listings,
+   not of bars, which is why `shareLabel` names its denominator.
+
+   Not rendered at all when the directory is empty: three chains at zero would
+   be a chart about nothing, and the empty state already says it in a sentence.
+   ============================================================================ */
+const CHAIN_SERIES: readonly SeriesColor[] = ['primary', 'signal', 'violet', 'success', 'amber']
+
+function ChainMix({ projects }: { projects: readonly EcosystemProject[] }) {
+  const bars: LabelledBar[] = useMemo(
+    () =>
+      chainCounts(projects).map(({ chainId, count }, i) => ({
+        name: chainNameFor(chainId),
+        value: String(count),
+        pct: (count / projects.length) * 100,
+        color: CHAIN_SERIES[i % CHAIN_SERIES.length] as SeriesColor,
+      })),
+    [projects],
+  )
+
+  return (
+    <section className="dapp-card lx-rail__card" aria-labelledby="eco-mix-h">
+      <h2 id="eco-mix-h" className="dapp-card__title">
+        Chains claimed
+      </h2>
+      <BarList items={bars} valueLabel="listings" shareLabel="of the listings" />
+      <p className="live-note">
+        Counted from what each project wrote in its own listing. A project spanning several chains
+        is counted on each.
       </p>
     </section>
   )
@@ -267,8 +312,8 @@ function KindLegend() {
         Reading the badges
       </h2>
       <p className="live-note">
-        A project says which Latch families it uses. The badge is their claim; the contract name
-        is what the family is called on chain.
+        The badge is the project&rsquo;s claim; the contract name is what the family is called on
+        chain.
       </p>
       <ul className="lx-legend">
         {LATCH_KIND_ORDER.map((k) => {
@@ -315,8 +360,8 @@ function HowItWorks() {
         <div>
           <dt>Verified</dt>
           <dd>
-            No. Never, for any entry. The label on each card is the status of the whole page, not a
-            flag that could flip.
+            No — for any entry. The label on each card is the status of the whole page, not a flag
+            that could flip.
           </dd>
         </div>
       </dl>
@@ -379,12 +424,14 @@ export default function Ecosystem() {
                 the badge that says so has to be the first thing after the title. */}
             <span className="dapp-badge dapp-badge--mute">SELF-SUBMITTED · UNVERIFIED</span>
           </div>
+          {/* The last sentence is the caveat, not padding: without it a
+              directory of names reads as a directory of endorsements. */}
           <p className="live-note">
-            Teams and products, not contracts — the contracts are on the{' '}
-            <Link to={dappPath('marketplace')}>Marketplace</Link>, read from the registry. Nothing
-            here comes from chain: each entry was written by the project itself in a GitHub issue
-            and merged as submitted. A listing says a team asked to be listed. It does not say the
-            integration works, is safe, or is still live.
+            Teams and products, not contracts — those are on the{' '}
+            <Link to={dappPath('marketplace')}>Marketplace</Link>, read from the registry. Every
+            entry here was written by the project itself and merged as submitted, so a listing says
+            a team asked to be listed. It does not say the integration works, is safe, or is
+            still live.
           </p>
         </section>
 
@@ -483,10 +530,9 @@ export default function Ecosystem() {
                 No projects are listed yet.
               </h3>
               <p>
-                This directory is open. Any team building on Latch can list itself by opening a
-                listing issue on GitHub — no review queue, no fee. It ships empty rather than seeded
-                with examples: every entry here names a real third party that asked to be listed,
-                and none has yet.
+                Any team building on Latch can list itself with a GitHub issue — no review queue,
+                no fee. It ships empty rather than seeded: every entry names a real third party
+                that asked to be here, and none has yet.
               </p>
               <p className="eco-empty__aside">
                 Looking for the Latches themselves? They are on the{' '}
@@ -534,6 +580,7 @@ export default function Ecosystem() {
 
       <aside className="lx-rail" aria-label="Submit a project and how to read this page">
         <SubmitPanel />
+        {all.length > 0 && <ChainMix projects={all} />}
         <KindLegend />
         <HowItWorks />
       </aside>

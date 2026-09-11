@@ -327,7 +327,6 @@
   color: var(--label-ink);
 }
 
-.panelKicker + .tags,
 .panelKicker:not(:first-child) {
   margin-top: 20px;
 }
@@ -401,21 +400,79 @@
   background: var(--error);
 }
 
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0 0;
+/* ---------------------------------------------------------- the bitmap grid
+
+   `.tags` / `.tag` lived here: a flat row of chips naming the callbacks that
+   were set, and nothing at all about the ones that were not. They were deleted
+   rather than left dark, because the replacement is strictly more informative
+   — `BitGrid` from routes/dapp/components/series-charts.tsx draws all fourteen
+   bits, lit and unlit, each one focusable and carrying what running at that
+   point in the lifecycle would let the contract do.
+
+   The grid's own styling is global, from dapp.css. This host supplies only what
+   the `.dapp` shell would have: the easing custom property that file scopes to
+   its own root, and this page's spacing. */
+
+.hostedBits {
+  --dapp-ease: var(--ease);
+  margin-bottom: 4px;
 }
 
-.tag {
-  padding: 4px 10px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-chip);
-  background: var(--panel-alt);
+/* ------------------------------------------------------- methodology, folded
+
+   For the sentence that explains WHY a rule exists, as opposed to the caveat
+   that changes how a number should be read. The second kind stays in the
+   paragraph; this is where the first kind goes. */
+
+.more {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--muted-ink-2);
+}
+
+.more > summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--mono-data-dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+  transition: color 0.18s ease;
+}
+
+.more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.more > summary::before {
+  content: '+';
+  font-size: 13px;
+  line-height: 1;
+  color: var(--latch-blue);
+}
+
+.more[open] > summary::before {
+  content: '–';
+}
+
+.more > summary:hover {
+  color: var(--ink);
+}
+
+.more > summary:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.more > p {
+  margin: 8px 0 0;
+  text-wrap: pretty;
 }
 
 /* -------------------------------------------------------- submitter strings */

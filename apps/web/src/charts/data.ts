@@ -1,9 +1,13 @@
 /**
  * Every number in this file is measured or derived from the repository.
  *
- * Latch Protocol is not deployed on any chain. There is deliberately no TVL,
- * volume, user, liquidity or price data on this page — not even as a
- * placeholder. If a section would need usage data, the section is not here.
+ * Nothing here is read from chain, and nothing here should be. These are
+ * properties of the CODE — what `calculateSwapFee` computes, what the
+ * settlement layer costs under each build profile — so they are the same on
+ * every deployment and are measured by running the suite, not by querying a
+ * node. Live protocol figures (TVL, volume, swap counts) belong to
+ * `lib/chain.ts` and the components that read it; if a chart here would need
+ * usage data, that chart does not belong in this file.
  */
 
 /* ------------------------------------------------------------------ */

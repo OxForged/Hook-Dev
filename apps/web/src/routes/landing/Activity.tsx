@@ -1,14 +1,24 @@
-import { IS_TESTNET_BUILD } from '../../lib/chain'
 import { useEffect, useState } from 'react'
 import { MEASURED_GAS, NETWORK_REACH, TEST_COVERAGE } from './data'
-import { SEPOLIA_CHAIN_ID, readActivity, type ActivityEvent } from '../../lib/chain'
+import {
+  ACTIVE_CHAIN_ID,
+  DEPLOYMENTS,
+  readActivity,
+  readProtocolStatus,
+  type ActivityEvent,
+  type ProtocolStatus,
+} from '../../lib/chain'
 import { useProtocolMetrics, fmtToken } from '../../lib/useMetrics'
 import { GasCompareChart } from '../../charts/GasCompareChart'
 import { pctMore } from '../../charts/chart-utils'
 import { BarList } from '../dapp/components/charts'
+import { Gauge, SeriesChart, type SeriesPoint } from '../dapp/components/series-charts'
 import type { LabelledBar } from '../dapp/data/types'
 import styles from './landing.module.css'
 import { cx } from './ui'
+
+/** The chain this build serves. Never a spelled-out name — see landing/data.ts. */
+const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
 /**
  * A4. Protocol activity — real, or absent.
@@ -31,94 +41,114 @@ import { cx } from './ui'
  *
  * WHAT IS DRAWN, AND WHAT IS DELIBERATELY NOT
  *
- * Two of the three panels are charts, and both are charts of a COMPARISON that
- * already exists in the data:
+ * Four charts, each of a comparison or a progression that is already IN the
+ * data rather than imposed on it:
  *
- *   - the event mix is five counts on one axis, so the bar list shows which
- *     kinds of activity this deployment has actually seen;
+ *   - the event mix is five counts on one axis, so a bar list shows which kinds
+ *     of activity this deployment has actually seen;
+ *   - the cumulative series is one point per real event at the block it landed
+ *     in — no bucketing, no smoothing, and no plot at all below two events;
+ *   - the fee gauge is one reading against one known ceiling, and both numbers
+ *     are read from the deployed fee controller rather than typed here;
  *   - the gas panel is two measurements of the same operation, where the whole
  *     content is the gap between them.
  *
- * LIVE PROTOCOL STATE stays as rows. Those five figures are unrelated scalars —
- * two counts, two token balances, one rate — with no shared axis and no shared
+ * The rest of LIVE PROTOCOL STATE stays as rows. Those figures are unrelated
+ * scalars — two counts, two token balances — with no shared axis and no shared
  * unit, so a chart of them would order and compare things that do not compare.
- * The one exception is the protocol fee, which IS a ratio (what is taken,
- * against the ceiling the contract allows), and gets a meter for exactly that
- * reason.
  *
- * There are six protocol events and two swaps on this deployment. Nothing here
- * interpolates, smooths, or extends that into a trend: every bar drawn is a
- * number that is also printed next to it, and the "too few swaps to plot a time
- * series" caveat stays, because it is the reason there is no time series.
+ * Nothing here interpolates, smooths or extends. `SeriesChart` refuses to draw
+ * fewer than two points and says how many there are instead; that empty state
+ * is the correct output on a young deployment, not a gap to be filled.
  */
-
-const MIN_POINTS_FOR_SERIES = 12
-
-/**
- * The fee the deployed controller charges, and the ceiling the core allows.
- *
- * Both in pips of `ProtocolFeeLibrary.PIPS_DENOMINATOR` (1e6), matching
- * `DEFAULT_FEE_PIPS` and `MAX_PROTOCOL_FEE` on the Sepolia fee controller —
- * the same pair `readProtocolStatus` reads, and the same 1000 that shows up in
- * the `protocolFee` field of every real Swap log on this deployment.
- */
-const FEE_PIPS = 1000
-const FEE_CAP_PIPS = 4000
-const PIPS_DENOMINATOR = 1_000_000
-
-const pctOfPips = (pips: number) => (pips / PIPS_DENOMINATOR) * 100
-
-/**
- * A genuine part-of-whole: 0.1% taken against the 0.4% the contract will ever
- * permit. Not interactive — it restates one scalar that is printed directly
- * above it, and a hover affordance would promise an inspection there is nothing
- * to inspect. `role="meter"` carries the same reading to a screen reader.
- */
-function FeeMeter() {
-  const taken = pctOfPips(FEE_PIPS)
-  const cap = pctOfPips(FEE_CAP_PIPS)
-  const share = (FEE_PIPS / FEE_CAP_PIPS) * 100
-  const text = `${taken}% taken of the ${cap}% cap`
-
-  return (
-    <div className={styles['feeMeter']}>
-      <div className={styles['healthRow']}>
-        <span className={styles['healthName']}>Protocol fee taken</span>
-        <span className={styles['healthValue']}>
-          {taken}% of {cap}% cap
-        </span>
-      </div>
-      <div
-        className={styles['meterTrack']}
-        role="meter"
-        aria-label="Protocol fee against the cap the contract allows"
-        aria-valuemin={0}
-        aria-valuemax={cap}
-        aria-valuenow={taken}
-        aria-valuetext={text}
-      >
-        <span className={styles['meterFill']} style={{ width: `${share}%` }} aria-hidden="true" />
-      </div>
-      <p className={styles['meterScale']} aria-hidden="true">
-        <span>0%</span>
-        <span>{cap}% cap</span>
-      </p>
-    </div>
-  )
-}
 
 type FeedState =
   | { k: 'loading' }
   | { k: 'error'; message: string }
   | { k: 'ready'; events: ActivityEvent[] }
 
-/** Live pools, swaps and vault TVL, read from the deployed Sepolia contracts. */
+type StatusState =
+  | { k: 'loading' }
+  | { k: 'error' }
+  | { k: 'ready'; s: ProtocolStatus }
+
+const PIPS_DENOMINATOR = 1_000_000
+
+/** Pips of `ProtocolFeeLibrary.PIPS_DENOMINATOR` as a percentage of swap input. */
+const pctOfPips = (pips: number) => `${Number(((pips / PIPS_DENOMINATOR) * 100).toFixed(4))}%`
+
+/**
+ * The protocol fee against the ceiling core will ever permit.
+ *
+ * Both numbers are READ: `DEFAULT_FEE_PIPS` and `MAX_PROTOCOL_FEE` off the
+ * deployed fee controller. They used to be two constants typed into this file,
+ * which was accurate for the one chain that existed and would have quietly
+ * misreported any chain configured differently.
+ *
+ * `feesDisabled` is load-bearing rather than a footnote: when the guardian has
+ * fees off, the rate actually charged is zero, and drawing the configured
+ * default as though it were being taken would overstate what the protocol
+ * takes. The gauge shows zero and the caption says why.
+ */
+function FeeGauge() {
+  const [state, setState] = useState<StatusState>({ k: 'loading' })
+
+  useEffect(() => {
+    let off = false
+    readProtocolStatus(ACTIVE_CHAIN_ID)
+      .then((s) => !off && setState({ k: 'ready', s }))
+      .catch(() => !off && setState({ k: 'error' }))
+    return () => {
+      off = true
+    }
+  }, [])
+
+  if (state.k !== 'ready') {
+    return (
+      <p className={styles['placeholderNote']}>
+        {state.k === 'loading' ? 'READING THE FEE CONTROLLER…' : 'FEE CONTROLLER UNREACHABLE'}
+      </p>
+    )
+  }
+
+  const { defaultFeePips, maxFeePips, feesDisabled } = state.s
+  const taken = feesDisabled ? 0 : defaultFeePips
+
+  return (
+    <div className={styles['hostedGauge']}>
+      <Gauge
+        value={taken}
+        max={maxFeePips}
+        label="Protocol fee against the cap the contract allows"
+        valueText={pctOfPips(taken)}
+        maxText={pctOfPips(maxFeePips)}
+        color={feesDisabled ? 'success' : 'primary'}
+        caption={
+          feesDisabled ? (
+            <>
+              <strong>Fees are disabled</strong> — the configured default is{' '}
+              {pctOfPips(defaultFeePips)}, and nothing is being taken.
+            </>
+          ) : (
+            <>
+              the <code>MAX_PROTOCOL_FEE</code> cap, set per swap direction
+            </>
+          )
+        }
+      />
+    </div>
+  )
+}
+
+/** Live pools, swaps and vault TVL, read from the deployed contracts. */
 function LiveState() {
   const s = useProtocolMetrics()
 
   return (
     <div className={styles['card']}>
-      <h3 className={styles['microLabel']}>LIVE PROTOCOL STATE · ETHEREUM SEPOLIA</h3>
+      <h3 className={styles['microLabel']}>
+        LIVE PROTOCOL STATE · {CHAIN.name.toUpperCase()}
+      </h3>
 
       {s.k === 'loading' && <p className={styles['placeholderNote']}>READING CHAIN&hellip;</p>}
       {s.k === 'error' && (
@@ -144,13 +174,10 @@ function LiveState() {
                 <span className={styles['healthValue']}>{fmtToken(t.balance, t.decimals, 2)}</span>
               </div>
             ))}
-            <FeeMeter />
           </div>
+          <FeeGauge />
           <p className={styles['deployCaption']}>
-            Block {s.m.latestBlock.toString()}
-            {IS_TESTNET_BUILD ? ' · testnet only, no mainnet deployment' : ''}. No USD figure:
-            these are unpriced testnet tokens, and inventing a price to produce a dollar headline is
-            the failure this section replaced.
+            Block {s.m.latestBlock.toString()}. Token units only — nothing prices this pair.
           </p>
         </>
       )}
@@ -191,13 +218,39 @@ function toBars(counts: Map<string, number>): LabelledBar[] {
     }))
 }
 
-/** Real protocol events by type. Not Latch callbacks — none have ever fired. */
+/**
+ * Events -> a cumulative series indexed by BLOCK.
+ *
+ * One point per event, at the block that event actually landed in, with y as
+ * the running count. Nothing is bucketed and nothing is interpolated: every
+ * point is a log entry, and two events in one block simply share an x.
+ *
+ * The axis is block height, not wall-clock time, and that is deliberate. Block
+ * times are not constant, so dividing a height by an assumed interval turns a
+ * measurement into an estimate wearing a measurement's clothes. Height is what
+ * the chain reported.
+ *
+ * Ordered ascending here because `readActivity` returns newest-first for the
+ * feed's benefit, and `SeriesChart` requires ascending x from its caller.
+ */
+function toSeries(events: readonly ActivityEvent[]): SeriesPoint[] {
+  return [...events]
+    .sort((a, b) => Number(a.blockNumber - b.blockNumber))
+    .map((e, i) => ({
+      x: Number(e.blockNumber),
+      y: i + 1,
+      label: `Block ${e.blockNumber.toLocaleString('en-US')}`,
+      value: `${i + 1} · ${e.kind}`,
+    }))
+}
+
+/** Real protocol events by type and over blocks. Not Latch callbacks — none have ever fired. */
 function EventMix() {
   const [state, setState] = useState<FeedState>({ k: 'loading' })
 
   useEffect(() => {
     let off = false
-    readActivity(SEPOLIA_CHAIN_ID, 200)
+    readActivity(ACTIVE_CHAIN_ID, 200)
       .then((events) => !off && setState({ k: 'ready', events }))
       .catch(
         (e) =>
@@ -208,12 +261,12 @@ function EventMix() {
     }
   }, [])
 
+  const events = state.k === 'ready' ? state.events : []
   const counts = new Map<string, number>()
-  if (state.k === 'ready') {
-    for (const e of state.events) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1)
-  }
+  for (const e of events) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1)
   const bars = toBars(counts)
-  const swaps = counts.get('Swap') ?? 0
+  const series = toSeries(events)
+  const firstBlock = series[0]?.label
 
   return (
     <div className={styles['card']}>
@@ -233,9 +286,20 @@ function EventMix() {
             valueLabel="recorded"
             shareLabel="of the most frequent event type"
           />
+
+          <div className={styles['hostedSeries']}>
+            <SeriesChart
+              points={series}
+              label="Protocol events over block height, cumulative"
+              valueLabel="events so far"
+              area
+              empty={`${events.length} event${events.length === 1 ? '' : 's'} so far. A line needs two — nothing is drawn rather than implying a shape from one point.`}
+            />
+          </div>
+
           <p className={styles['deployCaption']}>
-            {swaps < MIN_POINTS_FOR_SERIES
-              ? `Too few swaps (${swaps}) to plot a time series; the count is shown instead.`
+            {series.length >= 2
+              ? `Cumulative, one point per event, from ${firstBlock}. Block height, not elapsed time — block intervals are not constant.`
               : 'Protocol events, not Latch callbacks.'}
           </p>
         </>
@@ -267,7 +331,7 @@ function MeasuredGas() {
       <p className={styles['deployCaption']}>
         Observed in executed transactions, not estimated.
         {base && next && delta !== null
-          ? ` The second hop costs ${(next.gas - base.gas).toLocaleString('en-US')} gas more, ${delta.toFixed(1)}% on top of a single-hop swap.`
+          ? ` A second hop costs ${(next.gas - base.gas).toLocaleString('en-US')} gas more, +${delta.toFixed(1)}%.`
           : ''}{' '}
         A Latch adds its own cost on top.
       </p>
@@ -290,8 +354,7 @@ function NetworkReach() {
         ))}
       </div>
       <p className={styles['deployCaption']}>
-        Contracts are deployed on one network. The other ten are targets, and are labelled as such
-        everywhere in this app.
+        Targets are EIP-1153-probed networks with no contracts, labelled as such everywhere here.
       </p>
     </div>
   )
@@ -311,10 +374,7 @@ function Assurance() {
           </div>
         ))}
       </div>
-      <p className={styles['deployCaption']}>
-        No third-party audit has been performed. Said plainly, because a reader deciding whether to
-        trust this with other people&rsquo;s money should not have to infer it from silence.
-      </p>
+      <p className={styles['deployCaption']}>No third-party audit has been performed.</p>
     </div>
   )
 }

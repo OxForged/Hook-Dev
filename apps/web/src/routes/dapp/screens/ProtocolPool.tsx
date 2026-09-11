@@ -33,10 +33,14 @@
 import { Link, useParams } from 'react-router-dom'
 
 import { DEPLOYMENTS } from '../../../lib/chain'
+import { BarList } from '../components/charts'
 import { PoolOwnerActions } from '../components/PoolOwnerActions'
+import { Methodology } from '../components/ProtocolCharts'
+import { Gauge, StackedBar } from '../components/series-charts'
 import { REV_SHARE_HOOK_ABI } from '../lib/revshareAbi'
 import {
   REVSHARE_CHAIN_ID,
+  amountWithUnit,
   bpsPct,
   isPoolId,
   keyTuple,
@@ -63,6 +67,21 @@ import { useHookRef } from '../lib/useHookRef'
 import { dappPath } from '../paths'
 
 const CHAIN = DEPLOYMENTS[REVSHARE_CHAIN_ID]
+
+/**
+ * `RevShareHook.MAX_FEE_PIPS` — `uint24 public constant MAX_FEE_PIPS = 100_000`
+ * at packages/hooks-revshare/src/RevShareHook.sol:140, checked by `configure`
+ * at :642.
+ *
+ * A constant, not a stored value: it cannot be raised, so there is nothing to
+ * read and nothing that can drift. It is written here rather than fetched
+ * because `readPoolOverview` does not call it, and a gauge without its ceiling
+ * is a bare percentage — which is precisely what a gauge exists to improve on.
+ */
+const MAX_FEE_PIPS = 100_000
+
+/** The three-way split, in the order the contract stores it. */
+const SPLIT_TOTAL_BPS = 10_000
 
 export default function ProtocolPool() {
   const { poolId: raw } = useParams<{ poolId: string }>()
@@ -140,12 +159,14 @@ export default function ProtocolPool() {
             <code>address(0)</code> for <PoolIdText value={state.data.poolId} />, which means the
             pool has never been configured on this hook.
           </p>
-          <p style={{ marginTop: 8 }}>
-            Note what is <em>not</em> shown: a 0% cut with a 0/0/0 split and a disabled flag. That is
-            what the zero struct decodes to, and it is indistinguishable from a real configuration
-            somebody deliberately switched off. The owner field is the only thing that tells the two
-            apart, so it is what this screen tests.
-          </p>
+          <Methodology label="Why nothing is shown instead of a 0% configuration">
+            <p className="live-note">
+              The zero struct decodes to a 0% cut with a 0/0/0 split and a disabled flag, which is
+              indistinguishable from a real configuration somebody switched off deliberately. The
+              owner field is the only thing that tells the two apart, so it is what this screen
+              tests.
+            </p>
+          </Methodology>
         </Empty>
       )}
 
@@ -241,14 +262,62 @@ function PoolBody({
           </div>
         )}
 
+        {/* One bar per currency, because the three destinations are amounts of
+            the SAME token and add to exactly what was taken. Charting one
+            currency's total against another's would need a price neither has. */}
+        {o.lifetime.rows.map((r) => {
+          const total = lifetimeTotal(r)
+          if (total === 0n) return null
+          /* Two floors and a remainder, so the three shares sum to exactly
+             10,000. Flooring all three would leave the bar short, and a short
+             bar is how `StackedBar` reports a split that genuinely does not add
+             up — which this one does. Every `value` string stays exact. */
+          const bps = (v: bigint) => Number((v * 10_000n) / total)
+          const lpBps = bps(r.lpDonated)
+          const benBps = bps(r.toBeneficiaries)
+          return (
+            <div key={`split-${r.token.address}`} style={{ marginTop: 12 }}>
+              <StackedBar
+                total={SPLIT_TOTAL_BPS}
+                unit={`of the ${r.token.symbol} taken`}
+                label={`${r.token.symbol} taken by this pool, split between liquidity providers, the beneficiary roster and the distributor`}
+                segments={[
+                  {
+                    name: `${r.token.symbol} · to LPs`,
+                    amount: lpBps,
+                    value: amountWithUnit(r.lpDonated, r.token),
+                    color: 'success',
+                  },
+                  {
+                    name: `${r.token.symbol} · to beneficiaries`,
+                    amount: benBps,
+                    value: amountWithUnit(r.toBeneficiaries, r.token),
+                    color: 'primary',
+                  },
+                  {
+                    name: `${r.token.symbol} · to distributor`,
+                    amount: 10_000 - lpBps - benBps,
+                    value: amountWithUnit(r.toDistributor, r.token),
+                    color: 'violet',
+                  },
+                ]}
+              />
+            </div>
+          )
+        })}
+
         <p className="live-note" style={{ marginTop: 10 }}>
           <strong>Summed from logs since block {o.lifetime.fromBlock.toString()}</strong> (head{' '}
-          {o.lifetime.toBlock.toString()}). <code>RevShareHook</code> keeps no cumulative counter —
-          there is no <code>totalTaken(poolId, currency)</code> to read — so this is a total over the
-          scanned window only, bounded by how far back this RPC serves logs. It is not a lifetime
-          total and is not presented as one. The three columns are the three fields of{' '}
-          <code>RevShareTaken</code>, so they add up to what the swap path actually took.
+          {o.lifetime.toBlock.toString()}) — a window total, not a lifetime total.
         </p>
+        <Methodology label="Why there is no lifetime total to read">
+          <p className="live-note">
+            <code>RevShareHook</code> keeps no cumulative counter: there is no{' '}
+            <code>totalTaken(poolId, currency)</code>, so this is a sum over the scanned window
+            only, bounded by how far back this RPC serves logs. The three columns are the three
+            fields of <code>RevShareTaken</code>, so they add up to exactly what the swap path took.
+          </p>
+        </Methodology>
       </section>
 
       {/* ------------------------------------------------------- PENDING */}
@@ -306,16 +375,60 @@ function PoolBody({
           </span>
         </div>
 
+        {/* The cut against its ceiling, then how that cut divides. Two charts
+            because they answer two questions: how much this pool takes, and who
+            gets it. The split MUST equal 10000 bps — the contract rejects
+            anything else — so drawing it as one bar makes the absence of slack
+            visible rather than asking the reader to add three percentages. */}
         <div className="dapp-kpis">
-          <Kpi
-            label="CUT OF EACH SWAP"
-            value={pipsPct(o.config.feePips)}
-            sub={`${o.config.feePips} pips of the unspecified amount · getConfig`}
+          {/* Wrapped in the same card the Kpi tiles use, so the gauge is a
+              sibling in the grid rather than a bare figure floating in it. */}
+          <div className="dapp-card dapp-card--kpi">
+          <Gauge
+            value={o.config.feePips}
+            max={MAX_FEE_PIPS}
+            label="This pool's cut of each swap, against the hook's hard cap"
+            valueText={pipsPct(o.config.feePips)}
+            maxText={pipsPct(MAX_FEE_PIPS)}
+            color={o.config.enabled ? 'primary' : 'amber'}
+            caption={
+              <>
+                {o.config.feePips} pips of the unspecified amount, of{' '}
+                <code>MAX_FEE_PIPS</code> — a constant the owner cannot raise.
+              </>
+            }
           />
+          </div>
           <Kpi label="TO LPs" value={bpsPct(o.config.lpDonateBps)} sub="donated in-range via CLPoolManager.donate" />
           <Kpi label="TO BENEFICIARIES" value={bpsPct(o.config.beneficiaryBps)} sub="split across the roster by weight" />
           <Kpi label="TO DISTRIBUTOR" value={bpsPct(o.config.distributorBps)} sub="pulled by the epoch distributor" />
         </div>
+
+        <StackedBar
+          total={SPLIT_TOTAL_BPS}
+          unit="of this pool's cut"
+          label="How this pool's cut divides between liquidity providers, the beneficiary roster and the epoch distributor"
+          segments={[
+            {
+              name: 'To LPs',
+              amount: o.config.lpDonateBps,
+              value: bpsPct(o.config.lpDonateBps),
+              color: 'success',
+            },
+            {
+              name: 'To beneficiaries',
+              amount: o.config.beneficiaryBps,
+              value: bpsPct(o.config.beneficiaryBps),
+              color: 'primary',
+            },
+            {
+              name: 'To distributor',
+              amount: o.config.distributorBps,
+              value: bpsPct(o.config.distributorBps),
+              color: 'violet',
+            },
+          ]}
+        />
 
         <dl className="dapp-fields" style={{ marginTop: 12 }}>
           <Field name="Pool owner" value={<Addr value={o.config.owner} />} />
@@ -343,11 +456,7 @@ function PoolBody({
         </dl>
 
         <p className="live-note" style={{ marginTop: 10 }}>
-          Owner-only actions — <code>proposeConfig</code>, <code>reduceFee</code>,{' '}
-          <code>disable</code>, <code>freezeConfig</code>, <code>setBeneficiaries</code>,{' '}
-          <code>transferPoolOwnership</code> — appear in their own panel below, and only when the
-          connected wallet is this pool's owner. For everybody else they are state, shown here and
-          not actionable.
+          Owner-only actions appear in their own panel below, and only for this pool&rsquo;s owner.
         </p>
       </section>
 
@@ -406,9 +515,8 @@ function PoolBody({
           <div className="an-empty">
             <p className="an-empty__title">No beneficiaries set</p>
             <p className="live-note">
-              <code>getBeneficiaries</code> returns an empty roster. Anything this pool accrues for
-              beneficiaries waits in <code>pendingBeneficiary</code> rather than being lost —{' '}
-              <code>settleBeneficiaries</code> returns quietly while the total weight is zero.
+              <code>getBeneficiaries</code> is empty. Anything accrued for beneficiaries waits in{' '}
+              <code>pendingBeneficiary</code> rather than being lost.
             </p>
           </div>
         ) : (
@@ -440,14 +548,37 @@ function PoolBody({
           </div>
         )}
 
+        {/* Weight is the one per-pool number on this roster, and a bar is how a
+            reader sees a share without dividing. Every bar is a share of the
+            same total weight, so the comparison is unit-consistent by
+            construction. */}
+        {o.beneficiaries.length > 0 && o.totalWeight > 0n && (
+          <div style={{ marginTop: 12 }}>
+            <BarList
+              items={o.beneficiaries.map((b) => ({
+                name: shortHex(b.recipient),
+                value: b.weight.toString(),
+                pct: Number((b.weight * 10_000n) / o.totalWeight) / 100,
+                color: 'primary' as const,
+              }))}
+              valueLabel="weight"
+              shareLabel="of the beneficiary slice"
+            />
+          </div>
+        )}
+
         <p className="live-note" style={{ marginTop: 10 }}>
-          There is no &ldquo;claimable from this pool&rdquo; column, and there cannot be.{' '}
-          <code>claimable</code> on the hook is keyed{' '}
-          <code>(recipient, currency)</code> with no pool in the key: a beneficiary of two pools has
-          one merged balance, and <code>claim(currency, to)</code> pays all of it. Weight is
-          per-pool and real; the balance is not.{' '}
+          Weight is per-pool; a claimable balance is not.{' '}
           <Link to={withHook(dappPath('claim'))}>See a global balance on the claim screen →</Link>
         </p>
+        <Methodology label="Why there is no “claimable from this pool” column">
+          <p className="live-note">
+            <code>claimable</code> on the hook is keyed <code>(recipient, currency)</code> with no
+            pool in the key. A beneficiary of two pools has one merged balance and{' '}
+            <code>claim(currency, to)</code> pays all of it, so no view function can answer what
+            this pool owes them.
+          </p>
+        </Methodology>
       </section>
 
       {/* ---------------------------------------------------- UNSETTLED */}
@@ -523,13 +654,19 @@ function PoolBody({
               ))}
 
             {o.unsettled.every((u) => u.beneficiary === 0n) && (
-              <p className="live-note" style={{ marginTop: 10 }}>
-                Nothing is pending for the roster in any currency, so{' '}
-                <code>settleBeneficiaries</code> is not offered. It is the one call on this surface
-                that does <em>not</em> revert when it is pointless — it returns early — so a
-                simulation against an empty pot would pass and the button would look armed while the
-                transaction did nothing.
-              </p>
+              <>
+                <p className="live-note" style={{ marginTop: 10 }}>
+                  Nothing is pending for the roster, so <code>settleBeneficiaries</code> is not
+                  offered.
+                </p>
+                <Methodology label="Why it is hidden rather than disabled">
+                  <p className="live-note">
+                    It is the one call on this surface that does <em>not</em> revert when it is
+                    pointless — it returns early. A simulation against an empty pot passes, so the
+                    button would look armed while the transaction did nothing.
+                  </p>
+                </Methodology>
+              </>
             )}
           </>
         )}

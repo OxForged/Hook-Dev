@@ -21,6 +21,20 @@
    The merkle distributor has a third path which is NOT BUILDABLE here: its
    `claim` needs `(index, account, amount0, amount1, proof)` and nothing on
    chain publishes the tree. That is stated, not worked around.
+
+   THE SOLVENCY BARS. `backing(currency)` must always be at least
+   `totalOwed(currency)`; a hook where it is not cannot pay everyone it owes,
+   and that is the single most important thing this screen can report. It was
+   reported in a sentence under a table of three 18-decimal integers, which is
+   a comparison no reader performs by eye. The three figures are now also drawn
+   as bars off the same three reads, so a shortfall is visible without doing
+   arithmetic. Nothing new is fetched.
+
+   COPY. Each long explanation here sits behind a <details> now — how the
+   currency list is discovered, why a merkle proof cannot be built, why an
+   undelegated holder has no share. The facts are unchanged and none was
+   dropped; they stopped being the first thing between the reader and their
+   balance.
    ============================================================================ */
 
 import { LatchConnectButton } from '@latchprotocol/connect'
@@ -30,9 +44,12 @@ import { getAddress, isAddress, type Address } from 'viem'
 import { useAccount, useSwitchChain } from 'wagmi'
 
 import { DEPLOYMENTS } from '../../../lib/chain'
+import { BarList } from '../components/charts.tsx'
+import type { LabelledBar, SeriesColor } from '../data/types.ts'
 import { REV_SHARE_HOOK_ABI, SNAPSHOT_DISTRIBUTOR_ABI } from '../lib/revshareAbi'
 import {
   REVSHARE_CHAIN_ID,
+  amountWithUnit,
   fmtTimestamp,
   readCurrenciesSeen,
   readDistributor,
@@ -64,6 +81,47 @@ interface GlobalLoad {
   fromBlock: bigint
   /** Currencies the log scan found, before the extra one was added. */
   discovered: number
+}
+
+/* -------------------------------------------------------------- solvency ---- */
+
+/**
+ * One currency's three figures, drawn.
+ *
+ * The scale is the LARGEST of the three, never `backing` alone: a hook that
+ * owes more than it holds would otherwise need a bar past the end of its own
+ * track, and clamping it would hide exactly the condition worth seeing.
+ */
+function Solvency({ row }: { row: ClaimableRow }) {
+  const solvent = row.backing >= row.totalOwed
+  const denom = row.backing > row.totalOwed ? row.backing : row.totalOwed
+
+  const bar = (name: string, v: bigint, color: SeriesColor): LabelledBar => ({
+    name,
+    value: amountWithUnit(v, row.token),
+    pct: denom <= 0n ? 0 : Number((v * 10_000n) / denom) / 100,
+    color,
+  })
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <p className="dapp-microlabel dapp-microlabel--tight">
+        {row.token.symbol}{' '}
+        <span className={solvent ? 'dapp-badge dapp-badge--ok' : 'dapp-badge dapp-badge--danger'}>
+          {solvent ? 'FULLY BACKED' : 'SHORTFALL'}
+        </span>
+      </p>
+      <BarList
+        items={[
+          bar('Hook can pay out', row.backing, solvent ? 'success' : 'amber'),
+          bar('Hook owes everyone', row.totalOwed, 'violet'),
+          bar('Yours', row.amount, 'primary'),
+        ]}
+        valueLabel="Amount"
+        shareLabel="of the largest figure here"
+      />
+    </div>
+  )
 }
 
 export default function Claim() {
@@ -130,8 +188,8 @@ export default function Claim() {
     <>
       <ScreenIntro title="Claim what is owed to you" hook={hook ?? undefined}>
         <p>
-          Two different balances reach a person from a revenue-share pool, and they are not
-          interchangeable. Both are shown separately below, read live from {CHAIN.name}.
+          Two different balances reach a person from a revenue-share pool. They are not
+          interchangeable, so they are shown separately, read live from {CHAIN.name}.
         </p>
       </ScreenIntro>
 
@@ -146,20 +204,24 @@ export default function Claim() {
               <span className="dapp-badge dapp-badge--warn">global, not per pool</span>
             </div>
             <p className="live-note">
-              <code>claimable(recipient, currency)</code> is keyed by address and token with{' '}
-              <strong>no pool in the key</strong>. If you are on the roster of more than one pool,
-              the figure below is all of them added together, and{' '}
-              <code>claim(currency, to)</code> withdraws the entire amount in one transaction. No
-              view function on the hook can split it by pool, so this screen does not offer a
-              per-pool figure — it would have to be invented.
+              <code>claimable(recipient, currency)</code> has <strong>no pool in the key</strong>:
+              one figure covering every pool you are a beneficiary of, and{' '}
+              <code>claim(currency, to)</code> withdraws all of it at once.
             </p>
+            <details className="dapp-method">
+              <summary>Why there is no per-pool figure</summary>
+              <div className="dapp-method__body">
+                <p>
+                  No view function on the hook can split the balance by pool. A per-pool number
+                  would have to be invented, so none is shown.
+                </p>
+              </div>
+            </details>
 
             {!isConnected && (
               <div className="dp-gate" style={{ marginTop: 12 }}>
                 <p className="dp-gate__title">Connect a wallet to see your balance</p>
-                <p className="dp-gate__body">
-                  The balance is keyed by address. Connecting reads only.
-                </p>
+                <p className="dp-gate__body">The balance is keyed by address. Connecting reads only.</p>
                 <LatchConnectButton variant="inline" label="Connect wallet" />
               </div>
             )}
@@ -168,7 +230,8 @@ export default function Claim() {
               <div className="dp-gate dp-gate--warn" style={{ marginTop: 12 }}>
                 <p className="dp-gate__title">Not deployed on this chain</p>
                 <p className="dp-gate__body">
-                  RevShareHook is deployed on {CHAIN.name} and nowhere else — not because your wallet is on the wrong network, but because the hook has not been deployed to the chain you are on. Switching moves you to the only chain where these reads mean anything.
+                  This RevShareHook is on {CHAIN.name}. The chain your wallet is on has no such
+                  contract, so there is nothing there to read.
                 </p>
                 <button
                   type="button"
@@ -195,9 +258,8 @@ export default function Claim() {
                 autoComplete="off"
               />
               <p className="dp-hint">
-                The list of currencies below is discovered from <code>RevShareTaken</code> logs,
-                which is bounded by what this RPC serves. A token those logs miss can be checked
-                directly here.
+                The list below comes from <code>RevShareTaken</code> logs, bounded by what this RPC
+                serves. A token those logs miss can be checked here.
               </p>
             </div>
           </section>
@@ -210,10 +272,9 @@ export default function Claim() {
           {global.state.k === 'ready' && global.state.data.rows.length === 0 && (
             <Empty title="No currency to check">
               <p>
-                No <code>RevShareTaken</code> log was found on this hook since block{' '}
-                {global.state.data.fromBlock.toString()}, so no currency has been discovered to
-                query. That is an empty log stream, not a failed read — this hook has never taken a
-                cut in the scanned range. Paste a token address above to check one directly.
+                No <code>RevShareTaken</code> log on this hook since block{' '}
+                {global.state.data.fromBlock.toString()} — an empty log stream, not a failed read.
+                Paste a token address above to check one directly.
               </p>
             </Empty>
           )}
@@ -250,12 +311,24 @@ export default function Claim() {
                   </tbody>
                 </table>
               </div>
-              <p className="live-note" style={{ marginTop: 8 }}>
-                <code>backing(currency)</code> is what the hook holds plus the vault claims it can
-                redeem; <code>totalOwed(currency)</code> is every recipient&rsquo;s balance combined.
-                The first must always be at least the second — if it is not, that is a solvency
-                problem worth reporting, not a display glitch.
-              </p>
+              {/* The invariant, drawn from the same three reads as the table.
+                  A shortfall between two 18-decimal integers is not something a
+                  reader spots in a table; it is something they spot in a bar. */}
+              {global.state.data.rows.map((r) => (
+                <Solvency key={`solv-${r.token.address}`} row={r} />
+              ))}
+
+              <details className="dapp-method">
+                <summary>What these three figures are</summary>
+                <div className="dapp-method__body">
+                  <p>
+                    <code>backing(currency)</code> is what the hook holds plus the vault claims it
+                    can redeem. <code>totalOwed(currency)</code> is every recipient&rsquo;s balance
+                    combined. The first must always be at least the second; if it is not, that is a
+                    solvency problem worth reporting, not a display glitch.
+                  </p>
+                </div>
+              </details>
 
               {/* Offered only where there is a balance. `claim` reverts
                   NothingToClaim on zero, so an always-rendered button would be
@@ -278,10 +351,9 @@ export default function Claim() {
 
               {global.state.data.rows.every((r) => r.amount === 0n) && (
                 <p className="live-note" style={{ marginTop: 10 }}>
-                  Nothing is claimable in any of these currencies, so no claim button is offered —{' '}
-                  <code>claim</code> reverts <code>NothingToClaim</code> on a zero balance. A
-                  balance appears here only after <code>settleBeneficiaries</code> has run for a
-                  pool you are on the roster of.
+                  Nothing claimable, so no claim button — <code>claim</code> reverts{' '}
+                  <code>NothingToClaim</code> on zero. A balance appears once{' '}
+                  <code>settleBeneficiaries</code> has run for a pool you are on the roster of.
                 </p>
               )}
             </section>
@@ -294,9 +366,9 @@ export default function Claim() {
               <span className="dapp-badge dapp-badge--info">per epoch, per account</span>
             </div>
             <p className="live-note">
-              An epoch distributor pays token holders directly rather than through the hook&rsquo;s
-              roster. There is no index of distributors on chain, so name one — a pool&rsquo;s
-              distributor address is on its pool screen, under <code>distributorOf</code>.
+              An epoch distributor pays holders directly, not through the roster. There is no index
+              of distributors on chain, so name one — a pool&rsquo;s is on its pool screen under{' '}
+              <code>distributorOf</code>.
             </p>
 
             <div className="dp-field" style={{ marginTop: 12 }}>
@@ -331,10 +403,10 @@ export default function Claim() {
                 autoComplete="off"
               />
               <p className="dp-hint">
-                <code>claim(epochId, account)</code> pays <em>account</em>, and the submitter is
-                permissionless — anyone may push somebody else&rsquo;s claim through, and the funds
-                still go to that account, never to the sender. Left blank this uses the connected
-                address{address ? ` (${address})` : ''}.
+                Blank uses the connected address{address ? ` (${address})` : ''}.{' '}
+                <code>claim(epochId, account)</code> always pays <em>account</em>: the submitter is
+                permissionless, so anyone may push somebody else&rsquo;s claim through and the funds
+                still go to that account, never to the sender.
               </p>
             </div>
           </section>
@@ -356,18 +428,22 @@ export default function Claim() {
             <section className="dapp-card hx-alert">
               <h3 className="dapp-card__title">A merkle claim cannot be built here</h3>
               <p className="live-note">
-                This is a <code>MerkleEpochDistributor</code>. Its{' '}
-                <code>claim(epochId, index, account, amount0, amount1, proof)</code> needs a merkle
-                proof, and <strong>nothing on chain publishes the tree</strong> — the contract
-                stores only the root, and there is no event, URI or registry carrying the leaves. A
-                self-service claim UI would have to invent a proof source, so this app ships no
-                merkle <code>claim</code> in its ABI at all.
-              </p>
-              <p className="live-note" style={{ marginTop: 6 }}>
                 Claim through whatever channel the operator published the tree on. The epoch screen
-                shows the root and challenge state so you can check that what you are given matches
-                the chain.
+                shows the root and challenge state, so you can check what you are given against the
+                chain.
               </p>
+              <details className="dapp-method">
+                <summary>Why this app cannot build one</summary>
+                <div className="dapp-method__body">
+                  <p>
+                    <code>claim(epochId, index, account, amount0, amount1, proof)</code> needs a
+                    merkle proof, and <strong>nothing on chain publishes the tree</strong> — the
+                    contract stores only the root, and no event, URI or registry carries the leaves.
+                    A self-service claim UI would have to invent a proof source, so this app ships
+                    no merkle <code>claim</code> in its ABI at all.
+                  </p>
+                </div>
+              </details>
             </section>
           )}
 
@@ -420,9 +496,10 @@ function SnapshotClaims({
         </span>
       </div>
       <p className="live-note">
-        Shares are pro-rata by <Addr value={d.token.address} /> ({d.token.symbol}) delegated votes at
-        each epoch&rsquo;s snapshot. An address that never delegated has no votes and therefore no
-        share, however many tokens it holds — that is ERC-5805, not a bug in this screen.
+        Shares are pro-rata by <Addr value={d.token.address} /> ({d.token.symbol}){' '}
+        <strong>delegated</strong> votes at each epoch&rsquo;s snapshot. Holding the token is not
+        enough: an address that never delegated has no votes and no share. That is ERC-5805, not a
+        bug in this screen.
       </p>
 
       {account === null && (
@@ -501,9 +578,8 @@ function SnapshotClaims({
             </table>
           </div>
           <p className="live-note" style={{ marginTop: 8 }}>
-            &ldquo;This account&rsquo;s share&rdquo; is <code>claimableAmounts(epochId, account)</code>,
-            which reports the share whether or not it has been taken; the next column is{' '}
-            <code>claimed(epochId, account)</code>, which says whether it has.
+            Share is <code>claimableAmounts(epochId, account)</code> — reported whether or not it
+            has been taken. Already claimed is <code>claimed(epochId, account)</code>.
           </p>
 
           {standings.data
@@ -524,10 +600,8 @@ function SnapshotClaims({
             <div className="an-empty" style={{ marginTop: 12 }}>
               <p className="an-empty__title">Nothing claimable for this account</p>
               <p className="live-note">
-                <code>claimableAmounts</code> returns zero for every listed epoch. Most often that
-                means the address held no <em>delegated</em> votes at the snapshot timepoints —
-                holding the token is not enough under ERC-5805, the votes have to be delegated
-                before the epoch closes.
+                <code>claimableAmounts</code> returns zero for every listed epoch — most often
+                because no votes were <em>delegated</em> before those epochs closed.
               </p>
             </div>
           )}

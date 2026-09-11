@@ -1,7 +1,11 @@
 import styles from './landing.module.css'
 import { useCountUp } from './useCountUp'
 import { useProtocolMetrics, fmtToken } from '../../lib/useMetrics'
+import { ACTIVE_CHAIN_ID, DEPLOYMENTS, IS_TESTNET_BUILD } from '../../lib/chain'
 import type { ProtocolMetrics } from '../../lib/chain'
+
+/** The chain this build serves. Never a spelled-out name: see landing/data.ts. */
+const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
 function StatCell({ value, label }: { value: string; label: string }) {
   const { ref, display } = useCountUp<HTMLDivElement>(value)
@@ -16,20 +20,16 @@ function StatCell({ value, label }: { value: string; label: string }) {
 }
 
 /**
- * A3. Stats strip — now REAL, read from the deployed Sepolia contracts.
+ * A3. Stats strip — read from the deployed contracts, whichever chain this
+ * build serves.
  *
  * The design spec put placeholder figures here ($412M routed, 1,840 latches, 9
- * networks). Those are gone. What replaces them is small — one pool, a couple of
- * swaps — because that is what a fresh testnet actually contains.
+ * networks). Those are gone. What replaces them is small, because that is what
+ * a young deployment actually contains — and a sparse honest number is worth
+ * more than an impressive invented one to an audience that will check the chain.
  *
- * A sparse honest number is worth more than an impressive invented one: the
- * audience for this page is developers who will check the chain, and a headline
- * figure that does not reconcile with Etherscan costs more credibility than a
- * modest one ever could.
- *
- * There is deliberately no USD figure. ltUSD and ltETH are testnet tokens that
- * nothing prices, and a fabricated price to produce a dollar headline is exactly
- * the failure this replaces.
+ * No USD figure anywhere. These pairs are unpriced test tokens; a fabricated
+ * price to produce a dollar headline is the exact failure this replaced.
  */
 function cells(m: ProtocolMetrics): { value: string; label: string }[] {
   const tvl0 = m.tvl[0]
@@ -38,7 +38,7 @@ function cells(m: ProtocolMetrics): { value: string; label: string }[] {
     { value: String(m.poolCount), label: 'POOLS INITIALIZED' },
     { value: String(m.swapCount), label: 'SWAPS EXECUTED' },
     { value: tvlText, label: `${tvl0?.symbol ?? 'TOKEN'} HELD BY THE VAULT` },
-    { value: '1', label: 'NETWORK LIVE · SEPOLIA' },
+    { value: '1', label: `NETWORK LIVE · ${CHAIN.name.toUpperCase()}` },
   ]
 }
 
@@ -46,7 +46,10 @@ export function StatsStrip() {
   const s = useProtocolMetrics()
 
   return (
-    <section className={styles['statsStrip']} aria-label="Live protocol metrics from Ethereum Sepolia">
+    <section
+      className={styles['statsStrip']}
+      aria-label={`Live protocol metrics from ${CHAIN.name}`}
+    >
       <div className={styles['statsGrid']}>
         {s.k === 'ready' ? (
           cells(s.m).map((c) => <StatCell key={c.label} value={c.value} label={c.label} />)
@@ -61,10 +64,12 @@ export function StatsStrip() {
       </div>
       <p className={styles['statsNote']}>
         {s.k === 'ready'
-          ? `LIVE FROM ETHEREUM SEPOLIA · BLOCK ${s.m.latestBlock.toString()} · TESTNET ONLY, NO MAINNET DEPLOYMENT`
+          ? `LIVE FROM ${CHAIN.name.toUpperCase()} · BLOCK ${s.m.latestBlock.toString()}${
+              IS_TESTNET_BUILD ? ' · TESTNET' : ''
+            }`
           : s.k === 'error'
             ? 'COULD NOT READ THE CHAIN — NO FIGURES SHOWN RATHER THAN STALE ONES'
-            : 'READING LIVE CONTRACTS ON ETHEREUM SEPOLIA'}
+            : `READING LIVE CONTRACTS ON ${CHAIN.name.toUpperCase()}`}
       </p>
     </section>
   )

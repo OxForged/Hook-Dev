@@ -1088,47 +1088,37 @@
   --dapp-ease: var(--ease);
 }
 
+/* `SeriesChart` and `StackedBar`, mounted on this surface for the same reason
+   as the bar list: they already draw exactly what is wanted, and a second
+   implementation is a second place for the two to disagree. Each host supplies
+   only what the `.dapp` shell would have — the easing custom property, and this
+   page's vertical rhythm instead of the dapp's 12px. */
+.hostedSeries,
+.hostedStack {
+  --dapp-ease: var(--ease);
+  margin-top: var(--s4);
+}
+
 .chartHost {
   margin-top: var(--s4);
 }
 
-/* ------------------------------------------------------------- the fee meter
+/* ------------------------------------------------------------- the fee gauge
 
    The one figure in LIVE PROTOCOL STATE that is a ratio rather than a standalone
    scalar: what the protocol takes, against the ceiling the contract enforces.
-   The row above it still prints both numbers; the bar only shows how much of the
-   permitted range is used.
+
+   This used to be a hand-rolled `.feeMeter` — a track, a fill and a two-ended
+   scale, roughly 30 lines — fed by two constants typed into Activity.tsx. Both
+   halves are gone: the numbers are now read off the deployed fee controller,
+   and the drawing is `Gauge` from series-charts.tsx, which already states its
+   ceiling in the middle of the ring. A local reimplementation of a primitive
+   this app already owns is one more place for the two to drift apart.
    -------------------------------------------------------------------------- */
 
-.feeMeter {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-}
-
-.meterTrack {
-  height: 6px;
-  border-radius: var(--r-pill);
-  background: var(--track);
-  overflow: hidden;
-}
-
-.meterFill {
-  display: block;
-  height: 100%;
-  border-radius: var(--r-pill);
-  background: linear-gradient(90deg, var(--latch-blue), var(--dapp-bar-tail));
-  /* A CSS transition, so tokens.css's prefers-reduced-motion block flattens it. */
-  transition: width 1s var(--ease);
-}
-
-.meterScale {
-  display: flex;
-  justify-content: space-between;
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--faint-ink);
+.hostedGauge {
+  --dapp-ease: var(--ease);
+  margin-top: var(--s5);
 }
 
 /* Visually hidden, still announced. */

@@ -5,7 +5,8 @@
    weekly hook-call bars, a four-network TVL donut (Ethereum 41% / Base 27% /
    Arbitrum 19%) and dollar fee totals for latches that do not exist. All of it
    is gone. Nothing here is authored; every figure is computed from logs and
-   balances read off the deployed Sepolia contracts by `lib/chain.ts`.
+   balances read off the ACTIVE deployment's contracts by `lib/chain.ts` —
+   whichever chain that is, never a chain named in a string here.
 
    Three things the old shape could not honestly express, and how each is
    handled now:
@@ -17,9 +18,11 @@
        own `fee` / `protocolFee` fields.
 
      - "Weekly" columns. Logs carry block numbers, not weeks; deriving a week
-       from block height means assuming a block time Sepolia does not honour.
-       The columns are now protocol events bucketed by BLOCK across the window
-       in which activity actually occurred, and the axis says which blocks.
+       from block height means assuming a block time no chain here honours
+       exactly. The columns are now protocol events bucketed by BLOCK across
+       the window in which activity actually occurred, and the axis says which
+       blocks. The cumulative fee series below is indexed the same way, for the
+       same reason.
 
      - "TOP LATCHES BY FEES", in dollars. No hook has ever earned a fee here —
        no live pool has a hook attached — and testnet tokens have no price. The
@@ -30,7 +33,7 @@
    ============================================================================ */
 
 import {
-  SEPOLIA_CHAIN_ID,
+  ACTIVE_CHAIN_ID,
   formatUnits,
   readActivity,
   readProtocolMetrics,
@@ -60,6 +63,32 @@ export interface FeeConfig {
   swaps: number
 }
 
+/**
+ * One token's running fee total, one point per swap that charged in it.
+ *
+ * Indexed by BLOCK, never by a clock derived from one. Each point is a real
+ * reading — "after this swap, this much fee had been charged in this token" —
+ * so the line passes through measurements only and never between them. Nothing
+ * is emitted for a block in which no swap occurred: a flat segment drawn across
+ * quiet blocks would assert that somebody measured them.
+ *
+ * ONE TOKEN PER SERIES. The two sides of a swap are different tokens and
+ * nothing prices either, so a combined "total fees" line would need an exchange
+ * rate that does not exist. Same reason `feeBars` keeps its bars per token.
+ */
+export interface FeeSeriesPoint {
+  blockNumber: bigint
+  /** Cumulative protocol + LP fee, in this token's smallest unit. */
+  cumulative: bigint
+}
+
+export interface TokenFeeSeries {
+  symbol: string
+  decimals: number
+  /** Ascending by block. One entry per swap whose INPUT side was this token. */
+  points: FeeSeriesPoint[]
+}
+
 export interface AnalyticsData {
   latestBlock: bigint
   poolCount: number
@@ -82,6 +111,13 @@ export interface AnalyticsData {
 
   /** Fees earned, split protocol/LP, one pair of bars per token. */
   feeBars: LabelledBar[]
+
+  /**
+   * Running fee total per token, one series each. A token with a single
+   * fee-bearing swap yields a single point, and the chart says so rather than
+   * drawing a line through it.
+   */
+  feeSeries: TokenFeeSeries[]
 
   /** Hooks listed in the registry, and how many live pools actually use one. */
   hooks: RegisteredLatch[]
@@ -232,6 +268,52 @@ function feeBars(m: ProtocolMetrics): LabelledBar[] {
 }
 
 /* -------------------------------------------------------------------------
+   Cumulative fee series, per token
+   ------------------------------------------------------------------------- */
+
+const absBig = (v: bigint) => (v < 0n ? -v : v)
+
+/**
+ * Turn real Swap logs into one running total per token.
+ *
+ * The apportionment is the same one `readProtocolMetrics` uses — each swap's
+ * OWN `fee` field against its own input amount — so this series and the KPI
+ * totals cannot disagree. Reusing the controller's current default instead
+ * would silently rewrite history the moment a fee changed.
+ *
+ * Token identity follows the same positional convention as `feeBars`: side 0 of
+ * a swap is `metrics.tvl[0]`. That holds while the deployment has one pool,
+ * which is what the chain says today; it is stated here rather than assumed
+ * silently, because a second pool with different currencies would break it.
+ */
+function feeSeries(m: ProtocolMetrics, swaps: SwapRecord[]): TokenFeeSeries[] {
+  const tokens = [m.tvl[0], m.tvl[1]]
+  const running = [0n, 0n]
+  const points: FeeSeriesPoint[][] = [[], []]
+
+  // readRecentSwaps hands back newest-first for the activity feed; a series
+  // reads the other way.
+  const ascending = [...swaps].sort((a, b) => Number(a.blockNumber - b.blockNumber))
+
+  for (const s of ascending) {
+    const side = s.amount0 > 0n ? 0 : 1
+    const gross = absBig(side === 0 ? s.amount0 : s.amount1)
+    const fee = (gross * BigInt(s.feePips)) / 1_000_000n
+    if (fee === 0n) continue
+    running[side] = (running[side] ?? 0n) + fee
+    points[side]?.push({ blockNumber: s.blockNumber, cumulative: running[side] ?? 0n })
+  }
+
+  const out: TokenFeeSeries[] = []
+  for (const [i, t] of tokens.entries()) {
+    const pts = points[i]
+    if (!t || !pts || pts.length === 0) continue
+    out.push({ symbol: t.symbol, decimals: t.decimals, points: pts })
+  }
+  return out
+}
+
+/* -------------------------------------------------------------------------
    Loader
    ------------------------------------------------------------------------- */
 
@@ -243,7 +325,7 @@ function feeBars(m: ProtocolMetrics): LabelledBar[] {
  * invented is indistinguishable to the reader.
  */
 export async function loadAnalytics(
-  chainId: DeployedChainId = SEPOLIA_CHAIN_ID,
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<AnalyticsData> {
   const [metrics, events, swaps, hooks] = await Promise.all([
     readProtocolMetrics(chainId),
@@ -269,6 +351,7 @@ export async function loadAnalytics(
     feeSplit: segments,
     feeConfigs: configs,
     feeBars: feeBars(metrics),
+    feeSeries: feeSeries(metrics, swaps),
     hooks,
   }
 }

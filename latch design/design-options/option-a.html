@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Latch — Design Option A · Terminal</title>
+<link rel="icon" href="/brand/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* =====================================================================
+   OPTION A · TERMINAL
+   ---------------------------------------------------------------------
+   SPACING SCALE (the only spacing values used anywhere in this file):
+     --s1  4px   --s2  8px   --s3 12px   --s4 16px
+     --s5 24px   --s6 32px   --s7 48px   --s8 64px
+   Hairlines are 1px borders — or a 1px grid gap over a --line background,
+   which is the same hairline drawn between cells — never spacing. Type sizes live on their own
+   scale (11/12/13/14/16/20/28/40) and are not spacing values.
+   ONE accent: --acc. Dashed borders mean "illustrative"; solid means fact.
+   ===================================================================== */
+:root{
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;--s8:64px;
+  --bg:#09090b;--bg1:#0e0e11;--bg2:#131317;--line:#1f1f24;--line2:#2a2a31;
+  --fg:#e7e7ea;--fg1:#a1a1aa;--fg2:#6b6b75;
+  --acc:#4f8cff;--acc-dim:rgba(79,140,255,.14);--err:#ff5f57;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --grid:64px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg);-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);color:var(--fg);font:400 13px/1.5 var(--sans);
+  font-feature-settings:"tnum" 1,"ss01" 1;-webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+.mono,code,pre,kbd,table,input,button,.tab,.kpi,.chip{font-family:var(--mono);font-variant-numeric:tabular-nums}
+a{color:inherit;text-decoration:none}
+a:hover{color:var(--fg)}
+img{display:block;max-width:100%}
+button{background:none;border:0;color:inherit;font:inherit;cursor:pointer}
+:focus{outline:none}
+:focus-visible{outline:1px solid var(--acc);outline-offset:2px}
+::selection{background:var(--acc);color:#000}
+hr{border:0;border-top:1px solid var(--line)}
+
+/* ---------- top tab control ---------- */
+.switch{
+  position:sticky;top:0;z-index:50;height:var(--s7);
+  display:flex;align-items:stretch;border-bottom:1px solid var(--line);
+  background:rgba(9,9,11,.92);backdrop-filter:blur(8px);
+}
+.switch .brand{display:flex;align-items:center;gap:var(--s2);padding:0 var(--s4);border-right:1px solid var(--line);font:500 12px var(--mono);letter-spacing:.06em}
+.switch .brand img{width:var(--s4);height:var(--s4)}
+.tabs{display:flex}
+.tab{
+  display:flex;align-items:center;gap:var(--s2);padding:0 var(--s4);font-size:12px;letter-spacing:.06em;
+  color:var(--fg1);border-right:1px solid var(--line);position:relative;
+}
+.tab .k{color:var(--fg2)}
+.tab:hover{color:var(--fg);background:var(--bg1)}
+.tab[aria-selected="true"]{color:var(--fg)}
+.tab[aria-selected="true"]::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:var(--acc)}
+.switch .meta{margin-left:auto;display:flex;align-items:center;gap:var(--s3);padding:0 var(--s4);font:400 11px var(--mono);color:var(--fg2);letter-spacing:.04em}
+.switch .meta .dot{width:6px;height:6px;background:var(--acc);border-radius:50%;display:inline-block;margin-right:var(--s2);vertical-align:middle;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.view{display:none}
+.view[data-active]{display:block}
+
+/* ---------- primitives ---------- */
+.chip{display:inline-flex;align-items:center;gap:var(--s1);height:20px;padding:0 var(--s2);border:1px solid var(--line2);font-size:11px;letter-spacing:.04em;color:var(--fg1);white-space:nowrap;vertical-align:middle}
+.chip.acc{border-color:var(--acc);color:var(--acc)}
+.chip.ill{border-style:dashed;color:var(--fg2)}
+.chip.err{border-color:var(--err);color:var(--err)}
+.lbl{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--fg2)}
+.lbl code,.lbl.id{text-transform:none;letter-spacing:.04em}
+.btn{display:inline-flex;align-items:center;gap:var(--s2);height:var(--s6);padding:0 var(--s3);border:1px solid var(--line2);font:500 12px var(--mono);letter-spacing:.02em;color:var(--fg);background:var(--bg1);transition:border-color .12s,background .12s}
+.btn:hover{border-color:var(--fg2);background:var(--bg2)}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:#04070f}
+.btn.primary:hover{background:#6a9dff;border-color:#6a9dff}
+.btn.sm{height:var(--s5);padding:0 var(--s2);font-size:11px}
+.panel{border:1px solid var(--line);background:var(--bg1)}
+.panel > .ph{display:flex;align-items:center;gap:var(--s2);height:var(--s6);padding:0 var(--s3);border-bottom:1px solid var(--line);font:500 11px var(--mono);letter-spacing:.06em;color:var(--fg1);flex-wrap:wrap;height:auto;min-height:var(--s6);padding-block:var(--s1)}
+.panel > .ph .r{margin-left:auto;display:flex;gap:var(--s2);text-transform:none;letter-spacing:0}
+.panel > .pb{padding:var(--s3)}
+pre{overflow:auto;padding:var(--s3);font:400 12px/1.6 var(--mono);color:var(--fg1);tab-size:2;-moz-tab-size:2}
+pre .k{color:var(--acc)}pre .t{color:var(--fg)}pre .c{color:var(--fg2)}pre .n{color:#dfe3ea}pre .s{color:#b6c8ea}
+kbd{font-size:11px;border:1px solid var(--line2);padding:0 var(--s1);color:var(--fg1)}
+.num{font-variant-numeric:tabular-nums;text-align:right}
+/* grids: every track is minmax(0,·) and every item min-width:0, so a wide table or <pre>
+   scrolls inside its own container instead of widening the document */
+.hero-g>*,.flow-g>*,.code-g>*,.three>*,.two>*,.two-eq>*,.trust>*,.steps>*,.content>*,.mini>*,.ctl>*,.app>*{min-width:0}
+.hero-g,.flow-g,.code-g,.three,.two,.two-eq,.content,.mini,.ctl,.app{grid-template-columns:minmax(0,1fr)}
+.tbl-scroll{overflow-x:auto}
+.wrap{max-width:1280px;margin:0 auto;padding:0 var(--s4)}
+@media(min-width:900px){.wrap{padding:0 var(--s6)}}
+
+/* ---------- LANDING ---------- */
+.landing{
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:var(--grid) var(--grid);background-position:0 0;
+}
+.sec{border-bottom:1px solid var(--line)}
+.sec .wrap{padding-top:var(--s6);padding-bottom:var(--s6)}
+@media(min-width:900px){.sec .wrap{padding-top:var(--s7);padding-bottom:var(--s7)}}
+.sec-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s2) var(--s3);margin-bottom:var(--s5)}
+.sec-h .chip{height:auto;min-height:20px;white-space:normal}
+.sec-h .idx{font:500 11px var(--mono);color:var(--acc);letter-spacing:.08em}
+.sec-h h2{font:500 16px var(--mono);letter-spacing:-.01em}
+.sec-h .rule{flex:1;border-top:1px solid var(--line2);transform:translateY(-4px)}
+
+/* hero */
+.hero{border-bottom:1px solid var(--line)}
+.hero .wrap{padding-top:var(--s8);padding-bottom:var(--s8)}
+.hero-g{display:grid;gap:var(--s6);align-items:start}
+@media(min-width:900px){.hero-g{grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:var(--s7)}}
+.hero .eyebrow{display:flex;flex-wrap:wrap;gap:var(--s2);margin-bottom:var(--s5)}
+.hero h1{font:500 28px/1.15 var(--mono);letter-spacing:-.02em;margin-bottom:var(--s4);max-width:18ch}
+@media(min-width:600px){.hero h1{font-size:40px}}
+.hero h1 .acc{color:var(--acc)}
+.hero p.lede{font:400 14px/1.6 var(--sans);color:var(--fg1);max-width:56ch;margin-bottom:var(--s5)}
+.hero .ctas{display:flex;flex-wrap:wrap;gap:var(--s2);margin-bottom:var(--s6)}
+.spec{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);background:var(--bg1)}
+@media(min-width:600px){.spec{grid-template-columns:repeat(4,1fr)}}
+.spec div{padding:var(--s3);border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.spec div:nth-child(2n){border-right:0}
+@media(min-width:600px){.spec div:nth-child(2n){border-right:1px solid var(--line)}.spec div:nth-child(4n){border-right:0}.spec div:nth-child(n+5){border-bottom:0}}
+@media(max-width:599px){.spec div:nth-child(n+7){border-bottom:0}}
+.spec .lbl{margin-bottom:var(--s1)}
+.spec .v{font:500 13px var(--mono);color:var(--fg)}
+.term{border:1px solid var(--line);background:var(--bg1)}
+.term .bar{height:var(--s6);display:flex;align-items:center;gap:var(--s2);padding:0 var(--s3);border-bottom:1px solid var(--line);font:400 11px var(--mono);color:var(--fg2)}
+.term .bar i{width:8px;height:8px;border:1px solid var(--line2);display:inline-block}
+.term pre{padding:var(--s3)}
+.term .p{color:var(--acc)}
+.term .out{color:var(--fg2)}
+
+/* flow */
+.flow-g{display:grid;gap:var(--s4);align-items:start}
+@media(min-width:1000px){.flow-g{grid-template-columns:320px minmax(0,1fr)}}
+.ctl{display:grid;gap:var(--s3)}
+.field label{display:block;margin-bottom:var(--s1)}
+.field .row{display:flex;gap:var(--s2);align-items:center}
+.in{height:var(--s6);width:100%;background:var(--bg);border:1px solid var(--line2);color:var(--fg);padding:0 var(--s2);font:400 12px var(--mono);transition:border-color .12s}
+.in:hover{border-color:var(--fg2)}.in:focus-visible{border-color:var(--acc);outline-offset:0}
+.in[aria-invalid="true"]{border-color:var(--err)}
+.in.small{width:88px;flex:0 0 88px}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:var(--s4);background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:1px;background:var(--line2)}
+input[type=range]::-moz-range-track{height:1px;background:var(--line2)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:var(--s3);height:var(--s3);background:var(--acc);margin-top:-6px;border:0;border-radius:0}
+input[type=range]::-moz-range-thumb{width:var(--s3);height:var(--s3);background:var(--acc);border:0;border-radius:0}
+input[type=range]:focus-visible{outline-offset:0}
+.sum{display:flex;justify-content:space-between;align-items:center;font:400 12px var(--mono);color:var(--fg1);padding-top:var(--s2);border-top:1px solid var(--line)}
+.sum b{font-weight:500;color:var(--fg)}
+.sum.bad b{color:var(--err)}
+.err-line{font:400 11px var(--mono);color:var(--err);min-height:var(--s4)}
+.presets{display:flex;flex-wrap:wrap;gap:var(--s1)}
+.diagram{overflow-x:auto;background:var(--bg)}
+.diagram svg{display:block;min-width:860px;width:100%;height:auto}
+.diagram text{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.d-box{fill:var(--bg1);stroke:var(--line2)}
+.d-box.acc{stroke:var(--acc)}
+.d-box.hot{stroke:var(--acc);fill:var(--acc-dim)}
+.d-t{fill:var(--fg);font-size:13px;font-weight:500}
+.d-l{fill:var(--fg2);font-size:10px;letter-spacing:.08em}
+.d-v{fill:var(--fg);font-size:12px}
+.d-e{stroke:var(--line2);fill:none;stroke-width:1}
+.d-e.acc{stroke:var(--acc)}
+.d-e.zero{stroke-dasharray:3 3;opacity:.5}
+.d-e.hot{stroke:var(--acc);stroke-width:2}
+.d-a{fill:var(--line2)}
+.d-a.acc{fill:var(--acc)}
+.d-group{stroke:var(--line);fill:none;stroke-dasharray:4 4}
+.legend{display:flex;flex-wrap:wrap;gap:var(--s3);padding:var(--s2) var(--s3);border-top:1px solid var(--line);font:400 11px var(--mono);color:var(--fg2)}
+.legend i{display:inline-block;width:var(--s4);border-top:1px solid var(--line2);vertical-align:middle;margin-right:var(--s1)}
+.legend i.acc{border-color:var(--acc)}
+.legend i.dash{border-top-style:dashed}
+.out-t{width:100%;border-collapse:collapse;font-size:12px}
+.out-t th,.out-t td{padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.out-t th{font-weight:500;color:var(--fg2);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.out-t td.num,.out-t th.num{text-align:right}
+.out-t tr:last-child td{border-bottom:0}
+.out-t td .bar{display:inline-block;height:var(--s2);background:var(--acc);vertical-align:middle;margin-right:var(--s2);min-width:0}
+
+/* what a latch is */
+.three{display:grid;gap:var(--s4)}
+@media(min-width:900px){.three{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.def{padding:var(--s4);border:1px solid var(--line);background:var(--bg1)}
+.def .lbl{margin-bottom:var(--s2)}
+.def h3{font:500 14px var(--mono);margin-bottom:var(--s2)}
+.def p{color:var(--fg1);font-size:13px}
+.def p + p{margin-top:var(--s2)}
+.def code{overflow-wrap:anywhere}
+.bits{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin:var(--s3) 0}
+.bit{aspect-ratio:1;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;font:500 12px/1.2 var(--mono);color:var(--fg2);transition:background .12s,color .12s}
+.bit small{font-size:9px;line-height:1.2;letter-spacing:.04em;color:var(--fg2)}
+.bit:hover{background:var(--bg2);color:var(--fg)}
+.bit[aria-pressed="true"]{background:var(--acc);color:#04070f}
+.bit[aria-pressed="true"] small{color:#04070f}
+.bit:focus-visible{outline-offset:-2px}
+.bit-out{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;font:400 12px var(--mono);color:var(--fg1)}
+.bit-out b{font-weight:500;color:var(--fg)}
+.bit-names{margin-top:var(--s2);font:400 11px/1.7 var(--mono);color:var(--fg1);min-height:var(--s6)}
+
+/* integration */
+.code-g{display:grid;gap:var(--s4)}
+@media(min-width:1000px){.code-g{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.steps{display:grid;gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:var(--s4)}
+@media(min-width:700px){.steps{grid-template-columns:repeat(4,1fr)}}
+.step{background:var(--bg1);padding:var(--s3)}
+.step .n{font:500 11px var(--mono);color:var(--acc);letter-spacing:.08em;margin-bottom:var(--s1)}
+.step .t{font:500 13px var(--mono);margin-bottom:var(--s1)}
+.step p{font-size:12px;color:var(--fg1)}
+
+/* chains */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);background:var(--bg1)}
+.tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:640px}
+.tbl th,.tbl td{padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);text-align:left;white-space:nowrap;height:var(--s6)}
+.tbl th{font-weight:500;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg2);position:sticky;top:0;background:var(--bg1)}
+.tbl td.num,.tbl th.num{text-align:right}
+.tbl tr:last-child td{border-bottom:0}
+.tbl tbody tr:hover td{background:var(--bg2)}
+.tbl .logo{width:var(--s4);height:var(--s4);display:inline-block;vertical-align:middle;margin-right:var(--s2)}
+.tbl .mono-g{display:inline-block;width:var(--s4);height:var(--s4);border:1px solid var(--line2);text-align:center;font-size:9px;line-height:14px;vertical-align:middle;margin-right:var(--s2);color:var(--fg2)}
+.tbl .dim td{color:var(--fg2)}
+.tbl td.st{color:var(--fg2)}
+.tbl td.st.live{color:var(--acc)}
+
+/* trust */
+.trust{display:grid;gap:1px;background:var(--line);border:1px solid var(--line)}
+@media(min-width:700px){.trust{grid-template-columns:repeat(3,1fr)}}
+.trust div{background:var(--bg1);padding:var(--s4)}
+.trust .big{font:500 28px/1 var(--mono);letter-spacing:-.02em;margin:var(--s2) 0 var(--s2)}
+.trust p{font-size:12px;color:var(--fg1)}
+
+/* close */
+.close .wrap{display:grid;gap:var(--s5)}
+@media(min-width:900px){.close .wrap{grid-template-columns:1fr auto;align-items:center}}
+.close h2{font:500 20px/1.3 var(--mono);letter-spacing:-.01em;max-width:32ch}
+.close p{color:var(--fg1);margin-top:var(--s2);max-width:60ch}
+footer{background:var(--bg)}
+footer .wrap{padding-top:var(--s5);padding-bottom:var(--s5);display:flex;flex-wrap:wrap;gap:var(--s3) var(--s5);font:400 11px var(--mono);color:var(--fg2);letter-spacing:.04em}
+footer .wrap span:last-child{margin-left:auto}
+
+/* ---------- DAPP ---------- */
+.app{display:grid;grid-template-columns:1fr;min-height:calc(100vh - var(--s7));background:var(--bg)}
+@media(min-width:900px){.app{grid-template-columns:208px minmax(0,1fr)}}
+.side{border-bottom:1px solid var(--line);background:var(--bg1);display:flex;flex-direction:column}
+@media(min-width:900px){.side{border-bottom:0;border-right:1px solid var(--line);position:sticky;top:var(--s7);height:calc(100vh - var(--s7))}}
+.side nav{display:flex;overflow-x:auto;padding:var(--s2);scrollbar-width:none}
+.side nav::-webkit-scrollbar{display:none}
+@media(min-width:900px){.side nav{flex-direction:column;overflow:visible;padding:var(--s2)}}
+.side nav a{display:flex;align-items:center;gap:var(--s2);height:var(--s6);padding:0 var(--s2);font:400 12px var(--mono);color:var(--fg1);white-space:nowrap;border:1px solid transparent}
+.side nav a .k{color:var(--fg2);font-size:11px;width:var(--s4)}
+.side nav a:hover{color:var(--fg);background:var(--bg2)}
+.side nav a[aria-current]{color:var(--fg);border-color:var(--line2);background:var(--bg)}
+.side nav a[aria-current] .k{color:var(--acc)}
+.side .foot{display:none}
+@media(min-width:900px){.side .foot{display:block;margin-top:auto;padding:var(--s3);border-top:1px solid var(--line);font:400 11px/1.7 var(--mono);color:var(--fg2)}}
+.side .foot b{font-weight:500;color:var(--fg1)}
+.main{min-width:0}
+.topbar{display:flex;align-items:center;gap:var(--s2);height:var(--s7);padding:0 var(--s3);border-bottom:1px solid var(--line);background:var(--bg1);position:sticky;top:var(--s7);z-index:10}
+.topbar .crumb{font:400 12px var(--mono);color:var(--fg2);display:flex;gap:var(--s2);min-width:0;overflow:hidden;white-space:nowrap}
+.topbar .crumb b{font-weight:500;color:var(--fg)}
+.topbar .r{margin-left:auto;display:flex;gap:var(--s2);align-items:center}
+.hide-n{display:none!important}
+@media(min-width:700px){.hide-n{display:inline-flex!important}}
+.switch .meta{display:none}
+@media(min-width:700px){.switch .meta{display:flex}}
+.sel{display:inline-flex;align-items:center;gap:var(--s2);height:var(--s6);padding:0 var(--s2);border:1px solid var(--line2);background:var(--bg);font:400 12px var(--mono);color:var(--fg)}
+.sel .dot{width:6px;height:6px;background:var(--acc);border-radius:50%}
+.sel:hover{border-color:var(--fg2)}
+.content{padding:var(--s3);display:grid;gap:var(--s3)}
+@media(min-width:900px){.content{padding:var(--s4);gap:var(--s4)}}
+.note{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3);align-items:center;padding:var(--s2) var(--s3);border:1px dashed var(--line2);font:400 11px var(--mono);color:var(--fg2)}
+.note i{display:inline-block;width:var(--s4);border-top:1px solid var(--line2);vertical-align:middle;margin-right:var(--s1)}
+.note i.dash{border-top-style:dashed}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line)}
+@media(min-width:900px){.kpis{grid-template-columns:repeat(4,1fr)}}
+.kpi{background:var(--bg1);padding:var(--s3);display:flex;flex-direction:column;gap:var(--s1);min-width:0}
+.kpi .lbl{display:flex;justify-content:space-between;gap:var(--s2)}
+.kpi .v{font:500 20px/1.2 var(--mono);letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi .v small{font-size:12px;color:var(--fg2);font-weight:400;margin-left:var(--s1)}
+.kpi .sub{font:400 11px var(--mono);color:var(--fg2)}
+.two{display:grid;gap:var(--s3)}
+@media(min-width:900px){.two{grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:var(--s4)}}
+.two-eq{display:grid;gap:var(--s3)}
+@media(min-width:900px){.two-eq{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s4)}}
+.mini{display:grid;gap:var(--s3)}
+.bars{display:grid;gap:var(--s2)}
+.bars .r{display:grid;grid-template-columns:120px 1fr 96px;gap:var(--s2);align-items:center;font:400 12px var(--mono)}
+.bars .r .n{color:var(--fg1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bars .r .b{height:var(--s3);background:var(--bg2);border:1px solid var(--line);position:relative}
+.bars .r .b i{position:absolute;inset:0;right:auto;background:var(--acc);transition:width .2s}
+.bars .r .v{text-align:right;color:var(--fg)}
+.ep{display:grid;grid-template-columns:1fr auto;gap:var(--s2) var(--s3);font:400 12px var(--mono)}
+.ep .k{color:var(--fg2)}
+.ep .v{text-align:right;color:var(--fg)}
+.ep .track{grid-column:1/-1;height:var(--s1);background:var(--bg2);border:1px solid var(--line);position:relative}
+.ep .track i{position:absolute;inset:0;right:auto;background:var(--acc)}
+.card{border:1px solid var(--line);background:var(--bg1)}
+.card .ch{display:flex;align-items:center;gap:var(--s3);padding:var(--s3);border-bottom:1px solid var(--line)}
+.card .ch img{width:var(--s6);height:var(--s6);border:1px solid var(--line)}
+.card .ch h3{font:500 14px var(--mono)}
+.card .ch .addr{font:400 11px var(--mono);color:var(--fg2)}
+.card .ch .r{margin-left:auto;display:flex;gap:var(--s2)}
+.card .cb{padding:var(--s3);display:grid;gap:var(--s3)}
+.card .cb p{font-size:12px;color:var(--fg1)}
+.caps{display:grid;grid-template-columns:repeat(14,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
+.caps span{aspect-ratio:1;background:var(--bg);display:flex;align-items:center;justify-content:center;font:500 10px var(--mono);color:var(--fg2)}
+.caps span.on{background:var(--acc);color:#04070f}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:var(--s1) var(--s3);font:400 12px var(--mono)}
+.kv .k{color:var(--fg2);white-space:nowrap}
+.kv .v{color:var(--fg);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kv .v.acc{color:var(--acc)}
+.card .cf{display:flex;gap:var(--s2);padding:var(--s3);border-top:1px solid var(--line)}
+.toolbar{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center}
+.toolbar .in{width:auto;flex:1 1 160px;max-width:280px}
+.pager{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s3);border-top:1px solid var(--line);font:400 11px var(--mono);color:var(--fg2)}
+.pager .r{margin-left:auto;display:flex;gap:var(--s1)}
+.pill{display:inline-block;padding:0 var(--s1);border:1px solid var(--line2);font-size:10px;letter-spacing:.04em;color:var(--fg1)}
+.pill.acc{border-color:var(--acc);color:var(--acc)}
+.tbl tbody tr.sel-row td{background:var(--acc-dim)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+<body>
+
+<!-- ============================ TAB CONTROL ============================ -->
+<header class="switch">
+  <a class="brand" href="#landing"><img src="/brand/latch-mark-transparent.png" alt="" width="16" height="16"><span>LATCH</span></a>
+  <div class="tabs" role="tablist" aria-label="Prototype views">
+    <button class="tab" role="tab" id="tab-landing" aria-selected="true" aria-controls="landing" data-view="landing"><span class="k">1</span>LANDING</button>
+    <button class="tab" role="tab" id="tab-dapp" aria-selected="false" aria-controls="dapp" data-view="dapp" tabindex="-1"><span class="k">2</span>DAPP</button>
+  </div>
+  <div class="meta"><span><i class="dot"></i>OPTION A · TERMINAL</span><span class="hide-n">grid 64 · scale 4</span></div>
+</header>
+
+<!-- ============================ VIEW 1 · LANDING ============================ -->
+<main id="landing" class="view landing" role="tabpanel" aria-labelledby="tab-landing" data-active>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-g">
+        <div>
+          <div class="eyebrow">
+            <span class="chip acc">LIVE · TESTNET</span>
+            <span class="chip">Ethereum Sepolia · 11155111</span>
+            <span class="chip">GPL-2.0-or-later</span>
+          </div>
+          <h1>Attach logic to liquidity.<br><span class="acc">Keep custody in one place.</span></h1>
+          <p class="lede">A Latch is a hook contract attached to a liquidity pool. Latch Protocol is a fork of PancakeSwap Infinity aimed at chains where Uniswap v4 is not deployed: one immutable Vault holding every token, pool managers holding nothing, and a registry that tells integrators exactly which callbacks a Latch will run in their swap path.</p>
+          <div class="ctas">
+            <a class="btn primary" href="#integrate">Integrate →</a>
+            <a class="btn" href="#flow">Trace a swap</a>
+            <a class="btn" href="#chains">15 target chains</a>
+          </div>
+          <div class="spec" aria-label="Protocol facts">
+            <div><div class="lbl">Fork of</div><div class="v">PancakeSwap Infinity</div></div>
+            <div><div class="lbl">Custody</div><div class="v">Vault · single</div></div>
+            <div><div class="lbl">Custody timelock</div><div class="v">48h</div></div>
+            <div><div class="lbl">Policy timelock</div><div class="v">6h</div></div>
+            <div><div class="lbl">Registry bitmap</div><div class="v">14 bits</div></div>
+            <div><div class="lbl">Fee cap · RevShare</div><div class="v">100,000 pips = 10%</div></div>
+            <div><div class="lbl">Mainnet</div><div class="v">none yet</div></div>
+            <div><div class="lbl">First intended</div><div class="v">Robinhood · 4663</div></div>
+          </div>
+        </div>
+        <div class="term" aria-label="Install">
+          <div class="bar"><i></i><i></i><i></i><span>latch · integrate</span></div>
+<pre><span class="p">$</span> <span class="t">npm i @latchprotocol/sdk viem</span>
+<span class="out">+ @latchprotocol/sdk</span>
+
+<span class="p">$</span> <span class="t">forge install latchprotocol/core</span>
+<span class="out">Installing core in lib/core</span>
+
+<span class="p">$</span> <span class="t">forge build</span>            <span class="c"># EIP-1153 · cancun</span>
+<span class="p">$</span> <span class="t">FOUNDRY_PROFILE=legacy forge build</span>  <span class="c"># SSTORE · shanghai</span>
+<span class="out">Compiler run successful · 2 backends · 1 source</span>
+
+<span class="p">$</span> <span class="t">cast call $REGISTRY "latchCount()(uint256)" --rpc-url sepolia</span>
+<span class="out">reads LatchRegistry 0xB504…07d1</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOW -->
+  <section class="sec" id="flow">
+    <div class="wrap">
+      <div class="sec-h"><span class="idx">01</span><h2>Where one swap goes</h2><span class="rule"></span><span class="chip ill">ILLUSTRATIVE · your inputs, exact arithmetic</span></div>
+      <div class="flow-g">
+        <div class="panel">
+          <div class="ph">INPUT · <code>RevShareHook.ConfigParams</code></div>
+          <div class="pb ctl">
+            <div class="field">
+              <label class="lbl id" for="f-amt">swap amount · ltUSD</label>
+              <div class="row"><input class="in" id="f-amt" type="text" inputmode="decimal" value="1000" aria-describedby="f-amt-h"><span class="chip ill">example</span></div>
+              <div class="sr" id="f-amt-h">Illustrative input. Not read from chain.</div>
+            </div>
+            <div class="field">
+              <label class="lbl id" for="f-fee">feePips · uint24 · MAX_FEE_PIPS 100000</label>
+              <div class="row"><input class="in small" id="f-fee" type="text" inputmode="numeric" value="3000"><input id="f-fee-r" type="range" min="0" max="100000" step="100" value="3000" aria-label="feePips slider"></div>
+            </div>
+            <div class="field">
+              <label class="lbl id" for="f-lp">lpDonateBps · uint16</label>
+              <div class="row"><input class="in small" id="f-lp" type="text" inputmode="numeric" value="5000"><input id="f-lp-r" type="range" min="0" max="10000" step="50" value="5000" aria-label="lpDonateBps slider"></div>
+            </div>
+            <div class="field">
+              <label class="lbl id" for="f-ben">beneficiaryBps · uint16</label>
+              <div class="row"><input class="in small" id="f-ben" type="text" inputmode="numeric" value="3000"><input id="f-ben-r" type="range" min="0" max="10000" step="50" value="3000" aria-label="beneficiaryBps slider"></div>
+            </div>
+            <div class="field">
+              <label class="lbl id" for="f-dist">distributorBps · uint16</label>
+              <div class="row"><input class="in small" id="f-dist" type="text" inputmode="numeric" value="2000"><input id="f-dist-r" type="range" min="0" max="10000" step="50" value="2000" aria-label="distributorBps slider"></div>
+            </div>
+            <div class="sum" id="f-sum"><span>Σ bps / SPLIT_DENOMINATOR</span><b id="f-sum-v">10000 / 10000</b></div>
+            <div class="err-line" id="f-err" role="status" aria-live="polite"></div>
+            <div class="presets">
+              <button class="btn sm" data-preset="3000,5000,3000,2000">0.3% · 50/30/20</button>
+              <button class="btn sm" data-preset="10000,0,0,10000">1% · all to holders</button>
+              <button class="btn sm" data-preset="100000,3334,3333,3333">cap · 10%</button>
+              <button class="btn sm" data-preset="3000,5000,3000,1000">break the sum</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="ph">SCHEMATIC · vault-centric<span class="r"><span class="chip">amounts in ltUSD · 6 dp</span></span></div>
+          <div class="diagram">
+            <svg viewBox="0 0 1020 372" role="img" aria-labelledby="dg-title">
+              <title id="dg-title">Swap flow: swapper to pool manager, hook takes feePips, splits to LPs, beneficiaries and epoch distributor; all balances live in the Vault.</title>
+              <defs>
+                <marker id="ar" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L8 4L0 8z" class="d-a"/></marker>
+                <marker id="ar-acc" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L8 4L0 8z" class="d-a acc"/></marker>
+              </defs>
+              <!-- vault boundary -->
+              <rect x="232" y="16" width="778" height="340" class="d-group"/>
+              <text x="244" y="34" class="d-l">VAULT · custodies every balance below · registerApp() is irreversible</text>
+
+              <!-- swapper -->
+              <rect x="16" y="150" width="140" height="72" class="d-box"/>
+              <text x="28" y="172" class="d-l">SWAPPER</text>
+              <text x="28" y="192" class="d-t">amountIn</text>
+              <text x="28" y="210" class="d-v" id="d-amt">1000.000000</text>
+
+              <!-- edge swapper -> pool -->
+              <path d="M156 186 H 260" class="d-e acc" marker-end="url(#ar-acc)"/>
+              <text x="164" y="178" class="d-l">swap()</text>
+
+              <!-- pool manager -->
+              <rect x="260" y="150" width="150" height="72" class="d-box"/>
+              <text x="272" y="172" class="d-l">CLPOOLMANAGER</text>
+              <text x="272" y="192" class="d-t">holds nothing</text>
+              <text x="272" y="210" class="d-v">delta → Vault</text>
+
+              <!-- edge pool -> hook -->
+              <path d="M410 186 H 490" class="d-e acc" marker-end="url(#ar-acc)"/>
+              <text x="418" y="178" class="d-l">afterSwap</text>
+
+              <!-- hook -->
+              <rect x="490" y="134" width="210" height="104" class="d-box acc" id="d-hook"/>
+              <text x="502" y="156" class="d-l">LATCH · RevShareHook</text>
+              <text x="502" y="176" class="d-t">take = in·feePips / 1e6</text>
+              <text x="502" y="196" class="d-v" id="d-feepips">feePips 3000 · 0.300000%</text>
+              <text x="502" y="216" class="d-v" id="d-take">take 3.000000</text>
+              <text x="502" y="230" class="d-l" id="d-net">net to pool 997.000000</text>
+
+              <!-- three outputs: label lane 708–838, vertical runs at 844, destinations from 860 -->
+              <path id="e-lp"   d="M700 160 H 844 V 72  H 860" class="d-e acc" marker-end="url(#ar-acc)"/>
+              <path id="e-ben"  d="M700 186 H 860" class="d-e acc" marker-end="url(#ar-acc)"/>
+              <path id="e-dist" d="M700 212 H 844 V 300 H 860" class="d-e acc" marker-end="url(#ar-acc)"/>
+              <text x="708" y="152" class="d-l" id="l-lp">lpDonateBps 5000</text>
+              <text x="708" y="178" class="d-l" id="l-ben">beneficiaryBps 3000</text>
+              <text x="708" y="230" class="d-l" id="l-dist">distributorBps 2000</text>
+
+              <rect x="860" y="44" width="140" height="56" class="d-box" id="b-lp" tabindex="0"/>
+              <text x="872" y="64" class="d-l">LPs · donate()</text>
+              <text x="872" y="84" class="d-v" id="v-lp">1.500000</text>
+
+              <rect x="860" y="158" width="140" height="56" class="d-box" id="b-ben" tabindex="0"/>
+              <text x="872" y="178" class="d-l">BENEFICIARIES ≤ 8</text>
+              <text x="872" y="198" class="d-v" id="v-ben">0.900000</text>
+
+              <rect x="860" y="272" width="140" height="56" class="d-box" id="b-dist" tabindex="0"/>
+              <text x="872" y="292" class="d-l">EPOCH DISTRIBUTOR</text>
+              <text x="872" y="312" class="d-v" id="v-dist">0.600000</text>
+
+              <!-- keeper note -->
+              <text x="490" y="300" class="d-l">OFF SWAP PATH · permissionless</text>
+              <text x="490" y="318" class="d-v">settleBeneficiaries(key, currency)</text>
+              <text x="490" y="336" class="d-v">closeEpoch() · rollover(id)</text>
+            </svg>
+          </div>
+          <div class="legend"><span><i class="acc"></i>value flows</span><span><i></i>call</span><span><i class="dash"></i>zero share / vault boundary</span><span>hover or focus a destination to trace</span></div>
+          <div class="tbl-scroll"><table class="out-t" aria-label="Split output">
+            <thead><tr><th>destination</th><th class="num">bps</th><th class="num">share of take</th><th class="num">ltUSD</th></tr></thead>
+            <tbody id="out-rows">
+              <tr><td>LPs</td><td class="num" id="o-lp-bps">5000</td><td class="num"><span class="bar" id="o-lp-bar" style="width:40px"></span>50.00%</td><td class="num" id="o-lp">1.500000</td></tr>
+              <tr><td>Beneficiaries</td><td class="num" id="o-ben-bps">3000</td><td class="num"><span class="bar" id="o-ben-bar" style="width:24px"></span>30.00%</td><td class="num" id="o-ben">0.900000</td></tr>
+              <tr><td>Epoch distributor</td><td class="num" id="o-dist-bps">2000</td><td class="num"><span class="bar" id="o-dist-bar" style="width:16px"></span>20.00%</td><td class="num" id="o-dist">0.600000</td></tr>
+              <tr><td>Σ take</td><td class="num" id="o-sum-bps">10000</td><td class="num" id="o-sum-pct">100.00%</td><td class="num" id="o-take">3.000000</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHAT A LATCH IS -->
+  <section class="sec" id="latch">
+    <div class="wrap">
+      <div class="sec-h"><span class="idx">02</span><h2>What a Latch is</h2><span class="rule"></span></div>
+      <div class="three">
+        <div class="def">
+          <div class="lbl">Definition</div>
+          <h3>A hook contract attached to a pool</h3>
+          <p>The pool key names a Latch in <code>poolKey.hooks</code>. At initialisation the pool manager calls <code>getHooksRegistrationBitmap()</code> on it and validates the answer with <code>Hooks.validateHookConfig</code>. From then on the Latch runs on exactly the callbacks its bitmap declares, and no others.</p>
+          <p>Custody never moves: a Latch accounts deltas against the Vault. With <code>afterSwapReturnsDelta</code> set it can take a bounded <code>hookDelta</code> — never more than the swap amount.</p>
+        </div>
+        <div class="def">
+          <div class="lbl">Capability bitmap · 14 bits · interactive</div>
+          <h3>Registry reads it, you can too</h3>
+          <div class="bits" role="group" aria-label="Toggle bitmap bits" id="bits"></div>
+          <div class="bit-out"><span>bitmap</span><b id="bm-hex">0x0000</b><span>·</span><b id="bm-dec">0</b><span class="chip ill">example config</span></div>
+          <div class="bit-names" id="bm-names">—</div>
+          <div class="presets"><button class="btn sm" id="bm-example">afterSwap + returnsDelta</button><button class="btn sm" id="bm-clear">clear</button></div>
+        </div>
+        <div class="def">
+          <div class="lbl">Registry</div>
+          <h3>LatchRegistry · Sepolia</h3>
+          <p>Lists Latches with curated metadata and the bitmap the contract itself reports. Reads are free: <code>latchCount()</code>, <code>latchAt(i)</code>, <code>getLatch(addr)</code>, <code>listLatches()</code>.</p>
+          <p><code>0xB504da43C6ED342a511f3e5849f53035F2C807d1</code></p>
+          <p>A listing is not an audit. The registry states what the bitmap says and what it does not cover; nothing here says "safe".</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INTEGRATION -->
+  <section class="sec" id="integrate">
+    <div class="wrap">
+      <div class="sec-h"><span class="idx">03</span><h2>Integration</h2><span class="rule"></span><span class="chip">solidity ^0.8</span><span class="chip">typescript · viem</span></div>
+      <div class="steps">
+        <div class="step"><div class="n">STEP 1</div><div class="t">Deploy the Latch</div><p>No address mining. Unlike Uniswap v4, permissions come from <code>getHooksRegistrationBitmap()</code> on the contract, not from bits of its address.</p></div>
+        <div class="step"><div class="n">STEP 2</div><div class="t">Configure the pool</div><p><code>configure(key, params)</code> claims the pool id for <code>msg.sender</code> before initialisation.</p></div>
+        <div class="step"><div class="n">STEP 3</div><div class="t">Initialise with hooks = Latch</div><p>Pool manager validates the bitmap. Wrong flags revert at init, not at the first swap.</p></div>
+        <div class="step"><div class="n">STEP 4</div><div class="t">Run the four calls</div><p><code>closeEpoch</code> · <code>rollover</code> · <code>settleBeneficiaries</code> · <code>applyPendingConfig</code>. Permissionless. The keeper does it; anyone can.</p></div>
+      </div>
+      <div class="code-g">
+        <div class="panel">
+          <div class="ph">SOLIDITY · script/ConfigureRevShare.s.sol<span class="r"><span class="chip">forge script</span></span></div>
+<pre><span class="c">// SPDX-License-Identifier: GPL-2.0-or-later</span>
+<span class="k">pragma solidity</span> ^0.8.26;
+
+<span class="k">import</span> {PoolKey} <span class="k">from</span> <span class="s">"infinity-core/src/types/PoolKey.sol"</span>;
+<span class="k">import</span> {RevShareHook} <span class="k">from</span> <span class="s">"../src/RevShareHook.sol"</span>;
+
+<span class="k">contract</span> <span class="t">ConfigureRevShare</span> {
+  <span class="k">function</span> <span class="t">run</span>(RevShareHook hook, PoolKey <span class="k">calldata</span> key, <span class="k">address</span> distributor) <span class="k">external</span> {
+    <span class="c">// take 0.3% of every swap, split 50 / 30 / 20 — must sum to SPLIT_DENOMINATOR</span>
+    hook.configure(key, RevShareHook.ConfigParams({
+      feePips:        <span class="n">3_000</span>,      <span class="c">// ≤ MAX_FEE_PIPS 100_000 (10%)</span>
+      lpDonateBps:    <span class="n">5_000</span>,
+      beneficiaryBps: <span class="n">3_000</span>,
+      distributorBps: <span class="n">2_000</span>,      <span class="c">// Σ = 10_000</span>
+      distributor:    distributor,
+      enabled:        <span class="k">true</span>
+    }));
+    <span class="c">// after the pool is initialised, raising feePips goes through</span>
+    <span class="c">// proposeConfig → CONFIG_DELAY_BLOCKS → applyPendingConfig</span>
+  }
+}</pre>
+        </div>
+        <div class="panel">
+          <div class="ph">TYPESCRIPT · read.ts<span class="r"><span class="chip">@latchprotocol/sdk</span></span></div>
+<pre><span class="k">import</span> { createPublicClient, http, parseAbi } <span class="k">from</span> <span class="s">"viem"</span>;
+<span class="k">import</span> { sepolia } <span class="k">from</span> <span class="s">"viem/chains"</span>;
+<span class="k">import</span> {
+  registry, decodeCLHookPermissions, formatHookPermissions,
+} <span class="k">from</span> <span class="s">"@latchprotocol/sdk"</span>;
+
+<span class="k">const</span> client = createPublicClient({ chain: sepolia, transport: http() });
+<span class="k">const</span> REGISTRY = <span class="s">"0xB504da43C6ED342a511f3e5849f53035F2C807d1"</span>;
+
+<span class="k">const</span> count = <span class="k">await</span> client.readContract({
+  address: REGISTRY, abi: registry.RegistryAbis.Registry,
+  functionName: <span class="s">"latchCount"</span>,
+});
+<span class="c">// the one function every Latch must answer — declared upstream in IHooks</span>
+<span class="k">const</span> IHooksAbi = parseAbi([<span class="s">"function getHooksRegistrationBitmap() view returns (uint16)"</span>]);
+
+<span class="k">for</span> (<span class="k">let</span> i = <span class="n">0n</span>; i &lt; count; i++) {
+  <span class="k">const</span> latch = <span class="k">await</span> client.readContract({
+    address: REGISTRY, abi: registry.RegistryAbis.Registry,
+    functionName: <span class="s">"latchAt"</span>, args: [i],
+  });
+  <span class="c">// the bitmap the contract itself reports, not what the listing claims</span>
+  <span class="k">const</span> bitmap = <span class="k">await</span> client.readContract({
+    address: latch, abi: IHooksAbi, functionName: <span class="s">"getHooksRegistrationBitmap"</span>,
+  });
+  console.log(latch, formatHookPermissions(<span class="s">"CL"</span>, Number(bitmap)));
+  <span class="k">const</span> p = decodeCLHookPermissions(Number(bitmap));
+  <span class="k">if</span> (p.afterSwapReturnsDelta) console.log(<span class="s">"may take a hookDelta on swap"</span>);
+}</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHAINS -->
+  <section class="sec" id="chains">
+    <div class="wrap">
+      <div class="sec-h"><span class="idx">04</span><h2>Target chains · 15</h2><span class="rule"></span><span class="chip acc">live: 1</span><span class="chip">mainnet: 0</span></div>
+      <div class="tbl-wrap">
+        <table class="tbl" id="chain-tbl">
+          <thead><tr><th>chain</th><th class="num">id</th><th>network</th><th>backend</th><th class="num">rpc endpoints</th><th>status</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p style="margin-top:var(--s3);font:400 11px var(--mono);color:var(--fg2)">Backend = build profile the chain needs: <code>eip1153</code> (tstore/tload, cancun) or <code>legacy</code> (SSTORE, shanghai). Every chain in this table probed as EIP-1153-capable; the legacy profile exists for the ones that are not. Endpoint counts are verified public RPCs known to the SDK.</p>
+    </div>
+  </section>
+
+  <!-- TRUST -->
+  <section class="sec" id="trust">
+    <div class="wrap">
+      <div class="sec-h"><span class="idx">05</span><h2>What you are trusting</h2><span class="rule"></span></div>
+      <div class="trust">
+        <div><div class="lbl">Custody</div><div class="big">1 Vault</div><p>Every token, every pool. Pool managers hold nothing. <code>registerApp</code> is <code>onlyOwner</code> and irreversible — there is no unregister.</p></div>
+        <div><div class="lbl">Custody timelock · Vault, pool managers</div><div class="big">48h</div><p>Safe multisig behind a timelock. Any app gains permanent Vault access only after it has sat in public for two days.</p></div>
+        <div><div class="lbl">Policy timelock · fee controller</div><div class="big">6h</div><p>Protocol fee is capped at 4,000 pips (0.4%) per direction and launches at zero. The controller is replaceable; the Vault is not.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSE -->
+  <section class="sec close">
+    <div class="wrap">
+      <div>
+        <h2>Ship the Latch. The pool, the custody and the registry are already there.</h2>
+        <p>Read the contracts, run both build profiles, and list on Sepolia today. Mainnet follows the audits, not the other way round.</p>
+      </div>
+      <div class="ctas" style="display:flex;gap:var(--s2);flex-wrap:wrap">
+        <a class="btn primary" href="#integrate">Start integrating</a>
+        <button class="btn" data-view="dapp">Open the dapp →</button>
+      </div>
+    </div>
+  </section>
+  <footer><div class="wrap"><span>LATCH PROTOCOL</span><span>GPL-2.0-or-later · core</span><span>MIT · sdk, keeper, latch-ai</span><span>design option A · prototype</span></div></footer>
+</main>
+
+<!-- ============================ VIEW 2 · DAPP ============================ -->
+<div id="dapp" class="view" role="tabpanel" aria-labelledby="tab-dapp" hidden>
+  <div class="app">
+    <aside class="side">
+      <nav aria-label="Dapp">
+        <a href="#dapp" aria-current="page"><span class="k">01</span>Overview</a>
+        <a href="#dapp"><span class="k">02</span>Pools</a>
+        <a href="#dapp"><span class="k">03</span>Marketplace</a>
+        <a href="#dapp"><span class="k">04</span>My Latches</a>
+        <a href="#dapp"><span class="k">05</span>Revenue</a>
+        <a href="#dapp"><span class="k">06</span>Governance</a>
+        <a href="#dapp"><span class="k">07</span>Keeper</a>
+        <a href="#dapp"><span class="k">08</span>Docs</a>
+      </nav>
+      <div class="foot">
+        <div>backend <b>eip1153</b> · cancun</div>
+        <div>registry <b>0xB504…07d1</b></div>
+        <div>custody <b>48h</b> · policy <b>6h</b></div>
+        <div>sdk <b>@latchprotocol/sdk</b></div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <div class="topbar">
+        <div class="crumb"><span>latch</span><span>/</span><b>overview</b><span>/</span><span>ltUSD-ltETH · 0.30%</span></div>
+        <div class="r">
+          <span class="chip ill hide-n">block 9,214,880 · illustrative</span>
+          <button class="sel" aria-haspopup="listbox" aria-expanded="false"><span class="dot"></span><span>Sepolia</span><span class="hide-n" style="color:var(--fg2)">11155111</span></button>
+          <button class="btn">connect</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="note"><span><i></i>solid = read from chain or contract source</span><span><i class="dash"></i>dashed = illustrative example, this prototype invents nothing else</span><span style="margin-left:auto">Ethereum Sepolia · no mainnet deployment</span></div>
+
+        <div class="kpis">
+          <div class="kpi"><div class="lbl"><span>pools with a latch</span><span class="chip ill">ill.</span></div><div class="v">3</div><div class="sub"><code>listLatches()</code> → pools</div></div>
+          <div class="kpi"><div class="lbl"><span>swaps observed</span><span class="chip ill">ill.</span></div><div class="v">142</div><div class="sub">counted from Swap logs since block 8,990,000</div></div>
+          <div class="kpi"><div class="lbl"><span>take routed</span><span class="chip ill">ill.</span></div><div class="v">418.26<small>ltUSD</small></div><div class="sub">summed from logs · no cumulative counter on chain</div></div>
+          <div class="kpi"><div class="lbl"><span>epoch</span><span class="chip ill">ill.</span></div><div class="v">#7</div><div class="sub">closes in 41,220 blocks</div></div>
+        </div>
+
+        <div class="two">
+          <div class="panel">
+            <div class="ph">SPLIT · mirrors the flow inputs<span class="r"><span class="chip ill">ILLUSTRATIVE</span><span class="chip" id="k-fee">feePips 3000</span></span></div>
+            <div class="pb mini">
+              <div class="bars" id="k-bars">
+                <div class="r"><span class="n">LPs</span><span class="b"><i style="width:50%"></i></span><span class="v" id="k-lp">50.00%</span></div>
+                <div class="r"><span class="n">Beneficiaries</span><span class="b"><i style="width:30%"></i></span><span class="v" id="k-ben">30.00%</span></div>
+                <div class="r"><span class="n">Distributor</span><span class="b"><i style="width:20%"></i></span><span class="v" id="k-dist">20.00%</span></div>
+              </div>
+              <hr>
+              <div class="ep">
+                <span class="k">epoch #7 · illustrative</span><span class="v">SnapshotEpochDistributor</span>
+                <span class="track"><i style="width:63%"></i></span>
+                <span class="k">opened</span><span class="v">block 9,140,000</span>
+                <span class="k">closeEpoch() eligible</span><span class="v">block 9,256,100</span>
+                <span class="k">carried from #6</span><span class="v">12.410000 ltUSD</span>
+              </div>
+              <div class="toolbar">
+                <button class="btn sm">simulate closeEpoch()</button>
+                <button class="btn sm">simulate settleBeneficiaries()</button>
+                <span class="chip ill">dry run default</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="ch">
+              <img src="/brand/latch-mark-transparent.png" alt="" width="32" height="32">
+              <div><h3>RevShareHook</h3><div class="addr">0x… · set at deploy <span class="pill">ill.</span></div></div>
+              <div class="r"><span class="chip acc">listed</span></div>
+            </div>
+            <div class="cb">
+              <p>Takes <code>feePips</code> on each swap and splits the take to LPs, a weighted roster of up to 8 beneficiaries, and an epoch distributor for token holders.</p>
+              <div>
+                <div class="lbl" style="margin-bottom:var(--s1)">capabilities · <code>getHooksRegistrationBitmap()</code></div>
+                <div class="caps" id="card-caps" aria-label="Capability bitmap"></div>
+              </div>
+              <div class="kv">
+                <span class="k">bitmap</span><span class="v" id="card-bm">0x0000</span>
+                <span class="k">MAX_FEE_PIPS</span><span class="v">100000 · 10%</span>
+                <span class="k">SPLIT_DENOMINATOR</span><span class="v">10000</span>
+                <span class="k">MAX_BENEFICIARIES</span><span class="v">8</span>
+                <span class="k">raise fee</span><span class="v">propose → delay → apply</span>
+                <span class="k">freezeConfig</span><span class="v">one-way</span>
+                <span class="k">license</span><span class="v acc">GPL-2.0-or-later</span>
+              </div>
+            </div>
+            <div class="cf"><button class="btn primary">Attach to pool</button><button class="btn">Source</button><button class="btn">ABI</button></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="ph">BENEFICIARY ROSTER · ltUSD-ltETH<span class="r"><span class="chip ill">ILLUSTRATIVE</span><span class="chip" id="r-count">5 / 8</span></span></div>
+          <div class="pb toolbar">
+            <input class="in" type="search" id="r-q" placeholder="filter by address" aria-label="Filter roster">
+            <button class="btn sm" data-sort="weight">sort · weight</button>
+            <button class="btn sm" data-sort="pending">sort · pending</button>
+            <span class="chip" style="margin-left:auto">settleBeneficiaries · off swap path</span>
+          </div>
+          <div class="tbl-wrap" style="border-left:0;border-right:0;border-bottom:0">
+            <table class="tbl" id="roster">
+              <thead><tr><th>#</th><th>recipient</th><th class="num">weight</th><th class="num">share</th><th class="num">pending · ltUSD</th><th class="num">claimed · ltUSD</th><th>state</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="pager"><span id="r-status">5 rows</span><span class="r"><button class="btn sm" disabled>‹</button><button class="btn sm" disabled>›</button></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+  /* ---------------- constants from the contracts (facts) ---------------- */
+  const PIPS_DENOMINATOR = 1_000_000n;
+  const MAX_FEE_PIPS = 100_000n;
+  const SPLIT_DENOMINATOR = 10_000n;
+  const CL_HOOK_FLAGS = [
+    "beforeInitialize","afterInitialize","beforeAddLiquidity","afterAddLiquidity",
+    "beforeRemoveLiquidity","afterRemoveLiquidity","beforeSwap","afterSwap",
+    "beforeDonate","afterDonate","beforeSwapReturnsDelta","afterSwapReturnsDelta",
+    "afterAddLiquidityReturnsDelta","afterRemoveLiquidityReturnsDelta",
+  ];
+  const BIT_SHORT = ["bInit","aInit","bAddL","aAddL","bRemL","aRemL","bSwap","aSwap","bDon","aDon","bSwΔ","aSwΔ","aAddΔ","aRemΔ"];
+  const CHAINS = [
+    ["Ethereum",1,"mainnet",true,5,"ethereum","target"],
+    ["Base",8453,"mainnet",true,5,"base","target"],
+    ["BNB Smart Chain",56,"mainnet",true,5,"bnb","target"],
+    ["Linea",59144,"mainnet",true,5,"linea","target"],
+    ["Robinhood Chain",4663,"mainnet",true,5,null,"first mainnet · intended"],
+    ["Ink",57073,"mainnet",true,5,"ink","target"],
+    ["X Layer",196,"mainnet",true,4,"xlayer","target"],
+    ["HyperEVM",999,"mainnet",true,5,"hyperevm","target"],
+    ["Monad",143,"mainnet",true,5,"monad","target"],
+    ["Plasma",9745,"mainnet",true,3,"plasma","target"],
+    ["Stable",988,"mainnet",true,4,"stable","target"],
+    ["Ethereum Sepolia",11155111,"testnet",true,5,"ethereum","LIVE"],
+    ["Monad Testnet",10143,"testnet",true,5,"monad","target"],
+    ["Stable Testnet",2201,"testnet",true,3,"stable","target"],
+    ["Arc Testnet",5042002,"testnet",true,5,"arc","target"],
+  ];
+
+  /* ---------------- view switching ---------------- */
+  const tabs = $$('.tab[role="tab"]');
+  const views = { landing: $("#landing"), dapp: $("#dapp") };
+  function show(name, push = true) {
+    if (!views[name]) name = "landing";
+    for (const [k, v] of Object.entries(views)) {
+      const on = k === name;
+      v.hidden = !on;
+      if (on) v.setAttribute("data-active", ""); else v.removeAttribute("data-active");
+    }
+    for (const t of tabs) {
+      const on = t.dataset.view === name;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+    }
+    if (push && location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+  for (const t of tabs) {
+    t.addEventListener("click", () => show(t.dataset.view));
+    t.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      const i = tabs.indexOf(t);
+      const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+      n.focus(); show(n.dataset.view); e.preventDefault();
+    });
+  }
+  $$("button[data-view]").filter(b => !b.classList.contains("tab")).forEach(b => b.addEventListener("click", () => show(b.dataset.view)));
+  // in-page anchors inside the landing must reveal the landing first
+  $$('a[href^="#"]').forEach(a => a.addEventListener("click", (e) => {
+    const id = a.getAttribute("href").slice(1);
+    if (id === "dapp" || id === "landing") { show(id); e.preventDefault(); return; }
+    if (views.landing.hidden) show("landing", false);
+  }));
+  window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (views[h]) show(h, false); });
+  show(views[location.hash.slice(1)] ? location.hash.slice(1) : "landing", false);
+  // the browser scrolls to the #landing/#dapp element after load; that is under the sticky bar
+  window.addEventListener("load", () => setTimeout(() => window.scrollTo(0, 0), 0), { once: true });
+
+  /* ---------------- flow calculator (BigInt, 18-dec token units) ---------------- */
+  const WAD = 10n ** 18n;
+  const fmt = (wei) => {
+    const neg = wei < 0n; if (neg) wei = -wei;
+    const whole = wei / WAD, frac = (wei % WAD) / 10n ** 12n; // 6 dp
+    return (neg ? "-" : "") + whole.toString() + "." + frac.toString().padStart(6, "0");
+  };
+  const parseAmt = (s) => {
+    const m = String(s).trim().replace(/,/g, "").match(/^(\d*)(?:\.(\d{0,18}))?$/);
+    if (!m || (m[1] === "" && !m[2])) return null;
+    return BigInt(m[1] || "0") * WAD + BigInt((m[2] || "").padEnd(18, "0"));
+  };
+  const parseInt_ = (s) => (/^\d+$/.test(String(s).trim()) ? BigInt(String(s).trim()) : null);
+  const pct = (n, d) => (d === 0n ? "0.00" : (Number(n * 10000n / d) / 100).toFixed(2)) + "%";
+
+  const F = {
+    amt: $("#f-amt"), fee: $("#f-fee"), feeR: $("#f-fee-r"),
+    lp: $("#f-lp"), lpR: $("#f-lp-r"), ben: $("#f-ben"), benR: $("#f-ben-r"), dist: $("#f-dist"), distR: $("#f-dist-r"),
+  };
+  const pairs = [[F.fee, F.feeR], [F.lp, F.lpR], [F.ben, F.benR], [F.dist, F.distR]];
+  for (const [txt, rng] of pairs) {
+    rng.addEventListener("input", () => { txt.value = rng.value; compute(); });
+    txt.addEventListener("input", () => { const v = parseInt_(txt.value); if (v !== null) rng.value = String(Math.min(Number(v), Number(rng.max))); compute(); });
+  }
+  F.amt.addEventListener("input", compute);
+  $$(".presets [data-preset]").forEach(b => b.addEventListener("click", () => {
+    const [fee, lp, ben, dist] = b.dataset.preset.split(",");
+    F.fee.value = F.feeR.value = fee; F.lp.value = F.lpR.value = lp; F.ben.value = F.benR.value = ben; F.dist.value = F.distR.value = dist;
+    compute();
+  }));
+
+  const D = (id) => document.getElementById(id);
+  function setEdge(id, share, valid) {
+    const e = D(id);
+    e.classList.toggle("zero", share === 0n);
+    e.classList.toggle("acc", valid && share > 0n);
+    e.setAttribute("marker-end", valid && share > 0n ? "url(#ar-acc)" : "url(#ar)");
+  }
+  function compute() {
+    const amt = parseAmt(F.amt.value);
+    const fee = parseInt_(F.fee.value), lp = parseInt_(F.lp.value), ben = parseInt_(F.ben.value), dist = parseInt_(F.dist.value);
+    const errs = [];
+    F.amt.setAttribute("aria-invalid", amt === null);
+    if (amt === null) errs.push("amount: not a number");
+    for (const [el, v, name] of [[F.fee, fee, "feePips"], [F.lp, lp, "lpDonateBps"], [F.ben, ben, "beneficiaryBps"], [F.dist, dist, "distributorBps"]]) {
+      el.setAttribute("aria-invalid", v === null); if (v === null) errs.push(name + ": uint expected");
+    }
+    if (errs.length) { D("f-err").textContent = errs[0]; return; }
+    const sum = lp + ben + dist;
+    const feeOk = fee <= MAX_FEE_PIPS, sumOk = sum === SPLIT_DENOMINATOR;
+    F.fee.setAttribute("aria-invalid", !feeOk);
+    D("f-sum").classList.toggle("bad", !sumOk);
+    D("f-sum-v").textContent = sum + " / " + SPLIT_DENOMINATOR;
+    D("f-err").textContent = !feeOk ? `revert FeeTooHigh(${fee})` : !sumOk ? `revert SplitMustSumToDenominator(${sum})` : "";
+    const valid = feeOk && sumOk;
+
+    // exactly what the contract does: one division over PIPS_DENOMINATOR * SPLIT_DENOMINATOR
+    const take = amt * fee / PIPS_DENOMINATOR;
+    const den = PIPS_DENOMINATOR * SPLIT_DENOMINATOR;
+    const sLp = amt * fee * lp / den, sBen = amt * fee * ben / den, sDist = amt * fee * dist / den;
+
+    D("d-amt").textContent = fmt(amt);
+    D("d-feepips").textContent = `feePips ${fee} · ${(Number(fee) / 10000).toFixed(6)}%`;
+    D("d-take").textContent = valid ? "take " + fmt(take) : "take — (reverts)";
+    D("d-net").textContent = valid ? "net to pool " + fmt(amt - take) : D("f-err").textContent;
+    D("l-lp").textContent = "lpDonateBps " + lp; D("l-ben").textContent = "beneficiaryBps " + ben; D("l-dist").textContent = "distributorBps " + dist;
+    D("v-lp").textContent = valid ? fmt(sLp) : "—"; D("v-ben").textContent = valid ? fmt(sBen) : "—"; D("v-dist").textContent = valid ? fmt(sDist) : "—";
+    setEdge("e-lp", valid ? sLp : 0n, valid); setEdge("e-ben", valid ? sBen : 0n, valid); setEdge("e-dist", valid ? sDist : 0n, valid);
+    D("d-hook").classList.toggle("acc", valid);
+
+    const row = (k, bps, v) => {
+      D(`o-${k}-bps`).textContent = bps;
+      D(`o-${k}`).textContent = valid ? fmt(v) : "—";
+      const cell = D(`o-${k}-bar`).parentElement;
+      D(`o-${k}-bar`).style.width = (Number(bps) / 125) + "px"; // 10000 bps = 80px
+      cell.lastChild.textContent = pct(bps, SPLIT_DENOMINATOR);
+    };
+    row("lp", lp, sLp); row("ben", ben, sBen); row("dist", dist, sDist);
+    D("o-sum-bps").textContent = sum; D("o-sum-pct").textContent = pct(sum, SPLIT_DENOMINATOR); D("o-take").textContent = valid ? fmt(take) : "—";
+
+    // dapp mirror
+    D("k-fee").textContent = "feePips " + fee;
+    const bars = $$("#k-bars .r .b i");
+    [[lp, "k-lp"], [ben, "k-ben"], [dist, "k-dist"]].forEach(([b, id], i) => {
+      D(id).textContent = pct(b, SPLIT_DENOMINATOR);
+      bars[i].style.width = Math.min(100, Number(b) / 100) + "%";
+    });
+  }
+
+  // hover / focus trace on destinations
+  const trace = { "b-lp": "e-lp", "b-ben": "e-ben", "b-dist": "e-dist" };
+  for (const [box, edge] of Object.entries(trace)) {
+    const b = D(box), e = D(edge);
+    const on = () => { b.classList.add("hot"); e.classList.add("hot"); };
+    const off = () => { b.classList.remove("hot"); e.classList.remove("hot"); };
+    b.addEventListener("mouseenter", on); b.addEventListener("mouseleave", off);
+    b.addEventListener("focus", on); b.addEventListener("blur", off);
+  }
+  compute();
+
+  /* ---------------- bitmap explorer ---------------- */
+  let bitmap = 0;
+  const bitsEl = D("bits");
+  CL_HOOK_FLAGS.forEach((name, i) => {
+    const b = document.createElement("button");
+    b.className = "bit"; b.type = "button"; b.setAttribute("aria-pressed", "false");
+    b.title = name; b.setAttribute("aria-label", `bit ${i} ${name}`);
+    b.innerHTML = `<span>${i}</span><small>${BIT_SHORT[i]}</small>`;
+    b.addEventListener("click", () => { bitmap ^= (1 << i); renderBits(); });
+    bitsEl.appendChild(b);
+  });
+  const caps = D("card-caps");
+  CL_HOOK_FLAGS.forEach((name, i) => { const s = document.createElement("span"); s.title = name; s.textContent = i; caps.appendChild(s); });
+  function renderBits() {
+    $$(".bit", bitsEl).forEach((b, i) => b.setAttribute("aria-pressed", String(!!(bitmap & (1 << i)))));
+    $$("span", caps).forEach((s, i) => s.classList.toggle("on", !!(bitmap & (1 << i))));
+    const hex = "0x" + bitmap.toString(16).padStart(4, "0");
+    D("bm-hex").textContent = hex; D("bm-dec").textContent = String(bitmap); D("card-bm").textContent = hex;
+    const names = CL_HOOK_FLAGS.filter((_, i) => bitmap & (1 << i));
+    let warn = "";
+    if ((bitmap & (1 << 10)) && !(bitmap & (1 << 6))) warn = " · beforeSwapReturnsDelta needs beforeSwap";
+    if ((bitmap & (1 << 11)) && !(bitmap & (1 << 7))) warn += " · afterSwapReturnsDelta needs afterSwap";
+    D("bm-names").textContent = (names.length ? names.join(" · ") : "no callbacks — the pool manager never calls this Latch") + warn;
+    D("bm-names").style.color = warn ? "var(--err)" : "";
+  }
+  D("bm-example").addEventListener("click", () => { bitmap = (1 << 7) | (1 << 11); renderBits(); });
+  D("bm-clear").addEventListener("click", () => { bitmap = 0; renderBits(); });
+  bitmap = (1 << 7) | (1 << 11); renderBits();
+
+  /* ---------------- chain table ---------------- */
+  const tb = $("#chain-tbl tbody");
+  for (const [name, id, net, eip, eps, logo, status] of CHAINS) {
+    const tr = document.createElement("tr");
+    if (status === "target") tr.className = "dim";
+    const mark = logo ? `<img class="logo" src="/chains/${logo}.svg" alt="" width="16" height="16">` : `<span class="mono-g">${name[0]}</span>`;
+    tr.innerHTML = `<td>${mark}${name}</td><td class="num">${id}</td><td>${net}</td><td>${eip ? "eip1153" : "legacy"}</td><td class="num">${eps}</td><td class="st ${status === "LIVE" ? "live" : ""}">${status}</td>`;
+    tb.appendChild(tr);
+  }
+
+  /* ---------------- roster table (illustrative) ---------------- */
+  let roster = [
+    { a: "0x9a1F…c04D", w: 400n, p: 3.412, c: 21.88 },
+    { a: "0x51b2…7E9a", w: 250n, p: 2.132, c: 13.67 },
+    { a: "0xC0dE…0011", w: 200n, p: 1.706, c: 10.94 },
+    { a: "0x77aa…B3f0", w: 100n, p: 0.853, c: 5.47 },
+    { a: "0xE4e4…9d21", w: 50n, p: 0.426, c: 2.73 },
+  ];
+  const rb = $("#roster tbody");
+  let sortKey = "weight", filter = "";
+  function renderRoster() {
+    const tot = roster.reduce((s, r) => s + r.w, 0n);
+    const rows = roster.filter(r => r.a.toLowerCase().includes(filter)).slice()
+      .sort((x, y) => sortKey === "weight" ? Number(y.w - x.w) : y.p - x.p);
+    rb.innerHTML = rows.map((r, i) => `<tr tabindex="0"><td>${String(i + 1).padStart(2, "0")}</td><td>${r.a}</td><td class="num">${r.w}</td><td class="num">${pct(r.w, tot)}</td><td class="num">${r.p.toFixed(6)}</td><td class="num">${r.c.toFixed(6)}</td><td><span class="pill ${r.p > 1 ? "acc" : ""}">${r.p > 1 ? "settle" : "wait"}</span></td></tr>`).join("");
+    D("r-status").textContent = `${rows.length} rows · Σ weight ${tot} · illustrative`;
+    $$("tr", rb).forEach(tr => tr.addEventListener("click", () => { $$("tr", rb).forEach(x => x.classList.remove("sel-row")); tr.classList.add("sel-row"); }));
+  }
+  $$("[data-sort]").forEach(b => b.addEventListener("click", () => { sortKey = b.dataset.sort; renderRoster(); }));
+  $("#r-q").addEventListener("input", (e) => { filter = e.target.value.trim().toLowerCase(); renderRoster(); });
+  renderRoster();
+})();
+</script>
+</body>
+</html>

@@ -12,14 +12,16 @@
    testnet with one pool and a handful of swaps — that is the honest picture, and
    Analytics already established that showing it beats showing invented millions.
 
-   THE FEE CHART IS NOT REPLACED WITH A DIFFERENT CHART. A 24-hour fee series
-   needs 24 hours of fees; this deployment has a handful of swaps across a few
-   blocks. Drawing any line through that would be the same lie in a new shape, so
-   the section states the count and says why there is no series — the pattern
-   Analytics settled on for exactly this case.
+   THE 24-HOUR FEE SERIES IS NOT REPLACED BY A PRETTIER 24-HOUR FEE SERIES. A
+   fee-over-time chart needs time, and time here would have to be inferred from
+   block height. What replaces it is indexed by the thing that was actually
+   measured: swaps through THIS pool, counted against the block each landed in.
+   Every point is a reading; the line never passes between two of them, and it
+   refuses to draw at all below two points rather than implying a shape from
+   one. That is the pattern Analytics settled on for exactly this case.
    ============================================================================ */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import {
@@ -27,21 +29,33 @@ import {
   explorerAddress,
   formatUnits,
   readPools,
-  readProtocolMetrics,
+  readRecentSwaps,
   readVaultHoldings,
   type PoolRecord,
-  type ProtocolMetrics,
+  type SwapRecord,
   type VaultHolding,
 } from '../../../lib/chain'
 import { ChainTag } from '../../../components/ChainTag.tsx'
 import { PoolPriceCard } from '../components/PoolPriceCard.tsx'
+import { Methodology } from '../components/ProtocolCharts.tsx'
+import { SeriesChart, StackedBar, type SeriesPoint } from '../components/series-charts.tsx'
 import { useDapp } from '../state.tsx'
 import { dappPath } from '../paths.ts'
 
+/**
+ * `readProtocolMetrics` is deliberately NOT one of these reads any more.
+ *
+ * Its `swapCount` is protocol-wide, and this screen was printing it under a
+ * heading naming one pool. On a one-pool deployment the two agree, which is
+ * exactly why it went unnoticed — the second pool would have made every figure
+ * on this page quietly wrong. Swap logs carry the pool id, so the count, the
+ * series and the fee split below are all filtered to THIS pool.
+ */
 interface Loaded {
   readonly pool: PoolRecord | undefined
   readonly holdings: readonly VaultHolding[]
-  readonly metrics: ProtocolMetrics
+  /** Every Swap log on the CL manager. Filtered to this pool by the screen. */
+  readonly swaps: readonly SwapRecord[]
 }
 
 type State =
@@ -65,9 +79,9 @@ export default function PoolDetail() {
     Promise.all([
       readPools(browsingChain),
       readVaultHoldings(browsingChain),
-      readProtocolMetrics(browsingChain),
+      readRecentSwaps(browsingChain, 5000),
     ])
-      .then(([pools, holdings, metrics]) => {
+      .then(([pools, holdings, swaps]) => {
         if (off) return
         // Prefer the deployment's named pool; fall back to the first one that
         // exists, so this screen is not empty on a chain configured differently.
@@ -78,7 +92,7 @@ export default function PoolDetail() {
         const pool =
           (target === null ? undefined : pools.find((p) => p.id.toLowerCase() === target)) ??
           pools[0]
-        setState({ k: 'ready', d: { pool, holdings, metrics } })
+        setState({ k: 'ready', d: { pool, holdings, swaps } })
       })
       .catch((e) =>
         !off &&
@@ -109,7 +123,7 @@ export default function PoolDetail() {
     )
   }
 
-  const { pool, holdings, metrics } = state.d
+  const { pool, holdings, swaps } = state.d
 
   if (!pool) {
     return (
@@ -131,6 +145,9 @@ export default function PoolDetail() {
   }
 
   const hooked = pool.hooks !== ZERO
+  /* Scoped to THIS pool. Swap logs carry the pool id, so there is no reason to
+     show a protocol-wide count under a heading that names one pair. */
+  const poolSwaps = swaps.filter((s) => s.poolId.toLowerCase() === pool.id.toLowerCase())
   /* Symbols come from the deployment record, which only has them for a named
      pool. Falling back to the chain's own pool id is honest: it says "this is
      the pool" without inventing a ticker for tokens nobody has named here. */
@@ -180,8 +197,8 @@ export default function PoolDetail() {
             <dd className="dapp-pool-stat__value">{pctFromPips(pool.lpFeePips)}</dd>
           </div>
           <div className="dapp-pool-stat">
-            <dt className="dapp-stat__label">SWAPS · ALL TIME</dt>
-            <dd className="dapp-pool-stat__value">{metrics.swapCount.toLocaleString('en-US')}</dd>
+            <dt className="dapp-stat__label">SWAPS · THIS POOL</dt>
+            <dd className="dapp-pool-stat__value">{poolSwaps.length.toLocaleString('en-US')}</dd>
           </div>
           {holdings.map((h) => (
             <div key={h.token} className="dapp-pool-stat">
@@ -195,33 +212,7 @@ export default function PoolDetail() {
       <PoolPriceCard />
 
       <div className="dapp-row dapp-row--pool">
-        <section className="dapp-card">
-          <div className="dapp-card__bar">
-            <h2 className="dapp-microlabel">FEE OVER TIME</h2>
-            <span className="lr-badge">
-              <span className="lr-dot" aria-hidden="true" />
-              LIVE
-            </span>
-          </div>
-          <div className="an-empty">
-            <p className="an-empty__title">
-              {metrics.swapCount === 0
-                ? 'No swaps yet'
-                : `Not enough history to plot — ${metrics.swapCount} swap${metrics.swapCount === 1 ? '' : 's'}`}
-            </p>
-            <p className="live-note">
-              A fee-over-time series needs time. This pool charges a flat{' '}
-              {pctFromPips(pool.lpFeePips)} LP fee, set at initialization and unchanged since; a
-              line through {metrics.swapCount} swap
-              {metrics.swapCount === 1 ? '' : 's'} would be a drawing, not a reading. The chart
-              appears once there is a history to draw.
-            </p>
-            <p className="live-note">
-              A Latch with a dynamic fee would move this number per swap. This pool
-              {hooked ? ' has one attached — see the Latch above.' : ' has none attached.'}
-            </p>
-          </div>
-        </section>
+        <PoolActivityCard pool={pool} swaps={poolSwaps} holdings={holdings} hooked={hooked} />
 
         <section className="dapp-card">
           <div className="dapp-card__bar">
@@ -269,8 +260,8 @@ export default function PoolDetail() {
             </div>
           </dl>
           <p className="live-note">
-            Read from the CL pool manager&rsquo;s own Initialize log, so every field here is what
-            the pool was actually created with.
+            Read from the CL pool manager&rsquo;s own Initialize log — what the pool was created
+            with.
           </p>
           <p className="dapp-note">
             <Link to={dappPath('analytics')}>Protocol-wide activity →</Link>
@@ -278,5 +269,184 @@ export default function PoolDetail() {
         </section>
       </div>
     </>
+  )
+}
+
+/* ============================================================================
+   Swaps through this pool, and where their fees went.
+
+   TWO CHARTS, TWO DIFFERENT QUESTIONS, BOTH FROM THE SAME LOGS.
+
+   The series answers "has anybody used this pool", indexed by block because
+   that is what a log carries. The stacked bars answer "who got the fee", one
+   bar per token, because the protocol's slice and the LP's slice of a swap are
+   amounts of the SAME token and add to exactly what was charged. A bar putting
+   one token against another would need a price neither has.
+
+   Both are filtered to this pool by `poolId`, which every Swap log carries.
+   ============================================================================ */
+
+interface FeeSide {
+  readonly holding: VaultHolding
+  readonly protocol: bigint
+  readonly lp: bigint
+}
+
+const absBig = (v: bigint) => (v < 0n ? -v : v)
+
+/**
+ * Apportion each swap's fee from that swap's OWN pips.
+ *
+ * Reading the controller's current default instead would rewrite history the
+ * moment a fee changed — the same rule `readProtocolMetrics` follows, kept
+ * identical here so the two can never disagree about one pool.
+ */
+function feeSides(pool: PoolRecord, swaps: readonly SwapRecord[], holdings: readonly VaultHolding[]): FeeSide[] {
+  const currencies = [pool.currency0, pool.currency1]
+  const totals = [
+    { protocol: 0n, lp: 0n },
+    { protocol: 0n, lp: 0n },
+  ]
+
+  for (const s of swaps) {
+    // The INPUT side is the positive delta: tokens flowing into the pool.
+    const i = s.amount0 > 0n ? 0 : 1
+    const gross = absBig(i === 0 ? s.amount0 : s.amount1)
+    const total = (gross * BigInt(s.feePips)) / 1_000_000n
+    const protocol = (gross * BigInt(s.protocolFeePips)) / 1_000_000n
+    const side = totals[i]
+    if (!side) continue
+    side.protocol += protocol
+    side.lp += total > protocol ? total - protocol : 0n
+  }
+
+  const out: FeeSide[] = []
+  for (const [i, currency] of currencies.entries()) {
+    const side = totals[i]
+    if (!side || side.protocol + side.lp === 0n) continue
+    /* Matched by ADDRESS, not by position. The holdings list is ordered by the
+       deployment record's demo pool; a different pool's currency0 need not be
+       the same token, and a symbol attached to the wrong balance is worse than
+       no symbol. */
+    const holding = holdings.find((h) => h.token.toLowerCase() === currency.toLowerCase())
+    if (!holding) continue
+    out.push({ holding, protocol: side.protocol, lp: side.lp })
+  }
+  return out
+}
+
+function PoolActivityCard({
+  pool,
+  swaps,
+  holdings,
+  hooked,
+}: {
+  pool: PoolRecord
+  swaps: readonly SwapRecord[]
+  holdings: readonly VaultHolding[]
+  hooked: boolean
+}) {
+  /* Deduplicated by block: two swaps in one block are one reading of "4 swaps
+     by block N", not two points sharing an x. */
+  const points = useMemo<SeriesPoint[]>(() => {
+    const blocks = swaps.map((s) => s.blockNumber).sort((a, b) => Number(a - b))
+    const out: SeriesPoint[] = []
+    let total = 0
+    for (const [i, b] of blocks.entries()) {
+      total += 1
+      if (blocks[i + 1] === b) continue
+      out.push({
+        x: Number(b),
+        y: total,
+        label: `Block #${b.toLocaleString('en-US')}`,
+        value: total.toLocaleString('en-US'),
+      })
+    }
+    return out
+  }, [swaps])
+
+  const sides = useMemo(() => feeSides(pool, swaps, holdings), [pool, swaps, holdings])
+
+  return (
+    <section className="dapp-card">
+      <div className="dapp-card__bar">
+        <h2 className="dapp-microlabel">SWAPS THROUGH THIS POOL · BY BLOCK</h2>
+        <span className="lr-badge">
+          <span className="lr-dot" aria-hidden="true" />
+          LIVE
+        </span>
+      </div>
+
+      <SeriesChart
+        points={points}
+        area
+        label={`Running total of swaps through pool ${pool.id.slice(0, 10)}, against the block each landed in`}
+        valueLabel="swaps so far"
+        empty={
+          swaps.length === 0
+            ? 'No swap has gone through this pool.'
+            : `${swaps.length} swap${swaps.length === 1 ? '' : 's'}, in a single block. A line needs two readings, so none is drawn.`
+        }
+      />
+      {points.length >= 2 && (
+        <div className="dapp-axis">
+          <span>#{(points[0]?.x ?? 0).toLocaleString('en-US')}</span>
+          <span>running total · block height</span>
+          <span>#{(points[points.length - 1]?.x ?? 0).toLocaleString('en-US')}</span>
+        </div>
+      )}
+
+      <p className="live-note">
+        {swaps.length.toLocaleString('en-US')} swap{swaps.length === 1 ? '' : 's'} at a flat{' '}
+        {pctFromPips(pool.lpFeePips)} LP fee, fixed at initialization.
+      </p>
+
+      {sides.length > 0 && (
+        <>
+          <h3 className="dapp-microlabel" style={{ marginTop: 14 }}>
+            WHERE THE FEES WENT
+          </h3>
+          {sides.map((s) => {
+            const total = s.protocol + s.lp
+            /* One floor, one remainder. Flooring both shares would leave the
+               bar a basis point short, and a short bar is how StackedBar
+               reports a split that genuinely does not add up. */
+            const protocolBps = Number((s.protocol * 10_000n) / total)
+            return (
+              <StackedBar
+                key={s.holding.token}
+                total={10_000}
+                unit={`of the ${s.holding.symbol} fees this pool charged`}
+                label={`${s.holding.symbol} fees charged by this pool, split between the protocol and liquidity providers`}
+                segments={[
+                  {
+                    name: `${s.holding.symbol} · protocol`,
+                    amount: protocolBps,
+                    value: formatUnits(s.protocol, s.holding.decimals, 6),
+                    color: 'primary',
+                  },
+                  {
+                    name: `${s.holding.symbol} · liquidity providers`,
+                    amount: 10_000 - protocolBps,
+                    value: formatUnits(s.lp, s.holding.decimals, 6),
+                    color: 'violet',
+                  },
+                ]}
+              />
+            )
+          })}
+        </>
+      )}
+
+      <Methodology label="What these are read from, and what would change them">
+        <p className="live-note">
+          Every figure is a <code>Swap</code> log on the CL pool manager, filtered by this
+          pool&rsquo;s id, with each swap&rsquo;s fee apportioned from its own <code>fee</code> and{' '}
+          <code>protocolFee</code> fields rather than the controller&rsquo;s current default. Token
+          units only — these tokens are unpriced. A Latch with a dynamic fee would move the LP rate
+          per swap; this pool {hooked ? 'has one attached, shown above.' : 'has none attached.'}
+        </p>
+      </Methodology>
+    </section>
   )
 }
