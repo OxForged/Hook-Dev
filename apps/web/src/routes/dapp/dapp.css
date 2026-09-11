@@ -187,17 +187,20 @@
 
 .dapp-main { display: flex; flex-direction: column; min-width: 0; }
 
-/* The sticky box is the WRAPPER, not the bar. The bar and the reference-price
-   rails under it have to travel as one unit; sticking the bar alone would let
-   the prices slide up behind it and out of view on the first scroll. The ground
-   and the blur move up here too, because the rails are deliberately transparent
-   and would otherwise have page content scrolling through them. */
+/* NOT STICKY, deliberately — it used to be, and it was wrong.
+
+   The bar carries a title, a subtitle, five chips, a primary button and two
+   reference-price rails. That is ~270px, and pinning it spent a third of a
+   1080p viewport on chrome that never changes while the reader scrolls the
+   thing they actually came for. A sticky header earns its keep when it holds
+   navigation you reach for mid-page; this one holds status you read once.
+
+   The sidebar is the persistent navigation and it stays put on its own, so
+   nothing is lost by letting this scroll away. If it ever comes back it should
+   come back as a condensed bar — title and chain chip only — not the full
+   block. */
 .dapp-headwrap {
-  position: sticky;
-  top: 0;
-  z-index: 30;
   background: var(--dapp-header-bg);
-  backdrop-filter: blur(14px);
 }
 
 .dapp-header {
@@ -1888,7 +1891,10 @@ span.dapp-net-chip__mark {
 }
 .lx-main { min-width: 0; }
 
-.lx-rail { display: grid; gap: 14px; position: sticky; top: 132px; }
+/* `top: 132px` used to clear the sticky header. That header no longer sticks,
+   so the offset would have parked the rail a header's height below the viewport
+   top for no reason. --s5 is just breathing room against the edge. */
+.lx-rail { display: grid; gap: 14px; position: sticky; top: var(--s5); }
 /* align-content: start — below 1180px the two rail cards sit side by side and
    stretch to one height; without this the shorter card's rows spread out to
    fill it. */
