@@ -226,4 +226,22 @@ contract LatchVotesTest is Test {
         // contract exists to remove.
         assertEq(summed, token.getPastTotalSupply(t), "every unit is delegated to somebody");
     }
+
+    /* ---- regression probe: delegate BEFORE first receipt ---------------- */
+
+    function test_PreReceiptDelegationSurvivesFirstReceipt() public {
+        // Alice picks her delegate before she holds anything — the only
+        // possible ordering for a delegateBySig collected ahead of a
+        // distribution, and an ordinary one for anybody who decides first.
+        vm.prank(ALICE);
+        token.delegate(BOB);
+        assertEq(token.delegates(ALICE), BOB, "delegated before holding");
+
+        vm.prank(TREASURY);
+        token.transfer(ALICE, 100 ether);
+
+        assertEq(token.delegates(ALICE), BOB, "first receipt must not overwrite her choice");
+        assertEq(token.getVotes(BOB), 100 ether, "votes follow her delegate");
+        assertEq(token.getVotes(ALICE), 0, "alice holds none herself");
+    }
 }

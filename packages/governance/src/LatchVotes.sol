@@ -32,13 +32,30 @@ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
  * closed, for a call that does nothing a holder can see. So delegation happens
  * here, on first receipt, where it cannot be forgotten.
  *
- * OPTING OUT IS PERMANENT, BY DESIGN. The obvious implementation tests
- * `delegates(to) == address(0)`, which silently re-delegates anybody who
- * deliberately undelegated, every time they receive tokens — a holder cannot
- * opt out and stay out. `_hasAutoDelegated` records that the one-time
- * assignment already happened, so `delegate(address(0))` afterwards is
- * respected forever. A holder who chooses to hold no voting power forfeits
- * their share of each epoch to the rollover, which is their decision to make.
+ * A HOLDER'S OWN CHOICE ALWAYS WINS, WHENEVER THEY MAKE IT. `_hasAutoDelegated`
+ * records that the one-time assignment has been SPENT — not that the account
+ * currently delegates to itself — and it is spent by any delegation, automatic
+ * or deliberate. That is why `_delegate` is overridden rather than only
+ * `_update`: OpenZeppelin routes `delegate` and `delegateBySig` through
+ * `_delegate` without passing through `_update` at all, so a flag maintained
+ * only on receipt misses both.
+ *
+ * The ordering that exposes it is not exotic. Somebody picks a delegate before
+ * they hold anything — which is the ONLY possible ordering for a
+ * `delegateBySig` gathered ahead of a distribution — and their first receipt
+ * then resets them to self, emitting `DelegateChanged` and `AutoDelegated` as
+ * though that were intended. Their dividend quietly stops going where they
+ * sent it, because `SnapshotEpochDistributor` pays on votes, not on balance.
+ *
+ * The same rule makes opting out permanent: `delegate(address(0))` spends the
+ * assignment, so later receipts do not re-delegate. A holder who chooses to
+ * hold no voting power forfeits their share of each epoch to the rollover,
+ * which is their decision to make.
+ *
+ * Dusting is therefore not a grief. An unsolicited transfer spends the
+ * automatic assignment, but the recipient can still call `delegate` freely
+ * afterwards — the flag only ever suppresses a FUTURE automatic assignment,
+ * never a person's instruction.
  *
  * FIXED SUPPLY. There is no `mint`, no owner, no role and no upgrade path.
  * Supply is minted once, in the constructor, and that is the whole of it.
@@ -68,9 +85,10 @@ contract LatchVotes is ERC20, ERC20Votes {
     ///      assignment apart from a holder's own decision.
     event AutoDelegated(address indexed account);
 
-    /// @dev True once an account has had its one-time self-delegation applied.
-    ///      Never cleared: it records that the assignment HAPPENED, not that
-    ///      the account currently delegates to itself.
+    /// @dev True once an account's one-time automatic assignment has been
+    ///      SPENT — by `_update` on first receipt, or by the holder's own
+    ///      `delegate` / `delegateBySig`, whichever comes first. Never cleared,
+    ///      and NOT a statement about who the account currently delegates to.
     mapping(address account => bool) private _hasAutoDelegated;
 
     /**
@@ -114,9 +132,23 @@ contract LatchVotes is ERC20, ERC20Votes {
 
         // Burns (`to == 0`) are not receipts and must not create a delegation.
         if (to != address(0) && !_hasAutoDelegated[to]) {
-            _hasAutoDelegated[to] = true;
+            // `_delegate` below sets the flag; setting it here too would be
+            // redundant. The event is emitted here because only this path
+            // knows the delegation was automatic rather than instructed.
             _delegate(to, to);
             emit AutoDelegated(to);
         }
+    }
+
+    /**
+     * @dev Every delegation spends the one-time automatic assignment,
+     *      including `delegate` and `delegateBySig`, which OpenZeppelin routes
+     *      here WITHOUT going through `_update`. Tracking the flag only on
+     *      receipt would let a first transfer overwrite a delegation the
+     *      holder had already chosen — see the contract header.
+     */
+    function _delegate(address account, address delegatee) internal override {
+        _hasAutoDelegated[account] = true;
+        super._delegate(account, delegatee);
     }
 }

@@ -82,7 +82,7 @@ contract DeployLatchVotesMainnetScript is Script {
            and supply would both look correct. */
         require(token.delegates(treasury) == treasury, "treasury is not self-delegated");
         require(token.getVotes(treasury) == supply, "treasury has no voting power");
-        require(token.hasAutoDelegated(treasury), "auto-delegation flag not set");
+        require(token.hasAutoDelegated(treasury), "one-time assignment not spent");
 
         console.log("LatchVotes            ", address(token));
         console.log("  name                ", token.name());
