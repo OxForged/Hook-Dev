@@ -121,7 +121,27 @@ export const DEPLOYMENTS = {
         it passes owner_ straight to Ownable(). Guardian is the ops key and can
         only pause, never unpause. Takes nothing until a pool owner configures. */
     revShareHook: '0x23CE34E8199927DD270dddd8579c947542bDE446',
-    demoPool: null,
+    /**
+     * The FIRST POOL ON MAINNET, created by
+     * packages/hooks-revshare/script/ExerciseRobinhood.s.sol with RevShareHook
+     * attached and exercised end to end — configure, initialize, add liquidity,
+     * swap both directions, fees accrued and readable.
+     *
+     * LTT1/LTT2 are deliberately throwaway ERC-20s. Initializing a pool fixes
+     * its starting price permanently, and the deployer holds no WETH or USDG to
+     * defend a price it set on a real pair — an empty mispriced pool is a trap
+     * for whoever LPs into it first. This proves the plumbing; the real launch
+     * follows on contracts already known to work together.
+     */
+    demoPool: {
+      id: '0xcb1fbdafcaa52a0cc8f5ece1752737c2a5eec2b7242953270c15bdd9818a50e8',
+      token0: '0x2A21c0826848f2D597B7C87A4B931dE1407958A6',
+      token1: '0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4',
+      symbol0: 'LTT1',
+      symbol1: 'LTT2',
+      lpFee: 3000,
+      tickSpacing: 60,
+    },
     /** Block the first Latch contract landed — the two timelocks. */
     deployedAtBlock: 60111836n,
   },
