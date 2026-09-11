@@ -1,3 +1,4 @@
+import type { IconName } from '../../components/NavIcon'
 /**
  * Docs page content.
  *
@@ -101,11 +102,17 @@ export type RailItem = {
   spy: boolean
 }
 
-export type RailGroup = { title: string; items: RailItem[] }
+/** `icon` names a glyph in components/NavIcon — the SAME set the dapp sidebar
+    draws from, so a reader moving between docs and app sees one visual
+    language rather than two. Group headers only: there is no honest icon for
+    "Errors" or "Callbacks", and inventing one per table-of-contents row would
+    add noise where the label already does the work. */
+export type RailGroup = { title: string; items: RailItem[]; icon?: IconName }
 
 export const RAIL_GROUPS: RailGroup[] = [
   {
     title: 'GET STARTED',
+    icon: 'deploy',
     items: [
       { label: 'Quickstart', href: '#quickstart', spy: true },
       { label: 'Install', href: '#install', spy: true },
@@ -114,6 +121,7 @@ export const RAIL_GROUPS: RailGroup[] = [
   },
   {
     title: 'MARKETPLACE',
+    icon: 'explorer',
     items: [
       { label: 'Register a Latch', href: '#register', spy: true },
       { label: 'Verification permalink', href: '#verify', spy: true },
@@ -121,6 +129,7 @@ export const RAIL_GROUPS: RailGroup[] = [
   },
   {
     title: 'REFERENCE',
+    icon: 'docs',
     items: [
       { label: 'Callbacks', href: '#interface', spy: true },
       { label: 'Execution order', href: '#lifecycle', spy: true },
@@ -131,6 +140,7 @@ export const RAIL_GROUPS: RailGroup[] = [
   },
   {
     title: 'GUIDES',
+    icon: 'developers',
     items: [
       { label: 'Dynamic fees', href: '#write', spy: false },
       { label: 'Launch protection', href: '#write', spy: false },
@@ -139,6 +149,7 @@ export const RAIL_GROUPS: RailGroup[] = [
   },
   {
     title: 'OPERATIONS',
+    icon: 'settings',
     items: [
       { label: 'Local devnet', href: '#install', spy: false },
       { label: 'Sepolia deployment', href: '#deploy', spy: false },

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { RAIL_GROUPS, TOC } from './content'
+import { NavIcon } from '../../components/NavIcon'
 import { ThemeToggle } from '../../components/ThemeToggle'
 
 type Props = {
@@ -89,6 +90,7 @@ export default function LeftRail({ activeId, isDrawer, open, onClose }: Props) {
           {RAIL_GROUPS.map((group) => (
             <div className="dk-rail__group" key={group.title}>
               <span className="dk-rail__title" id={slug(group.title)}>
+                {group.icon && <NavIcon name={group.icon} size={13} />}
                 {group.title}
               </span>
               <ul className="dk-rail__items" aria-labelledby={slug(group.title)}>
@@ -119,19 +121,26 @@ export default function LeftRail({ activeId, isDrawer, open, onClose }: Props) {
               <span className="dk-rail__title" id="rail-site">
                 SITE
               </span>
+              {/* These three are DESTINATIONS, not headings in this document,
+                  so they take the same icons the dapp sidebar uses for them.
+                  That is the one place in the rail where an icon carries
+                  information: it says "this leaves the page you are reading". */}
               <ul className="dk-rail__items" aria-labelledby="rail-site">
                 <li>
-                  <Link to="/" className="dk-rail__link" onClick={handleNav}>
+                  <Link to="/" className="dk-rail__link dk-rail__link--site" onClick={handleNav}>
+                    <NavIcon name="home" size={15} />
                     Home
                   </Link>
                 </li>
                 <li>
-                  <Link to="/brand" className="dk-rail__link" onClick={handleNav}>
+                  <Link to="/brand" className="dk-rail__link dk-rail__link--site" onClick={handleNav}>
+                    <NavIcon name="brand" size={15} />
                     Brand Kit
                   </Link>
                 </li>
                 <li>
-                  <Link to="/app" className="dk-rail__link" onClick={handleNav}>
+                  <Link to="/app" className="dk-rail__link dk-rail__link--site" onClick={handleNav}>
+                    <NavIcon name="launch" size={15} />
                     Launch App
                   </Link>
                 </li>

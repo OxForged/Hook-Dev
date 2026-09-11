@@ -271,12 +271,39 @@
   color: var(--ink-bright);
 }
 
+/* Was `display: block`. Now a flex row so the group's icon sits on the label's
+   optical centre rather than the text baseline, which is where `vertical-align`
+   would have put it and it reads a pixel low at this size. */
 .dk-rail__title {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.18em;
   color: var(--faint-ink);
+}
+
+/* The icon is decoration on a label that already says the same thing, so it
+   stays quieter than the text and never becomes the only carrier of meaning. */
+.dk-rail__title svg {
+  flex: 0 0 auto;
+  opacity: 0.65;
+}
+
+/* SITE links only — the entries that leave this page. Table-of-contents rows
+   deliberately have no icon, so they keep their original alignment. */
+.dk-rail__link--site {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.dk-rail__link--site svg {
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+.dk-rail__link--site:hover svg {
+  opacity: 1;
 }
 
 .dk-rail__items {
