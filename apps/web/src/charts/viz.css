@@ -26,12 +26,18 @@
      the same tokens the dapp's SERIES_VAR uses (lib/series.ts), so the two
      chart systems cannot drift into different blues.
 
-     `--s2` is violet rather than the old orange: these two series are read
+     `--series-2` is violet rather than the old orange: these two series are read
      against each other in a stacked bar, and the dapp already settled on
      blue/violet for exactly that comparison after finding two blues
      indistinguishable in a donut. */
-  --s1: var(--latch-blue);
-  --s2: var(--violet);
+  /* RENAMED from --s1/--s2, which collided with the --s1..--s10 SPACING scale
+     added to tokens.css for Canvas. The collision was silent and ugly: a
+     `gap: var(--s2)` elsewhere resolved to #4A3AA7, which is not a length, so
+     the declaration was dropped and the gap fell back to `normal` — chips in
+     the dapp header rendered touching at exactly 0px. Series colours get an
+     unambiguous name; a bare --s1 was never a good one for a colour. */
+  --series-1: var(--latch-blue);
+  --series-2: var(--violet);
 
   /* Chart furniture. GasChart and FeeChart have always painted their grid and
      axis with these two names, and nothing defined them — an unresolvable var

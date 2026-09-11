@@ -32,7 +32,7 @@ import type { DatumTipProps } from './useChartTip'
 import type { TipRow } from './tip'
 
 /** The two-series palette, shared with `GasChart` (see viz.css). */
-const SERIES = ['var(--s1)', 'var(--s2)'] as const
+const SERIES = ['var(--series-1)', 'var(--series-2)'] as const
 
 const BAR_H = 15
 /** Room at the right for the value label that rides each bar's tip. */

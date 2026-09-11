@@ -14,8 +14,8 @@ import { hBarPath, ticksFor, useMeasuredWidth } from './chart-utils'
 import { useChartTip } from './useChartTip'
 import type { DatumTipProps } from './useChartTip'
 
-const S1 = 'var(--s1)'
-const S2 = 'var(--s2)'
+const S1 = 'var(--series-1)'
+const S2 = 'var(--series-2)'
 
 const BAR_H = 18
 /** Surface gap that separates the two stacked segments. */

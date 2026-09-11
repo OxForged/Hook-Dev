@@ -577,15 +577,14 @@ vault claims into real tokens; it pays nobody.
 This is the **Safe** row in the table above: sole `PROPOSER_ROLE` on both timelocks,
 and the direct owner of anything the table marks Safe rather than a tier.
 
-Two facts about it that change the plan:
+**Deployed at the SAME address on both Robinhood Chain (4663) and Ethereum Sepolia**,
+with identical owners and threshold — verified with `cast` on both. That is what makes
+the step-5 rehearsal worth anything: the mainnet run will not be the first time these
+three keys drive this Safe.
 
-- **It exists on Robinhood Chain (4663) only.** `cast code` returns nothing at that
-  address on Sepolia. The Sepolia rehearsal in step 5 below therefore cannot use it as
-  written — deploy a Safe there with the same owners first (the canonical factory is
-  live on Sepolia, so the address can be reproduced with the same salt), or rehearse
-  against a throwaway Safe and accept that the mainnet run is the first time these
-  three keys drive the real one. Prefer the former: an untested signer set is the same
-  class of risk as an untested timelock.
+- **Protocol fees go here.** `collectProtocolFees(recipient, currency, amount)` names its
+  recipient per call, and the recipient is this Safe. No separate treasury address
+  exists or should be introduced — a second address to secure, for no gain.
 - **2 of 3 governs an irreversible power.** Any two of those keys can queue
   `registerApp`, wait out 48h, and grant an app permanent authority to move Vault
   funds. That is a deliberate, reasonable choice for an active protocol — 3 of 3 has
