@@ -35,6 +35,30 @@
  *     published separately when available." Arc TESTNET (5042002) is fully
  *     supported below. Do not add Arc mainnet from memory: probe it first.
  *
+ *     PROBED AGAIN 2026-09-12 with a candidate supplied by the project owner,
+ *     `https://rpc.arc-scan.org`. STILL NOT USABLE. DNS resolves and TCP
+ *     connects in ~46ms, then the TLS handshake fails (curl exit 35, HTTP
+ *     status 000); `https://arc-scan.org` itself behaves identically. A
+ *     control request to a known-good host from the same machine returned
+ *     200, so this is the endpoint rather than the network. Neither
+ *     `eth_chainId` nor `eth_blockNumber` was answerable, so chain id 5042 is
+ *     still UNCONFIRMED from here — it has never been read off a live node.
+ *
+ *     The rest of the owner's config is recorded so it is not lost, and
+ *     because one field needs care when the chain does become reachable:
+ *
+ *         chainId 5042 · rpc https://rpc.arc-scan.org
+ *         explorer https://arc-scan.org
+ *         quoteIsGasToken true · nativeDecimals 18 · quoteDecimals 6
+ *
+ *     `quoteIsGasToken` with a 6-decimal quote is the interesting part. Arc
+ *     uses a stablecoin as its gas token, so a pool quoted in it against an
+ *     ordinary 18-decimal token carries the SAME twelve-decimal gap that
+ *     would have priced a USDG pool a million times wrong on Robinhood.
+ *     `sqrtPriceX96` encodes the ratio in RAW units, so anything computing a
+ *     price or a tick for an Arc pool must take both decimals explicitly. Do
+ *     not let a default of 18 anywhere near it.
+ *
  *   * `rpc.xlayer.tech` (X Layer's own canonical endpoint) and roughly a dozen
  *     other hosts — `ethereum-rpc.publicnode.com`, `eth.llamarpc.com`,
  *     `rpc.mevblocker.io`, `sepolia.gateway.tenderly.co` among them. These fail
