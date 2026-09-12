@@ -111,8 +111,13 @@ function FeeGauge() {
     )
   }
 
-  const { defaultFeePips, maxFeePips, feesDisabled } = state.s
-  const taken = feesDisabled ? 0 : defaultFeePips
+  /* `taken` is what a pool actually pays, not what the controller would apply
+     if anything asked it. Those differ today: the controller is deployed with
+     a 0.1% default and NO pool manager points at it, so the honest reading is
+     zero. Rendering the default here would contradict the swap rows below,
+     which show 0 to protocol on every fill. */
+  const { configuredFeePips, maxFeePips, feesDisabled, controllerWired, effectiveFeePips } = state.s
+  const taken = effectiveFeePips
 
   return (
     <div className={styles['hostedGauge']}>
@@ -122,12 +127,17 @@ function FeeGauge() {
         label="Protocol fee against the cap the contract allows"
         valueText={pctOfPips(taken)}
         maxText={pctOfPips(maxFeePips)}
-        color={feesDisabled ? 'success' : 'primary'}
+        color={taken === 0 ? 'success' : 'primary'}
         caption={
-          feesDisabled ? (
+          !controllerWired ? (
+            <>
+              <strong>Nothing is taken.</strong> No pool manager points at the fee
+              controller, so its {pctOfPips(configuredFeePips)} default is not in force.
+            </>
+          ) : feesDisabled ? (
             <>
               <strong>Fees are disabled</strong> — the configured default is{' '}
-              {pctOfPips(defaultFeePips)}, and nothing is being taken.
+              {pctOfPips(configuredFeePips)}, and nothing is being taken.
             </>
           ) : (
             <>

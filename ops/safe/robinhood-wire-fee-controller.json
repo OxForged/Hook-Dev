@@ -1,0 +1,36 @@
+{
+  "version": "1.0",
+  "chainId": "4663",
+  "createdAt": 1789200000000,
+  "meta": {
+    "name": "Latch — wire the protocol fee controller, at zero",
+    "description": "Sets the controller's default fee to 0 BEFORE pointing either pool manager at it, then points both. Wiring alone is not neutral: LatchProtocolFeeController's constructor arms _defaultFee at DEFAULT_FEE_PIPS = 1000 (0.1%) in both directions, verified on chain as defaultFee() == (true, 1000, 1000). Pointing a manager at it without zeroing first would start charging 0.1% on every pool initialized afterwards, which contradicts the launch-at-0 position in CLAUDE.md. Order is load-bearing and the batch is atomic, so no pool can initialize in a window where the default is still armed.",
+    "txBuilderVersion": "1.16.5"
+  },
+  "transactions": [
+    {
+      "to": "0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c",
+      "value": "0",
+      "data": "0x0e5a4c9600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "LatchProtocolFeeController.setDefaultFee(0, 0) — MUST be first."
+    },
+    {
+      "to": "0x5D7111d6c624e9a08aE63d342E4baE5878989a67",
+      "value": "0",
+      "data": "0x2d7713890000000000000000000000002a03e6e6900b9cf93ccc27e3a75a5a95fb4a154c",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "CLPoolManagerOwner.setProtocolFeeController(LatchProtocolFeeController)"
+    },
+    {
+      "to": "0x98920e33313257Ffd942f94379A7ced216462665",
+      "value": "0",
+      "data": "0x2d7713890000000000000000000000002a03e6e6900b9cf93ccc27e3a75a5a95fb4a154c",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "BinPoolManagerOwner.setProtocolFeeController(LatchProtocolFeeController)"
+    }
+  ]
+}

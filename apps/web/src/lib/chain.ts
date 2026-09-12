@@ -279,9 +279,17 @@ const VAULT = parseAbi([
 const FEE_CONTROLLER = parseAbi([
   'function DEFAULT_FEE_PIPS() view returns (uint16)',
   'function MAX_PROTOCOL_FEE() view returns (uint16)',
+  'function defaultFee() view returns (bool isSet, uint16 zeroForOne, uint16 oneForZero)',
   'function feesDisabled() view returns (bool)',
   'function guardian() view returns (address)',
   'function owner() view returns (address)',
+])
+
+/* The pool manager, not the controller, decides whether the controller is in
+   force at all. `protocolFeeController()` is the single slot that settles it,
+   and it reads address(0) on Robinhood today. */
+const POOL_MANAGER = parseAbi([
+  'function protocolFeeController() view returns (address)',
 ])
 
 /**
@@ -314,9 +322,32 @@ export interface ProtocolStatus {
   vaultOwner: Address
   clRegistered: boolean
   binRegistered: boolean
+  /**
+   * `DEFAULT_FEE_PIPS`, the controller's compiled-in launch default.
+   *
+   * NOT what any pool charges. Kept because it is what the controller WOULD
+   * apply, which is the number that matters the moment it is wired.
+   */
   defaultFeePips: number
+  /** The controller's live `defaultFee()` storage, which governance can move. */
+  configuredFeePips: number
   maxFeePips: number
   feesDisabled: boolean
+  /**
+   * Whether `CLPoolManager.protocolFeeController()` actually points at our
+   * controller. False means the controller is deployed and inert.
+   */
+  controllerWired: boolean
+  /**
+   * What a pool initialized right now would actually charge: zero unless the
+   * controller is BOTH wired and not disabled.
+   *
+   * This field exists because the dashboard used to render `DEFAULT_FEE_PIPS`
+   * as "the protocol fee" while the activity feed beside it read
+   * "0 to protocol" on every swap — both true, flatly contradicting each
+   * other, and only one of them answering the question a reader was asking.
+   */
+  effectiveFeePips: number
   guardian: Address
   blockNumber: bigint
 }
@@ -328,17 +359,30 @@ export async function readProtocolStatus(
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
 
-  const [clReg, binReg, vaultOwner, defFee, maxFee, disabled, guardian, blockNumber] =
+  const [clReg, binReg, vaultOwner, defFee, configured, maxFee, disabled, wiredTo, guardian, blockNumber] =
     await Promise.all([
       c.readContract({ address: d.vault, abi: VAULT, functionName: 'isAppRegistered', args: [d.clPoolManager] }),
       c.readContract({ address: d.vault, abi: VAULT, functionName: 'isAppRegistered', args: [d.binPoolManager] }),
       c.readContract({ address: d.vault, abi: VAULT, functionName: 'owner' }),
       c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'DEFAULT_FEE_PIPS' }),
+      c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'defaultFee' }),
       c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'MAX_PROTOCOL_FEE' }),
       c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'feesDisabled' }),
+      c.readContract({ address: d.clPoolManager, abi: POOL_MANAGER, functionName: 'protocolFeeController' }),
       c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'guardian' }),
       c.getBlockNumber(),
     ])
+
+  /* `defaultFee()` returns (isSet, zeroForOne, oneForZero). An unset config
+     packs to zero regardless of the compiled default, so isSet is load-bearing
+     rather than decorative. The two directions can differ; the UI shows one
+     number, so take the larger — understating what a trader might pay is the
+     worse of the two errors. */
+  const [isSet, zeroForOne, oneForZero] = configured
+  const configuredFeePips = isSet ? Math.max(zeroForOne, oneForZero) : 0
+
+  const controllerWired = wiredTo.toLowerCase() === d.feeController.toLowerCase()
+  const effectiveFeePips = controllerWired && !disabled ? configuredFeePips : 0
 
   return {
     chainId,
@@ -348,8 +392,11 @@ export async function readProtocolStatus(
     clRegistered: clReg,
     binRegistered: binReg,
     defaultFeePips: defFee,
+    configuredFeePips,
     maxFeePips: maxFee,
     feesDisabled: disabled,
+    controllerWired,
+    effectiveFeePips,
     guardian,
     blockNumber,
   }

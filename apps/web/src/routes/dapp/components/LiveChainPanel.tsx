@@ -209,26 +209,44 @@ export function ChainStatusCard({ state }: { state: State }) {
     <LiveCard title={`Live on ${D.name}`} state={state} badge="ON CHAIN">
       {(d) => (
         <>
-          {/* Both numbers are read: DEFAULT_FEE_PIPS and MAX_PROTOCOL_FEE off
-              the fee controller. The ceiling is the point — it is what says
-              how much of the protocol's headroom is in use. */}
+          {/* WHAT THIS GAUGE MUST NOT DO IS READ `DEFAULT_FEE_PIPS`.
+
+              It used to, and the result was two true statements contradicting
+              each other on one screen: this card said the protocol fee was
+              0.10%, while the activity feed a few hundred pixels away read
+              "3000 pips total · 0 to protocol" on every swap. The feed was
+              right. `DEFAULT_FEE_PIPS` is a constant compiled into the
+              controller, and the controller is only in force if a pool manager
+              points at it — `CLPoolManager.protocolFeeController()` reads
+              address(0) on Robinhood today, so nothing charges anything.
+
+              `effectiveFeePips` is what a pool initialized right now would
+              actually pay: zero unless the controller is BOTH wired and not
+              disabled. The unwired case is called out rather than shown as a
+              tidy zero, because "no fee" and "no fee YET" are different
+              readings and only one of them is a decision. */}
           <Gauge
-            value={d.status.defaultFeePips}
+            value={d.status.effectiveFeePips}
             max={d.status.maxFeePips}
-            label="Default protocol fee against the protocol fee cap"
-            valueText={pipsPct(d.status.defaultFeePips)}
+            label="Protocol fee actually charged, against the protocol fee cap"
+            valueText={pipsPct(d.status.effectiveFeePips)}
             maxText={pipsPct(d.status.maxFeePips, 1)}
-            color={d.status.feesDisabled ? 'amber' : 'primary'}
+            color={d.status.effectiveFeePips === 0 ? 'success' : 'primary'}
             caption={
-              d.status.feesDisabled ? (
+              !d.status.controllerWired ? (
                 <>
-                  <code>DEFAULT_FEE_PIPS</code> of <code>MAX_PROTOCOL_FEE</code> — but the guardian
-                  has fees <strong>disabled</strong>, so pools are charged nothing.
+                  Nothing is taken: no pool manager points at the fee
+                  controller, so its {pipsPct(d.status.configuredFeePips)} default is not in
+                  force.
+                </>
+              ) : d.status.feesDisabled ? (
+                <>
+                  Nothing is taken: the guardian has fees <strong>disabled</strong>. The
+                  configured default is {pipsPct(d.status.configuredFeePips)}.
                 </>
               ) : (
                 <>
-                  <code>DEFAULT_FEE_PIPS</code> of <code>MAX_PROTOCOL_FEE</code>, the cap compiled
-                  into the controller.
+                  of <code>MAX_PROTOCOL_FEE</code>, the cap compiled into core.
                 </>
               )
             }
