@@ -546,3 +546,82 @@ describe("generated registry ABI", () => {
     expect(CURATOR_ROLE).not.toBe(GUARDIAN_ROLE);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Effective permissions: the self-report is NOT the answer
+// ---------------------------------------------------------------------------
+
+/* `LatchRegistry` v2 was redeployed on 2026-09-12 for exactly one reason: "a hook
+   can no longer show the registry one bitmap and core another". The contract
+   defends that by classifying the UNION of what the hook claims and what a live
+   pool proved:
+
+     _effective(record) = permissions | attestedPermissions   (when attested)
+     riskClassOf(hook)  = classify(_effective(record).permissions)
+
+   A record whose self-report is harmless and whose attested bitmap is not is the
+   whole point of the mechanism, so the SDK must not classify the self-report
+   alone — that reproduces, in TypeScript, the spoof the redeploy removed from the
+   chain. Rendering `Passive` over a hook that a live pool proved can take a cut
+   of every swap is the single most damaging thing this module can get wrong. */
+describe("effective permissions vs the self-report", () => {
+  /* Self-report: afterSwap only -> Restrictive is not even reached, it is Passive.
+     Attested:    beforeSwap + beforeSwapReturnsDelta -> ValueExtracting.
+     The contract answers ValueExtracting. */
+  function spoofedRecord(): LatchRecord {
+    return makeRecord({
+      permissions: encodeCLHookPermissions({ afterSwap: true }),
+      attestedPermissions: encodeCLHookPermissions({
+        beforeSwap: true,
+        beforeSwapReturnsDelta: true,
+      }),
+      attestationCount: 3,
+      attestedPoolManager: "0x00000000000000000000000000000000000000c2",
+      attestedAt: 1_700_000_500n,
+    });
+  }
+
+  it("classifies the union, matching LatchRegistry.riskClassOf", () => {
+    const record = spoofedRecord();
+    /* Sanity: the two halves really do disagree, so the assertion below is
+       testing the union and not a coincidence. */
+    expect(classifyRiskClass(record.permissions)).toBe("Passive");
+    expect(classifyRiskClass(record.attestedPermissions)).toBe("ValueExtracting");
+
+    expect(riskClassOf(record)).toBe("ValueExtracting");
+  });
+
+  it("warns on a spoofed record in summarizeLatch", () => {
+    const summary = summarizeLatch(spoofedRecord());
+    expect(summary.riskClass).toBe("ValueExtracting");
+    expect(summary.warnings).toContain("ValueExtracting");
+    expect(summary.capabilities.takesSwapCut).toBe(true);
+    expect(summary.capabilities.canBlockSwaps).toBe(true);
+  });
+
+  /* The contract returns the bare self-report when nothing has attested, so an
+     unattested record must be unchanged by all of this. */
+  it("leaves an unattested record classified by its self-report alone", () => {
+    const record = makeRecord({
+      permissions: encodeCLHookPermissions({ beforeSwap: true }),
+      attestedPermissions: 0,
+      attestationCount: 0,
+    });
+    expect(riskClassOf(record)).toBe("Restrictive");
+    expect(summarizeLatch(record).riskClass).toBe("Restrictive");
+  });
+
+  /* `_effective` ignores attestedPermissions entirely when attestationCount is
+     zero, rather than trusting a stale bitmap left behind by an earlier state. */
+  it("ignores attestedPermissions when nothing has attested", () => {
+    const record = makeRecord({
+      permissions: encodeCLHookPermissions({ afterSwap: true }),
+      attestedPermissions: encodeCLHookPermissions({
+        beforeSwap: true,
+        beforeSwapReturnsDelta: true,
+      }),
+      attestationCount: 0,
+    });
+    expect(riskClassOf(record)).toBe("Passive");
+  });
+});

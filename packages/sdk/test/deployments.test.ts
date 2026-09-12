@@ -26,6 +26,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   LATCH_CHAIN_IDS,
+  LATCH_MAINNET_CHAIN_IDS,
   LATCH_DEPLOYMENTS,
   NATIVE_CURRENCY,
   REDEPLOYABLE_CONTRACTS,
@@ -201,6 +202,18 @@ describe("LATCH_DEPLOYMENTS", () => {
     expect(usdg).toBeDefined();
     expect(usdg?.decimals).toBe(6);
     expect(tokenBySymbol(4663, "WETH")?.decimals).toBe(18);
+  });
+
+  it("separates the mainnets from the full list", () => {
+    /* Guards the reason both lists exist: a testnet must stay listed so a hook
+       author can test against a real deployment, but must never appear where a
+       mainnet is meant. If a second mainnet is added this fails until the
+       expectation is updated deliberately. */
+    expect(LATCH_MAINNET_CHAIN_IDS).toEqual([4663]);
+    expect(LATCH_CHAIN_IDS).toContain(11155111);
+    for (const id of LATCH_MAINNET_CHAIN_IDS) {
+      expect(LATCH_DEPLOYMENTS[id].isMainnet).toBe(true);
+    }
   });
 
   it("marks Robinhood as mainnet and Sepolia as not", () => {

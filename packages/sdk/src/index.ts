@@ -50,16 +50,19 @@ export {
   LATCH_HOOK_REGISTRY_ABI,
   LATCH_HOOK_REGISTRY_EVENTS_ABI,
   LISTING_STATUSES,
+  PERMISSION_SOURCES,
   RISK_CLASSES,
   VERIFICATION_LEVELS,
   classifyRiskClass,
   decodeLatchRecord,
   describeCapabilities,
+  effectivePermissions,
   formatLatchTrust,
   hookPermissionState,
   isValidHookBitmap,
   listingFromUint8,
   listingToUint8,
+  permissionSourceFromUint8,
   permissionsAreAttestable,
   riskClassFromUint8,
   riskClassOf,
@@ -70,6 +73,7 @@ export {
   verificationToUint8,
 } from "./registry/index.js";
 export type {
+  EffectivePermissions,
   HookCapabilities,
   LatchMetadata,
   HookPermissionState,
@@ -77,6 +81,7 @@ export type {
   HookTrustSummary,
   HookWarning,
   Listing,
+  PermissionSource,
   RawLatchRecord,
   RiskClass,
   Verification,
@@ -107,7 +112,21 @@ export * as deployments from "./deployments/index.js";
 export {
   LATCH_CHAIN_IDS,
   LATCH_DEPLOYMENTS,
-  NATIVE_CURRENCY,
+  /**
+   * Re-exported under a distinct name ON PURPOSE. `types/currency.ts` already
+   * exports `NATIVE_CURRENCY` — the zero-address sentinel meaning "this pool leg
+   * is the chain's native asset" — and this barrel star-exports that module.
+   *
+   * An explicit re-export silently WINS over a star export in both TypeScript
+   * and ESM: no error, no warning, the star-exported binding just stops existing
+   * at the root. Exporting the per-chain table under its own name here meant
+   * `NATIVE_CURRENCY` resolved to an object, and `isNativeCurrency(NATIVE_CURRENCY)`
+   * threw `toLowerCase is not a function` at the consumer rather than here.
+   *
+   * The table is unchanged and still `NATIVE_CURRENCY` on the `deployments`
+   * namespace and the `./deployments` subpath. Guarded by `test/public-api.test.ts`.
+   */
+  NATIVE_CURRENCY as CHAIN_NATIVE_CURRENCIES,
   REDEPLOYABLE_CONTRACTS,
   explorerAddressUrl,
   explorerTxUrl,

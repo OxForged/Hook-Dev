@@ -523,6 +523,28 @@ timelockCustody: "0x3ae354e2CdFB9cB855Aba41C825f6Ee53F28E119",
 /** Every chain in the table, ascending. */
 export const LATCH_CHAIN_IDS: readonly LatchChainId[] = [4663, 11155111];
 
+/**
+ * The mainnets only. Iterate this, not `LATCH_CHAIN_IDS`, anywhere a testnet
+ * being present would be a bug.
+ *
+ * BOTH LISTS EXIST ON PURPOSE, and the reasoning is worth keeping because the
+ * obvious move is to ship one. Dropping Sepolia was considered and rejected: a
+ * developer building a hook needs a deployed Latch to test against before
+ * putting one in a real swap path, and a mainnet-only address book means they
+ * hand-type testnet addresses — which is precisely the drift this module was
+ * created to end.
+ *
+ * The real risk was never that a testnet is listed. It is that one gets
+ * SELECTED by a default nobody revisited. So the answer is a narrower list for
+ * the code paths where that would matter, rather than a smaller table that
+ * makes honest testing harder.
+ *
+ * `LATCH_DEPLOYMENTS[id].isMainnet` is the per-record form of the same fact.
+ */
+export const LATCH_MAINNET_CHAIN_IDS: readonly LatchChainId[] = LATCH_CHAIN_IDS.filter(
+  (id) => LATCH_DEPLOYMENTS[id].isMainnet,
+);
+
 /** Native currency per chain, split out for callers that want only this. */
 export const NATIVE_CURRENCY: Readonly<Record<LatchChainId, NativeCurrency>> = {
   4663: LATCH_DEPLOYMENTS[4663].nativeCurrency,

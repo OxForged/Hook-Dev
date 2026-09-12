@@ -524,9 +524,92 @@ export function hookPermissionState(
   return "Fresh";
 }
 
-/** Derived {@link RiskClass} of a record's recorded bitmap. */
-export function riskClassOf(record: Pick<LatchRecord, "permissions">): RiskClass {
-  return classifyRiskClass(record.permissions);
+// ---------------------------------------------------------------------------
+// Effective permissions
+// ---------------------------------------------------------------------------
+
+/**
+ * Where an effective bitmap came from. Mirrors the contract's `PermissionSource`
+ * enum, in its declaration order.
+ *
+ * This is the one enum whose zero value is also the most reassuring-looking, so
+ * it is the one most worth naming: `SelfReported` means nothing corroborates the
+ * bitmap, which a UI must say out loud rather than imply.
+ */
+export const PERMISSION_SOURCES = [
+  /** No live pool has attested. The bitmap is the hook's own account of itself. */
+  "SelfReported",
+  /** A live pool corroborates the self-report and adds nothing to it. */
+  "PoolAttested",
+  /** A live pool proved bits the hook did NOT self-report. Read that as a lie. */
+  "PoolAttestedDivergent",
+] as const;
+
+/** Provenance of an effective permission bitmap. */
+export type PermissionSource = (typeof PERMISSION_SOURCES)[number];
+
+/**
+ * Decodes the contract's `uint8` `PermissionSource`.
+ *
+ * @throws on an unknown value, for the same reason the other three axes do: a
+ * newer contract must fail loudly rather than be rendered as its safest member.
+ */
+export function permissionSourceFromUint8(value: number): PermissionSource {
+  const source = PERMISSION_SOURCES[value];
+  if (source === undefined) {
+    throw new Error(`invalid PermissionSource: ${value}`);
+  }
+  return source;
+}
+
+/** An effective bitmap and where it came from. Neither is safe to show alone. */
+export interface EffectivePermissions {
+  /** `permissions | attestedPermissions`, or the self-report when unattested. */
+  readonly permissions: number;
+  readonly source: PermissionSource;
+}
+
+/**
+ * The bitmap a consumer should act on, and its provenance.
+ *
+ * Mirrors `LatchRegistry.effectivePermissions` / `_effective`: the UNION of what
+ * the hook says about itself and what a live pool proved, never a choice between
+ * them, because each can be true of a different pool and only UNDERSTATING can
+ * hurt anybody.
+ *
+ * This is the whole point of the v2 registry. A hook can present the registry one
+ * bitmap and core another; classifying the self-report alone reproduces that
+ * spoof in TypeScript and renders `Passive` over a hook a live pool proved can
+ * take a cut of every swap.
+ */
+export function effectivePermissions(
+  record: Pick<LatchRecord, "permissions" | "attestedPermissions" | "attestationCount">,
+): EffectivePermissions {
+  /* attestationCount 0 means nothing has attested, so attestedPermissions is
+     ignored outright rather than trusted as a leftover from an earlier state —
+     the contract makes the same choice, and for the same reason. */
+  if (record.attestationCount === 0) {
+    return { permissions: record.permissions, source: "SelfReported" };
+  }
+  const attested = record.attestedPermissions;
+  return {
+    permissions: record.permissions | attested,
+    source: (attested & ~record.permissions) !== 0 ? "PoolAttestedDivergent" : "PoolAttested",
+  };
+}
+
+/**
+ * Derived {@link RiskClass} of a record's EFFECTIVE bitmap.
+ *
+ * Mirrors `LatchRegistry.riskClassOf`, and like it is never milder than either
+ * source alone. Pair it with {@link effectivePermissions}' `source` wherever a
+ * badge or class label is rendered: `Passive` on a self-report and `Passive` on
+ * an attested record are very different statements.
+ */
+export function riskClassOf(
+  record: Pick<LatchRecord, "permissions" | "attestedPermissions" | "attestationCount">,
+): RiskClass {
+  return classifyRiskClass(effectivePermissions(record).permissions);
 }
 
 /**
@@ -560,6 +643,12 @@ export type HookWarning =
   | "CanTrapLiquidity"
   /** Can refuse trades. */
   | "CanBlockSwaps"
+  /**
+   * A live pool proved permissions the hook did NOT report to the registry.
+   * The self-report understated what the code can do — treat the difference as
+   * deliberate until the steward explains it.
+   */
+  | "PermissionsDivergent"
   /** Nobody currently knows the hook's real bitmap; the recorded one is old. */
   | "PermissionsStale"
   /** The recorded bitmap is one no pool can use. */
@@ -583,8 +672,18 @@ export interface HookTrustSummary {
   readonly verification: Verification;
   /** Whether the registry still recommends it. */
   readonly listing: Listing;
-  /** What the code can do. Derived from the bitmap, not curated. */
+  /**
+   * What the code can do. Derived from the EFFECTIVE bitmap, not curated.
+   *
+   * Never render this without {@link HookTrustSummary.permissionSource}. The
+   * contract is explicit about it: `Passive` on a self-reported record and
+   * `Passive` on an attested one are two very different statements.
+   */
   readonly riskClass: RiskClass;
+  /** Whether any live pool corroborates the bitmap `riskClass` was derived from. */
+  readonly permissionSource: PermissionSource;
+  /** How many live pools have vouched. Zero means self-reported only. */
+  readonly attestationCount: number;
   /** How far the recorded bitmap can be trusted. */
   readonly permissionState: HookPermissionState;
   /**
@@ -605,7 +704,12 @@ export interface HookTrustSummary {
 
 /** Builds a {@link HookTrustSummary} from a record. */
 export function summarizeLatch(record: LatchRecord): HookTrustSummary {
-  const capabilities = describeCapabilities(record.permissions);
+  /* The EFFECTIVE bitmap, not the self-report. See `effectivePermissions`: a
+     hook that tells the registry it is harmless while a live pool proves it
+     takes a cut of every swap is the exact case the v2 registry exists for, and
+     summarising the self-report alone would render it `Passive`. */
+  const effective = effectivePermissions(record);
+  const capabilities = describeCapabilities(effective.permissions);
   const permissionState = hookPermissionState(record);
 
   const warnings: HookWarning[] = [];
@@ -613,6 +717,7 @@ export function summarizeLatch(record: LatchRecord): HookTrustSummary {
   if (capabilities.riskClass === "ValueExtracting") warnings.push("ValueExtracting");
   if (capabilities.canTrapLiquidity) warnings.push("CanTrapLiquidity");
   if (capabilities.canBlockSwaps) warnings.push("CanBlockSwaps");
+  if (effective.source === "PoolAttestedDivergent") warnings.push("PermissionsDivergent");
   if (permissionState === "Stale") warnings.push("PermissionsStale");
   if (permissionState === "Invalid") warnings.push("PermissionsInvalid");
   if (record.listing === "Deprecated") warnings.push("Deprecated");
@@ -623,6 +728,8 @@ export function summarizeLatch(record: LatchRecord): HookTrustSummary {
     verification: record.verification,
     listing: record.listing,
     riskClass: capabilities.riskClass,
+    permissionSource: effective.source,
+    attestationCount: record.attestationCount,
     permissionState,
     badgeEarned:
       record.verification === "Audited" &&
