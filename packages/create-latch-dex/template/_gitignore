@@ -1,0 +1,15 @@
+node_modules
+dist
+.vite
+*.tsbuildinfo
+
+# Never commit these. An RPC URL from a keyed provider embeds the credential in
+# its path, and a deployer key that reaches a remote must be rotated, not
+# deleted. Only .env.example belongs in git.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+keystore/
+broadcast/

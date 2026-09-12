@@ -622,6 +622,44 @@ irreversible half, so the rule is about ordering, not the roster.**
 `pendingBeneficiary` settled to dust on **both** currencies. Any UI offering the button
 must check these and refuse.
 
+### 3b. `CONFIG_DELAY_BLOCKS` is six minutes on Robinhood, not twelve hours
+
+`RevShareHook.sol:159` — `uint48 public constant CONFIG_DELAY_BLOCKS = 3600`, whose own
+docstring reads *"Roughly 12 hours at 12s blocks, or proportionally less on a faster chain -
+set by the deployer's chain choice, and documented rather than configurable so it cannot be
+shortened."*
+
+Robinhood produces a block every **0.102 s**, measured over 500,000 blocks (51,001 s). So:
+
+```
+3,600 blocks x 0.102 s = 367 seconds = 6.1 minutes
+```
+
+The docstring anticipated the direction and not the magnitude. 118x shorter is not
+"proportionally less" — it is the mechanism defeated. The delay exists so a pool owner
+cannot land a fee rise in the same block as a large trade, *"a sandwich the trader cannot
+price"*. Six minutes of public notice, on a chain where nobody is watching a mempool for
+`proposeConfig`, does not achieve that.
+
+Compounded by item 5: a matured proposal never expires, so the practical sequence is
+propose once, wait six minutes, and hold an armed 10% fee indefinitely for the moment a
+large trade appears.
+
+**Unfixable on the live hook** (`0x23CE34E8199927DD270dddd8579c947542bDE446`) because the
+value is a `constant` in immutable code. Mitigation is procedural and thin: monitor
+`ConfigProposed` on every pool that matters and treat one as an incident rather than a
+notification. The real fix is a redeploy in which this is a constructor argument validated
+against a WALL-CLOCK floor rather than a block count — see the same failure in
+`LaunchGuardHook` (`MAX_DECAY_BLOCKS` and `MAX_START_DELAY` are 1,000,000 blocks, ~139 days
+at 12 s, **28 hours** here, so a three-day fair launch reverts) and in `LaunchpadKit`, whose
+constructor rejected Robinhood's block time outright until it was fixed this week.
+
+**The general rule, which is the actually useful output: this codebase was written assuming
+12-second blocks, and every duration expressed in blocks is 118x short on this chain.**
+Grep for `constant` on anything named `_BLOCKS`, `_DELAY` or `_PERIOD` before deploying
+another contract here, and prefer a wall-clock parameter with a block-time argument over a
+block count.
+
 ### 4. `freezeConfig` is irreversible and cheaper than raising a fee
 
 `proposeConfig` costs 3600 blocks and two transactions. `freezeConfig` is one call,

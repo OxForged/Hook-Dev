@@ -1,0 +1,528 @@
+/* SPDX-License-Identifier: MIT
+   ============================================================================
+   Styles.
+
+   Every colour, radius and font reads a `--brand-*` custom property set by
+   `src/theme.ts` from `latch.config.ts`, so restyling this app is a config edit
+   rather than a search through a stylesheet.
+
+   ONE EXCEPTION, at the bottom: `.config-gate` carries literal colours. It is
+   the screen that renders when `latch.config.ts` is invalid, which is exactly
+   when the brand variables cannot be trusted to have sensible values. A config
+   error screen that inherits a broken palette is a config error screen nobody
+   can read.
+
+   The four data states (loading, error, empty, not configured) are styled to be
+   VISUALLY DISTINCT, not merely differently worded. A user who cannot tell "the
+   chain is unreachable" from "there is nothing here" has been told nothing.
+   ============================================================================ */
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--brand-bg);
+  color: var(--brand-text);
+  font-family: var(--brand-font);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+.mono {
+  font-family: var(--brand-mono);
+  font-size: 0.9em;
+}
+
+a {
+  color: var(--brand-accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------- shell --- */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--brand-border);
+  background: var(--brand-surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-logo {
+  height: 28px;
+  width: auto;
+}
+.brand-name {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.nav {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+.nav-link {
+  padding: 6px 12px;
+  border-radius: var(--brand-radius);
+  color: var(--brand-text-muted);
+}
+.nav-link:hover {
+  color: var(--brand-text);
+  background: var(--brand-surface-alt);
+  text-decoration: none;
+}
+.nav-link-active {
+  color: var(--brand-on-accent);
+  background: var(--brand-accent);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--brand-border);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--brand-text-muted);
+}
+.chip-block {
+  font-family: var(--brand-mono);
+  font-size: 12px;
+}
+.chip-block-error {
+  color: var(--brand-negative);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand-text-muted);
+}
+.dot-live {
+  background: var(--brand-positive);
+}
+
+.banner {
+  padding: 8px 24px;
+  font-size: 13px;
+  text-align: center;
+}
+.banner-testnet {
+  background: color-mix(in srgb, var(--brand-accent) 18%, transparent);
+  border-bottom: 1px solid var(--brand-border);
+}
+
+.main {
+  flex: 1;
+  padding: 32px 24px 64px;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 24px;
+  border-top: 1px solid var(--brand-border);
+  color: var(--brand-text-muted);
+  font-size: 13px;
+}
+.footer-links {
+  display: flex;
+  gap: 16px;
+}
+
+/* ----------------------------------------------------------------- page --- */
+
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.page-narrow {
+  max-width: 640px;
+}
+.page-head {
+  margin-bottom: 24px;
+}
+.page-head h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+}
+.page-sub {
+  margin: 0;
+  color: var(--brand-text-muted);
+}
+
+.panel,
+.card {
+  background: var(--brand-surface);
+  border: 1px solid var(--brand-border);
+  border-radius: var(--brand-radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.panel h2,
+.card-head h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 12px 0 0;
+  font-size: 14px;
+}
+.kv dt {
+  color: var(--brand-text-muted);
+}
+.kv dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--brand-border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--brand-text-muted);
+  white-space: nowrap;
+}
+.tag-decaying {
+  border-color: var(--brand-accent);
+  color: var(--brand-accent);
+}
+.tag-settled {
+  border-color: var(--brand-positive);
+  color: var(--brand-positive);
+}
+
+.muted {
+  color: var(--brand-text-muted);
+}
+
+/* ---------------------------------------------------------------- table --- */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.table th,
+.table td {
+  text-align: left;
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--brand-border);
+  vertical-align: top;
+}
+.table th {
+  color: var(--brand-text-muted);
+  font-weight: 500;
+  font-size: 13px;
+}
+.pair {
+  font-weight: 600;
+}
+
+.hook-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.capability-list {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--brand-text-muted);
+  font-size: 13px;
+}
+
+/* --------------------------------------------------------------- states ---
+   Four states, four visual treatments. See the header. */
+
+.state {
+  border-radius: var(--brand-radius);
+  padding: 16px 18px;
+  margin: 12px 0;
+  border: 1px solid var(--brand-border);
+  background: var(--brand-surface);
+}
+.state strong {
+  display: block;
+  margin-bottom: 4px;
+}
+.state-detail {
+  margin: 0;
+  color: var(--brand-text-muted);
+  overflow-wrap: anywhere;
+}
+.state-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--brand-text-muted);
+}
+
+.state-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--brand-text-muted);
+  border-style: dashed;
+}
+.state-error {
+  border-color: var(--brand-negative);
+  background: color-mix(in srgb, var(--brand-negative) 10%, var(--brand-surface));
+}
+.state-empty {
+  border-style: dashed;
+  text-align: center;
+  color: var(--brand-text-muted);
+}
+.state-unconfigured {
+  border-color: var(--brand-accent);
+  border-left-width: 4px;
+  background: color-mix(in srgb, var(--brand-accent) 8%, var(--brand-surface));
+}
+.state-ok {
+  border-color: var(--brand-positive);
+  background: color-mix(in srgb, var(--brand-positive) 10%, var(--brand-surface));
+}
+
+.warn-inline {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--brand-negative);
+}
+
+.provenance {
+  margin: 16px 0 0;
+  font-size: 12px;
+  color: var(--brand-text-muted);
+  border-top: 1px dashed var(--brand-border);
+  padding-top: 12px;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--brand-border);
+  border-top-color: var(--brand-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
+/* -------------------------------------------------------------- controls --- */
+
+.btn {
+  font: inherit;
+  padding: 8px 14px;
+  border-radius: var(--brand-radius);
+  border: 1px solid var(--brand-border);
+  background: var(--brand-surface-alt);
+  color: var(--brand-text);
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--brand-accent);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--brand-accent);
+  border-color: var(--brand-accent);
+  color: var(--brand-on-accent);
+  display: inline-block;
+  text-decoration: none;
+}
+.btn-primary:hover {
+  text-decoration: none;
+}
+.btn-ghost {
+  background: transparent;
+}
+
+/* ----------------------------------------------------------------- form --- */
+
+.form fieldset {
+  border: 1px solid var(--brand-border);
+  border-radius: var(--brand-radius);
+  padding: 16px 20px 20px;
+  margin: 0 0 16px;
+}
+.form legend {
+  padding: 0 8px;
+  color: var(--brand-text-muted);
+  font-size: 13px;
+}
+.form label {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+.form input,
+.form select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 12px;
+  font: inherit;
+  font-family: var(--brand-mono);
+  background: var(--brand-surface-alt);
+  color: var(--brand-text);
+  border: 1px solid var(--brand-border);
+  border-radius: var(--brand-radius);
+}
+.form input:focus,
+.form select:focus {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 1px;
+}
+.form small {
+  display: block;
+  margin-top: 6px;
+  color: var(--brand-text-muted);
+  font-size: 12px;
+}
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* ------------------------------------------------------------ disclosure --- */
+
+.disclosure {
+  margin-top: 24px;
+  padding: 18px 20px;
+  border: 1px solid var(--brand-border);
+  border-radius: var(--brand-radius);
+  background: var(--brand-surface);
+  font-size: 14px;
+}
+.disclosure h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.disclosure ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--brand-text-muted);
+}
+.disclosure li + li {
+  margin-top: 8px;
+}
+.disclosure strong {
+  color: var(--brand-text);
+}
+
+/* ----------------------------------------------------------- config gate --- */
+
+.config-gate {
+  max-width: 720px;
+  margin: 80px auto;
+  padding: 28px;
+  border: 1px solid var(--brand-negative, #d94a4a);
+  border-radius: 12px;
+  background: #16191e;
+  color: #f2f4f7;
+  font-family: system-ui, sans-serif;
+}
+.config-gate h1 {
+  margin-top: 0;
+  font-size: 20px;
+}
+.problem-list {
+  list-style: none;
+  padding: 0;
+}
+.problem-list li {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #262b33;
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    gap: 12px;
+  }
+  .nav {
+    order: 3;
+    flex-basis: 100%;
+    overflow-x: auto;
+  }
+  .kv,
+  .problem-list li {
+    grid-template-columns: 1fr;
+  }
+}
