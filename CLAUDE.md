@@ -382,9 +382,9 @@ Two rules to preserve:
    read. Note `settleBeneficiaries` does NOT revert when pointless — it returns early — so that
    job must read `pendingBeneficiary` first or it will pay gas to do nothing forever.
 
-**The `getEpoch` shape trap.** The two distributors have no common interface and no
-`kind()`. Both `Epoch` structs are nine all-static fields, so the positions line up and a
-single shared ABI **decodes without error while silently reinterpreting**:
+**The `getEpoch` shape trap.** Both `Epoch` structs are nine all-static fields, so the
+positions line up and a single shared ABI **decodes without error while silently
+reinterpreting**:
 
 | idx | SnapshotEpochDistributor | MerkleEpochDistributor |
 |---|---|---|
@@ -392,10 +392,25 @@ single shared ABI **decodes without error while silently reinterpreting**:
 | 5 | `timepoint` (uint48) | `closedAt` (uint64) |
 | 6 | `closedAt` (uint64) | `claimableAt` (uint64) |
 
-Indices 0-3, 7 and 8 do agree, which is why this stayed latent. Always probe first —
-`token()` answers only on snapshot, `challengeDelay()` only on merkle, exactly one must
-answer — then read through the matching ABI. Never guess: the wrong ABI returns nonsense,
-not an error.
+Indices 0-3, 7 and 8 do agree, which is why this stayed latent. Read through the matching
+ABI. Never guess: the wrong ABI returns nonsense, not an error.
+
+**Use `kind()`. The selector probe this section used to prescribe is obsolete and every
+consumer is still running it.** Both distributors now implement
+`IEpochDistributor.kind()` (`SnapshotEpochDistributor.sol:246`, `MerkleEpochDistributor.sol:357`),
+returning domain-separated constants. The old advice — call `token()`, call
+`challengeDelay()`, exactly one must answer — was a two-round-trip guess that happens to
+still resolve, and breaks the day a third distributor exposes a `token()` getter. Three
+places still do it, two of them carrying a comment asserting `kind()` does not exist:
+`packages/keeper/src/abi.ts:31` and `src/jobs/epochs.ts:98`,
+`packages/latch-ai/src/abi.ts:91`, and `apps/web/src/routes/dapp/lib/revshare.ts:780`
+(`probeDistributor`). Fix the comment when you fix the call.
+
+Also for the keeper: the rollover job's deadline arithmetic is now short by
+`ROOT_GRACE_PERIOD`. Harmless, because it simulates first and `NotExpiredYet` is a free
+read, but it should call `rolloverEligibleAt(id)` — the only view that knows which of the
+two clocks governs, since `cancelRoot` moves one of them and `getEpoch` does not record
+that it did.
 
 ### `packages/latch-ai` (LatchAI) — MIT
 
@@ -442,6 +457,116 @@ something to hand an autonomous process.
 - **Open, LOW** — `renounceOwnership` is not disabled on any RWA hook or on the oracle.
 - **Not yet run:** the RWA hooks have never been exercised under `FOUNDRY_PROFILE=legacy`, which
   the build-profile rules above require.
+
+
+---
+
+## Deployed and unfixable: the calls governance must never make
+
+These contracts are live and immutable on Robinhood Chain (4663). Nothing below can be
+patched. Each is a call governance is *able* to make, that no on-chain guard prevents, and
+whose consequence cannot be walked back. Every mitigation is procedural — which means it
+only works if it is written here rather than remembered.
+
+Regression guards: `packages/hooks-revshare/test/DeployedHazards.t.sol` (`test_HAZARD_*`).
+Those tests assert the CURRENT behaviour on purpose. If one starts failing against a future
+redeploy, that is the fix landing, and the matching rule below can go.
+
+### 1. `renounceOwnership()` — live on four contracts, no override anywhere
+
+A repo-wide grep finds zero overrides in `packages/*/src`. OpenZeppelin ships this on the
+premise that an owner who can no longer act is safer than one who can. That premise is
+inverted on all four.
+
+| Contract | Caller | What it destroys, permanently |
+|---|---|---|
+| `Vault` | Custody 48h | `registerApp` is the only `onlyOwner` function (`Vault.sol:41`). No new pool manager, no new app, ever. The protocol cannot be extended, only replaced. |
+| `CLPoolManagerOwner` / `BinPoolManagerOwner` | Custody 48h | `unpausePoolManager`, `setProtocolFeeController`, `transferPoolManagerOwnership` and the pausable-role grants are all `onlyOwner`. The worst is `transferPoolManagerOwnership`: the manager can never be moved to a replacement wrapper. |
+| `RevShareHook` | Policy 6h | `setPaused(false)` and `setGuardian` are gone. Pool owners, `claim`, `redeem` and `settleBeneficiaries` are unaffected — no user funds strand — but the global switch is lost in whatever position it was left. |
+
+**`pausePoolManager` is `onlyPausableRoleOrOwner`, not `onlyOwner`.** So a renounce does not
+brick pausing — it leaves the managers pausable by an Ops key and **unpausable by anyone**.
+That is worse than losing both, and a review that assumed `onlyOwner` got it backwards.
+
+**`RevShareHook.setPaused` is not `onlyOwner` either.** It compares against `owner()` by
+hand, so after a renounce it reverts `NotGuardianOrOwner()`, not
+`OwnableUnauthorizedAccount`. A monitor grepping for the OZ error will miss it.
+
+**Mitigation.** None in code. `renounceOwnership()` is on the permanent do-not-queue list
+for both timelocks, and a Safe signer seeing that selector should reject without discussion.
+The legitimate form of the same intent is `transferOwnership` — `Ownable2Step` everywhere,
+so it cannot land somewhere unreachable. **Every contract deployed from here on overrides
+`renounceOwnership` to revert;** `MerkleEpochDistributor` is the reference.
+
+### 2. `LatchTimelock.updateDelay(0)` — with nobody left to cancel it
+
+The tier floor is checked once, in the constructor (`LatchTimelock.sol:92`). OZ's
+`updateDelay` is `external virtual`, gated only on `sender == address(this)`, and
+re-validates nothing. `LatchTimelock` does not override it. One queued operation targeting
+the timelock itself sets `_minDelay = 0`, after which every later operation — `registerApp`
+included — executes in the block it is queued. The tier stops existing.
+
+**The sharp part.** `TimelockController` grants `CANCELLER_ROLE` to **proposers only**, and
+the Safe is the sole proposer. A 2-of-3 compromise that queues `updateDelay(0)` therefore
+buys the public 48 hours of *visibility* with **no party able to cancel**. The deploy
+script asserts PROPOSER and EXECUTOR and never looks at CANCELLER.
+
+**Mitigation, and it needs no redeploy.** Each timelock administers its own roles, so
+`grantRole(CANCELLER_ROLE, x)` is a normal queued operation. Cost, stated plainly: a
+canceller can veto any operation including honest ones, so this trades governance-liveness
+griefing against having no veto at all on a compromised Safe. The right holder is a key
+whose only failure mode is inaction. It fits the house rule, because cancelling is
+privilege *reduction*. Add a CANCELLER assertion to step 4 while doing it.
+
+### 3. `RevShareHook`: `beneficiaryBps > 0`, an empty roster, then `freezeConfig`
+
+`_validateParams` enforces the distributor invariant and not its beneficiary twin, and
+`setBeneficiaries` accepts a zero-length roster — despite the `InvalidBeneficiaries` doc
+comment claiming otherwise. With `_totalWeight == 0`, `settleBeneficiaries` **returns early
+rather than reverting**, so the pot accrues silently and no keeper log looks wrong.
+`freezeConfig` then removes the repair.
+
+**Without the freeze the pot is fine** — a roster set late collects everything that
+accrued, because the early return leaves the value in place. **The freeze is the
+irreversible half, so the rule is about ordering, not the roster.**
+
+**Rule.** Set the roster before the first swap. Never `freezeConfig` a pool with non-zero
+`beneficiaryBps` until all three hold: `getBeneficiaries` non-empty, `totalWeight > 0`, and
+`pendingBeneficiary` settled to dust on **both** currencies. Any UI offering the button
+must check these and refuse.
+
+### 4. `freezeConfig` is irreversible and cheaper than raising a fee
+
+`proposeConfig` costs 3600 blocks and two transactions. `freezeConfig` is one call,
+immediate, and permanently ends `proposeConfig`, `reduceFee`, `disable`,
+`setBeneficiaries` and `transferPoolOwnership` for that pool.
+
+That asymmetry is *correct* under this contract's own rule — delay belongs on escalation,
+never on reduction, and a freeze only reduces the owner's power. It is recorded because the
+consequence is irreversible while the friction is one click, and because it is what turns
+item 3 from a mistake into a permanent one. **A UI must confirm it the way it confirms a
+burn.**
+
+### 5. A matured proposal never expires, and `disable` does not clear it
+
+`reduceFee` and `disable` write `_configs` and never touch `_pending`; a matured proposal
+has no expiry; `applyPendingConfig` is permissionless. So a pool can emit
+`ConfigUpdated(feePips: 0, enabled: false)` — which every indexer reads as "revenue share
+off" — while a 10%/enabled proposal sits armed, applicable by anyone, at any time,
+including immediately in front of a large swap.
+
+**The bound, verified rather than assumed.** The cut lands on the unspecified currency and
+`CLHooks.afterSwap` does `delta = delta - hookDelta` (`CLHooks.sol:190`), so what a router
+measures against `amountOutMinimum` is already net of it (`CLRouterBase.sol:36`).
+`MAX_FEE_PIPS` is 10% and ordinary slippage tolerances are not, so a router trade reverts
+rather than paying. It bounds **nothing** for a caller taking its own vault lock, or one
+setting `amountOutMinimum = 0`.
+
+**Rule.** `disable` and `reduceFee` are not "off" — only `cancelPendingConfig` or
+`freezeConfig` clears a proposal. Any surface rendering a pool's cut MUST read
+`getPendingConfig` beside `getConfig` and show an armed matured proposal as armed. A screen
+showing only the live config is telling a trader something that can stop being true in the
+next block, for free, at anyone's option.
 
 ---
 
@@ -539,12 +664,25 @@ useless.
 | Both `LatchTimelock`s | `EXECUTOR_ROLE` | **`address(0)`** | Permissionless execution. Once an operation has survived its delay in public, anyone executing it is harmless, and the Safe stops being a liveness dependency. |
 | Both `LatchTimelock`s | OZ optional admin | **`address(0)`, hardcoded** | Not a constructor parameter, on purpose. An admin can grant roles directly, which is a permanent backdoor around every delay. |
 
+### Contracts with no privileged role, recorded so the absence is a decision
+
+An empty row is as much a decision as a tier, and this table is where it belongs — otherwise
+the next person to read these contracts finds no owner, assumes an oversight, and adds one.
+
+| Contract | Role | Assign to | Why |
+|---|---|---|---|
+| `LaunchGuardHook` | *none exists* | **n/a — do not add one** | Extends `BaseCLHook`; the only access control is `onlyPoolManager` on the callbacks. Its one authority is the per-pool `launchOwner`: first-claim, non-transferable, and powerless from `startBlock` onward. A compromised governance key reaches nothing here. Adding an owner to make it look governed would create the risk it does not currently have. |
+| `LaunchpadKit` | *none exists* | **n/a — do not add one** | Not `Ownable`, not `AccessControl`. Every constructor argument is immutable; no withdrawal, no pause, no upgrade, and it custodies nothing between transactions. The trade is real and accepted: no admin key also means no recovery, which is why the deploy scripts assert every argument instead of relying on a fix later. Native sent to it directly is unrecoverable. |
+| `LatchRegistry` listing steward for `LaunchGuardHook` | steward | **Ops** | Metadata only, and `CURATOR_ROLE` can reassign it. This is a runbook item, not a key: list the hook in the same session it is deployed, or a stranger can list the protocol's own hook first, with hostile metadata. |
+
 ### Pool-level — NOT ours, never assign these
 
 | Role | Held by |
 |---|---|
 | `RevShareHook.poolOwner(poolId)` | whoever created the pool — a third-party Latch deployer |
 | `MarketHoursModule` per-pool `issuer` | the pool's own issuer |
+| `LaunchpadKit` per-launch `operator` | whoever called `createLaunch`. Sole route to `reconfigureLaunch`, frozen at `startBlock`, not transferable. |
+| `LaunchGuardHook.launchOwner(poolId)` | the `LaunchpadKit` for pools it created; the first claimant otherwise. |
 
 These are set by pool creators through `configure` / `transferPoolOwnership`. Protocol governance
 has no claim on them and the deployment runbook must not touch them.
