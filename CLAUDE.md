@@ -314,6 +314,93 @@ Design consequence: the fee controller is a separate `onlyOwner` contract, so bu
 replaceable/upgradeable while the Vault stays immutable. It governs protocol revenue, so it sits
 behind the same multisig + timelock as `registerApp`.
 
+
+---
+
+## The product: Latch is infrastructure other people ship on
+
+Stated by the project owner, 2026-09-12, and it governs the architecture from here:
+
+> Developers should be able to launch a DEX and a launchpad from our code with simple
+> integration. There should also be a separate DEX and launchpad TEMPLATE they can take to
+> market in roughly one click — set the fee wallet, restyle the UI if they want, ship.
+
+This is a white-label play, not a destination app. Everything below follows from it.
+
+### It inverts the fork threat, and the revenue section above is now half wrong
+
+That section says the GPL means "anyone can fork LatchProtocol and redeploy with
+`protocolFee = 0`", and treats that as the constraint to design around. Under a white-label
+product, **forking is not the threat — forking IS the product.** The question stops being
+"how do we stop people redeploying our code" and becomes "how do we stay in the path of the
+people we are actively inviting to redeploy it".
+
+Those have different answers, and only one of them is enforceable.
+
+### Two deployment models. Default to the first, and it is not close.
+
+**SHARED CORE (default).** The developer does NOT deploy core. They deploy their own hook,
+their own launchpad kit and their own UI, pointed at the `Vault` and pool managers Latch
+already has deployed and verified on that chain. Their pools live in our Vault.
+
+- Cheaper and faster for them: no 19-contract deployment, no verification, no audit
+  question — they inherit contracts that are already live and already exercised.
+- **The protocol fee becomes enforceable.** `protocolFeeController` on a shared pool manager
+  is set by Latch governance and a tenant cannot change it. It is capped at
+  `MAX_PROTOCOL_FEE = 4000` pips (0.4%) by core, so it cannot become predatory either. This
+  is the only revenue lever in the system a tenant cannot simply edit out.
+- Liquidity and the registry compound: every tenant's pools are visible in one marketplace.
+
+**FULL FORK.** They deploy everything, owe nothing, and we have no path to revenue. The GPL
+permits it and we should say so plainly rather than pretend otherwise. Make it possible and
+make it the harder road: it is a legitimate choice for someone who wants sovereignty, and
+the people who want it were never going to pay.
+
+### What is actually defensible, ranked honestly
+
+The contracts are GPL and copyable. What is not copyable in an afternoon:
+
+1. **Deployed, verified core on N chains.** Nobody wants to redeploy and re-verify nineteen
+   contracts across fifteen chains. This is the moat, and it is made of operational work
+   rather than of code.
+2. **The registry and marketplace network effect.** A Latch listed in our registry is seen
+   by every tenant's UI. A fork starts with an empty registry.
+3. **The SDK, the docs and the default config.** Most people ship the default. Uniswap forks
+   overwhelmingly keep the original fee switch.
+4. **Being the venue.** Latch earns by being where launches happen, not by owning the only
+   code that could host one.
+
+A tenant CAN strip the Latch treasury out of a `RevShareHook` roster — it is their pool's
+config. Treat roster revenue as a default that most tenants keep, never as an enforced
+one, and never build a forecast that assumes otherwise.
+
+### Licensing, which decides what the template can even be
+
+The contracts are GPL-2.0-or-later and derivative contract work stays GPL. That is settled
+and not negotiable. But a tenant wanting to go to market needs to know exactly what they
+must open-source, and the answer differs by layer:
+
+| Layer | Licence | Why |
+|---|---|---|
+| Forked core / periphery / router | **GPL-2.0-or-later** | derivative of `infinity-core`. Non-negotiable. |
+| Our own hooks | GPL (they import core) | |
+| `packages/sdk`, types, interfaces | **MIT, independently authored** | already the rule above: a tenant must never have to import GPL code to build against us. |
+| **The UI template** | **MIT** | a frontend talks to contracts through an ABI. That is not linking and does not create a derivative work, so the template can be MIT and a tenant can close-source their fork of it. |
+
+If the UI template ever imports GPL Solidity or generated code derived from it, that
+analysis breaks. Keep the template's dependency on the protocol to the MIT SDK and ABIs.
+
+### What the template has to be, concretely
+
+One repository a developer clones or scaffolds, containing: the MIT UI, a single config
+file (chain, fee wallet, branding, which features are on), a deploy script that stands up
+their hook and launchpad against the shared core, and nothing else. If setting the fee
+wallet requires editing Solidity, the product has failed its own brief.
+
+**Design rule that follows: every tenant-configurable value is a constructor argument or a
+config entry, never a constant.** A tenant who has to fork a contract to change a fee
+address is a tenant who now maintains a Solidity fork, which is the opposite of one click.
+
 ---
 
 ## Naming: "Latch" is the product, "hook" is the integration point
