@@ -4,11 +4,13 @@ pragma solidity 0.8.26;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IHooks} from "infinity-core/src/interfaces/IHooks.sol";
-import {IPoolManager} from "infinity-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "infinity-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "infinity-core/src/types/PoolId.sol";
-import {Currency} from "infinity-core/src/types/Currency.sol";
 import {ParametersHelper} from "infinity-core/src/libraries/math/ParametersHelper.sol";
+
+import {PoolProof, IVaultAppRegistry} from "./libraries/PoolProof.sol";
+import {PermissionMath} from "./libraries/PermissionMath.sol";
+import {RegistryPaging} from "./libraries/RegistryPaging.sol";
 
 import {
     ILatchRegistry,
@@ -38,16 +40,6 @@ import {
     PERM_SWAP_CUT_MASK,
     PERM_BEFORE_MASK
 } from "./ILatchRegistry.sol";
-
-/// @notice The one thing this registry needs from the Vault.
-/// @dev Declared locally rather than importing `IVault` because upstream declares
-/// `isAppRegistered` as `external returns (bool)` — non-view — while the implementation is a
-/// public mapping getter and therefore genuinely `view`. Importing the upstream interface would
-/// force every read path here to be non-view for no reason. Never rename this function: it is the
-/// Vault's ABI.
-interface IVaultAppRegistry {
-    function isAppRegistered(address app) external view returns (bool);
-}
 
 /// @title LatchRegistry
 /// @notice The discovery and safety surface for LatchProtocol hooks.
@@ -188,6 +180,7 @@ interface IVaultAppRegistry {
 contract LatchRegistry is ILatchRegistry, AccessControl {
     using PoolIdLibrary for PoolKey;
     using ParametersHelper for bytes32;
+    using RegistryPaging for address[];
 
     /*//////////////////////////////////////////////////////////////
                                  ROLES
@@ -464,7 +457,7 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
 
         // The Vault is the trust anchor. Everything below reads state from `poolManager`, so if
         // this check is wrong nothing after it means anything.
-        if (!vault.isAppRegistered(poolManager)) revert UntrustedPoolManager(poolManager);
+        PoolProof.requireTrustedManager(vault, poolManager);
 
         if (_attestedPools[hook][poolId]) revert PoolAlreadyAttested(hook, poolId);
 
@@ -498,38 +491,18 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
     }
 
     /// @dev Resolve `poolId` on `poolManager` and return the bitmap that pool enforces.
-    /// Three independent checks, each closing a different way the lookup could be meaningless:
-    ///   1. the stored key names this manager — core's own `poolManagerMatch` guarantees it at
-    ///      initialization, so a mismatch means the entry was never written by `initialize`;
-    ///   2. the stored key hashes back to the id asked for — a manager that returned one fixed key
-    ///      for every id would fail here;
-    ///   3. the stored key's `hooks` is the hook being attested. An uninitialized slot returns the
-    ///      zero key, whose `hooks` is `address(0)`, and `register` already rejects `address(0)`,
-    ///      so an unused id can never attest anything.
+    ///
+    /// The proof itself lives in `PoolProof` because `LatchLaunchRegistry` rests on exactly the
+    /// same three checks, and this is the only load-bearing security logic either of them has —
+    /// two copies would be two chances to fix a bug in one and not the other. See that library for
+    /// what each check closes. `PoolProof`'s errors share their selectors with the ones declared on
+    /// `ILatchRegistry`, so nothing a consumer matches on changes.
+    ///
+    /// An uninitialized slot returns the zero key, whose `poolManager` is `address(0)`, so an
+    /// unused id fails the first check and can never attest anything.
     function _readPoolBitmap(address hook, address poolManager, bytes32 poolId) private view returns (uint16) {
-        (
-            Currency currency0,
-            Currency currency1,
-            IHooks hooks,
-            IPoolManager keyManager,
-            uint24 fee,
-            bytes32 parameters
-        ) = IPoolManager(poolManager).poolIdToPoolKey(PoolId.wrap(poolId));
-
-        if (address(keyManager) != poolManager) revert PoolNotFound(poolManager, poolId);
-
-        PoolKey memory key = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            hooks: hooks,
-            poolManager: keyManager,
-            fee: fee,
-            parameters: parameters
-        });
-        if (PoolId.unwrap(key.toId()) != poolId) revert PoolNotFound(poolManager, poolId);
-        if (address(hooks) != hook) revert PoolHookMismatch(poolId, hook, address(hooks));
-
-        return parameters.getHooksRegistrationBitmap();
+        PoolKey memory key = PoolProof.verifiedKeyFor(poolManager, poolId, hook);
+        return key.parameters.getHooksRegistrationBitmap();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -695,32 +668,21 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Whether a bitmap is one core would accept.
-    /// @dev Mirrors `BaseCLHook._validatePermissions`.
+    /// @dev Mirrors `BaseCLHook._validatePermissions`. The body lives in `PermissionMath` so the
+    /// launch index cannot end up describing the same pool's hook differently; these stay on the
+    /// ABI because the SDK, the lint package and the UI all call them.
     function isValidBitmap(uint16 permissions) public pure returns (bool) {
-        return permissions & PERM_RESERVED_BITS == 0 && _dependenciesSatisfied(permissions);
+        return PermissionMath.isValidBitmap(permissions);
     }
 
     /// @dev A returns-delta bit is meaningless without the callback that returns the delta.
     function _dependenciesSatisfied(uint16 p) private pure returns (bool) {
-        if (p & PERM_BEFORE_SWAP_RETURNS_DELTA != 0 && p & PERM_BEFORE_SWAP == 0) return false;
-        if (p & PERM_AFTER_SWAP_RETURNS_DELTA != 0 && p & PERM_AFTER_SWAP == 0) return false;
-        if (p & PERM_AFTER_ADD_LIQUIDITY_RETURNS_DELTA != 0 && p & PERM_AFTER_ADD_LIQUIDITY == 0) return false;
-        if (p & PERM_AFTER_REMOVE_LIQUIDITY_RETURNS_DELTA != 0 && p & PERM_AFTER_REMOVE_LIQUIDITY == 0) {
-            return false;
-        }
-        return true;
+        return PermissionMath.dependenciesSatisfied(p);
     }
 
     /// @notice Capability class of a bitmap. Derived, not curated — no role can change this.
     function classify(uint16 permissions) public pure returns (RiskClass) {
-        // Can take value out of a swap or a liquidity movement, or can refuse a withdrawal
-        // forever. Both end with a user unable to get their money back out.
-        if (permissions & PERM_RETURNS_DELTA_MASK != 0 || permissions & PERM_BEFORE_REMOVE_LIQUIDITY != 0) {
-            return RiskClass.ValueExtracting;
-        }
-        // Holds a veto over some action.
-        if (permissions & PERM_BEFORE_MASK != 0) return RiskClass.Restrictive;
-        return RiskClass.Passive;
+        return PermissionMath.classify(permissions);
     }
 
     /// @notice True if the hook can take a cut of every swap in its pool (bits 10 or 11).
@@ -915,7 +877,7 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
 
     /// @notice Page through every registered hook. Index positions never change.
     function listLatches(uint256 offset, uint256 limit) external view returns (address[] memory) {
-        return _page(_hookList, offset, limit);
+        return _hookList.page(offset, limit);
     }
 
     function submittedCount(address submitter) external view returns (uint256) {
@@ -927,19 +889,7 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
         view
         returns (address[] memory)
     {
-        return _page(_submitted[submitter], offset, limit);
-    }
-
-    function _page(address[] storage list, uint256 offset, uint256 limit) private view returns (address[] memory page) {
-        uint256 length = list.length;
-        if (offset > length) revert InvalidRange();
-        // `limit = type(uint256).max` is the natural "give me the rest" idiom, so clamp before
-        // adding rather than letting checked arithmetic panic on it.
-        uint256 end = limit > length - offset ? length : offset + limit;
-        page = new address[](end - offset);
-        for (uint256 i; i < page.length; ++i) {
-            page[i] = list[offset + i];
-        }
+        return _submitted[submitter].page(offset, limit);
     }
 
     /*//////////////////////////////////////////////////////////////
