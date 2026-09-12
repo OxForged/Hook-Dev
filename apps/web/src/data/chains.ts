@@ -149,7 +149,7 @@ export const ROBINHOOD_CONTRACTS: readonly DeployedContract[] = [
   { name: 'LatchProtocolFeeController', address: '0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c' },
   { name: 'LatchRegistry', address: '0xb2c8BB7473A09b0906f192D69e30D7362fA988CC' },
   { name: 'RevShareHook', address: '0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2' },
-  { name: 'LatchTimelock · custody 48h', address: '0x3ae354e2CdFB9cB855Aba41C825f6Ee53F28E119' },
+  { name: 'LatchTimelock · custody 48h', address: '0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119' },
   { name: 'LatchLaunchRegistry', address: '0x6D10B4CeDb53aD50c5A1D83f27fcE9c5C3b15c94' },
   { name: 'LaunchGuardHook', address: '0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c' },
   { name: 'LaunchpadKit', address: '0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7' },

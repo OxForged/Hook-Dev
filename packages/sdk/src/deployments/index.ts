@@ -336,7 +336,7 @@ export const LATCH_DEPLOYMENTS: Readonly<Record<LatchChainId, LatchDeployment>> 
        Retired: registry 0xE4395085…, revShareHook 0x23CE34E8…, timelockCustody
        0x63F08A69…. The LTT1/LTT2 pool stays bound to the OLD RevShareHook
        forever, because poolKey.hooks is part of the pool id. */
-timelockCustody: "0x3ae354e2CdFB9cB855Aba41C825f6Ee53F28E119",
+timelockCustody: "0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
     timelockPolicy: "0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A",
 
     registry: "0xb2c8BB7473A09b0906f192D69e30D7362fA988CC",
