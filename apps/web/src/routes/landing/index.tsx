@@ -1,7 +1,7 @@
 import { Activity } from './Activity'
 import { Hero } from './Hero'
 import { LiquidityFlow } from './LiquidityFlow'
-import { Chains, CtaPanel, Features, HowItWorks, RevenueShare, UseCases } from './Sections'
+import { CtaPanel } from './Sections'
 import { SiteFooter } from './SiteFooter'
 import { SiteHeader } from './SiteHeader'
 import { StatsStrip } from './StatsStrip'
@@ -45,16 +45,30 @@ export default function LandingPage() {
   return (
     <div className={styles['page']}>
       <SiteHeader />
+      {/* CUT FROM TEN TO FIVE, 2026-09-12.
+          
+          What survives is what MOVES or what is READ FROM CHAIN: the hero's
+          floating satellites, StatsStrip's counters, LiquidityFlow's split bar,
+          Activity's series and gauge — plus the closing CtaPanel, which is not
+          animated but is the only thing on the page asking for a decision.
+
+          Removed: UseCases, RevenueShare, HowItWorks, Features, Chains. Four of
+          the five were explanatory prose with a scroll-reveal fade and nothing
+          else; Features and Chains had no motion at all. UseCases overlapped
+          LiquidityFlow, which shows the same thing with real numbers instead of
+          describing it.
+
+          The components are NOT deleted — they are still exported from
+          Sections.tsx and one line each puts them back. Deleting them would
+          make this a decision somebody has to redo rather than reverse, and
+          nothing here has been live long enough to be sure. Chains in
+          particular carries real deployment facts; if the page needs them
+          again, that is where they are. */}
       <main>
         <Hero />
         <StatsStrip />
         <LiquidityFlow />
         <Activity />
-        <UseCases />
-        <RevenueShare />
-        <HowItWorks />
-        <Features />
-        <Chains />
         <CtaPanel />
       </main>
       <SiteFooter />
