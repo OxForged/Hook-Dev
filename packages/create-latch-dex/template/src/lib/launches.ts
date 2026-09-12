@@ -16,9 +16,12 @@
  * against a hard cap, because there is no cap to progress toward. What exists
  * is a schedule, a current fee, and whether the first swap has happened.
  *
- * `@latchprotocol/widgets` also exports a `LaunchWidget`. It is bound to a
- * PROPOSED sale interface that no deployed Latch contract implements, so it is
- * deliberately not used here. Everything below is encoded against the real
+ * `@latchprotocol/widgets` also exports a `LaunchWidget`. It USED to be bound
+ * to a proposed sale interface that no deployed Latch contract implements,
+ * which is why this file exists. That has since been fixed — the widget now
+ * reads LaunchGuardHook directly — so a tenant who wants the packaged surface
+ * can use it, and this module stays as the unpackaged version for anyone who
+ * wants to render the schedule their own way. Everything below is against the real
  * `LAUNCHPAD_KIT_ABI` and `LAUNCH_GUARD_HOOK_ABI` from `@latchprotocol/sdk`.
  */
 

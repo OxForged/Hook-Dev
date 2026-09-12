@@ -88,6 +88,7 @@ export default defineLatchDex({
        There is no shared instance on any chain yet; see README.md
        § "The launchpad half is not live yet". */
     launchpadKit: null,
+    launchGuardHook: null,
 
     /* Extra RPC URLs, tried before the SDK's probed public list. A keyed
        provider embeds its credential in the path, so read it from the

@@ -86,7 +86,12 @@ function WidgetLayer({ children }: { children: ReactElement }): ReactElement {
         binPositionManager: cfg.contracts.binPositionManager,
         permit2: cfg.contracts.permit2,
         quoter: cfg.contracts.clQuoter,
-        ...(cfg.launchpadKit === null ? {} : { launchpad: cfg.launchpadKit }),
+        /* `launchGuardHook`, not `launchpad`, and not the kit. The old line
+           passed LaunchpadKit as `contracts.launchpad`, which the widget then
+           called a token-sale ABI against — the kit implements no such thing.
+           The widget now binds to LaunchGuardHook, which is the contract that
+           actually holds a launch's schedule. */
+        ...(cfg.launchGuardHook === null ? {} : { launchGuardHook: cfg.launchGuardHook }),
       },
     }),
     [cfg],

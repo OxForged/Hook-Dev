@@ -64,6 +64,20 @@ export interface ChainConfigInput {
    * shared instance on your chain, or from your own deployment when you run one.
    */
   readonly launchpadKit: Address | null;
+  /**
+   * The LaunchGuardHook a launch pool has attached.
+   *
+   * Separate from `launchpadKit` because they answer different questions: the
+   * kit CREATES a launch, the hook IS the launch — it holds the fee schedule
+   * and the start block, and it is what `LaunchWidget` reads. A chain can have
+   * the kit without the hook, or a tenant can point at a hook whose pools were
+   * created some other way.
+   *
+   * `null` means the launch surfaces render "not configured" rather than
+   * guessing an address. That is the correct value on Robinhood today: the hook
+   * exists only as a dry run there.
+   */
+  readonly launchGuardHook: Address | null;
 
   /**
    * Extra RPC URLs, tried before the SDK's probed public list.
