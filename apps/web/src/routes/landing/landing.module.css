@@ -1918,7 +1918,15 @@ span.chainMark {
    The reference is desktop-first. Multi-column grids stack, nothing scrolls
    the page horizontally at 360px, wide blocks scroll in their own container. */
 
-@media (max-width: 1040px) {
+/* 1278px, not 1040px. The original intent was "stack once the section's
+   content measure drops below about 960px", and while the page owned the
+   viewport those were the same number. With the 238px rail the content column
+   is `100vw - 238px`, so the same measure is reached at 1278px of viewport.
+   Between 1041 and 1278 — an ordinary laptop — the hero was holding two
+   columns with a 460-520px fixed-height .graph in a ~445px track, and
+   .activityGrid was holding two in a 780px measure. Everything below 861px is
+   already inside this range, so widening the block is the whole fix. */
+@media (max-width: 1278px) {
   .hero {
     grid-template-columns: minmax(0, 1fr);
     gap: 40px;
@@ -2314,8 +2322,23 @@ span.chainMark {
   /* Top only, matching .section. This was the one surviving block padding
      BOTH ends — its 104px bottom met the next section's 96px top and produced
      the 200px trough that read as a broken page rather than a generous one. */
-  padding: clamp(32px, 4vw, 56px) 0 0;
+  padding: clamp(32px, 4vw, 56px) var(--gutter-landing) 0;
   border-top: 1px solid var(--hairline);
+
+  /* THE MEASURE, which this section never had. Every other block on the page
+     — .hero, .statsGrid, .statsNote, .section, .ctaSection, .footer — is
+     content-box against var(--max-landing). This one was `padding: … 0` and
+     nothing else, so it ran the full width of the column while its neighbours
+     sat at 1120px centred. On a 1920 screen that is a 560px difference between
+     one section's edges and the next's.
+
+     It also produced height, which is the part that reads as a gap: .flowSvg
+     is `width: 100%; height: auto` over a 760x340 viewBox, so a wider canvas
+     is a taller canvas, and the .flowControls column beside it ran out of
+     content hundreds of pixels before the drawing ran out of height. */
+  box-sizing: content-box;
+  max-width: var(--max-landing);
+  margin-inline: auto;
 }
 
 .flowHead {

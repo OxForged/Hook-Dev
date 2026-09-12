@@ -424,15 +424,45 @@
 .dapp-microlabel--tight { letter-spacing: 0.14em; }
 
 .dapp-stack { display: flex; flex-direction: column; gap: 14px; }
-.dapp-row { display: grid; gap: 14px; }
+
+/* `align-items: start`, and the fr ratios say why.
+
+   Every `.dapp-row--*` below is a WIDE side and a NARROW side, and the two are
+   never the same kind of thing: a block chart beside an activity feed
+   (dashboard), a column chart beside a donut and a bar list (analytics), a
+   pool-activity card beside four rows of pool facts (pool), a registration
+   form beside a transaction log (deploy). A grid row defaults to `stretch`, so
+   whichever of the pair the chain gave less data to grows to match the other
+   and carries the difference as blank panel under its last line — hundreds of
+   pixels on a young deployment, where the short side is usually an empty
+   state that is one sentence long.
+
+   Matching heights is the right default for a row of PEERS — see
+   `.dapp-grid--latches` and `.lx-grid`, which keep it deliberately. It is the
+   wrong default the moment the two children answer different questions.
+
+   Harmless where a child is a `.dapp-stack`: that is a column flexbox, so its
+   own children never absorb the extra height either way. */
+.dapp-row { display: grid; gap: 14px; align-items: start; }
 .dapp-row--dashboard { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); margin-top: 14px; }
 .dapp-row--pool { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); margin-top: 14px; }
 .dapp-row--analytics { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }
 .dapp-row--deploy { grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr); gap: 16px; }
 
 .dapp-grid { display: grid; gap: 14px; }
+
+/* Stretch stays here on purpose. `--latches` is a wall of one repeated card,
+   all carrying the same fields off the same registry read, so equal heights
+   are what makes it read as a wall rather than a ragged pile. */
 .dapp-grid--latches { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-top: 16px; }
-.dapp-grid--settings { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+
+/* `--settings` is the opposite case and needs `start`. Its two children are
+   the Preferences card — one theme toggle, one sentence, about five lines —
+   and a `.dapp-stack` holding the network picker (two chain groups, a bar list
+   of RPC counts, two notes) plus the selected-chain card with its gauge.
+   Stretched, Preferences grew to the full height of that stack and rendered as
+   a mostly empty panel several hundred pixels tall. */
+.dapp-grid--settings { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
 
 .dapp-dot {
   display: inline-block;
@@ -2857,6 +2887,21 @@ span.dapp-net-chip__mark {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-top: 14px;
+  /* The four cards are not peers, and only one of them is short by accident.
+     ChainStatusCard draws a 132px gauge plus a three-line caption and three
+     stats; GovernanceCard next to it is four stats and a note. VaultHoldings
+     is one row per token the vault holds — two today — while RecentSwaps is a
+     list that grows with the chain. Under the default `stretch` the shorter
+     card in each row inflated to its neighbour's height, and because
+     `.lc-card` pins its content to the top (below), the difference rendered as
+     bare panel: the exact "few lines then several hundred pixels of nothing"
+     shape this pass is fixing.
+
+     `align-content: start` on the card is why the gap was so visible, not why
+     it existed. It stays — it is still correct for the sticky `.lx-rail`
+     sibling pattern and costs nothing here — but the height now comes from
+     the content instead of from the row. */
+  align-items: start;
 }
 
 .lc-card { display: grid; align-content: start; gap: 14px; }
