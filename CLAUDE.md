@@ -752,9 +752,19 @@ Every privileged role in the system, and what it must be assigned to. This table
 ownership was previously decided per-script at deploy time, which is how a Vault ends up owned by
 an EOA on a chain holding real funds.
 
-**Tiers.** `Custody` = the 48h `LatchTimelock`. `Policy` = the 6h `LatchTimelock`. `Safe` = the
-governance multisig directly, no delay. `Ops` = a hot operational key or small ops multisig,
-deliberately NOT timelocked.
+**Tiers, revised 2026-09-12.** `Custody` = the 48h `LatchTimelock`. `Safe` = the governance
+multisig directly, no delay. `Ops` = a hot operational key or small ops multisig, deliberately
+NOT timelocked.
+
+**There is no longer a Policy tier.** The 6h timelock is not being redeployed, and everything
+this table previously assigned to it now sits with the Safe. Two reasons. Reality had already
+drifted there — `hasRole(DEFAULT_ADMIN_ROLE, Safe)` reads true on the live registry while the
+policy timelock holds nothing at all. And the team is one person: a delay on reversible actions
+that custody nothing buys almost no safety and costs real agility. Delay is kept exactly where
+an action cannot be undone.
+
+The `POLICY_MIN_DELAY` floor stays in `LatchTimelock` so the tier can return when there is a
+team to check. It is a deployment decision, not a code change.
 
 The rule that decides the column: **delay scales with how hard the action is to undo, and delay
 never sits on privilege REDUCTION.** Anything whose only power is to make the protocol take less,
@@ -769,25 +779,26 @@ useless.
 | `CLPoolManager` / `BinPoolManager` | `owner` | **Custody** | Held via the `*PoolManagerOwner` wrappers. Fee and pause authority over every live pool. |
 | `CLPoolManagerOwner` / `BinPoolManagerOwner` | `owner` | **Custody** | The wrapper is the real authority; owning it is owning the manager. |
 | `PausableRole.hasPausableRole` | pausable role | **Ops** | Can only pause. A delay here means the pause arrives after the incident. |
-| `LatchProtocolFeeController` | `owner` | **Policy** | Fee changes are reversible and occasionally need to answer market conditions. |
+| `LatchProtocolFeeController` | `owner` | **Safe** | Fee changes are reversible and occasionally need to answer market conditions. |
 | `LatchProtocolFeeController` | guardian | **Ops** | May only disable fees. Can never enable, raise, or reconfigure. Do not add powers to it. |
-| `LatchRegistry` | `DEFAULT_ADMIN_ROLE` | **Policy** | Grants/revokes curator and guardian. Escalation, but reversible and custodies nothing. Judgement call, not derived — revisit if the registry ever gates funds. |
+| `LatchRegistry` | `DEFAULT_ADMIN_ROLE` | **Safe** | Grants/revokes curator and guardian. Escalation, but reversible and custodies nothing. Judgement call, not derived — revisit if the registry ever gates funds. |
 | `LatchRegistry` | `CURATOR_ROLE` | **Ops** | Listing throughput. A timelock on curation stalls the marketplace. |
 | `LatchRegistry` | `GUARDIAN_ROLE` | **Ops** | Flagging a malicious Latch must be immediate. |
 | `ManualPriceBandOracle` | `owner` | **Custody** | The owner is EXEMPT from `maxPublisherDeviationBps` and can move the reference — and therefore the band — arbitrarily. This is a price-manipulation key, not a config key. |
 | `ManualPriceBandOracle` | `isPublisher` | **Ops (bounded)** | Bounded per-update by `maxPublisherDeviationBps`. **Set `minPublisherInterval` non-zero on any live deployment** or the bound can be walked over many txs. |
-| `PythPriceBandAdapter` | `owner` | **Policy** | `refresh()` is permissionless; the owner only configures. |
-| `AllowlistComplianceOracle` | `owner` | **Policy** | Allowlist edits are reversible. |
-| `MarketHoursHook` | `owner` | **Policy** | Calendar config is reversible. |
-| `PermissionedPoolHook` | `owner` | **Policy** | Reversible. |
-| `RevShareHook` (protocol instance) | `owner` | **Policy** | Global pause and guardian appointment only. Cannot reach user funds. |
+| `PythPriceBandAdapter` | `owner` | **Safe** | `refresh()` is permissionless; the owner only configures. |
+| `AllowlistComplianceOracle` | `owner` | **Safe** | Allowlist edits are reversible. |
+| `MarketHoursHook` | `owner` | **Safe** | Calendar config is reversible. |
+| `PermissionedPoolHook` | `owner` | **Safe** | Reversible. |
+| `RevShareHook` (protocol instance) | `owner` | **Safe** | Global pause and guardian appointment only. Cannot reach user funds. |
 | `RevShareHook` | guardian | **Ops** | May only pause, never unpause. |
-| `MerkleEpochDistributor` | `owner` | **Policy or Safe — NEVER Custody** | `postRoot` gates holder claims: `claim` reverts `RootNotPosted` until it lands. On the 48h tier every epoch's payout waits two days behind a governance queue. Posting a root is operational, and `cancelRoot` is its undo. |
+| `MerkleEpochDistributor` | `owner` | **Safe — NEVER Custody** | `postRoot` gates holder claims: `claim` reverts `RootNotPosted` until it lands. On the 48h tier every epoch's payout waits two days behind a governance queue. Posting a root is operational, and `cancelRoot` is its undo. |
 | `MerkleEpochDistributor` | guardian | **Ops** | `cancelRoot` during the challenge window only. |
-| `CLPositionDescriptorOffChain` | `owner` | **Policy** | Metadata URI. Cosmetic. |
-| Both `LatchTimelock`s | `PROPOSER_ROLE` | **Safe** | The multisig is what makes the delay mean anything. A timelock whose sole proposer is one EOA delays that EOA and stops nobody else. |
-| Both `LatchTimelock`s | `EXECUTOR_ROLE` | **`address(0)`** | Permissionless execution. Once an operation has survived its delay in public, anyone executing it is harmless, and the Safe stops being a liveness dependency. |
-| Both `LatchTimelock`s | OZ optional admin | **`address(0)`, hardcoded** | Not a constructor parameter, on purpose. An admin can grant roles directly, which is a permanent backdoor around every delay. |
+| `CLPositionDescriptorOffChain` | `owner` | **Safe** | Metadata URI. Cosmetic. |
+| The `LatchTimelock` | `PROPOSER_ROLE` | **Safe** | The multisig is what makes the delay mean anything. A timelock whose sole proposer is one EOA delays that EOA and stops nobody else. |
+| The `LatchTimelock` | `EXECUTOR_ROLE` | **`address(0)`** | Permissionless execution. Once an operation has survived its delay in public, anyone executing it is harmless, and the Safe stops being a liveness dependency. |
+| The `LatchTimelock` | `CANCELLER_ROLE` | **A separate cancel-only key** | OpenZeppelin grants CANCELLER to proposers ONLY, so with the Safe as sole proposer a compromised Safe queueing `updateDelay(0)` bought 48h of public visibility with nobody able to cancel — an announcement, not a defence. A dedicated canceller is the ideal key for a solo operator because its only power is refusal: losing it costs nothing and stealing it achieves nothing beyond griefing. Constructor argument, rejects `address(0)`, and asserted after deploy — the original script checked PROPOSER and EXECUTOR and never looked at CANCELLER, which is how the gap survived the first deployment. |
+| The `LatchTimelock` | OZ optional admin | **`address(0)`, hardcoded** | Not a constructor parameter, on purpose. An admin can grant roles directly, which is a permanent backdoor around every delay. |
 
 ### Contracts with no privileged role, recorded so the absence is a decision
 
