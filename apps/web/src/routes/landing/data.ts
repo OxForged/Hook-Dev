@@ -126,18 +126,32 @@ export const LINKS = {
 
 export interface HeroNode {
   readonly label: string
+  /**
+   * Required, not optional.
+   *
+   * Every one of these tiles used to render the same diamond, which is a
+   * placeholder wearing the confidence of a finished design: six satellites a
+   * reader cannot tell apart communicate nothing except that something is
+   * missing. Making the field required means a seventh category cannot be added
+   * without deciding what it looks like.
+   *
+   * These are CATEGORIES, not vendors. There is no company mark for "perps",
+   * and CLAUDE.md's rule stands — never draw an approximation of somebody
+   * else's logo. Each glyph depicts the thing itself.
+   */
+  readonly icon: import('../../components/NavIcon').IconName
   /** Percentage offsets inside the 520px graph box. */
   readonly x: number
   readonly y: number
 }
 
 export const HERO_NODES: readonly HeroNode[] = [
-  { label: 'LAUNCHPADS', x: 20, y: 4 },
-  { label: 'STOCK PAIRS', x: 74, y: 10 },
-  { label: 'RWA', x: 80, y: 46 },
-  { label: 'PERPS', x: 70, y: 84 },
-  { label: 'DEX', x: 8, y: 78 },
-  { label: 'AMM', x: 0, y: 40 },
+  { label: 'LAUNCHPADS', x: 20, y: 4, icon: 'launch' },
+  { label: 'STOCK PAIRS', x: 74, y: 10, icon: 'stocks' },
+  { label: 'RWA', x: 80, y: 46, icon: 'rwa' },
+  { label: 'PERPS', x: 70, y: 84, icon: 'perps' },
+  { label: 'DEX', x: 8, y: 78, icon: 'dex' },
+  { label: 'AMM', x: 0, y: 40, icon: 'amm' },
 ]
 
 /* ------------------------------------------------- verified protocol facts */

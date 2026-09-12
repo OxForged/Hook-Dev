@@ -612,12 +612,12 @@
   box-shadow: var(--sh-node);
 }
 
-.diamond {
-  width: 16px;
-  height: 16px;
-  border: 1.5px solid var(--signal-blue);
-  border-radius: 4px;
-  transform: rotate(45deg);
+/* Replaced the `.diamond` placeholder, which drew one rotated square for all
+   six categories. The glyphs are strokes on `currentColor`, so the tile sets
+   the colour once here rather than each icon carrying its own. */
+.graphNodeTile svg {
+  color: var(--signal-blue);
+  opacity: 0.92;
 }
 
 .graphNodeLabel {

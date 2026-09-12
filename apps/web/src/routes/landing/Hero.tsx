@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { NavIcon } from '../../components/NavIcon'
 import { HERO_NODES, LINKS } from './data'
 import styles from './landing.module.css'
 import { cx } from './ui'
@@ -57,7 +58,9 @@ export function Hero() {
             }}
           >
             <div className={styles['graphNodeTile']}>
-              <div className={styles['diamond']} />
+              {/* aria-hidden: the label beneath already names the category, so
+                  announcing the glyph too would read it twice. */}
+              <NavIcon name={node.icon} size={22} />
             </div>
             <div className={styles['graphNodeLabel']}>{node.label}</div>
           </div>

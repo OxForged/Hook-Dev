@@ -39,8 +39,68 @@ export type IconName =
   | 'governance'
   | 'quest'
   | 'terminal'
+  /* Hero category glyphs, added 2026-09-12. The hero drew the SAME diamond for
+     all six market categories, which is a placeholder wearing the confidence of
+     a finished design — six tiles a reader cannot tell apart say nothing at all.
+     These are CATEGORIES, not companies: there is no vendor mark for "perps",
+     and CLAUDE.md forbids drawing an approximation of anybody's logo, so each is
+     an honest custom glyph for the thing itself. */
+  | 'amm'
+  | 'dex'
+  | 'perps'
+  | 'rwa'
+  | 'stocks'
 
 const PATHS: Record<IconName, React.ReactNode> = {
+  /* The constant-product curve itself. x*y=k is the one shape that means AMM
+     and nothing else — a coin pair or a droplet would mean liquidity generally. */
+  amm: (
+    <>
+      <path d="M4 20C4 11 11 4 20 4" />
+      <path d="M4 4h0.01" />
+      <path d="M4 20h16" />
+      <path d="M4 20V4" />
+    </>
+  ),
+  /* Two parties trading: nodes joined across a divide. Deliberately not the
+     swap arrows, which already mean "perform a swap" in the nav. */
+  dex: (
+    <>
+      <circle cx="6" cy="12" r="2.6" />
+      <circle cx="18" cy="12" r="2.6" />
+      <path d="M8.6 12h6.8" />
+      <path d="M6 9.4V4.5" />
+      <path d="M18 14.6v4.9" />
+    </>
+  ),
+  /* A candle with wicks running past the frame — a position that does not
+     expire, which is the whole of what "perpetual" means. */
+  perps: (
+    <>
+      <path d="M8 3v18" />
+      <rect x="5.4" y="7.5" width="5.2" height="9" />
+      <path d="M17 3v18" />
+      <rect x="14.4" y="11" width="5.2" height="6" />
+    </>
+  ),
+  /* A building. Real-world assets are the things with deeds and coupons, and a
+     facade reads that way faster than any abstraction. */
+  rwa: (
+    <>
+      <path d="M3.5 9.5 12 4l8.5 5.5" />
+      <path d="M5.5 9.5v9M11 9.5v9M13 9.5v9M18.5 9.5v9" />
+      <path d="M3 20.5h18" />
+    </>
+  ),
+  /* Two trend lines diverging — a spread. A stock PAIR is the relationship
+     between two instruments, not one line going up. */
+  stocks: (
+    <>
+      <path d="M3.5 20.5h17" />
+      <path d="M5 16l4-5 3.5 3L19 5" />
+      <path d="M5 8.5l4 3 3.5-1.5L19 15.5" />
+    </>
+  ),
   /* Two arrows passing — the universal shape for an exchange, and deliberately
      not a pool or a pair of coins, both of which already mean something here. */
   swap: (
