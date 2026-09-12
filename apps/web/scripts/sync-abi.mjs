@@ -12,6 +12,26 @@ mkdirSync(out, { recursive: true })
 
 const SOURCES = [
   ['registry', 'packages/registry/foundry-out/LatchRegistry.sol/LatchRegistry.json'],
+
+  /* The swap path. Three contracts, and the reason each is generated rather
+     than hand-typed is the same in every case: the calldata is nested and the
+     revert surface is wide, so a stale entry would not fail loudly — it would
+     encode something the router decodes as a DIFFERENT action.
+
+     · universalRouter — `execute(bytes commands, bytes[] inputs, uint256
+       deadline)`. The ABI also carries all 44 custom errors the router and the
+       periphery it inherits can throw (TooLittleReceived, ExecutionFailed,
+       DeltaNotPositive…). viem can only NAME a revert when the error is in the
+       ABI it was handed, and "TooLittleReceived(min, got)" is a usable message
+       where a bare 0x-blob is not.
+     · clQuoter — quoteExactInputSingle / quoteExactOutputSingle. Not `view`:
+       both revert with the answer, so they must be simulated, never read.
+     · permit2 — IAllowanceTransfer, the canonical Permit2 interface. The
+       router pays the vault via `PERMIT2.transferFrom`, so a trade needs BOTH
+       an ERC-20 approval to Permit2 and a Permit2 allowance to the router. */
+  ['universalRouter', 'packages/router/foundry-out/UniversalRouter.sol/UniversalRouter.json'],
+  ['clQuoter', 'packages/periphery/foundry-out/CLQuoter.sol/CLQuoter.json'],
+  ['permit2', 'packages/router/foundry-out/IAllowanceTransfer.sol/IAllowanceTransfer.json'],
 ]
 
 // Foundry does NOT delete artifacts for source files that no longer exist. When

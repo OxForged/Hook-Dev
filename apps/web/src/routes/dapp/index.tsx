@@ -7,6 +7,7 @@
    Mounted by src/App.tsx at /app/*; this module owns everything beneath that:
 
      /app                        Dashboard
+     /app/swap                   Swap — quote and trade through a live pool
      /app/marketplace            Latch Marketplace
      /app/marketplace/:address   Latch Detail — one Latch, in full
      /app/ecosystem              Ecosystem — third-party projects building on Latch
@@ -58,6 +59,7 @@ import ProtocolEpochs from './screens/ProtocolEpochs.tsx'
 import ProtocolPool from './screens/ProtocolPool.tsx'
 import ProtocolRevenue from './screens/ProtocolRevenue.tsx'
 import Settings from './screens/Settings.tsx'
+import Swap from './screens/Swap.tsx'
 import { DappStateProvider, useDapp } from './state.tsx'
 import './dapp.css'
 
@@ -66,6 +68,7 @@ const DRAWER_QUERY = '(max-width: 1023.98px)'
 
 const SCREEN_BY_SEGMENT: Record<string, Screen> = {
   '': 'dashboard',
+  swap: 'swap',
   marketplace: 'marketplace',
   /* `explorer` is the old segment. Kept in the map so a bookmarked or shared
      /app/explorer link still resolves the header and highlights the right nav
@@ -148,6 +151,8 @@ function Shell() {
         <main id="dapp-content" className="dapp-content" key={location.pathname}>
           <Routes>
             <Route index element={<Dashboard />} />
+            {/* The one route here that can move a user's funds. */}
+            <Route path="swap" element={<Swap />} />
             <Route path="marketplace" element={<Explorer />} />
             <Route path="marketplace/:address" element={<LatchDetail />} />
             {/* Old path. Redirect rather than delete: the previous nav shipped

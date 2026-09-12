@@ -18,6 +18,9 @@ import type { ChainKey } from '../../../data/chains.ts'
     on-chain API and renaming them would be a lie about what the chain exposes. */
 export type Screen =
   | 'dashboard'
+  /* The trading surface: /app/swap. The only screen that can move a user's
+     funds, which is why it is its own route and not a tab on Pool Detail. */
+  | 'swap'
   | 'marketplace'
   /* Third-party projects building on Latch: /app/ecosystem. A curated file,
      not a chain read — see data/ecosystem.ts. */

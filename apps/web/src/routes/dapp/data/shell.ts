@@ -47,6 +47,10 @@ export interface ShellData {
 /** SCREENS.md § C: sidebar nav order. */
 const nav: NavItem[] = [
   { screen: 'dashboard', label: 'Dashboard', path: '', icon: 'dashboard' },
+  /* Second, directly under the dashboard: it is the only row here that trades,
+     and burying the one thing a visitor arrives wanting to do below eight
+     read-only screens would be a strange way to present a DEX. */
+  { screen: 'swap', label: 'Swap', path: 'swap', icon: 'pool' },
   { screen: 'marketplace', label: 'Latch Marketplace', path: 'marketplace', icon: 'explorer' },
   { screen: 'ecosystem', label: 'Ecosystem', path: 'ecosystem', icon: 'ecosystem' },
   { screen: 'deploy', label: 'Deploy a Latch', path: 'deploy', icon: 'deploy' },
@@ -64,6 +68,14 @@ const meta: Record<Screen, ScreenMeta> = {
   dashboard: {
     title: 'Dashboard',
     subtitle: `Live from ${DEPLOYMENTS[ACTIVE_CHAIN_ID].name}${IS_TESTNET_BUILD ? ' · testnet only' : ''}`,
+  },
+  /* No pair, no fee and no chain in this subtitle. Which pools exist, what
+     they charge and whether the router is even accepting swaps are all chain
+     reads, and the screen makes every one of them — static copy here could
+     only contradict it. */
+  swap: {
+    title: 'Swap',
+    subtitle: 'Quoted from CLQuoter, routed through UniversalRouter',
   },
   marketplace: {
     title: 'Latch Marketplace',
