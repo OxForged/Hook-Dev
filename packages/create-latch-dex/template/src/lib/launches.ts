@@ -33,13 +33,32 @@ import { resolveConfig } from "../config/resolve";
 import { publicClient } from "./client";
 import { readTokenMeta } from "./tokens";
 
-/** Presets `LaunchpadKit` accepts, in enum order. `Custom` passes raw parameters. */
+/**
+ * Presets `LaunchpadKit` accepts, in ENUM ORDER — and the order is the whole
+ * point, because the index is sent straight to the contract as the preset.
+ *
+ * This array previously put `Custom` last, which rotated every value by one
+ * against `LaunchPresets.Preset` (`0 Custom, 1 FairLaunch, 2
+ * AntiSniperAggressive, 3 Stealth, 4 NoTax`). The comment already claimed
+ * "in enum order", which is how it survived.
+ *
+ * Nothing reverted. Choosing FairLaunch launched the pool as `Custom` with
+ * default fees, and choosing Custom launched it as `NoTax` while silently
+ * discarding the fee and decay fields the user had just filled in — a launch
+ * that opens with the wrong tax schedule and cannot be re-launched, because
+ * `createLaunch` is first-come for a pool key. The read path mislabelled every
+ * existing launch by one on the way back out, so the UI agreed with itself.
+ *
+ * If a preset is ever added to the Solidity enum it goes at the END there and
+ * here, never inserted, or every launch created before the change is
+ * retroactively mislabelled.
+ */
 export const PRESETS = [
+  "Custom",
   "FairLaunch",
   "AntiSniperAggressive",
   "Stealth",
   "NoTax",
-  "Custom",
 ] as const;
 export type PresetName = (typeof PRESETS)[number];
 

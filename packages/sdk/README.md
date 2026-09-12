@@ -58,7 +58,9 @@ getDeployment(999);                          // undefined — Latch is not on Hy
 | Ethereum Sepolia | `11155111` | testnet |
 
 **`null` means not deployed. It is never the zero address.** A contract Latch has not shipped on a
-chain — the launchpad contracts today — reads `null`, so the compiler makes you handle it. A zero
+chain — the launchpad contracts on Sepolia, the pool-manager owner wrappers there — reads `null`,
+so the compiler makes you handle it. (The launchpad IS deployed on Robinhood as of 2026-09-12;
+this example is about the shape, not that chain.) A zero
 address would not: it is a value `readContract` accepts and answers with silence.
 
 ```ts

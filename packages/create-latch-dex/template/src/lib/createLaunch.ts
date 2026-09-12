@@ -34,7 +34,8 @@ export interface LaunchDraft {
   readonly startPrice: string;
   readonly launchTokenDecimals: number;
   readonly quoteTokenDecimals: number;
-  /** Index into `PRESETS`. `4` (Custom) uses the three fee/decay fields below. */
+  /** Index into `PRESETS`, sent verbatim as the contract's `Preset`. `0`
+   *  (Custom) is the one that uses the three fee/decay fields below. */
   readonly preset: number;
   readonly initialFeeBips: number;
   readonly finalFeeBips: number;
