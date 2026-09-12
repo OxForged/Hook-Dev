@@ -1,0 +1,105 @@
+{
+  "version": "1.0",
+  "chainId": "4663",
+  "createdAt": 1789235397716,
+  "meta": {
+    "name": "Latch — re-point Vault and pool-manager owners to the NEW custody timelock",
+    "description": "Safe nonce FIRST of the two handover batches. Three transferOwnership calls replace the stale nominations that still point at the RETIRED custody timelock 0x63F08A69 (OZ Ownable2Step v5.0.2: a new nomination overwrites pendingOwner, nothing to clear first). Three schedule() calls on the NEW timelock 0x3ae354e2 queue its own acceptOwnership() on each target, so the 48h clock starts in this transaction. Three cancel() calls kill the retired timelock's queued accepts, which would otherwise become executable by ANYONE at 1789302054 (2026-09-13 12:20:54 UTC) and hand the Vault to a timelock with no independent canceller and no updateDelay floor. THIS BATCH MUST LAND BEFORE THAT TIMESTAMP: after it, a stranger can execute the retired accept first, ownership flips, and every call here reverts (GS013, nonce stuck until rejected). Order inside the batch is not load-bearing (atomic); order ACROSS batches is: this one takes the lower Safe nonce so a griefed policy batch cannot block it.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+    "checksum": ""
+  },
+  "_notes": {
+    "deadline": "Land before 1789302054 (2026-09-13 12:20:54 UTC). Re-read isOperationDone on the three retired ids and owner() on the three targets immediately before signing.",
+    "second_step_after_48h": "Permissionless — EXECUTOR_ROLE is address(0). Anyone calls execute(target, 0, 0x79ba5097, 0x0, salt) on 0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119 for each target once getTimestamp(id) <= block.timestamp. Exact calldata is in ops/safe/README.md.",
+    "new_operation_ids": {
+      "Vault": "0xb04e05ca3f8018246e91f8c15d2d3e4f2108afb9b44b3961e90573f026d5f33d",
+      "CLPoolManagerOwner": "0xab9c8f8e5fc6f02fafbc903847adccebca65b5811f5489993d9c0033721ebf00",
+      "BinPoolManagerOwner": "0x700f7b00af4f2d2109587a37f6dc3b12477e074385fa1e23a72f482ea1be4f6e"
+    },
+    "salts": {
+      "Vault": "0xe17bfec589d6a2594c2d59f7a1455e637425f2d5a4cbbcdf9062e39fad16e555",
+      "CLPoolManagerOwner": "0xb0ecc7113374d7c91a718f0d7a67a59bbf2efaaaf0f6c3a209b541cb4e3de097",
+      "BinPoolManagerOwner": "0x4787d44da9b61fa3107ab9bd0ef45f807be8debdaa46b66a2ae96ceb458a62c1"
+    },
+    "retired_operation_ids_cancelled": {
+      "Vault": "0x2cf9ecf22d9061b22312e9ac731633341adc62c080a7c45fbf8ecad37c33140a",
+      "CLPoolManagerOwner": "0x99b0275cbda43308c506eb0a14c785aa5a5c042f070ecf8fa56afab6b4c30888",
+      "BinPoolManagerOwner": "0x4dab5cb335ee1fc2f16184432fb05870fb964cb21c4608843eb8c419d145103d"
+    }
+  },
+  "transactions": [
+    {
+      "to": "0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c",
+      "value": "0",
+      "data": "0xf2fde38b0000000000000000000000003ae354e2cdfb9cb855aba41c825f6ee53f28e119",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "Vault.transferOwnership(NEW custody timelock 0x3ae354e2). Replaces pendingOwner 0x63F08A69 (retired). The Safe stays owner until the timelock accepts."
+    },
+    {
+      "to": "0x5D7111d6c624e9a08aE63d342E4baE5878989a67",
+      "value": "0",
+      "data": "0xf2fde38b0000000000000000000000003ae354e2cdfb9cb855aba41c825f6ee53f28e119",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "CLPoolManagerOwner.transferOwnership(NEW custody timelock). Replaces pendingOwner 0x63F08A69 (retired)."
+    },
+    {
+      "to": "0x98920e33313257Ffd942f94379A7ced216462665",
+      "value": "0",
+      "data": "0xf2fde38b0000000000000000000000003ae354e2cdfb9cb855aba41c825f6ee53f28e119",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "BinPoolManagerOwner.transferOwnership(NEW custody timelock). Replaces pendingOwner 0x63F08A69 (retired)."
+    },
+    {
+      "to": "0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
+      "value": "0",
+      "data": "0x01d5062a00000000000000000000000078e8359c6d34df797b8a793de8c7c6bffa97fb6c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000000e17bfec589d6a2594c2d59f7a1455e637425f2d5a4cbbcdf9062e39fad16e555000000000000000000000000000000000000000000000000000000000002a300000000000000000000000000000000000000000000000000000000000000000479ba509700000000000000000000000000000000000000000000000000000000",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "NEW timelock.schedule(target=Vault, value=0, data=acceptOwnership() 0x79ba5097, predecessor=0x0, salt=keccak256('latch.handover.v2.Vault'), delay=172800). Operation id 0xb04e05ca3f8018246e91f8c15d2d3e4f2108afb9b44b3961e90573f026d5f33d — matches hashOperation() read back from the timelock."
+    },
+    {
+      "to": "0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
+      "value": "0",
+      "data": "0x01d5062a0000000000000000000000005d7111d6c624e9a08ae63d342e4bae5878989a67000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000000b0ecc7113374d7c91a718f0d7a67a59bbf2efaaaf0f6c3a209b541cb4e3de097000000000000000000000000000000000000000000000000000000000002a300000000000000000000000000000000000000000000000000000000000000000479ba509700000000000000000000000000000000000000000000000000000000",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "NEW timelock.schedule(target=CLPoolManagerOwner, 0, acceptOwnership(), predecessor=0x0, salt=keccak256('latch.handover.v2.CLPoolManagerOwner'), 172800). Operation id 0xab9c8f8e5fc6f02fafbc903847adccebca65b5811f5489993d9c0033721ebf00."
+    },
+    {
+      "to": "0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
+      "value": "0",
+      "data": "0x01d5062a00000000000000000000000098920e33313257ffd942f94379a7ced216462665000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000004787d44da9b61fa3107ab9bd0ef45f807be8debdaa46b66a2ae96ceb458a62c1000000000000000000000000000000000000000000000000000000000002a300000000000000000000000000000000000000000000000000000000000000000479ba509700000000000000000000000000000000000000000000000000000000",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "NEW timelock.schedule(target=BinPoolManagerOwner, 0, acceptOwnership(), predecessor=0x0, salt=keccak256('latch.handover.v2.BinPoolManagerOwner'), 172800). Operation id 0x700f7b00af4f2d2109587a37f6dc3b12477e074385fa1e23a72f482ea1be4f6e."
+    },
+    {
+      "to": "0x63F08A697Cc003d5eA61787712C34438559a7428",
+      "value": "0",
+      "data": "0xc4d252f52cf9ecf22d9061b22312e9ac731633341adc62c080a7c45fbf8ecad37c33140a",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "RETIRED custody timelock.cancel(id of its queued Vault.acceptOwnership). The Safe holds CANCELLER_ROLE there because OZ grants it to every proposer. Op was Waiting at authoring time (ready at 1789302054); cancel reverts if it has already been executed."
+    },
+    {
+      "to": "0x63F08A697Cc003d5eA61787712C34438559a7428",
+      "value": "0",
+      "data": "0xc4d252f599b0275cbda43308c506eb0a14c785aa5a5c042f070ecf8fa56afab6b4c30888",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "RETIRED custody timelock.cancel(id of its queued CLPoolManagerOwner.acceptOwnership)."
+    },
+    {
+      "to": "0x63F08A697Cc003d5eA61787712C34438559a7428",
+      "value": "0",
+      "data": "0xc4d252f54dab5cb335ee1fc2f16184432fb05870fb964cb21c4608843eb8c419d145103d",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "RETIRED custody timelock.cancel(id of its queued BinPoolManagerOwner.acceptOwnership)."
+    }
+  ]
+}

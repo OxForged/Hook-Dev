@@ -131,7 +131,7 @@ table above is reading a contract that will answer.
 | Contract | Address | What changed |
 |---|---|---|
 | `LatchRegistry` v2 | `0xb2c8BB7473A09b0906f192D69e30D7362fA988CC` | pool attestation — a hook can no longer show the registry one bitmap and core another |
-| `LatchTimelock` custody 48h | `0x3ae354e2CdFB9cB855Aba41C825f6Ee53F28E119` | `CANCELLER_ROLE` on a separate key; `updateDelay` floor re-applied |
+| `LatchTimelock` custody 48h | `0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119` | `CANCELLER_ROLE` on a separate key; `updateDelay` floor re-applied |
 | `LatchLaunchRegistry` | `0x6D10B4CeDb53aD50c5A1D83f27fcE9c5C3b15c94` | new — the shared launch index |
 | `RevShareHook` | `0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2` | config delay 6 min -> 12 real hours; proposal expiry; roster invariant |
 | `LaunchGuardHook` | `0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c` | first deployment; launch window 28 h -> ~30 days |
@@ -146,6 +146,22 @@ all** — the tier is gone and everything it held now sits with the Safe directl
 hazard in CLAUDE.md's "Deployed and unfixable" section, and those operational
 rules stay in force for that pool specifically. A pool on the new hook is a new
 pool — new key, new id, no liquidity, no history.
+
+### Ownership after the redeploy — NOT finished, and on a clock
+
+Read 2026-09-12 17:42 UTC. The executed handover batch left seven nominations
+pointing at the RETIRED timelocks, all still live (`pendingOwner()` = a retired
+timelock on Vault, both pool-manager owners, both `ProtocolFeeController`s,
+`LatchProtocolFeeController`, `UniversalRouter`), and `CLPositionDescriptor`
+is already OWNED by the retired policy timelock. The retired timelocks' queued
+accepts are executable by anyone: the four policy ones now, the three custody
+ones from **2026-09-13 12:20:54 UTC**. Two Safe batches fix it —
+`robinhood-repoint-custody-to-new-timelock.json` first, then
+`robinhood-clear-policy-nominations.json` — and the reasoning, the second-step
+`execute` calldata and the deadline are all in `README.md` under "Handover, take
+two". The pausable role (`hasPausableRole(ops)` is `false` on both wrappers) and
+the fee-controller wiring (`protocolFeeController()` is `0x0` on both managers)
+are also outstanding and become 48h operations once the custody accept lands.
 
 ### Two things this deployment taught
 

@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "chainId": "4663",
+  "createdAt": 1789235397716,
+  "meta": {
+    "name": "Latch — grant the pausable role to the ops key (optional; before the custody accept executes)",
+    "description": "CLAUDE.md's ownership table assigns PausableRole.hasPausableRole to Ops; on chain neither pool-manager owner grants it to 0x304b0cc0 (hasPausableRole reads false on both). grantPausableRole is onlyOwner. While the Safe is still owner this is a direct 2-of-3 call; once the NEW custody timelock's acceptOwnership executes (48h after the custody batch) it becomes a 48h queued operation. Pause-only power: pausePoolManager is onlyPausableRoleOrOwner, unpause stays onlyOwner. Not required for the handover; included because this is the last cheap moment to do it.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+    "checksum": ""
+  },
+  "transactions": [
+    {
+      "to": "0x5D7111d6c624e9a08aE63d342E4baE5878989a67",
+      "value": "0",
+      "data": "0x2b6dcd21000000000000000000000000304b0cc019cdba6c7c767d86a2a34e69fdb3c9a9",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "CLPoolManagerOwner.grantPausableRole(0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9)"
+    },
+    {
+      "to": "0x98920e33313257Ffd942f94379A7ced216462665",
+      "value": "0",
+      "data": "0x2b6dcd21000000000000000000000000304b0cc019cdba6c7c767d86a2a34e69fdb3c9a9",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "BinPoolManagerOwner.grantPausableRole(0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9)"
+    }
+  ]
+}

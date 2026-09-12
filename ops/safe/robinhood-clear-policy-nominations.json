@@ -1,0 +1,130 @@
+{
+  "version": "1.0",
+  "chainId": "4663",
+  "createdAt": 1789235397716,
+  "meta": {
+    "name": "Latch — clear the retired policy-timelock nominations; the Safe stays owner",
+    "description": "Safe nonce SECOND. The Policy tier no longer exists; the four contracts nominated to the RETIRED policy timelock 0x1Da3AD33 stay with the Safe, per CLAUDE.md's ownership table. Four cancel() calls kill the retired timelock's queued acceptOwnership operations, which have been READY — executable by anyone — since 1789150854. Four transferOwnership(Safe)+acceptOwnership() pairs overwrite and then clear each stale pendingOwner, leaving owner=Safe, pendingOwner=0. One schedule() on the retired policy timelock queues CLPositionDescriptor.transferOwnership(Safe) at the 6h minimum delay: the descriptor is plain Ownable and the earlier batch handed it to the retired policy timelock outright, so the only way back is through that timelock's own queue. GRIEFABLE UNTIL IT LANDS: if a stranger executes any of the four ready operations first, that contract's owner becomes the retired timelock, its transferOwnership(Safe) here reverts, and the whole batch fails with GS013. Re-read owner() on all four and isOperationDone on all four ids immediately before signing; if any has flipped, do not submit — see the fallback in README.md.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+    "checksum": ""
+  },
+  "_notes": {
+    "second_step_after_6h": "Permissionless. Anyone calls execute(CLPositionDescriptor, 0, transferOwnership(Safe), 0x0, salt) on 0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A. Exact calldata in README.md.",
+    "descriptor_operation_id": "0x2096cb18b4aafbe051f029e853dd9caf26bf08164cbb8eee1f6f53b7ee67ec5e",
+    "descriptor_salt": "0x925afbaadb7078ce4ee0b381e642b14bf72bf6026116efc72df216a3c5cfe86d",
+    "retired_operation_ids_cancelled": {
+      "CLProtocolFeeController": "0x148e3e19a01516c9b5279d33226ebb2c01c96652aae6ebae10b1b7dd3d5b211a",
+      "BinProtocolFeeController": "0x37da9a6adbaa419e7798f7d84cd194caef508415a21f4142189400fb9ba04ba5",
+      "LatchProtocolFeeController": "0xa6667e521d70285101f7209540690278b0df4ecc6785b4bf396d5dc100cb8e0c",
+      "UniversalRouter": "0xa22e996b8dc516546602a240a58c6d9e46d7d97ea7e1ec2b587b001210c228bd"
+    },
+    "why_not_transferOwnership_zero": "Ownable2Step.transferOwnership has no zero check, so transferOwnership(address(0)) would clear each nomination in one call. It is not used because a 'transfer to zero' in a signing UI is indistinguishable at a glance from a renounce, which CLAUDE.md tells signers to reject on sight. Two explicit calls whose end state is owner=Safe, pendingOwner=0 are worth the extra gas."
+  },
+  "transactions": [
+    {
+      "to": "0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A",
+      "value": "0",
+      "data": "0xc4d252f5148e3e19a01516c9b5279d33226ebb2c01c96652aae6ebae10b1b7dd3d5b211a",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "RETIRED policy timelock.cancel(id of queued CLProtocolFeeController.acceptOwnership). READY at authoring time."
+    },
+    {
+      "to": "0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A",
+      "value": "0",
+      "data": "0xc4d252f537da9a6adbaa419e7798f7d84cd194caef508415a21f4142189400fb9ba04ba5",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "RETIRED policy timelock.cancel(id of queued BinProtocolFeeController.acceptOwnership). READY at authoring time."
+    },
+    {
+      "to": "0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A",
+      "value": "0",
+      "data": "0xc4d252f5a6667e521d70285101f7209540690278b0df4ecc6785b4bf396d5dc100cb8e0c",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "RETIRED policy timelock.cancel(id of queued LatchProtocolFeeController.acceptOwnership). READY at authoring time."
+    },
+    {
+      "to": "0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A",
+      "value": "0",
+      "data": "0xc4d252f5a22e996b8dc516546602a240a58c6d9e46d7d97ea7e1ec2b587b001210c228bd",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "RETIRED policy timelock.cancel(id of queued UniversalRouter.acceptOwnership). READY at authoring time."
+    },
+    {
+      "to": "0xb1cC5BDBADD19a2430131EaE332afD72fF6be64B",
+      "value": "0",
+      "data": "0xf2fde38b000000000000000000000000715a6176946adbd22c1b2021d321fb3767ca3432",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "CLProtocolFeeController (core ProtocolFeeController, instance 1).transferOwnership(Safe). Overwrites the stale pendingOwner 0x1Da3AD33 (RETIRED policy timelock) with the Safe itself."
+    },
+    {
+      "to": "0xb1cC5BDBADD19a2430131EaE332afD72fF6be64B",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "CLProtocolFeeController (core ProtocolFeeController, instance 1).acceptOwnership() from the Safe. Ownable2Step._transferOwnership deletes _pendingOwner, so pendingOwner() reads address(0) afterwards; owner() is unchanged (Safe)."
+    },
+    {
+      "to": "0x320feB54e940741AeB037E3944F2C95afAEE84af",
+      "value": "0",
+      "data": "0xf2fde38b000000000000000000000000715a6176946adbd22c1b2021d321fb3767ca3432",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "BinProtocolFeeController (core ProtocolFeeController, instance 2).transferOwnership(Safe). Overwrites the stale pendingOwner 0x1Da3AD33 (RETIRED policy timelock) with the Safe itself."
+    },
+    {
+      "to": "0x320feB54e940741AeB037E3944F2C95afAEE84af",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "BinProtocolFeeController (core ProtocolFeeController, instance 2).acceptOwnership() from the Safe. Ownable2Step._transferOwnership deletes _pendingOwner, so pendingOwner() reads address(0) afterwards; owner() is unchanged (Safe)."
+    },
+    {
+      "to": "0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c",
+      "value": "0",
+      "data": "0xf2fde38b000000000000000000000000715a6176946adbd22c1b2021d321fb3767ca3432",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "LatchProtocolFeeController.transferOwnership(Safe). Overwrites the stale pendingOwner 0x1Da3AD33 (RETIRED policy timelock) with the Safe itself."
+    },
+    {
+      "to": "0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "LatchProtocolFeeController.acceptOwnership() from the Safe. Ownable2Step._transferOwnership deletes _pendingOwner, so pendingOwner() reads address(0) afterwards; owner() is unchanged (Safe)."
+    },
+    {
+      "to": "0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c",
+      "value": "0",
+      "data": "0xf2fde38b000000000000000000000000715a6176946adbd22c1b2021d321fb3767ca3432",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "UniversalRouter.transferOwnership(Safe). Overwrites the stale pendingOwner 0x1Da3AD33 (RETIRED policy timelock) with the Safe itself."
+    },
+    {
+      "to": "0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "UniversalRouter.acceptOwnership() from the Safe. Ownable2Step._transferOwnership deletes _pendingOwner, so pendingOwner() reads address(0) afterwards; owner() is unchanged (Safe)."
+    },
+    {
+      "to": "0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A",
+      "value": "0",
+      "data": "0x01d5062a0000000000000000000000000af03bee134ce66ee12425ee05a50f32c72644eb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000000925afbaadb7078ce4ee0b381e642b14bf72bf6026116efc72df216a3c5cfe86d00000000000000000000000000000000000000000000000000000000000054600000000000000000000000000000000000000000000000000000000000000024f2fde38b000000000000000000000000715a6176946adbd22c1b2021d321fb3767ca343200000000000000000000000000000000000000000000000000000000",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "RETIRED policy timelock.schedule(target=CLPositionDescriptorOffChain, 0, data=transferOwnership(Safe) 0xf2fde38b…, predecessor=0x0, salt=keccak256('latch.reclaim.CLPositionDescriptor'), delay=21600). Plain Ownable: ownership moves to the Safe the moment this executes, no accept needed. Operation id 0x2096cb18b4aafbe051f029e853dd9caf26bf08164cbb8eee1f6f53b7ee67ec5e."
+    }
+  ]
+}
