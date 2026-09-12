@@ -36,7 +36,15 @@ import { parseAbi, parseAbiItem } from 'viem'
 export const REV_SHARE_HOOK_ABI = parseAbi([
   /* --- reads ------------------------------------------------------------ */
   'function getConfig(bytes32 poolId) view returns ((address owner, uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, bool enabled, bool frozen))',
-  'function getPendingConfig(bytes32 poolId) view returns ((uint48 effectiveBlock, (uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, address distributor, bool enabled) params))',
+  /* `expiryBlock` sits at index 1, AFTER effectiveBlock and BEFORE params.
+     Leaving it out does not error — the decoder reads expiryBlock as
+     params.feePips and every field after it shifts by one, so the UI would
+     print a block number as a fee. That is the getEpoch shape trap CLAUDE.md
+     documents, in a second place: a tuple that decodes cleanly while meaning
+     something else. A proposal is now refused past its expiry, so a screen
+     showing an armed proposal must read this field or it will show one that
+     can no longer be applied. */
+  'function getPendingConfig(bytes32 poolId) view returns ((uint48 effectiveBlock, uint48 expiryBlock, (uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, address distributor, bool enabled) params))',
   'function getBeneficiaries(bytes32 poolId) view returns ((address recipient, uint96 weight)[])',
   'function totalWeight(bytes32 poolId) view returns (uint256)',
   'function poolOwner(bytes32 poolId) view returns (address)',

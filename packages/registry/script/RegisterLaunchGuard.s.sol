@@ -43,7 +43,13 @@ contract RegisterLaunchGuardScript is Script {
         vm.startBroadcast(pk);
 
         LaunchGuardHook hook =
-            redeploy ? new LaunchGuardHook(ICLPoolManager(CL_POOL_MANAGER)) : LaunchGuardHook(EXISTING_HOOK);
+            redeploy
+            /* The launch window bounds are constructor arguments now, not
+               constants. They were 1,000,000 blocks — ~139 days at 12s and
+               28 HOURS on Robinhood, so a three-day fair launch reverted.
+               26,000,000 blocks at 10 centis is ~30 days of real time. */
+            ? new LaunchGuardHook(ICLPoolManager(CL_POOL_MANAGER), 10, 26_000_000, 26_000_000)
+            : LaunchGuardHook(EXISTING_HOOK);
 
         uint256[] memory chains = new uint256[](1);
         chains[0] = 11155111;

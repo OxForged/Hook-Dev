@@ -782,6 +782,13 @@
   grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
   gap: var(--s4);
   margin-top: var(--s6);
+  /* Cards size to their content. A grid row defaults to `stretch`, so the
+     shorter card grew to match the taller one and carried hundreds of pixels
+     of dead space under its last line — the gap reported here. Matching
+     heights only reads as tidy when the two have comparable content; when one
+     is a chart and the other is three lines, it reads as a rendering fault.
+     `.flowGrid` already made this choice one section up. */
+  align-items: start;
 }
 
 .chartCard {
