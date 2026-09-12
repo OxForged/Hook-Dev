@@ -51,13 +51,27 @@
  *         explorer https://arc-scan.org
  *         quoteIsGasToken true · nativeDecimals 18 · quoteDecimals 6
  *
- *     `quoteIsGasToken` with a 6-decimal quote is the interesting part. Arc
- *     uses a stablecoin as its gas token, so a pool quoted in it against an
- *     ordinary 18-decimal token carries the SAME twelve-decimal gap that
- *     would have priced a USDG pool a million times wrong on Robinhood.
- *     `sqrtPriceX96` encodes the ratio in RAW units, so anything computing a
- *     price or a tick for an Arc pool must take both decimals explicitly. Do
- *     not let a default of 18 anywhere near it.
+ *     THE DECIMALS ARE CONTRADICTORY AND MUST BE SETTLED ON CHAIN FIRST.
+ *     The owner's config says `quoteDecimals: 6`. Arc's own Connect RPC page,
+ *     read from a browser that can reach it, says plainly:
+ *
+ *         Chain ID 5042      USDC - 18 decimals
+ *
+ *     USDC is 6 decimals everywhere else it exists, so 18 here is either a
+ *     deliberate native-gas representation (a gas token has to be 18 to behave
+ *     like ether in the EVM) sitting alongside a 6-decimal ERC-20 of the same
+ *     name, or one of the two sources is wrong. Both readings are plausible
+ *     and they differ by 10^12.
+ *
+ *     That is the same quantity that would have opened a USDG pool on
+ *     Robinhood at a million times the intended price. `sqrtPriceX96` encodes
+ *     the ratio in RAW units, so this is not a display concern — it is the
+ *     opening price of a pool, fixed permanently at initialize.
+ *
+ *     Resolve it by reading `decimals()` off the actual token contract before
+ *     any pool is priced, and record BOTH the gas-token and ERC-20 answers if
+ *     they turn out to differ. Do not let a default of 18, or of 6, anywhere
+ *     near an Arc tick.
  *
  *   * `rpc.xlayer.tech` (X Layer's own canonical endpoint) and roughly a dozen
  *     other hosts — `ethereum-rpc.publicnode.com`, `eth.llamarpc.com`,
