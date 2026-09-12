@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@latchprotocol/connect": "file:../../packages/connect",
+    "@latchprotocol/sdk": "file:../../packages/sdk",
     "@rainbow-me/rainbowkit": "^2.2.11",
     "@tanstack/react-query": "^5.102.8",
     "react": "^19.2.8",

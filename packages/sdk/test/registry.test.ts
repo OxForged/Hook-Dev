@@ -65,7 +65,15 @@ function makeRecord(overrides: Partial<LatchRecord> = {}): LatchRecord {
     updatedAt: 1_700_000_000n,
     permissionsValid: true,
     permissionsReadable: true,
+    /* Unattested is the default and the interesting one: attestationCount 0
+       means the permissions are the hook's own account of itself and nothing
+       has confirmed them against a live pool. */
+    attestedPermissions: 0,
     codehash: CODEHASH,
+    attestedPoolManager: "0x0000000000000000000000000000000000000000",
+    attestedAt: 0n,
+    attestationCount: 0,
+    attestedPoolId: `0x${"00".repeat(32)}` as `0x${string}`,
     metadata: {
       name: "Example",
       description: "",
@@ -298,6 +306,11 @@ describe("decodeLatchRecord", () => {
     verification: 2,
     listing: 1,
     steward: HOOK,
+    attestedPermissions: 0,
+    attestedPoolManager: "0x0000000000000000000000000000000000000000",
+    attestedAt: 0n,
+    attestationCount: 0,
+    attestedPoolId: `0x${"00".repeat(32)}` as `0x${string}`,
     updatedAt: 1_700_000_500n,
     permissionsValid: true,
     permissionsReadable: true,

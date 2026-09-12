@@ -700,7 +700,7 @@ export const LAUNCHPAD_KIT_ABI = [
               {
                 "name": "metadata",
                 "type": "tuple",
-                "internalType": "struct HookMetadata",
+                "internalType": "struct LatchMetadata",
                 "components": [
                   {
                     "name": "name",
@@ -881,7 +881,7 @@ export const LAUNCHPAD_KIT_ABI = [
       {
         "name": "metadata",
         "type": "tuple",
-        "internalType": "struct HookMetadata",
+        "internalType": "struct LatchMetadata",
         "components": [
           {
             "name": "name",
@@ -1075,7 +1075,7 @@ export const LAUNCHPAD_KIT_ABI = [
               {
                 "name": "metadata",
                 "type": "tuple",
-                "internalType": "struct HookMetadata",
+                "internalType": "struct LatchMetadata",
                 "components": [
                   {
                     "name": "name",
@@ -1260,7 +1260,7 @@ export const LAUNCHPAD_KIT_ABI = [
 /**
  * `LaunchGuardHook` - the CL launch hook the kit drives.
  *
- * 16 errors, 3 events, 11 functions - curated from the compiled artifact, not the full ABI.
+ * 18 errors, 3 events, 11 functions - curated from the compiled artifact, not the full ABI.
  */
 export const LAUNCH_GUARD_HOOK_ABI = [
   {
@@ -1299,6 +1299,17 @@ export const LAUNCH_GUARD_HOOK_ABI = [
     "type": "error",
     "name": "HookNotImplemented",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidBlockTime",
+    "inputs": [
+      {
+        "name": "blockTimeCentis",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1367,6 +1378,27 @@ export const LAUNCH_GUARD_HOOK_ABI = [
         "name": "poolId",
         "type": "bytes32",
         "internalType": "PoolId"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "LaunchWindowOutOfRange",
+    "inputs": [
+      {
+        "name": "realSeconds",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minSeconds",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxSeconds",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },
@@ -1853,7 +1885,7 @@ export const LAUNCH_GUARD_HOOK_ABI = [
 /**
  * `BinLaunchGuardHook` - the liquidity-book variant, including `beforeMint`.
  *
- * 16 errors, 3 events, 11 functions - curated from the compiled artifact, not the full ABI.
+ * 18 errors, 3 events, 11 functions - curated from the compiled artifact, not the full ABI.
  */
 export const BIN_LAUNCH_GUARD_HOOK_ABI = [
   {
@@ -1892,6 +1924,17 @@ export const BIN_LAUNCH_GUARD_HOOK_ABI = [
     "type": "error",
     "name": "HookNotImplemented",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidBlockTime",
+    "inputs": [
+      {
+        "name": "blockTimeCentis",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1960,6 +2003,27 @@ export const BIN_LAUNCH_GUARD_HOOK_ABI = [
         "name": "poolId",
         "type": "bytes32",
         "internalType": "PoolId"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "LaunchWindowOutOfRange",
+    "inputs": [
+      {
+        "name": "realSeconds",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minSeconds",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxSeconds",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },

@@ -21,9 +21,16 @@
  */
 
 import type { Address } from "viem";
+import type { LatchChainId } from "@latchprotocol/sdk";
 
-/** Chains where Latch's shared core is deployed. */
-export type SupportedChainId = 4663 | 11155111;
+/**
+ * Chains where Latch's shared core is deployed.
+ *
+ * Aliased from the SDK rather than written out, so this union cannot fall
+ * behind the address book it indexes. `4663` is Robinhood Chain (mainnet) and
+ * `11155111` is Ethereum Sepolia today.
+ */
+export type SupportedChainId = LatchChainId;
 
 /**
  * Contract addresses.

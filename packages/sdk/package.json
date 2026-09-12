@@ -26,6 +26,11 @@
       "import": "./dist/indexer/index.js",
       "default": "./dist/indexer/index.js"
     },
+    "./deployments": {
+      "types": "./dist/deployments/index.d.ts",
+      "import": "./dist/deployments/index.js",
+      "default": "./dist/deployments/index.js"
+    },
     "./registry": {
       "types": "./dist/registry/index.d.ts",
       "import": "./dist/registry/index.js",

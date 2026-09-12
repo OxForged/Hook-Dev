@@ -34,13 +34,41 @@ export interface NavItem {
   path: string
 }
 
+/**
+ * One labelled block of nav rows.
+ *
+ * WHY THERE IS NO `soon` FLAG ON `NavItem`, and why nothing here is badged.
+ *
+ * The restyle brief called for a right-aligned SOON badge on rows that are not
+ * yet available. Every one of these twelve rows resolves to a screen that reads
+ * the live deployment: Swap builds real router calldata, Deploy sends a real
+ * `register` transaction, and Revenue Share and Claim both resolve a
+ * `RevShareHook` from `DEPLOYMENTS` on either chain. There is nothing here to
+ * badge, so there is no badge — a SOON on a working screen is the same class of
+ * claim as an invented figure, and a flag that no row sets is a flag somebody
+ * sets wrongly later.
+ *
+ * If a row ever is genuinely unavailable, the honest version is a `soon` field
+ * here plus a `.dapp-nav__soon` span in Sidebar.tsx — not a badge decided in the
+ * component, where nobody reviewing this file would see it.
+ */
+export interface NavGroup {
+  /**
+   * Micro-label above the group, or `null` for rows that sit at the top of the
+   * rail with nothing over them. Written in sentence case and uppercased by the
+   * stylesheet: a screen reader reading the DOM should get a word, not letters.
+   */
+  readonly heading: string | null
+  readonly items: readonly NavItem[]
+}
+
 export interface ScreenMeta {
   title: string
   subtitle: string
 }
 
 export interface ShellData {
-  nav: NavItem[]
+  navGroups: readonly NavGroup[]
   meta: Record<Screen, ScreenMeta>
 }
 
@@ -82,23 +110,80 @@ export const externalLinks: readonly ExternalLink[] = [
   { label: 'Terminal', href: 'http://peddlex.xyz', note: 'peddlex.xyz', icon: 'terminal' },
 ]
 
-/** SCREENS.md § C: sidebar nav order. */
-const nav: NavItem[] = [
-  { screen: 'dashboard', label: 'Dashboard', path: '', icon: 'dashboard' },
-  /* Second, directly under the dashboard: it is the only row here that trades,
-     and burying the one thing a visitor arrives wanting to do below eight
-     read-only screens would be a strange way to present a DEX. */
-  { screen: 'swap', label: 'Swap', path: 'swap', icon: 'swap' },
-  { screen: 'marketplace', label: 'Latch Marketplace', path: 'marketplace', icon: 'explorer' },
-  { screen: 'ecosystem', label: 'Ecosystem', path: 'ecosystem', icon: 'ecosystem' },
-  { screen: 'deploy', label: 'Deploy a Latch', path: 'deploy', icon: 'deploy' },
-  { screen: 'pool', label: 'Pool Detail', path: 'pool', icon: 'pool' },
-  { screen: 'portfolio', label: 'Portfolio', path: 'portfolio', icon: 'portfolio' },
-  { screen: 'protocol', label: 'Revenue Share', path: 'protocol', icon: 'revenue' },
-  { screen: 'claim', label: 'Claim', path: 'claim', icon: 'claim' },
-  { screen: 'analytics', label: 'Analytics', path: 'analytics', icon: 'analytics' },
-  { screen: 'governance', label: 'Governance', path: 'governance', icon: 'governance' },
-  { screen: 'settings', label: 'Settings', path: 'settings', icon: 'settings' },
+/**
+ * SCREENS.md § C: sidebar nav order, now in five blocks instead of one run.
+ *
+ * WHY GROUP AT ALL. Twelve equal rows is a list you read from the top every
+ * time, because nothing in it tells you where to stop looking. The headings do
+ * not add information about any single row — they tell you which four rows you
+ * can ignore, which is the whole job of a nav column that no longer fits on one
+ * glance. They are also what pays for the taller rows: a labelled block of
+ * three scans faster than an unlabelled run of twelve, so the extra height buys
+ * something rather than just spending the column.
+ *
+ * THE GROUPS, AND THE QUESTION EACH ONE ANSWERS.
+ *
+ *   (no heading)  Dashboard, Swap — where you land, and the one thing you came
+ *                 to do. Deliberately above the first heading rather than
+ *                 inside a "General" group: they are not a category, they are
+ *                 the two rows that must never be hunted for.
+ *   Latches       Which Latches exist, how to publish one, and who is shipping
+ *                 them. The product noun, and everything about the artefact
+ *                 itself rather than about a pool or an address.
+ *   Liquidity     One pool's live state, and the positions the connected
+ *                 address holds in pools. Both are "what is in the Vault".
+ *   Revenue       What a RevShareHook has taken and what it owes an address.
+ *                 Split from Liquidity because fees accrued are not a position
+ *                 — claiming is a separate act with a separate contract.
+ *   Protocol      Protocol-wide totals, who controls the contracts, and which
+ *                 chain and endpoints this build is talking to. The three rows
+ *                 nobody visits mid-task.
+ *
+ * Nothing is grouped alone. Ecosystem moved one row later (it now follows
+ * Deploy rather than preceding it) because "browse, publish, then see who
+ * else has" is the order a reader walks that block in; no other row moved.
+ */
+const navGroups: readonly NavGroup[] = [
+  {
+    heading: null,
+    items: [
+      { screen: 'dashboard', label: 'Dashboard', path: '', icon: 'dashboard' },
+      /* Second, directly under the dashboard: it is the only row here that
+         trades, and burying the one thing a visitor arrives wanting to do below
+         eight read-only screens would be a strange way to present a DEX. */
+      { screen: 'swap', label: 'Swap', path: 'swap', icon: 'swap' },
+    ],
+  },
+  {
+    heading: 'Latches',
+    items: [
+      { screen: 'marketplace', label: 'Latch Marketplace', path: 'marketplace', icon: 'explorer' },
+      { screen: 'deploy', label: 'Deploy a Latch', path: 'deploy', icon: 'deploy' },
+      { screen: 'ecosystem', label: 'Ecosystem', path: 'ecosystem', icon: 'ecosystem' },
+    ],
+  },
+  {
+    heading: 'Liquidity',
+    items: [
+      { screen: 'pool', label: 'Pool Detail', path: 'pool', icon: 'pool' },
+      { screen: 'portfolio', label: 'Portfolio', path: 'portfolio', icon: 'portfolio' },
+    ],
+  },
+  {
+    heading: 'Revenue',
+    items: [
+      { screen: 'protocol', label: 'Revenue Share', path: 'protocol', icon: 'revenue' },
+      { screen: 'claim', label: 'Claim', path: 'claim', icon: 'claim' },
+    ],
+  },
+  {
+    heading: 'Protocol',
+    items: [
+      { screen: 'analytics', label: 'Analytics', path: 'analytics', icon: 'analytics' },
+      { screen: 'governance', label: 'Governance', path: 'governance', icon: 'governance' },
+      { screen: 'settings', label: 'Settings', path: 'settings', icon: 'settings' },
+    ],
+  },
 ]
 
 /** SCREENS.md § C: header title + subtitle per screen. */
@@ -146,5 +231,5 @@ const meta: Record<Screen, ScreenMeta> = {
 }
 
 export function loadShell(): ShellData {
-  return { nav, meta }
+  return { navGroups, meta }
 }

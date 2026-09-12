@@ -129,13 +129,47 @@
   color: var(--latch-blue);
 }
 
-.dapp-nav { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); }
+/* GROUPS, AND WHY THE HEADINGS ARE ALLOWED TO BE THIS QUIET.
+   A heading here is a label, not a row: it is never a destination, so styling
+   it anywhere near row weight would put five decoys in a column of twelve
+   targets. Mono, letter-spaced, `--faint-ink`, and no hover state at all — the
+   eye slides over them on the way to a destination and only resolves them when
+   it is lost, which is exactly when they are wanted.
+   `--faint-ink` clears 3:1 but not 4.5:1 (see tokens.css). Legitimate here
+   because a group heading is never the sole carrier of a value — every row it
+   sits over says the same thing in full at body contrast.
+
+   TWO SPACING STEPS, NOT THREE. --s5 between groups inside the screens <nav>,
+   and `.dapp-sidebar`'s own --s6 between that <nav> and the exits <nav> below
+   it. The exits therefore sit further from the screens than any group sits
+   from its neighbour, which is the whole hierarchy — and it needs no rule of
+   its own, no margin and no hairline. A hairline there would read as a part of
+   the app that had been fenced off rather than as a different kind of link. */
+.dapp-navgroups { display: flex; flex-direction: column; gap: var(--s5); }
+.dapp-navgroup { display: flex; flex-direction: column; gap: 6px; }
+.dapp-navgroup__label {
+  margin: 0;
+  padding-inline: var(--s3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--faint-ink);
+}
+
+.dapp-nav { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+/* ROOMIER, and `min-height` rather than a fixed one so the two-line exit rows
+   in More use the same rule instead of a parallel one that drifts from it.
+   `position: relative` is for the accent bar, which is now pinned to the row's
+   left EDGE rather than sitting in flow — in flow it pushed every label 15px
+   right to reserve space for a mark that only one row ever shows. */
 .dapp-nav__row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--s3);
-  height: 40px;
-  padding-inline: var(--s3);
+  gap: 11px;
+  min-height: 42px;
+  padding: 10px var(--s3);
   border-radius: var(--r-sm);
   font-family: var(--font-body);
   font-weight: 500;
@@ -154,16 +188,42 @@
 .dapp-nav__row.is-active {
   background: var(--active-nav);
   color: var(--sky-ink);
+  font-weight: 600;
 }
 .dapp-nav__bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
   width: 3px;
-  height: 16px;
+  height: 18px;
+  margin-top: -9px;
   border-radius: var(--r-pill);
   background: transparent;
-  flex: 0 0 auto;
   transition: background 0.22s;
 }
 .dapp-nav__row.is-active .dapp-nav__bar { background: var(--latch-blue); }
+
+/* Label and, on an exit row, the destination under it. `min-width: 0` on both
+   so a long label ellipsises instead of widening the 238px column. */
+.dapp-nav__stack { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.dapp-nav__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.dapp-nav__note {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--faint-ink);
+}
+/* The ↗ is a hint, not a second icon: quieter than the row's own glyph at rest
+   and only reaching full strength when the row does. */
+.dapp-nav__row .dapp-nav__label svg { opacity: 0.5; }
+.dapp-nav__row:hover .dapp-nav__label svg,
+.dapp-nav__row:focus-visible .dapp-nav__label svg { opacity: 0.9; }
+.dapp-nav__row:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: -2px; }
 
 .dapp-sidebar__foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--s2); }
 
@@ -1566,11 +1626,22 @@ span.dapp-net-chip__mark {
 .live-list a:hover { text-decoration: underline; }
 .live-fee { color: var(--muted-ink); font-size: 11px; }
 
-/* Nav rows carry a decorative glyph beside the label. */
-.dapp-nav__row { display: flex; align-items: center; gap: 10px; }
-.dapp-nav__row svg { opacity: .72; transition: opacity .15s; }
+/* Nav rows carry a decorative glyph beside the label.
+
+   The `display/align-items/gap` triplet that used to sit here was a second,
+   later copy of what the `.dapp-nav__row` block up in the sidebar section
+   already declares — and being later, its 10px gap silently won. One row rule,
+   one place: the sidebar section. Only the glyph opacity belongs here.
+
+   .68 at rest rather than .72: the icons carry more of the row now that the
+   rows are taller and grouped, and a line glyph at full strength beside a 14px
+   label reads heavier than the label it is labelling. */
+.dapp-nav__row svg { opacity: .68; transition: opacity .15s; }
 .dapp-nav__row.is-active svg,
 .dapp-nav__row:hover svg { opacity: 1; }
+/* …except the inline ↗, which has its own quieter pair of rules in the sidebar
+   section and must not be dragged to full strength by the row-level ones. */
+.dapp-nav__row.is-active .dapp-nav__label svg { opacity: .9; }
 
 /* ---- Latch Marketplace (screens/Explorer): real Latches, read from chain ------
    The safety treatments here are load-bearing, not decoration. A flagged card
@@ -3682,10 +3753,24 @@ span.dapp-net-chip__mark {
 /* ===========================================================================
    More menu — links out to sibling properties.
 
-   Native <details>, closed by default. These are EXITS: a reader leaving for
-   another product should be able to find the door, and should never be shown
-   it more prominently than the room. So it sits below the nav, collapsed, and
-   is styled quieter than a nav row rather than competing with one.
+   NO LONGER A DISCLOSURE. It was a native <details>, closed by default, on the
+   principle that a reader leaving for another product should be able to find
+   the door without being shown it more prominently than the room. That
+   principle is intact and is now carried by position and weight — last block
+   in the column, under the same muted micro-label every other group wears, and
+   with a second line naming the destination that no in-app row has. A toggle
+   was not making them quieter, it was making them undiscoverable, and it cost
+   a click to open four links that were never confidential.
+
+   What the <details> gave for free and a plain list also gives: tab order,
+   find-in-page, no JS, keyboard operability. What it also gave — a role and an
+   expanded state — is not worth announcing for something that no longer has a
+   collapsed state to announce.
+
+   The rows themselves are `.dapp-nav__row` (+ `--ext`) and live in the sidebar
+   section above with every other row. Only what is unique to an exit is here.
+   `.dapp-more*` is gone; nothing else in this stylesheet or the app referenced
+   it — checked by grep before deleting, not assumed.
    =========================================================================== */
 
 .dapp-visually-hidden {
@@ -3700,57 +3785,11 @@ span.dapp-net-chip__mark {
   border: 0;
 }
 
-.dapp-more { margin: 4px 12px 0; }
-.dapp-more > summary {
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 10px;
-  border-radius: 9px;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--dapp-ink-sub);
-  transition: color 0.16s ease, background 0.16s ease;
-}
-.dapp-more > summary::-webkit-details-marker { display: none; }
-.dapp-more > summary:hover { color: var(--dapp-ink-data); background: color-mix(in srgb, var(--latch-blue) 7%, transparent); }
-.dapp-more > summary:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 2px; }
-
-.dapp-more__caret {
-  width: 0;
-  height: 0;
-  flex: 0 0 auto;
-  border-left: 4px solid currentColor;
-  border-top: 3.5px solid transparent;
-  border-bottom: 3.5px solid transparent;
-  transition: transform 0.18s var(--dapp-ease, ease-out);
-}
-.dapp-more[open] > summary .dapp-more__caret { transform: rotate(90deg); }
-
-.dapp-more__list {
-  list-style: none;
-  margin: 2px 0 0;
-  padding: 0 0 0 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  animation: dapp-fade 0.24s var(--dapp-ease, ease-out) both;
-}
-.dapp-more__row {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 7px 10px;
-  border-radius: 8px;
-  text-decoration: none;
-  color: var(--dapp-ink-data);
-  transition: background 0.16s ease;
-}
-.dapp-more__row:hover { background: color-mix(in srgb, var(--latch-blue) 9%, transparent); }
-.dapp-more__row:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: -2px; }
-.dapp-more__label { display: flex; align-items: center; gap: 5px; font-size: 13px; }
-.dapp-more__ext { font-size: 10px; color: var(--dapp-ink-sub); }
-.dapp-more__note { font-family: var(--font-mono); font-size: 10.5px; color: var(--faint-ink); }
+/* An exit is a two-line row: the label, and the domain it actually goes to.
+   The domain is the point — "Terminal" tells a reader nothing about where they
+   are about to end up, and peddlex.xyz tells them everything. Slightly less
+   vertical padding than a screen row, because the second line already supplies
+   the height and matching it would make the exits the tallest thing in the
+   column. */
+.dapp-nav__row--ext { padding-block: 8px; }
+.dapp-nav__row--ext .dapp-nav__label { font-size: 13.5px; }

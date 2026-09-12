@@ -403,6 +403,19 @@
   color: var(--label-ink);
 }
 
+/* .menuLabel's sibling for the desktop LEFT RAIL — same idea, quieter, and
+   hidden by default.
+
+   `display: none` here rather than only being switched on in the >= 861px
+   block, because the same markup renders the phone top bar: without this the
+   word "Follow" would appear in the bar beside the burger at 375px. The rail
+   block at the end of this file turns it back on, and that is the only place
+   it is ever visible. Sizing and colour are set there too, next to the rows it
+   labels. */
+.railLabel {
+  display: none;
+}
+
 .launchPill {
   padding: 9px 20px;
   border-radius: var(--r-pill);
@@ -2673,16 +2686,94 @@ span.chainMark {
     gap: 2px;
   }
 
-  /* A rail row is a full-width target, not a word. Matches .dapp-nav__row so
-     the hit area does not change size across the two shells. */
+  /* A rail row is a full-width target, not a word. Deliberately kept in step
+     with `.dapp-nav__row` in dapp.css — same min-height, same padding, same
+     11px icon gap, same radius token — because the whole point of the rail is
+     that the navigation does not change shape when a visitor clicks into the
+     app. If one of the two moves, move the other.
+
+     WHAT WAS NOT COPIED FROM THE REFERENCE. The reference rail is dark. This
+     site is theme-aware and its default is the paper ground, so the rail takes
+     the reference's structure — grouping, room, line icons, left accent bar —
+     and none of its palette. Every colour below is a token that already knows
+     what to be in both themes. */
   .navLink {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 9px 10px;
-    border-radius: 9px;
+    gap: 11px;
+    min-height: 42px;
+    padding: 10px 12px;
+    border-radius: var(--r-sm);
+    font-size: 14px;
   }
 
-  .headerSocials { justify-content: center; }
+  /* The active accent bar, as a pseudo-element rather than a span.
+
+     The dapp sidebar renders a real `.dapp-nav__bar` element because its rows
+     are built for that one job. This link component is also the phone top bar
+     and the collapsed menu, and adding a decorative span to it would put an
+     empty node into two layouts that have no use for it. A ::before costs
+     those nothing and is invisible to assistive technology either way. */
+  .navLink::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 3px;
+    height: 18px;
+    margin-top: -9px;
+    border-radius: var(--r-pill);
+    background: transparent;
+    transition: background 0.22s;
+  }
+
+  .navLink:hover {
+    background: var(--panel-alt);
+  }
+
+  /* Brighter label plus the bar, matching `.dapp-nav__row.is-active`. The base
+     rule paints the active link `--signal-blue` at weight 500, which reads as
+     a link that happens to be blue when it is one row in a horizontal bar; in
+     a column it has to read as the row you are standing on. */
+  .navLinkActive {
+    background: var(--active-nav);
+    color: var(--sky-ink);
+    font-weight: 600;
+  }
+  .navLinkActive::before {
+    background: var(--latch-blue);
+  }
+
+  .railLabel {
+    display: block;
+    /* Negative bottom margin pulls the label onto its list. .headerRight's
+       14px gap is the right distance between three unrelated controls and far
+       too much between a label and the thing it labels; a label floating
+       equidistant from the icons above and below it labels neither. */
+    margin: 0 0 -7px;
+    padding-inline: 12px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--faint-ink);
+  }
+
+  /* The account cluster is the rail's one labelled block, so the divider that
+     set it apart in the horizontal bar is now doing the job twice — and doing
+     it wrong, since a left border in a column is a stripe down the side of the
+     icons rather than a separator before them. The label separates; the border
+     goes. */
+  .headerSocials {
+    /* Left, not centred. The label above it starts at 12px and the nav rows
+       above that start at 12px; centring the icons under a left-aligned label
+       breaks the one vertical edge the whole rail is built on. 6px because a
+       28px icon button carries about 6px of its own inset, so the glyph — not
+       the button box — lands on the same line as the text. */
+    justify-content: flex-start;
+    padding-left: 6px;
+    border-left: none;
+  }
   .launchPill { text-align: center; }
 }

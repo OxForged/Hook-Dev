@@ -8,6 +8,13 @@ import {
   type PublicClient,
 } from 'viem'
 
+import {
+  LATCH_DEPLOYMENTS,
+  isLatchChainId,
+  resolveEndpoints,
+  type LatchChainId,
+} from '@latchprotocol/sdk'
+
 /**
  * Live reader for the deployed Latch Protocol contracts.
  *
@@ -15,137 +22,56 @@ import {
  * chain; nothing here invents a number. If a read fails it throws, and the caller
  * decides what to show — a screen must never render a fabricated figure as if it
  * came from chain.
- *
- * Only Sepolia has a deployment. Adding a chain means adding an entry to
- * DEPLOYMENTS, not changing any logic here.
  */
+
+/* ============================================================================
+   THE ADDRESS BOOK IS NOT DECLARED HERE ANY MORE.
+
+   It lives in `@latchprotocol/sdk` (`packages/sdk/src/deployments/index.ts`)
+   and this file RE-EXPORTS it. Forty-odd modules in this app import
+   `DEPLOYMENTS`, `DeployedChainId` and `isDeployed` from here, and every one of
+   them keeps working unchanged — the names, the fields and the values are
+   identical. What changed is where the values come from.
+
+   WHY IT MOVED. The table had already been copied: once into this file, once
+   into `packages/create-latch-dex/template/src/config/deployments.ts`, and the
+   two had quietly diverged (the template's copy knows nothing of the timelocks,
+   the fee controller, the quoters or the descriptor). Meanwhile the published
+   SDK — the package whose entire purpose is "install this and integrate" —
+   shipped no addresses at all, so an integrator's first task was hand-typing
+   twenty hex strings. One table serving all three consumers fixes both halves
+   of that at once. The DefiLlama adapters in this repo show the alternative:
+   two hand-maintained mirrors and a parity test to catch drift, which detects
+   the problem instead of removing it.
+
+   The SDK is MIT and carries only addresses and ABIs, which are facts about a
+   public chain rather than derivative works — nothing GPL is pulled in by this
+   import.
+
+   WHAT DID NOT MOVE, AND WHY. `IS_TESTNET_BUILD` and `ACTIVE_CHAIN_ID` below
+   stay here. They are not facts about a chain; they are this build's decision
+   about which chain it serves, read from `import.meta.env` at build time. A
+   library that answers "which network am I?" would be answering it for
+   consumers who never asked, and every one of them has a different answer.
+
+   REDEPLOYS ARE ONE EDIT, IN THE SDK. `LatchRegistry`, `RevShareHook` and the
+   custody timelock are queued for replacement, and the launchpad contracts do
+   not exist yet (they read `null`, never a zero address — a zero address is a
+   value this app would happily call). Change them there; nothing here needs
+   touching.
+   ============================================================================ */
 
 export const SEPOLIA_CHAIN_ID = 11155111
 export const ROBINHOOD_CHAIN_ID = 4663
 
-/** Verified on Etherscan. See packages/core/script/config/latch-sepolia.json. */
-export const DEPLOYMENTS = {
-  [SEPOLIA_CHAIN_ID]: {
-    name: 'Ethereum Sepolia',
-    explorer: 'https://sepolia.etherscan.io',
-    vault: '0xCe3d133eb486b448A53437A5073619FbE424d01B',
-    clPoolManager: '0xb7C8a11E0B359616eD06256783aF57114841F738',
-    binPoolManager: '0xdBA93F91BA5B8535AE2b38be6a3A6CdcfDE6f6f3',
-    feeController: '0xc1b7A4e61A4B6ceBA3e308425dc2390c2CE57ea9',
-    create3Factory: '0x76473D174Aa17C23FBE49CAb50aAc4ED4d8c678F',
-    /** Latch Marketplace backing contract. Permissions are read off each Latch on chain.
-     *  Redeployed 2026-09-10 as LatchRegistry (was LatchHookRegistry). The old registry at
-     *  0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE still answers `hookCount()` and still holds
-     *  the original listing, but nothing reads it — it is retired, not migrated. */
-    registry: '0xB504da43C6ED342a511f3e5849f53035F2C807d1',
-    /** 48h tier. Owns Vault + pool managers on mainnet, because registerApp is irreversible. */
-    timelockCustody: '0x35D72DbEeD5F2CE95a4DFb3917D2CD3c43e544CA',
-    /** 6h tier. Owns fee policy, which is reversible. */
-    timelockPolicy: '0x30897C9e7c1c336cDF68C7494f930C75A355d42F',
-
-    // Periphery + router. Until these existed, a developer had to write their own
-    // ILockCallback to add liquidity or swap; now there is a real path.
-    universalRouter: '0xB647CEbd5b8d6bE38C198634828187F482f4874B',
-    clPositionManager: '0xb3505d48A84651c104a02D41B2b9D8CB84dFEC33',
-    binPositionManager: '0x965b1D98BB0cd4E0125D78AD17ea4d2D1d62AE6f',
-    clQuoter: '0x4471e61fE697204908CA97CdF4810EeAf406e9C1',
-    binQuoter: '0x3544C594f12F7c89aa1D8C596d793b661206Ab17',
-    clPositionDescriptor: '0xFe386132bE4A3D85267488A1C64061ba691cfc7a',
-    permit2: '0x31c2F6fcFf4F8759b3Bd5Bf0e1084A055615c768',
-    weth: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
-    /**
-     * The pool created by the live exercise in
-     * packages/fees/script/ExerciseSepolia.s.sol. Real liquidity, real swaps.
-     */
-    demoPool: {
-      id: '0x1373a1db3e21b471647422e89bd87e4e97c0a5d0d2af24194226a40a5a402b38',
-      token0: '0x5c00ea81EedcED610c5174b9D20F83Ca245e269C',
-      token1: '0xbEf6E0f94Fe1a96390Eb25D32759aad85fD1f067',
-      symbol0: 'ltUSD',
-      symbol1: 'ltETH',
-      lpFee: 3000,
-      tickSpacing: 60,
-    },
-    /** The hook the Sepolia exercise deployed and drove a full revenue cycle
-        through. It PREDATES keyOf/hasKey/totalTaken and reverts on all three;
-        the dapp reads none of them, summing RevShareTaken logs instead. */
-    revShareHook: '0x1C86dc775FF3FDADCCF87F132de7a4eb60B6bE28',
-    /** Block the protocol was deployed at — log scans start here, not from genesis. */
-    deployedAtBlock: 11672600n,
-  },
-
-  /* Robinhood Chain — the FIRST MAINNET. Deployed 2026-09-11; see
-     ops/safe/robinhood-deployment.md for the full record and
-     packages/core/script/config/latch-robinhood.json for the source config.
-     All eighteen contracts are verified on Sourcify.
-
-     Two differences from Sepolia that matter to anything reading this table:
-
-     · GOVERNANCE IS REAL HERE. On Sepolia the deployer EOA still owns
-       everything and the timelocks own nothing, so they can be shown as
-       deployed-but-inert. Here every contract answers to the 2-of-3 Safe, and
-       the handover to these timelocks is queued. A screen that says "owned by
-       a timelock" must read owner() rather than assume it from this file.
-
-     · THERE IS NO demoPool. Nothing has been initialised on mainnet yet, so
-       any surface that reaches for one has to handle its absence rather than
-       fall back to Sepolia's — showing a testnet pool under a mainnet chain
-       header would be the worst kind of wrong. */
-  [ROBINHOOD_CHAIN_ID]: {
-    name: 'Robinhood Chain',
-    explorer: 'https://robinhoodchain.blockscout.com',
-    vault: '0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c',
-    clPoolManager: '0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66',
-    binPoolManager: '0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979',
-    feeController: '0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c',
-    create3Factory: '0x6ffdf9a3df7e9dd55bad2e60c7405cd181005633',
-    registry: '0xE4395085De89365440A6Ee25cE24BE2bAD66AC86',
-    /** 48h tier. Vault + both pool manager owners. */
-    timelockCustody: '0x63F08A697Cc003d5eA61787712C34438559a7428',
-    /** 6h tier. Fee controllers, descriptor, router. */
-    timelockPolicy: '0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A',
-
-    universalRouter: '0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c',
-    clPositionManager: '0x957cc13b24a563cc92253213d9d5e6954c8db6a7',
-    binPositionManager: '0x990f395003c35a0ab390e10b003972407f882399',
-    clQuoter: '0xdfd14247f87d1e4fc82f0f441fb43bc8aa466114',
-    binQuoter: '0xbee22c7edf206b3f24fa0e86ccdd2f35738eb28c',
-    clPositionDescriptor: '0x0af03bee134ce66ee12425ee05a50f32c72644eb',
-    /** Canonical Permit2, confirmed by reading code at the address. */
-    permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-    /** Canonical per docs.robinhood.com/chain/contracts. The usual predeploys
-        0x4200..06 and 0xC02aaA.. have NO CODE on this chain. */
-    weth: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
-    /** RevShareHook. Owner is the Safe from the constructor — this contract is
-        the one exception to the two-step pattern everywhere else here, because
-        it passes owner_ straight to Ownable(). Guardian is the ops key and can
-        only pause, never unpause. Takes nothing until a pool owner configures. */
-    revShareHook: '0x23CE34E8199927DD270dddd8579c947542bDE446',
-    /**
-     * The FIRST POOL ON MAINNET, created by
-     * packages/hooks-revshare/script/ExerciseRobinhood.s.sol with RevShareHook
-     * attached and exercised end to end — configure, initialize, add liquidity,
-     * swap both directions, fees accrued and readable.
-     *
-     * LTT1/LTT2 are deliberately throwaway ERC-20s. Initializing a pool fixes
-     * its starting price permanently, and the deployer holds no WETH or USDG to
-     * defend a price it set on a real pair — an empty mispriced pool is a trap
-     * for whoever LPs into it first. This proves the plumbing; the real launch
-     * follows on contracts already known to work together.
-     */
-    demoPool: {
-      id: '0xcb1fbdafcaa52a0cc8f5ece1752737c2a5eec2b7242953270c15bdd9818a50e8',
-      token0: '0x2A21c0826848f2D597B7C87A4B931dE1407958A6',
-      token1: '0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4',
-      symbol0: 'LTT1',
-      symbol1: 'LTT2',
-      lpFee: 3000,
-      tickSpacing: 60,
-    },
-    /** Block the first Latch contract landed — the two timelocks. */
-    deployedAtBlock: 60111836n,
-  },
-} as const
+/**
+ * Every deployed Latch contract, per chain. Re-exported from the SDK — see the
+ * note above. The record carries more than this app reads (the pool-manager
+ * owner wrappers, the two upstream fee controllers, the governance Safe, and a
+ * token table with decimals), which is additive: nothing that used to be here
+ * has changed name, type or value.
+ */
+export const DEPLOYMENTS = LATCH_DEPLOYMENTS
 
 /* ============================================================================
    WHICH NETWORK THIS BUILD IS.
@@ -169,41 +95,27 @@ export const IS_TESTNET_BUILD = import.meta.env['VITE_NETWORK'] === 'testnet'
 /** The one chain this build reads and writes. */
 export const ACTIVE_CHAIN_ID = IS_TESTNET_BUILD ? SEPOLIA_CHAIN_ID : ROBINHOOD_CHAIN_ID
 
-export type DeployedChainId = keyof typeof DEPLOYMENTS
+/** The chains Latch is deployed on. Same union as before, now named by the SDK. */
+export type DeployedChainId = LatchChainId
 
 export function isDeployed(chainId: number): chainId is DeployedChainId {
-  return chainId in DEPLOYMENTS
+  return isLatchChainId(chainId)
 }
 
-/**
- * Public RPCs verified by probe, fastest-first.
- *
- * Five independent operators, all of which answered `eth_chainId` and served
- * `eth_blockNumber` on 2026-09-10 — mirrors the Sepolia entry in
- * `packages/sdk/src/chains/endpoints.ts`, which carries the methodology and the
- * record of what was tried and failed. This used to be a single endpoint, so a
- * rate-limited publicnode meant the whole dapp read nothing.
- *
- * None of these carries an API key. Keyed providers belong in the environment.
- */
-const RPCS: Record<DeployedChainId, readonly string[]> = {
-  /* Ordered fastest-first from the SDK's live probe (packages/sdk/src/chains/
-     endpoints.ts), not hand-picked. All five answer EIP-1153. */
-  [ROBINHOOD_CHAIN_ID]: [
-    'https://rpc.nodeflare.app/robinhood/public',
-    'https://robinhood.rpc.blxrbdn.com',
-    'https://rpc-robinhood.blockmachine.io',
-    'https://rpc.ordofi.network',
-    'https://rpc.mainnet.chain.robinhood.com',
-  ],
-  [SEPOLIA_CHAIN_ID]: [
-    'https://11155111.rpc.thirdweb.com',
-    'https://gateway.tenderly.co/public/sepolia',
-    'https://ethereum-sepolia-rpc.publicnode.com',
-    'https://1rpc.io/sepolia',
-    'https://0xrpc.io/sep',
-  ],
-}
+/* ============================================================================
+   RPC ENDPOINTS ARE ALSO NO LONGER RESTATED HERE.
+
+   This file used to carry its own copy of the ten public endpoints with a
+   comment saying it "mirrors" the SDK's probed list. It did mirror it, right up
+   until one of them rotted — a mirror is a copy with a promise attached, and
+   the promise is the part that fails silently.
+
+   `resolveEndpoints` is the same function the SDK's own transport uses. It puts
+   any keyed provider from the environment first and the probed public list
+   behind it as a safety net, so nothing here has to know which is which. It is
+   called per request rather than snapshotted, because the alternative is a
+   build-time freeze of a list whose whole point is that it changes.
+   ============================================================================ */
 
 /**
  * One client per chain, cached by chain id.
@@ -223,7 +135,7 @@ const clients = new Map<number, PublicClient>()
  * rather than describing it in prose that drifts from the array.
  */
 export function rpcsFor(chainId: DeployedChainId): readonly string[] {
-  return RPCS[chainId] ?? []
+  return resolveEndpoints(chainId)
 }
 
 /**
@@ -240,13 +152,14 @@ export function client(chainId: DeployedChainId = ACTIVE_CHAIN_ID): PublicClient
   const hit = clients.get(chainId)
   if (hit) return hit
 
-  const urls = RPCS[chainId]
-  if (!urls || urls.length === 0) {
+  const urls = resolveEndpoints(chainId)
+  if (urls.length === 0) {
     // Louder than returning some other chain's client, which is what the old
     // single-cache version effectively did.
     throw new Error(
-      `No RPC endpoints for chain ${chainId}. Add it to RPCS, sourced from ` +
-        `packages/sdk/src/chains/endpoints.ts where every URL was probed.`,
+      `No RPC endpoints for chain ${chainId}. Add it to CHAIN_RPCS in ` +
+        `packages/sdk/src/chains/endpoints.ts — after probing it, which is the ` +
+        `standard every URL in that file was held to.`,
     )
   }
 

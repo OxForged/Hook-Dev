@@ -96,3 +96,35 @@ export * as indexer from "./indexer/index.js";
 // Chain RPC endpoints and the auto-failover transport.
 export * from "./chains/endpoints.js"
 export * from "./chains/transport.js"
+
+// --- deployed addresses ----------------------------------------------------
+// The address book: every deployed Latch contract, per chain, with token
+// decimals. THE single source of truth — `apps/web/src/lib/chain.ts` and the
+// `create-latch-dex` template both re-export this rather than restating it.
+// `null` means not-yet-deployed and is never the zero address; see the module
+// header for why that distinction is load-bearing.
+export * as deployments from "./deployments/index.js";
+export {
+  LATCH_CHAIN_IDS,
+  LATCH_DEPLOYMENTS,
+  NATIVE_CURRENCY,
+  REDEPLOYABLE_CONTRACTS,
+  explorerAddressUrl,
+  explorerTxUrl,
+  getDeployment,
+  isLatchChainId,
+  requireContract,
+  requireDeployment,
+  tokenByAddress,
+  tokenBySymbol,
+} from "./deployments/index.js";
+export type {
+  ContractKey,
+  LatchChainId,
+  LatchChainKey,
+  LatchDeployment,
+  NativeCurrency,
+  RedeployableContract,
+  ReferencePool,
+  TokenInfo,
+} from "./deployments/index.js";

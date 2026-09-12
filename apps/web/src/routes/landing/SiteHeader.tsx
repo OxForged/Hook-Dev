@@ -156,6 +156,23 @@ export function SiteHeader() {
         </div>
 
         <div className={styles['headerRight']}>
+          {/* RAIL ONLY (>= 861px), and `display: none` in the base rule so it
+              cannot leak into the top bar on a phone.
+
+              The rail borrows the dapp sidebar's rhythm: quiet mono micro-label
+              over a block of related things. Four nav destinations are too few
+              to carve into groups — a heading over all four would label the
+              whole nav, which is not a label — so the one labelled block here
+              is the account cluster, which is a genuinely different kind of
+              thing from a link to a section of this page. "FOLLOW" is the
+              collapsed menu's own word for it (see .menuFoot below), not a new
+              one invented for the rail.
+
+              aria-hidden: the <ul> beneath already carries the real accessible
+              name. Two labels for one list makes a screen reader say it twice. */}
+          <p className={styles['railLabel']} aria-hidden="true">
+            Follow
+          </p>
           <ul className={styles['headerSocials']} aria-label="Latch Protocol accounts">
             {HEADER_SOCIALS.map((social) => (
               <SocialIconLink key={social.id} social={social} size="sm" />

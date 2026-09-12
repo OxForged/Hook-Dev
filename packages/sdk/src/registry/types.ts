@@ -396,8 +396,32 @@ export interface LatchRecord {
   /** False if a refresh could no longer read the bitmap at all. `permissions`
    * then holds the last value successfully read and must be treated as stale. */
   readonly permissionsReadable: boolean;
+  /**
+   * The union of every bitmap this hook has been observed ENFORCING in a live
+   * pool, taken from that pool's immutable `parameters`.
+   *
+   * This is the field that makes `permissions` safe to read. `permissions` is
+   * self-reported — the hook's own account of itself, delivered to a caller it
+   * can identify — and `getHooksRegistrationBitmap()` is a `view` function, so
+   * a hook can answer the registry one way and core another. An attestation is
+   * taken from a pool core already validated, which the hook cannot forge.
+   *
+   * Monotone: attestations only ever ADD bits and no role can clear them, so
+   * no ordering of calls can make a record look milder. Zero and meaningless
+   * until `attestationCount > 0`.
+   */
+  readonly attestedPermissions: number;
   /** `hook.codehash` when permissions were last read. */
   readonly codehash: Hex;
+  /** The pool manager that vouched for `attestedPoolId`. Zero if unattested. */
+  readonly attestedPoolManager: Address;
+  /** Unix seconds of the most recent attestation. Zero if unattested. */
+  readonly attestedAt: bigint;
+  /** How many live pools have vouched. Zero means the record is self-reported
+   * only, which a UI must say out loud rather than imply. */
+  readonly attestationCount: number;
+  /** The pool that provided the most recent attestation. */
+  readonly attestedPoolId: Hex;
   readonly metadata: LatchMetadata;
 }
 
@@ -412,7 +436,12 @@ export interface RawLatchRecord {
   readonly updatedAt: bigint;
   readonly permissionsValid: boolean;
   readonly permissionsReadable: boolean;
+  readonly attestedPermissions: number;
   readonly codehash: Hex;
+  readonly attestedPoolManager: Address;
+  readonly attestedAt: bigint;
+  readonly attestationCount: number;
+  readonly attestedPoolId: Hex;
   readonly metadata: {
     readonly name: string;
     readonly description: string;
@@ -444,7 +473,17 @@ export function decodeLatchRecord(hook: Address, raw: RawLatchRecord): LatchReco
     updatedAt: raw.updatedAt,
     permissionsValid: raw.permissionsValid,
     permissionsReadable: raw.permissionsReadable,
+    /* Not validated with assertBitmap. `permissions` is bounded because the
+       registry re-reads it and rejects reserved bits; attestedPermissions is a
+       union of bitmaps core itself accepted at pool initialization, so a value
+       this SDK considers malformed would mean core accepted it — worth
+       surfacing rather than throwing on. */
+    attestedPermissions: raw.attestedPermissions,
     codehash: raw.codehash,
+    attestedPoolManager: raw.attestedPoolManager,
+    attestedAt: raw.attestedAt,
+    attestationCount: raw.attestationCount,
+    attestedPoolId: raw.attestedPoolId,
     metadata: {
       name: raw.metadata.name,
       description: raw.metadata.description,

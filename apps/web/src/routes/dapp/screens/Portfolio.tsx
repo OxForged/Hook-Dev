@@ -152,10 +152,21 @@ function NotConnected() {
           <span>Current token amounts and uncollected fees per position</span>
           <span className="live-fee">from the pool&rsquo;s own price and fee-growth state</span>
         </li>
-        <li>
-          <span>Wallet balances of {d.demoPool.symbol0} and {d.demoPool.symbol1}</span>
-          <span className="live-fee">the protocol&rsquo;s test tokens on {d.name}</span>
-        </li>
+        {/* A chain need not have a pool. Naming one that does not exist here —
+            or worse, naming another chain's — is the mistake the null branch at
+            the foot of this screen already guards against; this bullet was
+            reaching for `demoPool` without the same care. */}
+        {d.demoPool === null ? (
+          <li>
+            <span>Wallet balances of the tokens in a Latch pool</span>
+            <span className="live-fee">no pool has been initialised on {d.name} yet</span>
+          </li>
+        ) : (
+          <li>
+            <span>Wallet balances of {d.demoPool.symbol0} and {d.demoPool.symbol1}</span>
+            <span className="live-fee">the protocol&rsquo;s test tokens on {d.name}</span>
+          </li>
+        )}
         <li>
           <span>Latches you have listed in the registry</span>
           <span className="live-fee">matched on submitter address</span>

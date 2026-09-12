@@ -34,6 +34,58 @@ Requires Node 20+ and TypeScript 5.x. The package is ESM-only with `"strict": tr
 
 ---
 
+## Deployed addresses
+
+Every deployed Latch contract ships with the package. You should never have to hand-type one.
+
+```ts
+import { LATCH_DEPLOYMENTS, getDeployment, tokenBySymbol } from "@latchprotocol/sdk";
+// or, tree-shaking only this:
+// import { ... } from "@latchprotocol/sdk/deployments";
+
+const latch = LATCH_DEPLOYMENTS[4663];      // Robinhood Chain
+latch.vault;                                 // 0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c
+latch.clPoolManager;
+latch.universalRouter;
+latch.deployedAtBlock;                       // start log scans here, not at genesis
+
+getDeployment(999);                          // undefined — Latch is not on HyperEVM
+```
+
+| Chain | id | Status |
+| --- | --- | --- |
+| Robinhood Chain | `4663` | mainnet, 18 contracts verified on Sourcify |
+| Ethereum Sepolia | `11155111` | testnet |
+
+**`null` means not deployed. It is never the zero address.** A contract Latch has not shipped on a
+chain — the launchpad contracts today — reads `null`, so the compiler makes you handle it. A zero
+address would not: it is a value `readContract` accepts and answers with silence.
+
+```ts
+if (latch.launchpadKit === null) {
+  // render "not configured on this chain", do not substitute an address
+}
+requireContract(latch, "launchpadKit"); // or throw a sentence that names the chain
+```
+
+**Tokens carry their decimals**, because `sqrtPriceX96` encodes a price as a ratio of *raw* units.
+USDG is 6 decimals on Robinhood and WETH is 18; assuming 18 for both misprices a pool by 10¹², and
+that price is fixed permanently at `initialize`.
+
+```ts
+tokenBySymbol(4663, "USDG");  // { decimals: 6, ... }
+```
+
+**Some of these addresses move.** `REDEPLOYABLE_CONTRACTS` names the ones that do — the registry,
+the RevShareHook, the timelocks, the fee controller and the launchpad contracts. Their stale
+failure mode is silent: a retired `LatchRegistry` still answers `latchCount()` and renders as a
+healthy, empty marketplace. Read them from this module at call time rather than snapshotting them
+into a build. The `Vault` is immutable and will not move.
+
+An address book is a claim, not a proof. Verify with `eth_getCode` before you rely on one.
+
+---
+
 ## The differentiator: permissions live in the pool key, not the address
 
 In Uniswap v4, a hook's permissions are read from the **address** of the hook contract. Each callback is a bit of the address, so shipping a hook means grinding a CREATE2 salt until the deployed address happens to carry the right low bits. Change your mind about one callback and you redeploy at a new address.
@@ -263,6 +315,12 @@ packages/sdk/
 │   │   ├── poolKey.ts            PoolKey, PoolId, key builders
 │   │   ├── balanceDelta.ts       packed int128 pair
 │   │   └── fee.ts                LP fee, dynamic-fee marker, protocol fee
+│   ├── deployments/
+│   │   └── index.ts              THE address book — every chain, every contract,
+│   │                             token decimals; `null` = not deployed
+│   ├── chains/
+│   │   ├── endpoints.ts          probed public RPC endpoints per chain
+│   │   └── transport.ts          viem failover transport built from them
 │   ├── hooks/
 │   │   └── bitmap.ts             flag tables, encode/decode/validate
 │   ├── events/
@@ -272,6 +330,7 @@ packages/sdk/
 │       └── index.ts              id builders and mapping helpers
 └── test/
     ├── bitmap.test.ts
+    ├── deployments.test.ts
     └── events.test.ts
 ```
 

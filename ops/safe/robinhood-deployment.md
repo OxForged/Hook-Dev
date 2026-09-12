@@ -117,3 +117,45 @@ Two things that will bite on a re-run:
   `src/ProtocolFeeController.sol:ProtocolFeeController`. Guessing the split
   names reports a misleading "compiler version mismatch".
 - Handover from the Safe to the two timelocks.
+
+---
+
+## Redeploy, 2026-09-12 — six contracts, all Sourcify-verified
+
+These SUPERSEDE the rows above. The originals are retired, not dead, and the
+difference matters: a retired `LatchRegistry` still answers `latchCount()` and
+renders as a perfectly healthy empty marketplace. That is exactly how the
+2026-09-10 rename went unnoticed. Anything still pointing at an address in the
+table above is reading a contract that will answer.
+
+| Contract | Address | What changed |
+|---|---|---|
+| `LatchRegistry` v2 | `0xb2c8BB7473A09b0906f192D69e30D7362fA988CC` | pool attestation — a hook can no longer show the registry one bitmap and core another |
+| `LatchTimelock` custody 48h | `0x3ae354e2CdFB9cB855Aba41C825f6Ee53F28E119` | `CANCELLER_ROLE` on a separate key; `updateDelay` floor re-applied |
+| `LatchLaunchRegistry` | `0x6D10B4CeDb53aD50c5A1D83f27fcE9c5C3b15c94` | new — the shared launch index |
+| `RevShareHook` | `0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2` | config delay 6 min -> 12 real hours; proposal expiry; roster invariant |
+| `LaunchGuardHook` | `0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c` | first deployment; launch window 28 h -> ~30 days |
+| `LaunchpadKit` | `0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7` | first deployment; its constructor rejected this chain's block time until this week |
+
+Retired: `LatchRegistry 0xE4395085…`, `RevShareHook 0x23CE34E8…`,
+`LatchTimelock custody 0x63F08A69…`. **The policy timelock is not redeployed at
+all** — the tier is gone and everything it held now sits with the Safe directly.
+
+**The LTT1/LTT2 pool stays bound to the OLD RevShareHook, permanently**, because
+`poolKey.hooks` is part of the pool id. There is no migration: it keeps every
+hazard in CLAUDE.md's "Deployed and unfixable" section, and those operational
+rules stay in force for that pool specifically. A pool on the new hook is a new
+pool — new key, new id, no liquidity, no history.
+
+### Two things this deployment taught
+
+**Two of the three RPCs cannot deploy a large contract.** `rpc.mainnet.chain.robinhood.com`
+and `rpc.ordofi.network` cap the gas estimator and return
+`-32000: contract creation code storage out of gas` for anything with a big code
+deposit — `LatchLaunchRegistry` is 21,159 bytes, so the deposit alone is 4.23M
+gas. **`rpc-robinhood.blockmachine.io` handles them.** This is not a funding
+problem and reads nothing like one; the first diagnosis was wrong twice.
+
+**`--compilation-profile default` is required** to verify anything in
+`packages/launchpad`, exactly as it already was for periphery. Without it
+Sourcify submission fails with "Ambiguous compilation profiles found in cache".

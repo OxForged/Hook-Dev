@@ -50,6 +50,20 @@ export type IconName =
   | 'perps'
   | 'rwa'
   | 'stocks'
+  /* Added 2026-09-12 with the nav restyle. This one is not a destination glyph:
+     it sits INLINE, immediately after an external link's label, and says the
+     link leaves the site. It is here rather than as an inline <svg> in the
+     sidebar for the reason every other glyph is here — one 24-unit grid, one
+     stroke weight, one `currentColor` contract — and because the sidebar is now
+     the second surface that needs it.
+
+     What it replaces: a literal "↗" character. That rendered at whatever weight
+     the reader's symbol font happened to supply, sitting beside 1.6-stroke line
+     icons, and it was the one mark in the rail that did not scale with the rest.
+
+     Decorative, like every glyph here. The accessible name still says "opens in
+     a new tab" in words at each call site; a symbol is not an announcement. */
+  | 'external'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   /* The constant-product curve itself. x*y=k is the one shape that means AMM
@@ -99,6 +113,16 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M3.5 20.5h17" />
       <path d="M5 16l4-5 3.5 3L19 5" />
       <path d="M5 8.5l4 3 3.5-1.5L19 15.5" />
+    </>
+  ),
+  /* A box with the arrow already leaving it. The opening in the top-right
+     corner is the load-bearing part: a closed box with an arrow inside reads as
+     "expand", and an arrow with no box reads as "up and to the right". */
+  external: (
+    <>
+      <path d="M10.5 5.5H5.5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5" />
+      <path d="M13.5 4.5h6v6" />
+      <path d="M19.5 4.5 11 13" />
     </>
   ),
   /* Two arrows passing — the universal shape for an exchange, and deliberately
