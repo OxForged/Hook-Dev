@@ -1,0 +1,14 @@
+# OPT-IN OVERRIDE. The only file in this package where `--execute` appears.
+#
+# `docker-compose.yml` on its own is a dry run, always, even with a key in the
+# environment. Layer this file on top to make the stack SEND:
+#
+#   docker compose -p latch -f docker-compose.yml -f compose.execute.yml up -d --build
+#
+# Sending still needs KEEPER_PRIVATE_KEY in .env as well - both conditions, as
+# the CLI requires. Bringing the stack back up WITHOUT this file is how you go
+# back to reporting only; nothing in the image remembers the flag.
+
+services:
+  keeper:
+    command: ["--config", "/config/keeper.config.json", "--interval", "${KEEPER_INTERVAL:-300}", "--execute"]

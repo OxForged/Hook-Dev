@@ -3,57 +3,28 @@
 
    Both are permissionless on both distributors. Between them they are the
    reason this keeper exists: without something calling them, an epoch never
-   closes and unclaimed funds never return to the next epoch. Today nothing
-   calls them, so on a live deployment the revenue share simply stops moving
-   until a human remembers.
+   closes and unclaimed funds never return to the next epoch.
+
+   A target whose `distributor` is `null` still gets a verdict from each job.
+   "No distributor here" is a state the operator needs to see every tick, and
+   the close-epoch job checks it against the hook's own `distributorOf` so a
+   distributor added on chain but not in the config is reported, not skipped.
    ============================================================================ */
 
-import type { Address } from 'viem'
+import { zeroAddress, type Address } from 'viem'
 import {
   DISTRIBUTOR_ABI,
   EPOCH,
   MERKLE_EPOCH_ABI,
+  REV_SHARE_HOOK_ABI,
   SNAPSHOT_EPOCH_ABI,
   type DistributorKind,
   type EpochTuple,
 } from '../abi.js'
 import type { WatchTarget } from '../config.js'
-import { type Job, type JobContext, type JobVerdict, failed, notDue } from './types.js'
-
-/* Viem revert-message shapes. Declared as constants so the helper below reads as intent. */
-const NAMED_ERROR = /^Error:\s*[A-Za-z_]\w*\s*\(/
-const ERROR_PREFIX = /^Error:\s*/
-const SIG_HEADER = /reverted with the following signature/i
-const SELECTOR = /^0x[0-9a-fA-F]{8}$/
-const EXEC_PREFIX = /^ContractFunctionExecutionError:\s*/
-
-/**
- * A one-line revert summary an operator can act on.
- *
- * Viem's messages run to several paragraphs, and the FIRST line is often the least useful part:
- * "reverted with the following signature:" with the signature itself on the NEXT line. A keeper
- * that logs only line one prints a sentence that stops mid-thought, which is exactly what this
- * did against the live pool.
- *
- * Prefer the decoded custom-error name; fall back to the raw 4-byte selector, which is still
- * enough to look up; only then to the first line.
- */
-function revertReason(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e)
-  const lines = msg.split('\n').map((l) => l.trim()).filter(Boolean)
-
-  const named = lines.find((l) => NAMED_ERROR.test(l))
-  if (named) return named.replace(ERROR_PREFIX, '')
-
-  const sigIdx = lines.findIndex((l) => SIG_HEADER.test(l))
-  if (sigIdx >= 0) {
-    const sig = lines[sigIdx + 1]
-    if (sig && SELECTOR.test(sig)) return `reverted, undecoded selector ${sig}`
-  }
-
-  const first = lines[0] ?? msg
-  return first.replace(EXEC_PREFIX, '').trim()
-}
+import { kindFromBytes32 } from '../decode.js'
+import { revertReason, sendGuarded } from './send.js'
+import { failed, notDue, type Job, type JobContext, type JobVerdict } from './types.js'
 
 function fmtSeconds(s: bigint): string {
   const n = Number(s)
@@ -63,57 +34,52 @@ function fmtSeconds(s: bigint): string {
   return `${(n / 86400).toFixed(1)}d`
 }
 
-async function simulateAndMaybeSend(
-  ctx: JobContext,
-  address: Address,
-  functionName: 'closeEpoch' | 'rollover',
-  args: readonly unknown[],
-  label: string,
-): Promise<JobVerdict> {
+/**
+ * Which distributor is this? Ask it. `kind()` returns one of two
+ * domain-separated constants and nothing else is accepted: zero, a revert, an
+ * unrecognised hash and empty return data are all `unknown`, and the caller
+ * must stop rather than guess — a merkle epoch read through the snapshot ABI
+ * decodes without error and returns nonsense.
+ *
+ * A distributor deployed before `kind()` existed answers `unknown` here too.
+ * That is the honest outcome: this keeper does not probe `token()` any more,
+ * because any contract with a `token()` getter passes that probe.
+ */
+async function readKind(ctx: JobContext, address: Address): Promise<{ kind: DistributorKind; detail: string }> {
   try {
-    // The guard rail. Every contract-side precondition becomes a free read here
-    // rather than a failed transaction: EpochTooSoon, NothingToDistribute,
-    // AlreadyRolledOver all surface as a simulation revert.
-    const sim = await ctx.publicClient.simulateContract({
-      address,
-      abi: DISTRIBUTOR_ABI,
-      functionName,
-      args: args as never,
-      ...(ctx.account ? { account: ctx.account } : {}),
-    })
-
-    if (!ctx.walletClient || !ctx.account) {
-      return { due: true, reason: `${label}: DUE — simulated clean. Dry run, nothing sent.` }
-    }
-
-    const hash = await ctx.walletClient.writeContract(sim.request as never)
-    return { due: true, reason: `${label}: sent`, txHash: hash }
+    const raw = await ctx.publicClient.readContract({ address, abi: DISTRIBUTOR_ABI, functionName: 'kind' })
+    const kind = kindFromBytes32(raw)
+    return { kind, detail: kind === 'unknown' ? `kind() returned ${String(raw)}, which is neither constant this keeper knows` : `kind() = ${kind}` }
   } catch (e) {
-    // A revert here is the normal, expected outcome most of the time.
-    return notDue(`${label}: not due — ${revertReason(e)}`)
+    return { kind: 'unknown', detail: `kind() did not answer — ${revertReason(e).replace(/\.$/, '')}` }
   }
 }
 
 /**
- * Which distributor is this? There is no `kind()` on chain and the two have no
- * common interface, so the only way to tell them apart is to ask each a question
- * the other cannot answer: `token()` exists only on the snapshot distributor,
- * `challengeDelay()` only on the merkle one.
- *
- * Exactly one must answer. If both do, or neither does, the answer is `unknown`
- * and the caller must stop rather than guess — reading a merkle epoch through
- * the snapshot ABI decodes without error and returns nonsense.
+ * Compare the config's idea of the distributor with the hook's. Returns a
+ * verdict to report when they disagree, or null when they agree.
  */
-async function probeKind(ctx: JobContext, address: Address): Promise<DistributorKind> {
-  const [snap, merk] = await Promise.allSettled([
-    ctx.publicClient.readContract({ address, abi: DISTRIBUTOR_ABI, functionName: 'token' }),
-    ctx.publicClient.readContract({ address, abi: DISTRIBUTOR_ABI, functionName: 'challengeDelay' }),
-  ])
-  const isSnap = snap.status === 'fulfilled'
-  const isMerk = merk.status === 'fulfilled'
-  if (isSnap && !isMerk) return 'snapshot'
-  if (isMerk && !isSnap) return 'merkle'
-  return 'unknown'
+async function crossCheckDistributor(ctx: JobContext, t: WatchTarget, label: string): Promise<JobVerdict | null> {
+  const onChain = (await ctx.publicClient.readContract({
+    address: t.hook,
+    abi: REV_SHARE_HOOK_ABI,
+    functionName: 'distributorOf',
+    args: [t.poolId],
+  })) as Address
+  const routed = onChain.toLowerCase() !== zeroAddress
+
+  if (t.distributor === null) {
+    return routed
+      ? failed(`${label}: config says this pool has NO distributor, but the hook routes it to ${onChain}. Epochs there will never close until it is added to the config.`)
+      : notDue(`${label}: no distributor — config says none and the hook agrees (distributorOf = 0x0)`)
+  }
+  if (!routed) {
+    return failed(`${label}: config names distributor ${t.distributor}, but the hook routes this pool nowhere (distributorOf = 0x0). Check the config; the keeper will still service the configured contract.`)
+  }
+  if (onChain.toLowerCase() !== t.distributor.toLowerCase()) {
+    return failed(`${label}: config names distributor ${t.distributor}, but the hook now routes to ${onChain}. The configured one is still serviced (its epochs still need closing); add the new one.`)
+  }
+  return null
 }
 
 export function closeEpochJob(targets: readonly WatchTarget[]): Job {
@@ -123,9 +89,12 @@ export function closeEpochJob(targets: readonly WatchTarget[]): Job {
     async run(ctx) {
       const out: JobVerdict[] = []
       for (const t of targets) {
-        if (!t.distributor) continue
         const label = `${t.label} closeEpoch`
         try {
+          const mismatch = await crossCheckDistributor(ctx, t, label)
+          if (mismatch) out.push(mismatch)
+          if (t.distributor === null) continue
+
           const [lastCloseAt, minDuration, epochCount] = await Promise.all([
             ctx.publicClient.readContract({
               address: t.distributor, abi: DISTRIBUTOR_ABI, functionName: 'lastCloseAt',
@@ -148,7 +117,9 @@ export function closeEpochJob(targets: readonly WatchTarget[]): Job {
             }
           }
 
-          out.push(await simulateAndMaybeSend(ctx, t.distributor, 'closeEpoch', [], label))
+          out.push(
+            await sendGuarded(ctx, { address: t.distributor, abi: DISTRIBUTOR_ABI, functionName: 'closeEpoch', args: [] }, label),
+          )
         } catch (e) {
           out.push(failed(`${label}: could not read distributor — ${revertReason(e)}`))
         }
@@ -165,13 +136,17 @@ export function rolloverJob(targets: readonly WatchTarget[]): Job {
     async run(ctx) {
       const out: JobVerdict[] = []
       for (const t of targets) {
-        if (!t.distributor) continue
+        if (t.distributor === null) {
+          out.push(notDue(`${t.label} rollover: no distributor configured for this pool`))
+          continue
+        }
+        const distributor = t.distributor
         try {
-          const kind = await probeKind(ctx, t.distributor)
+          const { kind, detail } = await readKind(ctx, distributor)
           if (kind === 'unknown') {
             out.push(
               failed(
-                `${t.label} rollover: could not tell which distributor this is — it answered both or neither of token() and challengeDelay(). Refusing to guess, because a merkle epoch read through the snapshot ABI decodes silently into nonsense.`,
+                `${t.label} rollover: could not tell which distributor ${distributor} is — ${detail}. Refusing to guess, because a merkle epoch read through the snapshot ABI decodes silently into nonsense.`,
               ),
             )
             continue
@@ -179,7 +154,7 @@ export function rolloverJob(targets: readonly WatchTarget[]): Job {
           const epochAbi = kind === 'snapshot' ? SNAPSHOT_EPOCH_ABI : MERKLE_EPOCH_ABI
 
           const count = (await ctx.publicClient.readContract({
-            address: t.distributor, abi: DISTRIBUTOR_ABI, functionName: 'epochCount',
+            address: distributor, abi: DISTRIBUTOR_ABI, functionName: 'epochCount',
           })) as bigint
 
           if (count === 0n) {
@@ -193,25 +168,47 @@ export function rolloverJob(targets: readonly WatchTarget[]): Job {
           for (let id = 0n; id < count; id++) {
             const label = `${t.label} rollover#${id}`
             const epoch = (await ctx.publicClient.readContract({
-              address: t.distributor, abi: epochAbi, functionName: 'getEpoch', args: [id],
+              address: distributor, abi: epochAbi, functionName: 'getEpoch', args: [id],
             })) as EpochTuple
 
             if (epoch[EPOCH.rolledOver]) continue
 
+            // WHICH CLOCK. On the snapshot distributor `expiresAt` is the only
+            // deadline there is. On the merkle distributor an epoch with no
+            // root has expiresAt == 0 and is governed by an abandonment
+            // fallback that `cancelRoot` can push out — and nothing in
+            // `getEpoch` records that it did. `rolloverEligibleAt` is the one
+            // view that knows, so it is the only thing worth scheduling on.
             const expiresAt = epoch[EPOCH.expiresAt]
-            if (ctx.now < expiresAt) {
-              out.push(notDue(`${label}: claim window open for another ${fmtSeconds(expiresAt - ctx.now)}`))
+            let eligibleAt: bigint
+            let clock: string
+            if (kind === 'merkle') {
+              eligibleAt = BigInt(
+                (await ctx.publicClient.readContract({
+                  address: distributor, abi: DISTRIBUTOR_ABI, functionName: 'rolloverEligibleAt', args: [id],
+                })) as bigint | number,
+              )
+              clock = expiresAt === 0n ? 'no root posted; abandonment fallback' : 'claim window'
+            } else {
+              eligibleAt = expiresAt
+              clock = 'claim window'
+            }
+
+            if (ctx.now < eligibleAt) {
+              out.push(notDue(`${label}: not eligible for another ${fmtSeconds(eligibleAt - ctx.now)} (${clock})`))
               continue
             }
 
             const unclaimed0 = epoch[EPOCH.amount0] - epoch[EPOCH.claimed0]
             const unclaimed1 = epoch[EPOCH.amount1] - epoch[EPOCH.claimed1]
             if (unclaimed0 === 0n && unclaimed1 === 0n) {
-              out.push(notDue(`${label}: expired but fully claimed — nothing to roll`))
+              out.push(notDue(`${label}: eligible but fully claimed — nothing to roll`))
               continue
             }
 
-            out.push(await simulateAndMaybeSend(ctx, t.distributor, 'rollover', [id], label))
+            out.push(
+              await sendGuarded(ctx, { address: distributor, abi: DISTRIBUTOR_ABI, functionName: 'rollover', args: [id] }, label),
+            )
           }
         } catch (e) {
           out.push(failed(`${t.label} rollover: could not read distributor — ${revertReason(e)}`))

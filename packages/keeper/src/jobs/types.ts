@@ -16,6 +16,10 @@
    by reverting (`EpochTooSoon`, `NothingToDistribute`, `AlreadyRolledOver`).
    A keeper that just fires on a timer would spend gas discovering those guards.
    Simulating first turns every one of them into a free read.
+
+   The exception that proves the rule is `settleBeneficiaries`, which RETURNS
+   instead of reverting when there is nothing to do. Its job reads the guards
+   itself before it ever simulates. See jobs/hook.ts.
    ============================================================================ */
 
 import type { Address, Hex, PublicClient, WalletClient } from 'viem'
@@ -36,11 +40,13 @@ export interface JobContext {
   readonly publicClient: PublicClient
   /** Absent in a dry run. A job MUST treat that as "report only". */
   readonly walletClient?: WalletClient
-  /** The keeper's own address. Only ever used as `account` on a simulation. */
+  /** The keeper's own address. Only ever used as `account` on a simulation or estimate. */
   readonly account?: Address
   readonly chainId: number
   readonly now: bigint
   readonly blockNumber: bigint
+  /** From config. When set, a clean simulation that estimates above this is refused, not sent. */
+  readonly maxGas?: bigint
 }
 
 export interface Job {

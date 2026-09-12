@@ -1,8 +1,9 @@
-# The `latch` stack. Deployed to ~/latch on the host.
+# The `latch` stack. Lives in ~/latch/keeper on whichever host runs it.
 #
-# This host is SHARED. The `peddles`, `peddles-quest` and `peddlepro` compose
-# projects run alongside this one, and `peddles-caddy-1` owns :80 and :443 for
-# all of them. Everything here is therefore namespaced and self-contained:
+# Assume the host is SHARED. The previous one ran three unrelated production
+# stacks beside this one, and a Caddy belonging to one of them owned :80 and
+# :443 for all of them. Everything here is therefore namespaced and
+# self-contained, and stays that way on a fresh host too:
 #
 #   project   latch          (set by `name:`, so it cannot inherit a directory name)
 #   network   latch_net      (declared here, not the default bridge)
@@ -11,6 +12,9 @@
 #
 # Always `docker compose -p latch ...` from this directory. A bare
 # `docker compose down` run from the wrong path takes down somebody else's stack.
+#
+# THIS FILE IS A DRY RUN. It never passes `--execute`. To send, layer
+# `compose.execute.yml` on top - see RUNBOOK.md.
 
 name: latch
 
@@ -24,8 +28,12 @@ services:
 
     # Config is mounted read-only. The keeper never writes it, and a container
     # that cannot modify its own target list is one fewer thing to reason about.
+    #
+    # KEEPER_CONFIG selects WHICH tracked config is mounted. The Robinhood one is
+    # `./keeper.config.robinhood.json`; the default keeps the old name for a
+    # local, gitignored file.
     volumes:
-      - ./keeper.config.json:/config/keeper.config.json:ro
+      - ${KEEPER_CONFIG:-./keeper.config.json}:/config/keeper.config.json:ro
 
     environment:
       # ABSENT BY DEFAULT, and that is the safe state: with no key the keeper
@@ -37,20 +45,20 @@ services:
       # function the keeper calls is permissionless, so a stolen keeper key buys
       # an attacker nothing they could not already do from any address.
       #
-      # NEVER put the deployer key here. That one owns the Vault, and
-      # `registerApp` is irreversible.
+      # NEVER put the deployer key here. During a deployment that key is briefly
+      # the most valuable in the system.
       KEEPER_PRIVATE_KEY: ${KEEPER_PRIVATE_KEY:-}
 
-    # Default is a dry run on a 5-minute loop. Add --execute to actually send.
-    command: ["--config", "/config/keeper.config.json", "--interval", "300"]
+    # Dry run on a 5-minute loop. `compose.execute.yml` is the only place
+    # `--execute` appears.
+    command: ["--config", "/config/keeper.config.json", "--interval", "${KEEPER_INTERVAL:-300}"]
 
     networks: [latch_net]
 
     logging:
       driver: json-file
       options:
-        # The keeper logs every job every tick. Uncapped, that fills a disk
-        # already at 82%.
+        # The keeper logs every job every tick. Uncapped, that fills a disk.
         max-size: "10m"
         max-file: "3"
 

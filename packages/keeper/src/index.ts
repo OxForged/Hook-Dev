@@ -15,7 +15,7 @@
         always is.
    ============================================================================ */
 
-import { createPublicClient, createWalletClient, fallback, http, type Address } from 'viem'
+import { createPublicClient, createWalletClient, defineChain, fallback, http, type Address } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
 import { loadConfig, readPrivateKey } from './config.js'
@@ -76,11 +76,43 @@ async function main(): Promise<void> {
   const cfg = loadConfig(args.config)
   const pk = readPrivateKey()
 
+  // Reads issued within the same few milliseconds are folded into ONE JSON-RPC
+  // batch request. Every public Robinhood RPC rate-limits by request count, and
+  // a tick is a burst of a dozen small reads; batching turns that burst into
+  // two or three HTTP calls. `rpcBatch: false` in config for an RPC that rejects
+  // batch arrays. The retry delay is long on purpose: a "rate limit exceeded"
+  // answered again 150ms later is the same answer.
   const transport = fallback(
-    cfg.rpcUrls.map((u) => http(u, { timeout: 15_000, retryCount: 2 })),
+    cfg.rpcUrls.map((u) =>
+      http(u, {
+        timeout: 15_000,
+        retryCount: 3,
+        retryDelay: 1_500,
+        ...(cfg.rpcBatch === false ? {} : { batch: { wait: 25 } }),
+      }),
+    ),
     { rank: false },
   )
-  const publicClient = createPublicClient({ transport })
+
+  // The chain object exists so every signed transaction carries the chain id
+  // FROM CONFIG rather than whatever the RPC happened to answer. viem does not
+  // assert the chain for a local account, so the check below is the real guard.
+  const chain = defineChain({
+    id: cfg.chainId,
+    name: `chain-${cfg.chainId}`,
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: { default: { http: [...cfg.rpcUrls] } },
+  })
+  const publicClient = createPublicClient({ chain, transport })
+
+  // FAIL HARD ON THE WRONG CHAIN. Every address in the config is meaningful on
+  // exactly one chain; an RPC list that points elsewhere makes every read
+  // return zeros and every "nothing pending" a lie. Checked once, at startup,
+  // before a single job runs.
+  const rpcChainId = await publicClient.getChainId()
+  if (rpcChainId !== cfg.chainId) {
+    throw new Error(`config says chainId ${cfg.chainId} but the RPC answers chain ${rpcChainId}. Refusing to start.`)
+  }
 
   // Both conditions required. `--execute` without a key reports; a key without
   // `--execute` reports. This is deliberate belt-and-braces: the most likely
@@ -88,7 +120,7 @@ async function main(): Promise<void> {
   const willSend = args.execute && pk !== undefined
   const account = pk ? privateKeyToAccount(pk) : undefined
   const walletClient =
-    willSend && account ? createWalletClient({ account, transport }) : undefined
+    willSend && account ? createWalletClient({ account, chain, transport }) : undefined
 
   const allJobs: Job[] = [
     closeEpochJob(cfg.targets),
@@ -99,13 +131,19 @@ async function main(): Promise<void> {
   const disabled = new Set(cfg.disabledJobs ?? [])
   const jobs = allJobs.filter((j) => !disabled.has(j.id))
 
-  console.log(`latch-keeper · chain ${cfg.chainId} · ${cfg.targets.length} target(s) · ${jobs.length} job(s)`)
+  const hooks = new Set(cfg.targets.map((t) => t.hook.toLowerCase()))
+  const withDistributor = cfg.targets.filter((t) => t.distributor !== null).length
+  console.log(
+    `latch-keeper · chain ${cfg.chainId} · ${cfg.targets.length} target(s) across ${hooks.size} hook(s), ${withDistributor} with a distributor · ${jobs.length} job(s)`,
+  )
   console.log(
     willSend
       ? `MODE: EXECUTE — transactions WILL be sent from ${account?.address}`
       : `MODE: DRY RUN — nothing will be sent${args.execute && !pk ? ' (--execute given but KEEPER_PRIVATE_KEY is unset)' : ''}`,
   )
+  if (cfg.maxGas !== undefined) console.log(`maxGas: ${cfg.maxGas}`)
   if (disabled.size > 0) console.log(`disabled jobs: ${[...disabled].join(', ')}`)
+  if (cfg.notes) console.log(`notes: ${cfg.notes}`)
   console.log('')
 
   const runOnce = async (): Promise<void> => {
@@ -117,6 +155,7 @@ async function main(): Promise<void> {
       blockNumber: block.number,
       ...(walletClient ? { walletClient } : {}),
       ...(account ? { account: account.address as Address } : {}),
+      ...(cfg.maxGas !== undefined ? { maxGas: cfg.maxGas } : {}),
     }
     console.log(`[${stamp()}] block ${block.number}`)
     const { acted, failures } = await tick(jobs, ctx)

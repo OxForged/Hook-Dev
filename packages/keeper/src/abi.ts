@@ -12,7 +12,7 @@
    added - see README § "What a stolen keeper key buys an attacker".
    ============================================================================ */
 
-import { parseAbi } from 'viem'
+import { keccak256, parseAbi, toHex, type Hex } from 'viem'
 
 /** RevShareHook: the two permissionless maintenance calls, plus their guards. */
 export const REV_SHARE_HOOK_ABI = parseAbi([
@@ -22,26 +22,40 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   // --- reads used to decide whether the writes are worth sending ---
   'function pendingBeneficiary(bytes32 poolId, address currency) view returns (uint256)',
   'function pendingDistributorShare(bytes32 poolId, address currency) view returns (uint256)',
-  // The tuple gained `uint48 expiryBlock` after `effectiveBlock` when the hook was
-  // redeployed. A matured proposal now dies of old age instead of staying armed
-  // forever. Reading this through the two-field shape does NOT error - it silently
-  // returns `expiryBlock` as `params.feePips`, which is the same trap as decoding one
-  // distributor's `getEpoch` through the other's ABI.
-  'function getPendingConfig(bytes32 poolId) view returns ((uint48,uint48,(uint24,uint16,uint16,uint16,address,bool)))',
+  // `settleBeneficiaries` has TWO silent early returns: a zero pot, and an empty
+  // roster (`_totalWeight == 0`). The job must read both or it will pay gas to do
+  // nothing on a pool whose owner never set a roster.
+  'function totalWeight(bytes32 poolId) view returns (uint256)',
   'function distributorOf(bytes32 poolId) view returns (address)',
+  // `getPendingConfig` is deliberately NOT typed here. The struct it returns has
+  // two shapes in the wild — 7 words on the hooks deployed before proposal expiry
+  // existed (Robinhood 0x23CE…, Sepolia 0x1C86…), 8 words on the current source —
+  // and they are not interchangeable. The job calls it raw and
+  // `decodePendingConfig` switches on the returned length. See decode.ts.
 ])
 
 /**
- * The two distributors share `closeEpoch`/`rollover` signatures but NOT their
- * event signatures, and they have no common interface on chain. `kind()` does
- * not exist, so the keeper probes: `token()` answers only on the snapshot
- * distributor, `challengeDelay()` only on the merkle one. That probe is why
- * both selectors appear here.
+ * Selector-only entry for the raw `getPendingConfig` call. The declared return
+ * type is never used to decode; it exists so the selector is computed from a
+ * signature in this file rather than pasted in as a magic number.
+ */
+export const GET_PENDING_CONFIG_ABI = parseAbi([
+  'function getPendingConfig(bytes32 poolId) view returns (bytes)',
+])
+
+/**
+ * The two distributors share `closeEpoch`/`rollover` signatures and both
+ * implement `IEpochDistributor.kind()`, which is how the keeper tells them
+ * apart. `kind()` returns a domain-separated keccak constant, never zero, so an
+ * EOA, a proxy to nothing, or an unrelated contract that happens to expose a
+ * `token()` getter fails to match instead of being mistaken for a distributor.
  */
 export const DISTRIBUTOR_ABI = parseAbi([
   // --- writes (both permissionless on both distributors) ---
   'function closeEpoch() returns (uint256 epochId)',
   'function rollover(uint256 epochId)',
+  // --- identity ---
+  'function kind() pure returns (bytes32)',
   // --- reads with identical shape on both distributors ---
   'function epochCount() view returns (uint256)',
   'function lastCloseAt() view returns (uint64)',
@@ -49,9 +63,12 @@ export const DISTRIBUTOR_ABI = parseAbi([
   'function claimWindow() view returns (uint64)',
   'function carryOver0() view returns (uint256)',
   'function carryOver1() view returns (uint256)',
-  // --- type probes, read-only, never sent ---
-  'function token() view returns (address)',
-  'function challengeDelay() view returns (uint64)',
+  // --- merkle only ---
+  // The one view that knows which of the two rollover clocks governs an epoch.
+  // `cancelRoot` moves one of them and `getEpoch` does not record that it did, so
+  // a deadline recomputed off chain is eventually the wrong one. The snapshot
+  // distributor has no such call; there `expiresAt` is the whole story.
+  'function rolloverEligibleAt(uint256 epochId) view returns (uint64)',
   // --- custom errors ---
   // Present so viem DECODES a revert into a name instead of handing back a bare
   // 4-byte selector. These are the keeper's normal output, not exceptions:
@@ -61,11 +78,9 @@ export const DISTRIBUTOR_ABI = parseAbi([
   'error NothingToDistribute()',
   'error EpochTooSoon(uint64 earliest)',
   'error AlreadyRolledOver(uint256 epochId)',
+  'error NotExpiredYet(uint256 epochId, uint64 expiresAt)',
   'error ClaimWindowClosed(uint256 epochId, uint64 expiresAt)',
   'error UnknownEpoch(uint256 epochId)',
-  'error NothingToClaim(uint256 epochId, address account)',
-  'error AlreadyClaimed(uint256 epochId, address account)',
-  'error RolloverTooSoon(uint256 epochId, uint64 expiresAt)',
 ])
 
 /**
@@ -97,8 +112,20 @@ export const MERKLE_EPOCH_ABI = parseAbi([
   'function getEpoch(uint256 epochId) view returns ((uint256,uint256,uint256,uint256,bytes32,uint64,uint64,uint64,bool))',
 ])
 
-/** Which distributor a target is. `unknown` means the probe was inconclusive. */
+/** Which distributor a target is. `unknown` means `kind()` did not answer with a value this keeper recognises. */
 export type DistributorKind = 'snapshot' | 'merkle' | 'unknown'
+
+/**
+ * The constants `IEpochDistributor.kind()` may return, computed here exactly as
+ * `EpochDistributorKind` in `packages/hooks-revshare/src/interfaces/IEpochDistributor.sol`
+ * computes them. The `.v1` suffix is load-bearing: a distributor that changes its
+ * `Epoch` layout gets a NEW string, so this keeper fails to match it instead of
+ * decoding a new layout with an old ABI.
+ */
+export const DISTRIBUTOR_KIND: Readonly<Record<Exclude<DistributorKind, 'unknown'>, Hex>> = {
+  snapshot: keccak256(toHex('latch.revshare.distributor.snapshot.v1')),
+  merkle: keccak256(toHex('latch.revshare.distributor.merkle.v1')),
+}
 
 /**
  * Indices that mean the same thing on BOTH distributors. Nothing above index 3

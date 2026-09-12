@@ -7,11 +7,12 @@
   "bin": { "latch-keeper": "./dist/index.js" },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "README.md", "keeper.config.example.json"],
+  "files": ["dist", "README.md", "RUNBOOK.md", "keeper.config.example.json", "keeper.config.robinhood.json"],
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test \"test/**/*.test.mjs\"",
     "start": "node dist/index.js",
     "dry-run": "node dist/index.js --once",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""

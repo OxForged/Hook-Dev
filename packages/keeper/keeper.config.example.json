@@ -1,14 +1,16 @@
 {
   "chainId": 11155111,
+  "notes": "EXAMPLE. The hook is the zero address on purpose so a copy-paste run fails at startup. For a real config see keeper.config.robinhood.json. `distributor` is REQUIRED: an address, or null when the pool has none - say which.",
   "rpcUrls": ["https://ethereum-sepolia-rpc.publicnode.com"],
   "maxGas": "2000000",
+  "rpcBatch": true,
   "disabledJobs": [],
   "targets": [
     {
       "label": "ltUSD/ltETH revshare",
       "poolId": "0x1373a1db3e21b471647422e89bd87e4e97c0a5d0d2af24194226a40a5a402b38",
       "hook": "0x0000000000000000000000000000000000000000",
-      "distributor": "0x0000000000000000000000000000000000000000",
+      "distributor": null,
       "currencies": [
         "0x5c00ea81EedcED610c5174b9D20F83Ca245e269C",
         "0xbEf6E0f94Fe1a96390Eb25D32759aad85fD1f067"

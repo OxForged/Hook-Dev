@@ -1,0 +1,27 @@
+{
+  "chainId": 4663,
+  "notes": "Robinhood Chain mainnet. ONE target: the LTT1/LTT2 pool, bound forever to the RETIRED RevShareHook 0x23CE34E8 (poolKey.hooks is part of the pool id, so it cannot move). The CURRENT hook 0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2 has no pools yet and therefore no target; add one target per pool as pools are configured on it. distributor is null because no epoch distributor is deployed on this chain - the close-epoch job cross-checks that against distributorOf() every tick. rpc.mainnet.chain.robinhood.com, rpc.ordofi.network and the blockscout RPC cap the gas estimator and rate-limit to ~1 req/10s; do not add them as fallbacks.",
+  "rpcUrls": ["https://rpc-robinhood.blockmachine.io"],
+  "maxGas": "2000000",
+  "disabledJobs": [],
+  "targets": [
+    {
+      "label": "LTT1/LTT2 revshare (retired hook 0x23CE)",
+      "poolId": "0xcb1fbdafcaa52a0cc8f5ece1752737c2a5eec2b7242953270c15bdd9818a50e8",
+      "hook": "0x23CE34E8199927DD270dddd8579c947542bDE446",
+      "distributor": null,
+      "currencies": [
+        "0x2A21c0826848f2D597B7C87A4B931dE1407958A6",
+        "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4"
+      ],
+      "poolKey": {
+        "currency0": "0x2A21c0826848f2D597B7C87A4B931dE1407958A6",
+        "currency1": "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4",
+        "hooks": "0x23CE34E8199927DD270dddd8579c947542bDE446",
+        "poolManager": "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
+        "fee": 3000,
+        "parameters": "0x00000000000000000000000000000000000000000000000000000000003c0881"
+      }
+    }
+  ]
+}
