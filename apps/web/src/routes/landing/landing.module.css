@@ -505,7 +505,9 @@
   align-items: center;
   max-width: var(--max-landing);
   margin: 0 auto;
-  padding: var(--s8) var(--gutter-landing) var(--s9);
+  /* Bottom was --s9 (96px). Sized when nine sections followed; with four it
+     stacked onto StatsStrip's own 32 for a 128px trough. */
+  padding: var(--s8) var(--gutter-landing) var(--s7);
 }
 
 .heroGlow {
@@ -2309,7 +2311,10 @@ span.chainMark {
    =========================================================================== */
 
 .flowSection {
-  padding: clamp(56px, 8vw, 104px) 0;
+  /* Top only, matching .section. This was the one surviving block padding
+     BOTH ends — its 104px bottom met the next section's 96px top and produced
+     the 200px trough that read as a broken page rather than a generous one. */
+  padding: clamp(32px, 4vw, 56px) 0 0;
   border-top: 1px solid var(--hairline);
 }
 
