@@ -839,6 +839,33 @@ protocol cannot be paid. Two separate paths exist and neither is affected by tha
 `RevShareHook.redeem` is neither. It is permissionless plumbing that converts the hook's ERC-6909
 vault claims into real tokens; it pays nobody.
 
+### The canceller
+
+```
+0xe65F304e40b61d7417154cb3e725C0Ee16701142   EOA · sole CANCELLER_ROLE
+```
+
+Verified distinct from the Safe, from all three of its owners, and from the ops key. That
+separation is the whole value: a canceller that dies with the Safe cancels nothing.
+
+**Its only power is refusal.** It cannot schedule, cannot execute, cannot move a token. Lose
+it and you lose a veto you hope never to use; steal it and you can annoy governance by
+cancelling its operations, which moves no funds and makes nothing permanent. That asymmetry
+is why it is safe to keep somewhere merely DIFFERENT rather than somewhere maximally secure
+— and why it must not live on the shared VPS beside `0x304b…c9a9`, or one box compromise
+takes the attack and the defence together.
+
+**Two open items before it is load-bearing, both recorded because they are the ways this
+key silently fails:**
+
+1. **It holds no gas** (balance 0 at the time of writing). A canceller that cannot pay for a
+   transaction cannot cancel one, and the moment it is needed is the worst moment to
+   discover that. Fund it with a small amount of native and leave it there.
+2. **Its nonce is 0 — the key has never signed anything.** Nobody has yet demonstrated
+   control of it. Before it becomes the only address that can veto a compromised Safe, send
+   one transaction from it. An address written down correctly and a key you can actually
+   reach are different claims, and only the second one matters at 3am.
+
 ### The governance Safe
 
 ```
