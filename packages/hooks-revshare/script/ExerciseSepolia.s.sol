@@ -83,6 +83,12 @@ contract ExerciseRevShareSepolia is Script {
     /// without waiting a month. Never use a window this short on a real offering.
     uint64 constant CLAIM_WINDOW = 1 hours;
 
+    /// The floor the constructor enforces, and therefore the shortest exercise possible.
+    /// It used to be `0` here, which is exactly the configuration
+    /// `SnapshotEpochDistributor.MIN_EPOCH_DURATION_FLOOR` now refuses - and a testnet script is
+    /// precisely where a zero gets copied from into a mainnet one.
+    uint64 constant MIN_EPOCH_DURATION = 1 hours;
+
     int24 constant TICK_LOWER = -600;
     int24 constant TICK_UPPER = 600;
 
@@ -141,7 +147,7 @@ contract ExerciseRevShareSepolia is Script {
             IRevShareHook(address(hook)),
             key,
             IVotes(address(votes)),
-            0, // minEpochDuration: 0 so the first close needs no wait
+            MIN_EPOCH_DURATION,
             CLAIM_WINDOW
         );
 
@@ -204,7 +210,8 @@ contract ExerciseRevShareSepolia is Script {
         console.log("currency1   ", Currency.unwrap(c1));
         console.log("poolId      ", vm.toString(PoolId.unwrap(poolId)));
         console.log("");
-        console.log("NEXT: close the epoch and claim, in a LATER BLOCK:");
+        console.log("NEXT: close the epoch and claim, at least MIN_EPOCH_DURATION (1h) from now.");
+        console.log("`lastCloseAt` is seeded at construction, so the FIRST close waits too:");
         console.log("  DISTRIBUTOR=<distributor> forge script script/ExerciseSepolia.s.sol:CloseAndClaimSepolia \\");
         console.log("    --rpc-url <rpc> --broadcast -vv");
     }

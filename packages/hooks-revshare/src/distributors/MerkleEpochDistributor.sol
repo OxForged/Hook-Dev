@@ -93,6 +93,12 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     error NotGuardianOrOwner();
     error NativeNotAccepted();
 
+    /// @notice `minEpochDuration` is below `MIN_EPOCH_DURATION_FLOOR`.
+    error MinEpochDurationTooShort(uint64 provided, uint64 required);
+
+    /// @notice `renounceOwnership` is permanently disabled. See the override.
+    error RenounceDisabled();
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -112,6 +118,11 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     );
     event EpochRolledOver(uint256 indexed epochId, uint256 amount0, uint256 amount1);
     event GuardianUpdated(address indexed previousGuardian, address indexed newGuardian);
+
+    /// @notice The earliest `rollover(epochId)` may run has been pushed forward.
+    /// @dev Emitted by `cancelRoot`, which is the only thing that moves it. Read alongside
+    /// `rolloverEligibleAt`, which is the value a keeper should actually schedule against.
+    event RolloverDeferred(uint256 indexed epochId, uint64 notBefore);
 
     /*//////////////////////////////////////////////////////////////
                                  TYPES
@@ -163,6 +174,34 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     /// storage or emit an unbounded log; generous enough that no honest CID or URL comes close.
     uint256 public constant MAX_ROOT_URI_BYTES = 512;
 
+    /// @notice Shortest `minEpochDuration` this contract will accept at construction.
+    ///
+    /// @dev A floor against a DEGENERATE configuration, not a recommendation. `minEpochDuration`
+    /// used to be validated not at all, so `0` was accepted and produced a distributor whose pot
+    /// could be shredded into one epoch per block - each of which then needs its own root, its own
+    /// challenge window and its own claim transaction, which is exactly the griefing this parameter
+    /// exists to stop. The same class of hole as `TimelockController` accepting `minDelay = 0`, and
+    /// refused here for the same reason: a parameter whose safe value is only written in a comment
+    /// eventually ships as zero. Pick a value measured in days for a real deployment.
+    uint64 public constant MIN_EPOCH_DURATION_FLOOR = 1 hours;
+
+    /// @notice Extra time added to the no-root rollover deadline, during which a late `postRoot`
+    /// cannot be front-run by a `rollover`.
+    ///
+    /// @dev THE RACE THIS CLOSES. An epoch that never received a root becomes sweepable at
+    /// `closedAt + minEpochDuration + claimWindow`, and `postRoot` refuses an epoch that has
+    /// already rolled over. Without a buffer those two are back to back, so anybody could watch the
+    /// mempool for the owner's `postRoot` near the deadline, land `rollover(id)` in front of it, and
+    /// void an allocation that took an off-chain job to compute. Nothing is stolen - the value goes
+    /// to the next epoch's holders - but the work is wasted and the griefer pays only gas.
+    ///
+    /// The grace does not make the race impossible at every timestamp; it moves the sweep back so
+    /// that a poster aiming at the published deadline has a window behind it in which `rollover`
+    /// reverts for everyone. Sized longer than `LatchTimelock.CUSTODY_MIN_DELAY` on purpose: the
+    /// owner is meant to be a multisig behind a timelock, so "the root is queued and maturing" must
+    /// not be a losing position.
+    uint64 public constant ROOT_GRACE_PERIOD = 3 days;
+
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -206,6 +245,18 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     /// @dev Written only alongside a root, and cleared with it. See `getRootSource`.
     mapping(uint256 epochId => RootSource) internal _rootSources;
 
+    /**
+     * A floor on `rollover`, written by `cancelRoot` and read by `rolloverEligibleAt`.
+     * Zero means "no floor".
+     *
+     * Deliberately a separate mapping rather than a tenth field on `Epoch`, for
+     * the reason spelled out on `RootSource`: `getEpoch` returns nine all-static
+     * words, three consumers have hand-written ABIs for that shape, and widening
+     * it would break every one of them for a value only `rollover` and a keeper
+     * ever read.
+     */
+    mapping(uint256 epochId => uint64 notBefore) internal _rolloverFloor;
+
     /// @dev epochId => word index => bitmap of claimed leaf indices.
     mapping(uint256 epochId => mapping(uint256 word => uint256 bits)) private _claimedBitmap;
 
@@ -232,6 +283,9 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
         // A zero claim window would close claims in the same block they opened. A zero challenge
         // delay would make `cancelRoot` unreachable and the root final on arrival.
         if (claimWindow_ == 0 || challengeDelay_ == 0) revert InvalidWindows();
+        if (minEpochDuration_ < MIN_EPOCH_DURATION_FLOOR) {
+            revert MinEpochDurationTooShort(minEpochDuration_, MIN_EPOCH_DURATION_FLOOR);
+        }
 
         hook = hook_;
         _key = key_;
@@ -240,7 +294,43 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
         challengeDelay = challengeDelay_;
         claimWindow = claimWindow_;
 
+        // The clock starts at deployment, not at the first close. `closeEpoch` used to exempt
+        // epoch 0 from `minEpochDuration` entirely (`epochCount != 0 && ...`), because with
+        // `lastCloseAt == 0` the comparison was against a 1970 timestamp and could never bite.
+        // Seeding it here deletes that carve-out and the branch that implemented it: EVERY close,
+        // including the first, is at least `minEpochDuration` after the one before it.
+        lastCloseAt = uint64(block.timestamp);
+
         emit GuardianUpdated(address(0), guardian_);
+    }
+
+    /**
+     * Permanently disabled. Reverts for everybody, including the owner.
+     *
+     * OpenZeppelin ships `renounceOwnership` as a safety feature, on the premise
+     * that an owner who can no longer act is safer than an owner who can. That
+     * premise is inverted here, and the asymmetry is the whole reason for this
+     * override: THE OWNER IS THE ONLY PARTY THAT CAN PAY ANYBODY.
+     *
+     *   * `postRoot` is `onlyOwner`, and it is the only writer of `Epoch.root`.
+     *   * `claim` reverts `RootNotPosted` while that root is zero.
+     *
+     * So renouncing does not remove a power that could be abused, it removes the
+     * ONLY power that can release escrowed holder money. Every epoch already
+     * closed, and every epoch that closes afterwards, would run out its claim
+     * window with no root, become sweepable, and `rollover` into the next
+     * epoch — which is equally unpayable. The pot churns forever and no holder is
+     * ever paid a wei. There is no unrenounce and no re-owner: `transferOwnership`
+     * is itself `onlyOwner`.
+     *
+     * The bounded version of the same intent already exists and is not affected:
+     * an owner who wants out transfers to the address that should have it
+     * (`Ownable2Step`, so it cannot be sent somewhere unreachable by typo), and an
+     * owner who wants to STOP paying simply stops posting roots, which lets
+     * `rollover` — permissionless — return the value to the next epoch.
+     */
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
     }
 
     /// @notice Accepts native currency pulled from the hook.
@@ -350,9 +440,10 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     /// @dev Permissionless. Anybody may close an epoch; only the owner can decide who it pays.
     /// `minEpochDuration` is what stops that being a griefing vector.
     function closeEpoch() external nonReentrant returns (uint256 epochId) {
+        // `lastCloseAt` is seeded at construction, so the first close waits exactly like every
+        // other one. There is no first-epoch exemption.
         uint64 earliest = lastCloseAt + minEpochDuration;
-        // `epochCount == 0` is the first close, which has no predecessor to wait for.
-        if (epochCount != 0 && block.timestamp < earliest) revert EpochTooSoon(earliest);
+        if (block.timestamp < earliest) revert EpochTooSoon(earliest);
 
         // Carry-over is consumed BEFORE the external pull, so a reentrant close could not count it
         // twice even if the hook's own guard were absent.
@@ -472,6 +563,14 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     /// @dev Owner or guardian. Impossible once claims have opened - by then holders are relying on
     /// the published allocation, and letting an admin rewrite it would make the whole escrow
     /// meaningless.
+    ///
+    /// PUSHES THE ROLLOVER FLOOR OUT, and that is not housekeeping. Clearing `expiresAt` returns
+    /// the epoch to the no-root fallback measured from `closedAt`. For a root posted LATE - which
+    /// is the normal case for a root somebody had to notice was wrong - that deadline is already in
+    /// the past, so the cancellation would make the epoch instantly sweepable and no corrected root
+    /// could ever be posted. The function would defeat the one sentence of its own docstring that
+    /// says why it exists. The floor guarantees `ROOT_GRACE_PERIOD` of room to actually post the
+    /// replacement.
     function cancelRoot(uint256 epochId) external {
         if (msg.sender != owner() && msg.sender != guardian) revert NotGuardianOrOwner();
         if (epochId >= epochCount) revert UnknownEpoch(epochId);
@@ -484,6 +583,12 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
         epoch.root = bytes32(0);
         epoch.claimableAt = 0;
         epoch.expiresAt = 0;
+
+        uint64 notBefore = uint64(block.timestamp) + ROOT_GRACE_PERIOD;
+        if (notBefore > _rolloverFloor[epochId]) {
+            _rolloverFloor[epochId] = notBefore;
+            emit RolloverDeferred(epochId, notBefore);
+        }
 
         emit RootCancelled(epochId, root);
         // The pointer goes with the root. Leaving it would advertise a tree for an allocation that
@@ -543,19 +648,16 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     /// @dev Permissionless, and the only way value leaves an epoch other than a proven claim.
     /// Deliberately NOT a sweep to the owner: unclaimed holder money stays holder money.
     ///
-    /// An epoch that never received a root becomes eligible once `minEpochDuration + claimWindow`
-    /// has passed since it closed, so a root poster who abandons the job cannot strand funds
-    /// forever.
+    /// An epoch that never received a root becomes eligible once
+    /// `minEpochDuration + claimWindow + ROOT_GRACE_PERIOD` has passed since it closed, so a root
+    /// poster who abandons the job cannot strand funds forever. See `rolloverEligibleAt` for the
+    /// exact deadline, which is the value to schedule against rather than one recomputed off chain.
     function rollover(uint256 epochId) external nonReentrant {
         if (epochId >= epochCount) revert UnknownEpoch(epochId);
         Epoch storage epoch = _epochs[epochId];
         if (epoch.rolledOver) revert AlreadyRolledOver(epochId);
 
-        uint64 expiresAt = epoch.expiresAt;
-        if (expiresAt == 0) {
-            // No root was ever posted. Fall back to a deadline measured from the close.
-            expiresAt = epoch.closedAt + minEpochDuration + claimWindow;
-        }
+        uint64 expiresAt = _rolloverEligibleAt(epoch, epochId);
         if (block.timestamp < expiresAt) revert NotExpiredYet(epochId, expiresAt);
 
         uint256 remainder0 = epoch.amount0 - epoch.claimed0;
@@ -570,6 +672,38 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
         carryOver1 += remainder1;
 
         emit EpochRolledOver(epochId, remainder0, remainder1);
+    }
+
+    /**
+     * The exact timestamp `rollover(epochId)` becomes callable.
+     *
+     * Two different clocks govern an epoch depending on whether a root ever
+     * landed, and a keeper that recomputes either of them off chain will
+     * eventually recompute the wrong one — `cancelRoot` moves the second, and
+     * nothing in `getEpoch` records that it did. This is the single answer.
+     *
+     *   * A root stands (`expiresAt != 0`): its own claim window governs, exactly
+     *     as before. Holders were told when claims close and that does not move.
+     *   * No root (`expiresAt == 0`): the abandonment fallback,
+     *     `closedAt + minEpochDuration + claimWindow + ROOT_GRACE_PERIOD`, or the
+     *     floor left by a `cancelRoot`, whichever is later.
+     *
+     * Reverts for an epoch that does not exist. Returns a deadline for an epoch
+     * that has already rolled over too — `rolledOver` is the flag to check for
+     * that, and it is on `getEpoch`.
+     */
+    function rolloverEligibleAt(uint256 epochId) external view returns (uint64) {
+        if (epochId >= epochCount) revert UnknownEpoch(epochId);
+        return _rolloverEligibleAt(_epochs[epochId], epochId);
+    }
+
+    function _rolloverEligibleAt(Epoch storage epoch, uint256 epochId) private view returns (uint64) {
+        uint64 expiresAt = epoch.expiresAt;
+        if (expiresAt != 0) return expiresAt;
+
+        uint64 fallbackAt = epoch.closedAt + minEpochDuration + claimWindow + ROOT_GRACE_PERIOD;
+        uint64 floorAt = _rolloverFloor[epochId];
+        return fallbackAt > floorAt ? fallbackAt : floorAt;
     }
 
     function _setClaimed(uint256 epochId, uint256 index) private {

@@ -174,6 +174,11 @@ contract MerkleEpochDistributorTest is DistributorFixture {
             IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW
         );
         _configureAndSeed(address(distributor));
+
+        // `lastCloseAt` is seeded at construction, so the FIRST close waits `minEpochDuration`
+        // like every other one - there is no epoch-0 exemption any more. Stepped past once here
+        // rather than in every test below that closes an epoch.
+        vm.warp(block.timestamp + MIN_EPOCH);
     }
 
     /*//////////////////////// merkle helpers ////////////////////////*/
@@ -428,7 +433,16 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         distributor.closeEpoch();
         uint256 pot = distributor.getEpoch(0).amount1;
 
-        vm.warp(block.timestamp + MIN_EPOCH + CLAIM_WINDOW);
+        // The fallback deadline is the close plus `minEpochDuration + claimWindow`, and then
+        // `ROOT_GRACE_PERIOD` on top - see `test_rollover_cannotFrontRunALatePostRoot` for why
+        // that last term is there rather than being a rounding-up of the other two.
+        uint64 eligibleAt = distributor.rolloverEligibleAt(0);
+        assertEq(
+            eligibleAt,
+            distributor.getEpoch(0).closedAt + MIN_EPOCH + CLAIM_WINDOW + distributor.ROOT_GRACE_PERIOD()
+        );
+
+        vm.warp(eligibleAt);
         distributor.rollover(0);
         assertEq(distributor.carryOver1(), pot);
     }
@@ -648,6 +662,275 @@ contract MerkleEpochDistributorTest is DistributorFixture {
             IRevShareHook(address(hook)), wrong, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW
         );
     }
+
+    /*//////////////////////////////////////////////////////////////
+                   A1 - RENOUNCING OWNERSHIP IS DISABLED
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev The asymmetry that makes stock `Ownable` wrong here. The owner is not a party that
+    /// might abuse a power; it is the ONLY party that can release escrowed money, because
+    /// `postRoot` is `onlyOwner` and `claim` reverts `RootNotPosted` without a root. Renouncing
+    /// would therefore not reduce risk, it would make every epoch - closed and future -
+    /// permanently unpayable, churning through `rollover` forever with no holder ever paid.
+    ///
+    /// FAILS AGAINST STOCK OZ: without the override this call succeeds, `owner()` becomes zero,
+    /// and the `postRoot` at the end reverts `OwnableUnauthorizedAccount`.
+    function test_renounceOwnership_isDisabledAndTheEscrowStaysPayable() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+
+        vm.prank(GOVERNANCE);
+        vm.expectRevert(MerkleEpochDistributor.RenounceDisabled.selector);
+        distributor.renounceOwnership();
+
+        // Not merely gated on the owner - there is no caller for whom it works.
+        vm.prank(HOLDER_A);
+        vm.expectRevert(MerkleEpochDistributor.RenounceDisabled.selector);
+        distributor.renounceOwnership();
+
+        // And there is no side door to a zero owner. `Ownable2Step.transferOwnership` accepts the
+        // zero address, but only as the documented CANCEL of a pending handover - it writes
+        // `_pendingOwner` and never touches `owner`, and nobody can call `acceptOwnership` as
+        // `address(0)` to complete it.
+        vm.prank(GOVERNANCE);
+        distributor.transferOwnership(address(0));
+        assertEq(distributor.pendingOwner(), address(0));
+
+        assertEq(distributor.owner(), GOVERNANCE, "ownership survived every attempt to drop it");
+
+        // The point of keeping it: holders can still be paid.
+        uint256 pot = distributor.getEpoch(0).amount1;
+        bytes32 leafA = _leaf(0, HOLDER_A, 0, pot / 2);
+        bytes32 leafB = _leaf(1, HOLDER_B, 0, pot - pot / 2);
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, _hashPair(leafA, leafB), TREE_URI);
+        vm.warp(block.timestamp + CHALLENGE);
+        distributor.claim(0, 0, HOLDER_A, 0, pot / 2, _proof(leafB));
+        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(HOLDER_A), pot / 2);
+    }
+
+    /// @dev The bounded version of the same intent still works: an owner who wants out hands the
+    /// job to somebody, and `Ownable2Step` means it cannot land at an address that cannot accept.
+    function test_ownershipCanStillBeHandedOnRatherThanDropped() public {
+        vm.prank(GOVERNANCE);
+        distributor.transferOwnership(HOLDER_C);
+        assertEq(distributor.owner(), GOVERNANCE, "step 1 alone must not move it");
+
+        vm.prank(HOLDER_C);
+        distributor.acceptOwnership();
+        assertEq(distributor.owner(), HOLDER_C);
+
+        vm.prank(HOLDER_C);
+        vm.expectRevert(MerkleEpochDistributor.RenounceDisabled.selector);
+        distributor.renounceOwnership();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                A3 - ROLLOVER MUST NOT FRONT-RUN A LATE ROOT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev THE GRIEF. An epoch with no root is sweepable at
+    /// `closedAt + minEpochDuration + claimWindow`, and `postRoot` refuses a rolled-over epoch. Put
+    /// back to back, those two let anybody watch for the owner's `postRoot` near the deadline, land
+    /// `rollover(id)` in front of it and void an allocation that took an off-chain job to compute.
+    /// Nothing is stolen; the work is destroyed for the price of gas.
+    ///
+    /// FAILS AGAINST THE PRE-FIX CODE: `rollover(0)` below succeeds at the old deadline, and the
+    /// `postRoot` after it reverts `AlreadyRolledOver`.
+    function test_rollover_cannotFrontRunALatePostRoot() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        uint256 pot = distributor.getEpoch(0).amount1;
+
+        uint64 oldDeadline = distributor.getEpoch(0).closedAt + MIN_EPOCH + CLAIM_WINDOW;
+        vm.warp(oldDeadline);
+
+        // The griefer's window is shut.
+        vm.prank(HOLDER_C);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MerkleEpochDistributor.NotExpiredYet.selector, uint256(0), distributor.rolloverEligibleAt(0)
+            )
+        );
+        distributor.rollover(0);
+
+        // A root arriving right on the published deadline still lands, and still pays.
+        bytes32 leafA = _leaf(0, HOLDER_A, 0, pot / 2);
+        bytes32 leafB = _leaf(1, HOLDER_B, 0, pot - pot / 2);
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, _hashPair(leafA, leafB), TREE_URI);
+
+        vm.warp(block.timestamp + CHALLENGE);
+        distributor.claim(0, 0, HOLDER_A, 0, pot / 2, _proof(leafB));
+        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(HOLDER_A), pot / 2);
+    }
+
+    /// @dev The grace must DEFER the sweep, never remove it. An abandoned epoch still returns its
+    /// value to the next one; the only change is when.
+    function test_rollover_theGraceDefersTheSweepItDoesNotCancelIt() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        uint256 pot = distributor.getEpoch(0).amount1;
+
+        uint64 eligibleAt = distributor.rolloverEligibleAt(0);
+        assertEq(eligibleAt, distributor.getEpoch(0).closedAt + MIN_EPOCH + CLAIM_WINDOW + distributor.ROOT_GRACE_PERIOD());
+
+        vm.warp(eligibleAt - 1);
+        vm.expectRevert(abi.encodeWithSelector(MerkleEpochDistributor.NotExpiredYet.selector, uint256(0), eligibleAt));
+        distributor.rollover(0);
+
+        vm.warp(eligibleAt);
+        vm.prank(HOLDER_C); // permissionless, as before
+        distributor.rollover(0);
+        assertEq(distributor.carryOver1(), pot);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              A4 - CANCELROOT MUST LEAVE ROOM FOR THE FIX
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev `cancelRoot` exists, in its own words, "so a corrected one can be posted". Clearing
+    /// `expiresAt` drops the epoch back onto the `closedAt` fallback - and for the case the
+    /// function is FOR, a root somebody had to notice was wrong, that fallback is usually already
+    /// in the past. Cancelling would then make the epoch instantly sweepable and no corrected root
+    /// could ever be posted: the rescue strands the thing it was rescuing.
+    ///
+    /// FAILS AGAINST THE PRE-FIX CODE: after `cancelRoot` the epoch is immediately rolloverable,
+    /// so `rollover(0)` succeeds where this asserts a revert and the corrected `postRoot` dies with
+    /// `AlreadyRolledOver`.
+    function test_cancelRoot_leavesRoomToPostTheCorrectedRoot() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        uint256 pot = distributor.getEpoch(0).amount1;
+        uint64 closedAt = distributor.getEpoch(0).closedAt;
+
+        // A LATE root: posted after even the graced fallback would already have fired, which is
+        // the normal shape of the case rather than a contrived one - a root somebody had to notice
+        // was wrong is a root that was noticed slowly. Without the floor `cancelRoot` writes, this
+        // cancellation drops the epoch back onto a deadline that is already in the past.
+        vm.warp(closedAt + MIN_EPOCH + CLAIM_WINDOW + distributor.ROOT_GRACE_PERIOD() + 1 days);
+        bytes32 wrongRoot = _hashPair(_leaf(0, HOLDER_C, 0, pot), _leaf(1, HOLDER_C, 0, 0));
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, wrongRoot, TREE_URI);
+
+        // Somebody spots it inside the challenge window and the guardian pulls it.
+        vm.prank(GUARDIAN);
+        distributor.cancelRoot(0);
+        assertEq(distributor.getEpoch(0).root, bytes32(0));
+        assertEq(distributor.getEpoch(0).expiresAt, 0);
+
+        // The epoch must NOT be sweepable now, or the correction is impossible. Asserted as
+        // BEHAVIOUR first and as an exact deadline second, so removing the floor trips the thing
+        // that actually matters rather than only an arithmetic check.
+        uint64 eligibleAt = distributor.rolloverEligibleAt(0);
+        vm.prank(HOLDER_C);
+        vm.expectRevert(abi.encodeWithSelector(MerkleEpochDistributor.NotExpiredYet.selector, uint256(0), eligibleAt));
+        distributor.rollover(0);
+        assertEq(eligibleAt, uint64(block.timestamp) + distributor.ROOT_GRACE_PERIOD(), "floor set by the cancel");
+
+        // The corrected root lands and pays the real holders.
+        bytes32 leafA = _leaf(0, HOLDER_A, 0, pot / 2);
+        bytes32 leafB = _leaf(1, HOLDER_B, 0, pot - pot / 2);
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, _hashPair(leafA, leafB), TREE_URI);
+        vm.warp(block.timestamp + CHALLENGE);
+        distributor.claim(0, 1, HOLDER_B, 0, pot - pot / 2, _proof(leafA));
+        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(HOLDER_B), pot - pot / 2);
+    }
+
+    /// @dev A cancelled epoch that is then abandoned must still be sweepable. The floor is a delay,
+    /// not a lock.
+    function test_cancelRoot_stillLeavesTheEpochSweepableIfNobodyRepostsIt() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        uint256 pot = distributor.getEpoch(0).amount1;
+
+        vm.warp(distributor.getEpoch(0).closedAt + MIN_EPOCH + CLAIM_WINDOW + distributor.ROOT_GRACE_PERIOD() + 1 days);
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, bytes32(uint256(1)), TREE_URI);
+        vm.prank(GOVERNANCE);
+        distributor.cancelRoot(0);
+
+        vm.warp(distributor.rolloverEligibleAt(0));
+        distributor.rollover(0);
+        assertEq(distributor.carryOver1(), pot);
+    }
+
+    /// @dev Which clock governs is not something a keeper should be recomputing off chain, because
+    /// `cancelRoot` moves one of them and nothing in `getEpoch` records that it did.
+    function test_rolloverEligibleAt_reportsWhicheverClockGoverns() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        uint64 closedAt = distributor.getEpoch(0).closedAt;
+
+        // 1. No root: the abandonment fallback, grace included.
+        assertEq(distributor.rolloverEligibleAt(0), closedAt + MIN_EPOCH + CLAIM_WINDOW + distributor.ROOT_GRACE_PERIOD());
+
+        // 2. A root stands: its own claim window governs, and holders were told when that closes.
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, bytes32(uint256(1)), TREE_URI);
+        assertEq(distributor.rolloverEligibleAt(0), distributor.getEpoch(0).expiresAt);
+
+        // 3. Cancelled: back to no root, but never sooner than the grace from the cancellation.
+        vm.prank(GUARDIAN);
+        distributor.cancelRoot(0);
+        uint64 afterCancel = distributor.rolloverEligibleAt(0);
+        assertGe(afterCancel, uint64(block.timestamp) + distributor.ROOT_GRACE_PERIOD());
+
+        vm.expectRevert(abi.encodeWithSelector(MerkleEpochDistributor.UnknownEpoch.selector, uint256(7)));
+        distributor.rolloverEligibleAt(7);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              A2 - THE EPOCH COOLDOWN IS ENFORCED, NOT ADVISED
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev `minEpochDuration` was validated by nothing, so `0` was accepted - and a zero cooldown
+    /// lets anybody shred the pot into one epoch per block, each needing its own root, its own
+    /// challenge window and its own claim transaction. Exactly the griefing the parameter exists to
+    /// stop, guaranteed by a comment.
+    ///
+    /// FAILS AGAINST THE PRE-FIX CODE: both constructions below succeed.
+    function test_constructor_refusesADegenerateEpochCooldown() public {
+        uint64 floor_ = distributor.MIN_EPOCH_DURATION_FLOOR();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(MerkleEpochDistributor.MinEpochDurationTooShort.selector, uint64(0), floor_)
+        );
+        new MerkleEpochDistributor(IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, 0, CHALLENGE, CLAIM_WINDOW);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(MerkleEpochDistributor.MinEpochDurationTooShort.selector, floor_ - 1, floor_)
+        );
+        new MerkleEpochDistributor(
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, floor_ - 1, CHALLENGE, CLAIM_WINDOW
+        );
+
+        // The floor itself is accepted: this is a floor, not a policy.
+        new MerkleEpochDistributor(
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, floor_, CHALLENGE, CLAIM_WINDOW
+        );
+    }
+
+    /// @dev The first close used to be exempt from the cooldown outright (`epochCount != 0 && ...`,
+    /// which never bit because `lastCloseAt` was zero). Seeding `lastCloseAt` at construction
+    /// deletes the carve-out.
+    ///
+    /// FAILS AGAINST THE PRE-FIX CODE: the first `closeEpoch` succeeds immediately.
+    function test_closeEpoch_theFirstEpochIsNotExemptFromTheCooldown() public {
+        MerkleEpochDistributor fresh = new MerkleEpochDistributor(
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW
+        );
+        assertEq(fresh.lastCloseAt(), uint64(block.timestamp), "the cooldown clock starts at deployment");
+
+        _swap(SWAP_AMOUNT, true);
+        assertGt(hook.pendingDistributorShare(poolId, currency1), 0, "there is a pot; only the clock is stopping it");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(MerkleEpochDistributor.EpochTooSoon.selector, uint64(block.timestamp) + MIN_EPOCH)
+        );
+        fresh.closeEpoch();
+    }
 }
 
 /*//////////////////////////////////////////////////////////////
@@ -686,6 +969,10 @@ contract SnapshotEpochDistributorTest is DistributorFixture {
         vm.prank(HOLDER_B);
         votes.delegate(HOLDER_B);
         vm.roll(block.number + 1);
+
+        // See the merkle fixture: the first close is gated too, now that `lastCloseAt` starts at
+        // construction rather than at zero.
+        vm.warp(block.timestamp + MIN_EPOCH);
     }
 
     /// @dev The mirror of `EpochDistributorKindTest`'s merkle case, and the worse direction. A
@@ -819,12 +1106,103 @@ contract SnapshotEpochDistributorTest is DistributorFixture {
         assertEq(distributor.carryOver1(), pot1, "the unclaimable share is escrowed, not burned");
     }
 
+    /*//////////////////////////////////////////////////////////////
+             A2 - WHO CHOOSES THE SNAPSHOT MOMENT, AND AT WHAT COST
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev THE RESIDUAL RISK, ASSERTED RATHER THAN HAND-WAVED. `closeEpoch` is permissionless and
+    /// it is what fixes the timepoint, so an attacker picks the moment: buy in block N, close in
+    /// N+1, `timepoint == N` captures the position, claim, sell. This test PASSES on purpose - the
+    /// behaviour is accepted, and the alternative (recording the next epoch's timepoint at the
+    /// previous close) is rejected on the reasoning in the `closeEpoch` docstring. What is asserted
+    /// here is the shape and the bound, so that a future change which makes it cheaper is loud.
+    ///
+    /// Note the delegation happens in the same block as the transfer, which is exactly what
+    /// `LatchVotes` does automatically on first receipt: the attacker has no delegation lag to sit
+    /// through, and this is the honest, cheapest version of the attack.
+    function test_snapshotTiming_anAttackerCanPickTheMomentButNotTheFrequency() public {
+        address attacker = address(0xA77ACC);
+
+        _swap(SWAP_AMOUNT, true);
+        uint256 pot = hook.pendingDistributorShare(poolId, currency1);
+        assertGt(pot, 0, "the prize is a public number before the attacker commits any capital");
+
+        // Block N: buy in, and be delegated in the same block.
+        votes.transfer(attacker, 1000 ether);
+        vm.prank(attacker);
+        votes.delegate(attacker);
+
+        // Not in the SAME block: closing at N snapshots N-1, before the buy.
+        vm.roll(block.number + 1);
+        distributor.closeEpoch();
+
+        (, uint256 owed) = distributor.claimableAmounts(0, attacker);
+        assertGt(owed, 0, "one block of exposure is the entire cost, and it is not zero");
+
+        // The bound. The position may be dumped immediately - the snapshot is already taken - but
+        // the trick cannot be repeated until the cooldown elapses, and that is the ONLY lever.
+        distributor.claim(0, attacker);
+        vm.prank(attacker);
+        votes.transfer(address(this), 1000 ether);
+
+        _swap(SWAP_AMOUNT, true);
+        vm.roll(block.number + 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(SnapshotEpochDistributor.EpochTooSoon.selector, uint64(block.timestamp) + MIN_EPOCH)
+        );
+        distributor.closeEpoch();
+    }
+
+    /// @dev The cooldown carries a security property and used to be enforced by nothing: `0` was a
+    /// valid `minEpochDuration`, which makes the timepoint attacker-choosable in every block. Same
+    /// shape as `ManualPriceBandOracle.minPublisherInterval` defaulting to zero.
+    ///
+    /// FAILS AGAINST THE PRE-FIX CODE: both constructions below succeed.
+    function test_constructor_refusesADegenerateEpochCooldown() public {
+        uint64 floor_ = distributor.MIN_EPOCH_DURATION_FLOOR();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(SnapshotEpochDistributor.MinEpochDurationTooShort.selector, uint64(0), floor_)
+        );
+        new SnapshotEpochDistributor(IRevShareHook(address(hook)), key, IVotes(address(votes)), 0, CLAIM_WINDOW);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(SnapshotEpochDistributor.MinEpochDurationTooShort.selector, floor_ - 1, floor_)
+        );
+        new SnapshotEpochDistributor(
+            IRevShareHook(address(hook)), key, IVotes(address(votes)), floor_ - 1, CLAIM_WINDOW
+        );
+
+        new SnapshotEpochDistributor(IRevShareHook(address(hook)), key, IVotes(address(votes)), floor_, CLAIM_WINDOW);
+    }
+
+    /// @dev The first snapshot used to be free: `epochCount != 0 && ...` exempted epoch 0, so a
+    /// fresh distributor could be sniped the moment it had a pot, with no cooldown at all - the one
+    /// close nobody is watching for yet.
+    ///
+    /// FAILS AGAINST THE PRE-FIX CODE: the first `closeEpoch` succeeds immediately.
+    function test_closeEpoch_theFirstSnapshotIsNotFree() public {
+        SnapshotEpochDistributor fresh = new SnapshotEpochDistributor(
+            IRevShareHook(address(hook)), key, IVotes(address(votes)), MIN_EPOCH, CLAIM_WINDOW
+        );
+        assertEq(fresh.lastCloseAt(), uint64(block.timestamp), "the cooldown clock starts at deployment");
+
+        _swap(SWAP_AMOUNT, true);
+        vm.roll(block.number + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(SnapshotEpochDistributor.EpochTooSoon.selector, uint64(block.timestamp) + MIN_EPOCH)
+        );
+        fresh.closeEpoch();
+    }
+
     function test_closeEpoch_revertsWhenNobodyHasDelegated() public {
         VotesToken lonely = new VotesToken();
         lonely.mint(address(this), 1 ether);
         SnapshotEpochDistributor d = new SnapshotEpochDistributor(
             IRevShareHook(address(hook)), key, IVotes(address(lonely)), MIN_EPOCH, CLAIM_WINDOW
         );
+        vm.warp(block.timestamp + MIN_EPOCH); // `d` was just built; its own cooldown starts now
 
         _swap(SWAP_AMOUNT, true);
         vm.expectRevert(
@@ -947,6 +1325,8 @@ contract EpochDistributorKindTest is DistributorFixture {
             IRevShareHook(address(hook)), key, IVotes(address(votes)), MIN_EPOCH, CLAIM_WINDOW
         );
         _configureAndSeed(address(merkle));
+
+        vm.warp(block.timestamp + MIN_EPOCH);
     }
 
     function test_kind_answersDirectlyForBothDistributors() public view {

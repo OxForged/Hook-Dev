@@ -98,6 +98,25 @@ contract SnapshotEpochDistributor is IEpochDistributor, ReentrancyGuard {
     error AlreadyRolledOver(uint256 epochId);
     error NativeNotAccepted();
 
+    /// @notice `minEpochDuration` is below `MIN_EPOCH_DURATION_FLOOR`.
+    error MinEpochDurationTooShort(uint64 provided, uint64 required);
+
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Shortest `minEpochDuration` this contract will accept at construction.
+    ///
+    /// @dev A floor against a DEGENERATE configuration, not a recommendation, and the one
+    /// parameter that decides how cheap the snapshot-timing edge documented on `closeEpoch` is.
+    /// `minEpochDuration` used to be validated not at all, so `0` was accepted - and a snapshot
+    /// distributor with a zero cooldown can have its timepoint chosen by an attacker in EVERY
+    /// block, for a holding period of one block each time. That parameter was load-bearing for a
+    /// security property and enforced by nothing, which is the same shape as
+    /// `ManualPriceBandOracle.minPublisherInterval` defaulting to zero. Pick days, not hours, on a
+    /// thin token.
+    uint64 public constant MIN_EPOCH_DURATION_FLOOR = 1 hours;
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -169,12 +188,21 @@ contract SnapshotEpochDistributor is IEpochDistributor, ReentrancyGuard {
         if (address(hook_) == address(0)) revert InvalidHook();
         if (address(key_.hooks) != address(hook_)) revert InvalidPoolKey();
         if (claimWindow_ == 0) revert InvalidWindows();
+        if (minEpochDuration_ < MIN_EPOCH_DURATION_FLOOR) {
+            revert MinEpochDurationTooShort(minEpochDuration_, MIN_EPOCH_DURATION_FLOOR);
+        }
 
         hook = hook_;
         _key = key_;
         token = token_;
         minEpochDuration = minEpochDuration_;
         claimWindow = claimWindow_;
+
+        // The cooldown clock starts at deployment, not at the first close. `closeEpoch` used to
+        // exempt epoch 0 entirely (`epochCount != 0 && ...`) because with `lastCloseAt == 0` the
+        // comparison was against a 1970 timestamp and could never bite - which meant the very
+        // first snapshot, the one nobody is watching for yet, was the one with no cooldown at all.
+        lastCloseAt = uint64(block.timestamp);
 
         // DETECT, DO NOT ASSUME. ERC-6372 says a token without `clock()` is block-numbered.
         bool isBlockNumber = true;
@@ -256,17 +284,62 @@ contract SnapshotEpochDistributor is IEpochDistributor, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Close the current epoch, snapshotting the token's voting supply one tick back.
+    ///
     /// @dev Permissionless and admin-free. `timepoint = clock() - 1` because ERC-5805 rejects a
     /// lookup at or after the current timepoint: the current block is still mutable.
     ///
-    /// The snapshot is taken at close, i.e. AFTER the fees accrued. Someone can therefore buy the
-    /// token in the same block the epoch closes and collect a share of fees generated before they
-    /// held anything. That is inherent to snapshot dividends, is bounded by `minEpochDuration`
-    /// (which fixes how much value one snapshot can be worth relative to how long buyers must
-    /// hold), and is the reason a short epoch is a bad idea on a thin token.
+    /// ################## THE ATTACKER CHOOSES THE SNAPSHOT MOMENT ##################
+    ///
+    /// This function is permissionless AND it is what fixes the timepoint, so the two facts
+    /// compose into a real, un-removable edge, stated here rather than left for a reader to find:
+    ///
+    ///   1. Wait until `lastCloseAt + minEpochDuration` has passed and the pot is worth taking -
+    ///      it is a public number, `RevShareHook.pendingDistributorShare`.
+    ///   2. Buy a large position in block N.
+    ///   3. Call `closeEpoch()` in block N+1. `timepoint == N`, which captures step 2.
+    ///   4. Claim, then sell.
+    ///
+    /// It CANNOT be done in one transaction: closing in block N snapshots N-1, before the buy, so
+    /// the position must survive a block boundary and no flash loan reaches it. One block of price
+    /// risk plus the round trip's own slippage is the entire cost, which is thin on an illiquid
+    /// token and is the honest statement of the risk. `LatchVotes` makes it cheaper still, on
+    /// purpose: it auto-delegates on first receipt, so a buyer has voting units in the same block
+    /// they have tokens, with no delegation lag to sit through.
+    ///
+    /// WHAT IT IS WORTH, AND WHY THIS DESIGN WAS KEPT. A sniper holding share `s` of supply takes
+    /// `s` of one epoch. Doing it every epoch takes `s` of ALL fees - exactly what an honest holder
+    /// of `s` receives for holding continuously. The theft is not of quantity, it is of RISK: the
+    /// sniper is paid a continuous holder's dividend for one block of exposure per epoch, and
+    /// honest holders are diluted by however much snipers hold at each close.
+    ///
+    /// THE ALTERNATIVE THAT LOOKS BETTER AND IS NOT. Recording the NEXT epoch's timepoint at the
+    /// PREVIOUS close would fix the eligible set before the fees it will be paid accrue. It was
+    /// rejected on three counts, and the first is the one that settles it:
+    ///
+    ///   * IT DOES NOT CHANGE THE ATTACKER'S EXPOSURE. The close that records the next timepoint is
+    ///     itself permissionless, so the same buy-in-N, close-in-N+1 sequence lands the attacker in
+    ///     the pre-recorded set - and, once recorded, they may SELL IMMEDIATELY and still claim an
+    ///     epoch that closes a full `minEpochDuration` later. One block of exposure, as now. What
+    ///     changes is that they must bet on a future pot instead of seeing the present one, which
+    ///     lowers expected value but does not remove the attack.
+    ///   * IT SEALS THE SET. Today a large honest buyer before the close dilutes a sniper. Under a
+    ///     pre-recorded timepoint nobody can dilute anybody, and a mid-epoch buyer earns nothing
+    ///     for a whole epoch.
+    ///   * IT CREATES A PERMANENT LIVENESS HAZARD. The recorded timepoint is in the past and cannot
+    ///     be moved. If voting supply was zero at that timepoint, `NoVotingSupplyAtSnapshot` fires
+    ///     on every future `closeEpoch` and the distributor is bricked with no escape hatch -
+    ///     trading a bounded economic edge for an unbounded availability failure.
+    ///
+    /// SO THE MITIGATION IS `minEpochDuration`, AND IT IS NOW ENFORCED RATHER THAN ADVISED. It caps
+    /// how often the trick can be repeated, and it is the only lever that does. It was previously
+    /// unvalidated - `0` was accepted, and the first close was exempt from it outright - so the one
+    /// parameter carrying a security property was guaranteed by a comment. See
+    /// `MIN_EPOCH_DURATION_FLOOR`, and set days rather than hours on a thin token.
     function closeEpoch() external nonReentrant returns (uint256 epochId) {
+        // `lastCloseAt` is seeded at construction, so the first close waits exactly like every
+        // other one. There is no first-epoch exemption.
         uint64 earliest = lastCloseAt + minEpochDuration;
-        if (epochCount != 0 && block.timestamp < earliest) revert EpochTooSoon(earliest);
+        if (block.timestamp < earliest) revert EpochTooSoon(earliest);
 
         uint48 timepoint = clock() - 1;
         // Total supply of voting units at the snapshot, NOT the delegated subset - see the notes at
