@@ -44,6 +44,43 @@ export interface ShellData {
   meta: Record<Screen, ScreenMeta>
 }
 
+/**
+ * The "More" menu: other properties, not screens of this app.
+ *
+ * Deliberately NOT `NavItem`. That type is keyed by `screen: Screen` and its
+ * `path` is relative to the dapp mount point, because every row it describes is
+ * a route this router owns. Forcing an off-site URL through it would mean
+ * inventing a fake `Screen` and a `path` that is not a path, and the first
+ * person to iterate `nav` looking for routes would find four entries that are
+ * not routes. A different kind of destination gets a different type.
+ *
+ * These open in a new tab, which is the one case where `target="_blank"` is
+ * right: the reader is leaving for a sibling product, not navigating within
+ * this one, and a wallet-connected session is an expensive thing to lose to a
+ * misplaced click. `rel="noopener noreferrer"` is not optional on any of them —
+ * without `noopener` the opened page gets a handle on `window.opener` and can
+ * navigate this tab somewhere else, which is a phishing primitive, not a
+ * theoretical one.
+ */
+export interface ExternalLink {
+  readonly label: string
+  readonly href: string
+  /** Shown under the label. What the destination IS, not marketing copy. */
+  readonly note: string
+}
+
+export const externalLinks: readonly ExternalLink[] = [
+  { label: 'Launchpad', href: 'https://peddles.xyz', note: 'peddles.xyz' },
+  { label: 'PeddleSwap', href: 'https://peddleswap.xyz', note: 'peddleswap.xyz' },
+  { label: 'PeddleQuest', href: 'https://peddlequest.xyz', note: 'peddlequest.xyz' },
+  /* http, not https, as supplied. A page served over https that links to http
+     is a downgrade: some browsers warn, some strip the referrer, and a few
+     block it outright. Left exactly as given rather than silently "corrected"
+     to https, because a guessed scheme that 404s is worse than an honest
+     downgrade — but it is worth fixing at the source. */
+  { label: 'Terminal', href: 'http://peddlex.xyz', note: 'peddlex.xyz' },
+]
+
 /** SCREENS.md § C: sidebar nav order. */
 const nav: NavItem[] = [
   { screen: 'dashboard', label: 'Dashboard', path: '', icon: 'dashboard' },

@@ -21,6 +21,7 @@ import { useRef } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import type { ShellData } from '../data/shell.ts'
 import { useFocusTrap } from '../lib/dom.ts'
+import { externalLinks } from '../data/shell'
 import { NavIcon } from '../../../components/NavIcon'
 
 interface SidebarProps {
@@ -84,6 +85,52 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
             ))}
           </ul>
         </nav>
+
+        {/* MORE: other properties, not screens of this app.
+
+            A native <details> rather than a JS dropdown. It is keyboard
+            operable, announced as a disclosure, survives find-in-page, and
+            closes nothing when JS is still loading — none of which a
+            div-with-useState gets without work. Closed by default: these are
+            exits, and an exit should never be the most prominent thing in a
+            navigation column.
+
+            Every link carries rel="noopener noreferrer". `noopener` is the
+            load-bearing half: without it the opened page receives
+            window.opener and can navigate THIS tab to somewhere of its
+            choosing, which on a wallet-connected dapp is a phishing primitive
+            rather than a curiosity. */}
+        <details className="dapp-more">
+          <summary className="dapp-more__summary">
+            <span className="dapp-more__caret" aria-hidden="true" />
+            More
+          </summary>
+          <ul className="dapp-more__list">
+            {externalLinks.map((link) => (
+              <li key={link.href}>
+                <a
+                  className="dapp-more__row"
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={onClose}
+                >
+                  <span className="dapp-more__label">
+                    {link.label}
+                    {/* The arrow is decorative; the accessible name says
+                        "opens in a new tab" in words, because a glyph is not
+                        an announcement. */}
+                    <span className="dapp-more__ext" aria-hidden="true">
+                      ↗
+                    </span>
+                  </span>
+                  <span className="dapp-more__note">{link.note}</span>
+                  <span className="dapp-visually-hidden"> (opens in a new tab)</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </details>
 
         <div className="dapp-sidebar__foot">
           <p className="dapp-sample-note">
