@@ -250,9 +250,10 @@ export function SiteHeader() {
           <ThemeToggle />
         </div>
 
-        {/* All five here, not the header's two: a menu is a place someone has
-            chosen to look, so the full set costs nothing and the publishing
-            channels get their one on-screen home above the fold. */}
+        {/* The full confirmed set, which the header's two currently equal.
+            A menu is a place someone has chosen to look, so unverified
+            handles are exactly what must not be here — `SOCIALS` already
+            excludes them. */}
         <div className={styles['menuFoot']}>
           <p className={styles['menuLabel']}>FOLLOW</p>
           <ul className={styles['socials']} aria-label="Latch Protocol social accounts">

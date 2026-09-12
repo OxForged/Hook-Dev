@@ -7,10 +7,17 @@
  *
  * HANDLES: `GITHUB_URL` is confirmed. It is NOT the URL the docs footer used
  * to hardcode — that one (`github.com/latch-protocol`) pointed at the wrong
- * org and was a bug; `DocsFooter` now imports this constant instead. The other
- * four are provisional: they assume the `latchprotocol` handle stem on each
- * platform and have NOT been verified against a live account. Correct them
- * here before launch.
+ * org and was a bug; `DocsFooter` now imports this constant instead. X was
+ * confirmed by the project owner on 2026-09-12 and is the DEVELOPER's account,
+ * `@Ox_Forged`, not a protocol account — the label says so, because a footer
+ * link that reads "Latch Protocol on X" and lands on a personal handle is a
+ * small lie. The remaining three are still provisional.
+ *
+ * `SOCIALS` EXPORTS ONLY THE CONFIRMED ENTRIES. `confirmed` used to be a note
+ * to ourselves that nothing read, so the site shipped links to three accounts
+ * nobody had checked existed — which is the same failure the wrong-org GitHub
+ * URL was. Add an entry to `PROVISIONAL_SOCIALS` and it stays off every
+ * surface until somebody flips it; the flag now has teeth.
  *
  * ICONS: each entry carries its own path data rather than pulling from
  * `public/icons.svg`. That sprite is unreferenced by any component and its
@@ -44,24 +51,26 @@ export interface SocialLink {
 }
 
 /* ===========================================================================
-   !! FOUR OF THESE FIVE URLs ARE UNCONFIRMED — CORRECT THEM HERE !!
+   THREE OF THESE FIVE URLs ARE UNCONFIRMED.
 
-   X, YouTube, paragraph.xyz and Medium below are BEST GUESSES. They assume the
-   handle stem `latchprotocol` on each platform and nobody has checked that the
-   accounts exist. GitHub is the one confirmed entry and is marked as such.
+   YouTube, paragraph.xyz and Medium below are BEST GUESSES — they assume the
+   handle stem `latchprotocol` on each platform and nobody has checked that
+   the accounts exist. They are declared here and FILTERED OUT of the exported
+   `SOCIALS` below, so nothing renders them. Flip `confirmed` to true once an
+   account is verified and it appears everywhere at once.
 
    This array is the ONLY place any of them is written down — the landing
-   footer and the docs footer both read from here — so fixing all four is a
-   single edit to this block. Flip `confirmed` to true as each is verified.
+   footer, the mobile menu and the docs footer all read from here.
    =========================================================================== */
 
-export const SOCIALS: readonly SocialLink[] = [
-  // --- UNCONFIRMED handle -------------------------------------------------
+const ALL_SOCIALS: readonly SocialLink[] = [
+
+  // --- CONFIRMED (developer account, not a protocol account) --------------
   {
     id: 'x',
-    label: 'Latch Protocol on X',
-    href: 'https://x.com/latchprotocol',
-    confirmed: false,
+    label: 'Latch Protocol developer on X',
+    href: 'https://x.com/Ox_Forged',
+    confirmed: true,
     viewBox: '0 0 24 24',
     // The 2023 X mark, not the retired bird.
     path: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z',
@@ -104,6 +113,19 @@ export const SOCIALS: readonly SocialLink[] = [
     path: 'M13.54 12a6.8 6.8 0 0 1-6.77 6.82A6.8 6.8 0 0 1 0 12a6.8 6.8 0 0 1 6.77-6.82A6.8 6.8 0 0 1 13.54 12m7.42 0c0 3.54-1.51 6.42-3.38 6.42s-3.39-2.88-3.39-6.42 1.52-6.42 3.39-6.42 3.38 2.88 3.38 6.42M24 12c0 3.17-.53 5.75-1.19 5.75s-1.19-2.58-1.19-5.75.53-5.75 1.19-5.75S24 8.83 24 12',
   },
 ]
+
+/**
+ * What every surface renders: the confirmed entries, in declaration order.
+ *
+ * The filter is the point. An unverified handle in a footer sends a reader to
+ * a stranger under our name, and it costs one boolean to make that impossible.
+ */
+export const SOCIALS: readonly SocialLink[] = ALL_SOCIALS.filter((social) => social.confirmed)
+
+/** Declared but not rendered. Verify one, flip its flag, and it ships. */
+export const PROVISIONAL_SOCIALS: readonly SocialLink[] = ALL_SOCIALS.filter(
+  (social) => !social.confirmed,
+)
 
 /* ===========================================================================
    The subset the site HEADER carries.
