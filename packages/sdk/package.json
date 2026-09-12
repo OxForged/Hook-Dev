@@ -69,6 +69,7 @@
     "generate:registry": "node scripts/generate-registry-abi.mjs",
     "generate:check": "node scripts/generate-events.mjs --check && node scripts/generate-launchpad-abi.mjs --check && node scripts/generate-registry-abi.mjs --check",
     "build": "npm run generate && tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run generate:check && npm run build && npm test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
