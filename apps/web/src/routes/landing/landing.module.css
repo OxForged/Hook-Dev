@@ -2543,3 +2543,90 @@ span.chainMark {
 @media (max-width: 900px) {
   .flowGrid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ===========================================================================
+   LEFT SIDEBAR (desktop only, > 860px)
+
+   The landing used a sticky top bar; the dapp uses a 238px left rail. Two
+   shells for one product means the nav moves the moment a visitor clicks
+   through, and the thing that moves is the thing they were using to navigate.
+   This matches the dapp exactly: same width, same column, same order.
+
+   Written as a min-width block appended at the end rather than by rewriting
+   the base rules, for two reasons. The existing < 860px behaviour — top bar,
+   burger, disclosure panel — is correct on a phone and should stay the
+   default; a sidebar at 380px is just a top bar that stole half the screen.
+   And an additive block is one deletion away from being undone.
+   =========================================================================== */
+
+@media (min-width: 861px) {
+  .page {
+    display: grid;
+    grid-template-columns: 238px minmax(0, 1fr);
+    /* `clip` on the base rule would make .page a scroll container and break
+       the sticky rail, so the overflow guard moves to the content column. */
+    overflow-x: visible;
+  }
+
+  .header {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    border-bottom: none;
+    border-right: 1px solid var(--header-border);
+  }
+
+  .page > main,
+  .page > footer {
+    grid-column: 2;
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  /* The bar becomes the rail: lockup at the top, links beneath it, actions
+     pinned to the bottom by the auto margin on .headerRight. */
+  .headerBar {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    height: 100%;
+    gap: 26px;
+    padding: 22px 16px;
+  }
+
+  .headerLeft {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 26px;
+  }
+
+  .headerRight {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    margin-top: auto;
+  }
+
+  .nav,
+  .navList {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+
+  /* A rail row is a full-width target, not a word. Matches .dapp-nav__row so
+     the hit area does not change size across the two shells. */
+  .navLink {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 9px;
+  }
+
+  .headerSocials { justify-content: center; }
+  .launchPill { text-align: center; }
+}
