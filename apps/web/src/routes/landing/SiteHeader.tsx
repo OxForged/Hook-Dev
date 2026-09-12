@@ -129,22 +129,33 @@ export function SiteHeader() {
   return (
     <header className={styles['header']}>
       <div className={styles['headerBar']}>
-        <Lockup />
+        {/* LEFT GROUP. The primary links used to live inside the same
+            right-aligned <nav> as the socials, the theme toggle and the CTA,
+            so they read as one cluster of controls pinned to the far edge.
+            Navigation and actions are different things: the links say where
+            you can go, the CTA says what to do. Grouping the links with the
+            lockup puts them where a reader's eye already is after the mark,
+            and leaves the right edge to the one button that matters. */}
+        <div className={styles['headerLeft']}>
+          <Lockup />
 
-        <nav className={styles['nav']} aria-label="Primary">
-          <ul className={styles['navList']}>
-            {NAV.map((item) => (
-              <li key={item.label}>
-                <NavItemLink
-                  item={item}
-                  pathname={pathname}
-                  className={styles['navLink'] ?? ''}
-                  iconSize={15}
-                />
-              </li>
-            ))}
-          </ul>
+          <nav className={styles['nav']} aria-label="Primary">
+            <ul className={styles['navList']}>
+              {NAV.map((item) => (
+                <li key={item.label}>
+                  <NavItemLink
+                    item={item}
+                    pathname={pathname}
+                    className={styles['navLink'] ?? ''}
+                    iconSize={15}
+                  />
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </div>
 
+        <div className={styles['headerRight']}>
           <ul className={styles['headerSocials']} aria-label="Latch Protocol accounts">
             {HEADER_SOCIALS.map((social) => (
               <SocialIconLink key={social.id} social={social} size="sm" />
@@ -187,7 +198,7 @@ export function SiteHeader() {
             </svg>
             <span className={styles['srOnly']}>{open ? 'Close menu' : 'Open menu'}</span>
           </button>
-        </nav>
+        </div>
       </div>
 
       <TickerStrip provider={coinGeckoCrypto} state={crypto} className="ltk--landing" />

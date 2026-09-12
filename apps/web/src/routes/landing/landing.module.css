@@ -209,10 +209,26 @@
 
 /* Nav, accounts, CTA — three groups, not one undifferentiated run of items, so
    the eye can tell "places to go" from "the thing to click". */
+/* The bar is now two groups rather than lockup-then-everything-else: the links
+   sit with the mark on the left, the actions stay on the right. `space-between`
+   on .headerBar does the separating, so neither group needs a margin hack. */
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  min-width: 0;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex: 0 0 auto;
+}
+
 .nav {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 18px;
   font-size: 14px;
 }
