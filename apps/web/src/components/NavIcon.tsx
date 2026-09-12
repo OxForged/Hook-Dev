@@ -30,8 +30,53 @@ export type IconName =
   | 'analytics'
   | 'settings'
   | 'claim'
+  /* Added 2026-09-12. `swap` and `governance` exist because two rows were
+     borrowing a glyph that meant something else: Swap wore `pool`, which Pool
+     Detail also wears, and Governance wore `docs`. Two rows with one icon is
+     two rows a reader cannot tell apart at a glance, which is most of what an
+     icon is for. `quest` and `terminal` are for the More menu. */
+  | 'swap'
+  | 'governance'
+  | 'quest'
+  | 'terminal'
 
 const PATHS: Record<IconName, React.ReactNode> = {
+  /* Two arrows passing — the universal shape for an exchange, and deliberately
+     not a pool or a pair of coins, both of which already mean something here. */
+  swap: (
+    <>
+      <path d="M4.5 8.5h15" />
+      <path d="M15.5 4.5 19.5 8.5 15.5 12.5" />
+      <path d="M19.5 15.5h-15" />
+      <path d="M8.5 11.5 4.5 15.5 8.5 19.5" />
+    </>
+  ),
+  /* A balance. Governance is the weighing of a proposal, and a scale reads that
+     way in every jurisdiction — unlike a gavel, which reads as enforcement. */
+  governance: (
+    <>
+      <path d="M12 3.5v17" />
+      <path d="M5.5 20.5h13" />
+      <path d="M4 7.5h16" />
+      <path d="M7.5 7.5 4.5 14h6z" />
+      <path d="M16.5 7.5 13.5 14h6z" />
+    </>
+  ),
+  /* A flag on a route. A quest is a destination reached, not a task ticked. */
+  quest: (
+    <>
+      <path d="M6 21V4" />
+      <path d="M6 4.5h11l-2.5 4 2.5 4H6z" />
+    </>
+  ),
+  /* A prompt and a caret. The one glyph nobody mistakes for anything else. */
+  terminal: (
+    <>
+      <path d="M3.5 4.5h17v15h-17z" />
+      <path d="M7.5 9.5 10.5 12 7.5 14.5" />
+      <path d="M13 15h4" />
+    </>
+  ),
   // landing
   home: <path d="M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5" />,
   developers: <path d="m8 8-5 4 5 4M16 8l5 4-5 4M13.5 4l-3 16" />,

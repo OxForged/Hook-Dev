@@ -65,20 +65,21 @@ export interface ShellData {
 export interface ExternalLink {
   readonly label: string
   readonly href: string
+  readonly icon: import('../../../components/NavIcon').IconName
   /** Shown under the label. What the destination IS, not marketing copy. */
   readonly note: string
 }
 
 export const externalLinks: readonly ExternalLink[] = [
-  { label: 'Launchpad', href: 'https://peddles.xyz', note: 'peddles.xyz' },
-  { label: 'PeddleSwap', href: 'https://peddleswap.xyz', note: 'peddleswap.xyz' },
-  { label: 'PeddleQuest', href: 'https://peddlequest.xyz', note: 'peddlequest.xyz' },
+  { label: 'Launchpad', href: 'https://peddles.xyz', note: 'peddles.xyz', icon: 'launch' },
+  { label: 'PeddleSwap', href: 'https://peddleswap.xyz', note: 'peddleswap.xyz', icon: 'swap' },
+  { label: 'PeddleQuest', href: 'https://peddlequest.xyz', note: 'peddlequest.xyz', icon: 'quest' },
   /* http, not https, as supplied. A page served over https that links to http
      is a downgrade: some browsers warn, some strip the referrer, and a few
      block it outright. Left exactly as given rather than silently "corrected"
      to https, because a guessed scheme that 404s is worse than an honest
      downgrade — but it is worth fixing at the source. */
-  { label: 'Terminal', href: 'http://peddlex.xyz', note: 'peddlex.xyz' },
+  { label: 'Terminal', href: 'http://peddlex.xyz', note: 'peddlex.xyz', icon: 'terminal' },
 ]
 
 /** SCREENS.md § C: sidebar nav order. */
@@ -87,7 +88,7 @@ const nav: NavItem[] = [
   /* Second, directly under the dashboard: it is the only row here that trades,
      and burying the one thing a visitor arrives wanting to do below eight
      read-only screens would be a strange way to present a DEX. */
-  { screen: 'swap', label: 'Swap', path: 'swap', icon: 'pool' },
+  { screen: 'swap', label: 'Swap', path: 'swap', icon: 'swap' },
   { screen: 'marketplace', label: 'Latch Marketplace', path: 'marketplace', icon: 'explorer' },
   { screen: 'ecosystem', label: 'Ecosystem', path: 'ecosystem', icon: 'ecosystem' },
   { screen: 'deploy', label: 'Deploy a Latch', path: 'deploy', icon: 'deploy' },
@@ -96,7 +97,7 @@ const nav: NavItem[] = [
   { screen: 'protocol', label: 'Revenue Share', path: 'protocol', icon: 'revenue' },
   { screen: 'claim', label: 'Claim', path: 'claim', icon: 'claim' },
   { screen: 'analytics', label: 'Analytics', path: 'analytics', icon: 'analytics' },
-  { screen: 'governance', label: 'Governance', path: 'governance', icon: 'docs' },
+  { screen: 'governance', label: 'Governance', path: 'governance', icon: 'governance' },
   { screen: 'settings', label: 'Settings', path: 'settings', icon: 'settings' },
 ]
 

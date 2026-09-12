@@ -116,6 +116,7 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
                   onClick={onClose}
                 >
                   <span className="dapp-more__label">
+                    <NavIcon name={link.icon} size={15} />
                     {link.label}
                     {/* The arrow is decorative; the accessible name says
                         "opens in a new tab" in words, because a glyph is not
