@@ -2563,6 +2563,27 @@ span.chainMark {
   .page {
     display: grid;
     grid-template-columns: 238px minmax(0, 1fr);
+
+    /* THE MEASURE HAS TO COME DOWN, and this is why the rail looked broken.
+       Every section is `box-sizing: content-box` with `max-width:
+       var(--max-landing)` plus a gutter each side, so at the defaults it
+       occupies 1200 + 48 + 48 = 1296px of OUTER width. That was correct when
+       the page owned the viewport. It is not correct inside a column: a
+       1440px screen minus the 238px rail leaves 1202px, so every one of the
+       six sections using the full measure overflowed, and the overflow guard
+       on the content column silently clipped it rather than scrolling.
+
+       Overriding the two tokens here fixes all six at once, which is the
+       reason they are tokens.
+
+       FLUID, NOT A SMALLER FIXED NUMBER. A fixed 1040px still clips at a
+       1280px viewport (1042px column against 1120px of section), and 1280 is
+       an ordinary laptop rather than an edge case. `min()` caps the measure at
+       1040 on a wide screen and otherwise yields the column minus its gutters,
+       so the section total is never wider than the space it has. The 100% here
+       resolves against the containing block, which is the content column. */
+    --max-landing: min(1040px, calc(100% - 80px));
+    --gutter-landing: 40px;
     /* `clip` on the base rule would make .page a scroll container and break
        the sticky rail, so the overflow guard moves to the content column. */
     overflow-x: visible;
