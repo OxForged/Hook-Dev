@@ -6,18 +6,20 @@ import "forge-std/Script.sol";
 import {LatchTimelock} from "../src/LatchTimelock.sol";
 
 /**
- * Deploys both governance timelocks.
- *
- * Two tiers, because delay should be proportional to how hard an action is to undo:
+ * TESTNET rehearsal deployment. Deploys BOTH tiers on purpose — see below.
  *
  *   CUSTODY (48h) — owns Vault and the pool managers. `Vault.registerApp` is
  *     onlyOwner and IRREVERSIBLE; there is no unregister anywhere in the Vault or
  *     its interface. A registered app can move funds against the Vault forever, so
  *     the only real defence is a window long enough for the public to notice.
  *
- *   POLICY (6h) — owns the protocol fee controller. Fee changes are reversible and
- *     sometimes need to answer market conditions. A multi-day delay on a fee tweak
- *     buys nothing and creates pressure to hand someone an emergency bypass.
+ *   POLICY (6h) — retained here, and DELIBERATELY NOT DEPLOYED ON MAINNET.
+ *     `DeployGovernanceMainnet.s.sol` deploys Custody only; everything the
+ *     ownership table used to route through Policy is held by the Safe directly,
+ *     because a delay on a reversible action is a check on co-signers that a
+ *     single operator does not have. The tier stays exercised here so that
+ *     bringing it back — when there is a team — is a script change against code
+ *     that is known to work, rather than an untested path.
  *
  * TESTNET: the deployer is proposer and executor so Sepolia stays iterable.
  * MAINNET: the proposer MUST be a Safe multisig. Executors may be left open —
@@ -39,12 +41,19 @@ contract DeployGovernanceScript is Script {
         address[] memory executors = new address[](1);
         executors[0] = deployer;
 
+        /* The canceller must not be a proposer, which the constructor enforces, so a
+           testnet run needs a second address. `GOVERNANCE_CANCELLER` if one is set,
+           otherwise a deterministic throwaway — this is a testnet script and the
+           point is to exercise the role's existence, not to secure it. */
+        address canceller = vm.envOr("GOVERNANCE_CANCELLER", address(uint160(uint256(keccak256("latch.testnet.canceller")))));
+        require(canceller != deployer, "GOVERNANCE_CANCELLER must not be the deployer");
+
         vm.startBroadcast(pk);
 
         LatchTimelock custody =
-            new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours, proposers, executors);
+            new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours, proposers, executors, canceller);
         LatchTimelock policy =
-            new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours, proposers, executors);
+            new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours, proposers, executors, canceller);
 
         vm.stopBroadcast();
 
@@ -52,6 +61,7 @@ contract DeployGovernanceScript is Script {
         require(custody.getMinDelay() == 48 hours, "custody delay wrong");
         require(policy.getMinDelay() == 6 hours, "policy delay wrong");
         require(!custody.hasRole(custody.DEFAULT_ADMIN_ROLE(), deployer), "deployer must not be admin");
+        require(custody.hasRole(custody.CANCELLER_ROLE(), canceller), "canceller role not granted");
 
         console.log("LatchTimelock CUSTODY ", address(custody));
         console.log("  minDelay (s)        ", custody.getMinDelay());

@@ -45,6 +45,37 @@ import {TimelockController} from "@openzeppelin/contracts/governance/TimelockCon
 ///
 /// Do not add powers to the guardian. Anything that can increase what the protocol takes, or
 /// change who controls it, belongs behind this timelock.
+///
+/// ####################### ONE TIER IS DEPLOYED, NOT TWO #######################
+///
+/// The `Tier` enum and `POLICY_MIN_DELAY` below are retained, and a Policy timelock still
+/// constructs correctly - but only the CUSTODY tier is deployed. Everything the ownership table
+/// previously routed through a 6h Policy timelock is now held by the governance Safe directly.
+///
+/// The reasoning is about who governance is FOR. A delay between a multisig and a privileged call
+/// is a check on the signers, and with a single operator there are no other signers to check. What
+/// survives that reframing is (a) surviving a stolen key and (b) being a credible base for a
+/// tenant who would otherwise fork. Both of those are about IRREVERSIBLE authority -
+/// `Vault.registerApp` and pool-manager ownership - and neither is served by queueing a fee tweak
+/// or a registry role grant, which are reversible, custody nothing, and cost agility to delay.
+/// Reality had already drifted this way: `DEFAULT_ADMIN_ROLE` on the live registry is the Safe,
+/// and the deployed Policy timelock holds nothing at all.
+///
+/// The type is kept whole because a second tier is a reasonable thing to want back the moment
+/// there is a second signer. Deploying one is then a script change, not a contract change.
+///
+/// ####################### WHO CAN CANCEL #######################
+///
+/// `TimelockController` grants `CANCELLER_ROLE` to proposers and to nobody else. With the Safe as
+/// sole proposer that means a 2-of-3 compromise which queues `updateDelay(0)` buys the public 48
+/// hours of VISIBILITY with no party able to act on it - a delay that announces the attack and
+/// then executes it. So the canceller is an explicit, separate constructor argument.
+///
+/// It is the right key to hold alone, for a reason that is structural rather than procedural: its
+/// only power is REFUSAL. Losing it costs nothing that a redeploy of the role cannot restore, and
+/// stealing it achieves nothing beyond griefing - a thief can veto honest operations and can never
+/// cause one. That asymmetry is what makes a veto safe to hold on a hot key when the proposer is
+/// not.
 /// #####################################################################################
 contract LatchTimelock is TimelockController {
     /// @notice Minimum delay for the tier that owns the Vault and pool managers.
@@ -75,29 +106,114 @@ contract LatchTimelock is TimelockController {
     /// @notice A timelock with no executor can never execute what it queues
     error NoExecutors();
 
+    /// @notice A proposer entry is the zero address
+    /// @dev Length alone was checked, which a `[address(0)]` array passes. `schedule` is gated on
+    /// `onlyRole`, NOT `onlyRoleOrOpenRole`, so a zero proposer is a DEAD role rather than an open
+    /// one: the timelock would look correctly configured, pass `NoProposers`, and be unable to
+    /// queue anything for anybody. It also silently hands `CANCELLER_ROLE` to nobody, because OZ
+    /// grants that to each proposer.
+    error ZeroProposer();
+
+    /// @notice The canceller is the zero address
+    /// @dev Rejected for the same reason as `ZeroProposer`, and with a sharper consequence: a zero
+    /// canceller reproduces exactly the hole this argument exists to close, while making the
+    /// deployment look like it had been closed.
+    error ZeroCanceller();
+
+    /// @notice The canceller is also a proposer, so a compromised proposer can veto its own veto
+    error CancellerMustNotBeAProposer(address canceller);
+
     /// @dev The OZ optional `admin` is hardcoded to address(0). An admin can grant and revoke
     /// roles directly, which is a permanent backdoor around every delay this contract enforces.
     /// It is not a constructor parameter because it should never be a deployment decision.
-    /// @param tier_ Custody (Vault, pool managers) or Policy (fee controller)
+    /// @param tier_ Custody (Vault, pool managers) or Policy (retained; not deployed — see the
+    /// contract header)
     /// @param minDelay Seconds of delay; must meet the floor for `tier_`
     /// @param proposers Addresses allowed to queue operations — the governance multisig
     /// @param executors Addresses allowed to execute a matured operation. Passing address(0)
     /// makes execution permissionless, which is usually correct: once an operation has survived
     /// its delay in public, anyone executing it is harmless, and it removes the multisig as a
     /// liveness dependency.
-    constructor(Tier tier_, uint256 minDelay, address[] memory proposers, address[] memory executors)
-        TimelockController(minDelay, proposers, executors, address(0))
-    {
+    /// @param canceller An address whose ONLY power is to cancel a queued operation, independent
+    /// of the proposer set. Must be non-zero and must not be a proposer. OZ additionally grants
+    /// `CANCELLER_ROLE` to every proposer; that is left alone, because a proposer cancelling its
+    /// own mistake is useful and cancelling is never an escalation.
+    constructor(
+        Tier tier_,
+        uint256 minDelay,
+        address[] memory proposers,
+        address[] memory executors,
+        address canceller
+    ) TimelockController(minDelay, proposers, executors, address(0)) {
         uint256 floor = tier_ == Tier.Custody ? CUSTODY_MIN_DELAY : POLICY_MIN_DELAY;
         if (minDelay < floor) revert DelayBelowTierFloor(tier_, minDelay, floor);
         if (proposers.length == 0) revert NoProposers();
         if (executors.length == 0) revert NoExecutors();
+        if (canceller == address(0)) revert ZeroCanceller();
+
+        for (uint256 i = 0; i < proposers.length; ++i) {
+            if (proposers[i] == address(0)) revert ZeroProposer();
+            if (proposers[i] == canceller) revert CancellerMustNotBeAProposer(canceller);
+        }
+
+        _grantRole(CANCELLER_ROLE, canceller);
 
         tier = tier_;
     }
 
     /// @notice The floor enforced for this timelock's tier.
-    function minDelayFloor() external view returns (uint256) {
+    function minDelayFloor() public view returns (uint256) {
         return tier == Tier.Custody ? CUSTODY_MIN_DELAY : POLICY_MIN_DELAY;
+    }
+
+    /**
+     * THE TIER FLOOR, RE-APPLIED ON EVERY READ.
+     *
+     * `TimelockController._schedule` calls `getMinDelay()` rather than reading its storage
+     * directly, so overriding this is what makes the floor a property of the contract instead of a
+     * one-off constructor check. Even if `_minDelay` were somehow driven below the floor, every
+     * subsequent `schedule` would still demand the floor.
+     *
+     * `_minDelay` is `private` in OpenZeppelin, so this cannot be implemented by writing it back —
+     * which is why the guard is a max() on the read AND a rejection on the write below, rather
+     * than a single validated setter.
+     */
+    function getMinDelay() public view virtual override returns (uint256) {
+        uint256 stored = super.getMinDelay();
+        uint256 floor = minDelayFloor();
+        return stored < floor ? floor : stored;
+    }
+
+    /**
+     * `updateDelay(x)` BELOW THE TIER FLOOR IS REJECTED, at the only place it can originate.
+     *
+     * The hole this closes. OZ's `updateDelay` is `external virtual`, gated only on
+     * `msg.sender == address(this)`, and re-validates nothing. The tier floor was checked once, in
+     * the constructor. So a single queued operation targeting the timelock itself set
+     * `_minDelay = 0`, after which every later operation — `Vault.registerApp` included — executed
+     * in the block it was queued. The tier stopped existing, and with `CANCELLER_ROLE` held only
+     * by the compromised proposer there was nobody to stop it.
+     *
+     * Why here and not in an override of `updateDelay`. Solidity cannot call an `external` base
+     * function through `super`, and `_minDelay` is private, so an override could reject a bad
+     * delay but could never apply a good one. `_execute` is the single choke point instead: the
+     * timelock makes external calls from nowhere else, so a self-targeted `updateDelay` cannot
+     * reach the base implementation without passing through this check. A below-floor update
+     * therefore REVERTS the execution — loudly, with the operation left pending and cancellable —
+     * rather than succeeding and emitting a `MinDelayChange` that a monitor would read as the tier
+     * being gone.
+     *
+     * Raising the delay, or setting it to exactly the floor, is untouched and still works.
+     */
+    function _execute(address target, uint256 value, bytes calldata data) internal virtual override {
+        // 4 selector bytes + one 32-byte word. Anything shorter cannot be a well-formed call to
+        // `updateDelay` and is left to the target to reject.
+        if (target == address(this) && data.length >= 36 && bytes4(data[:4]) == TimelockController.updateDelay.selector)
+        {
+            uint256 newDelay = uint256(bytes32(data[4:36]));
+            uint256 floor = minDelayFloor();
+            if (newDelay < floor) revert DelayBelowTierFloor(tier, newDelay, floor);
+        }
+        super._execute(target, value, data);
     }
 }

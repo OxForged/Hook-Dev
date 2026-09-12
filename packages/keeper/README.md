@@ -7,7 +7,7 @@ The protocol has four maintenance calls that **somebody** has to make. Nobody cu
 | `closeEpoch()` | Revenue accrues in the distributor and no epoch ever closes. Nobody can claim anything. |
 | `rollover(epochId)` | An expired epoch's unclaimed funds sit stranded instead of returning to the next epoch. |
 | `settleBeneficiaries(key, currency)` | Fees accrue against the pool but never reach the beneficiary roster. |
-| `applyPendingConfig(key)` | A config change waits out its delay and then never takes effect. |
+| `applyPendingConfig(key)` | A config change waits out its delay and then never takes effect. A proposal now has a WINDOW rather than a deadline: past its `expiryBlock` it is dead, the job reports it as such, and the pool owner has to propose again. |
 
 All four are **permissionless** — any address may call them. That is a deliberate design property: it means the protocol cannot be stalled by an owner who proposed something and walked away. It also means this keeper needs no privileged role at all.
 

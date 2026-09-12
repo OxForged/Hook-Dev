@@ -6,7 +6,41 @@ import "forge-std/Script.sol";
 import {LatchTimelock} from "../src/LatchTimelock.sol";
 
 /**
- * Deploys both governance timelocks for a MAINNET chain.
+ * Deploys THE governance timelock for a MAINNET chain. One, not two.
+ *
+ * ####################### ONE TIER #######################
+ *
+ * This script used to deploy a Custody (48h) timelock and a Policy (6h) one. It
+ * now deploys only Custody. Everything the ownership table routed through Policy
+ * — the protocol fee controller, the registry's `DEFAULT_ADMIN_ROLE`, the RWA
+ * hook owners, the position descriptor — is held by the governance Safe directly.
+ *
+ * The reason is about who a delay is for. A timelock between a multisig and a
+ * privileged call is a check on the signers; with one operator there are no other
+ * signers to check. What survives that is (a) surviving a stolen key and (b)
+ * being a credible base for a tenant who would otherwise fork — and both are
+ * about IRREVERSIBLE authority. `Vault.registerApp` cannot be undone at any
+ * speed. A fee change can, a registry role grant can, and delaying those costs
+ * agility for nothing. Reality had already drifted here: `DEFAULT_ADMIN_ROLE` on
+ * the live registry is the Safe, and the deployed Policy timelock holds nothing.
+ *
+ * `LatchTimelock.Tier.Policy` and `POLICY_MIN_DELAY` are deliberately left intact
+ * in the contract. Bringing a second tier back when there is a second signer is
+ * then a change to this file, not to a deployed type.
+ *
+ * ####################### THE CANCELLER #######################
+ *
+ * `TimelockController` grants `CANCELLER_ROLE` to proposers and nobody else. With
+ * the Safe as sole proposer, a 2-of-3 compromise that queues `updateDelay(0)`
+ * bought the public 48 hours of VISIBILITY with no party able to act on it — a
+ * delay that announces an attack and then executes it. The old version of this
+ * script asserted PROPOSER and EXECUTOR and never looked at CANCELLER, which is
+ * how the gap survived the first deployment.
+ *
+ * `GOVERNANCE_CANCELLER` is now explicit and is asserted below. It is the right
+ * key to hold alone because its only power is refusal: losing it costs nothing a
+ * queued `grantRole` cannot restore, and stealing it achieves griefing and
+ * nothing else.
  *
  * Separate from `DeployGovernance.s.sol` rather than a flag on it. That script
  * makes the deployer both proposer and executor so Sepolia stays iterable — a
@@ -24,16 +58,16 @@ import {LatchTimelock} from "../src/LatchTimelock.sol";
  * transferring afterwards leaves a window in which one key can call
  * `registerApp`, which is irreversible.
  *
- * Usage:
- *   GOVERNANCE_SAFE=0x... \
- *   forge script script/DeployGovernanceMainnet.s.sol \
- *     --rpc-url <chain> --broadcast --slow
+ * Usage (dry run first — no --broadcast):
+ *   GOVERNANCE_SAFE=0x...  GOVERNANCE_CANCELLER=0x... \
+ *   forge script script/DeployGovernanceMainnet.s.sol --rpc-url <chain>
  */
 contract DeployGovernanceMainnetScript is Script {
     function run() public {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
         address safe = vm.envAddress("GOVERNANCE_SAFE");
+        address canceller = vm.envAddress("GOVERNANCE_CANCELLER");
 
         /* ---- pre-flight, before anything is broadcast ---------------------
            Each of these has a specific failure it prevents, and each is
@@ -50,6 +84,17 @@ contract DeployGovernanceMainnetScript is Script {
         // The deployer is a hot key that just held the deployment. It must not
         // also be the thing that proposes.
         require(safe != deployer, "GOVERNANCE_SAFE must not be the deployer");
+
+        /* The canceller is a veto and only a veto, so it does NOT need to be a
+           contract — a hot key whose sole failure mode is inaction is exactly the
+           right holder. What it must not be is either of the other two: a
+           canceller that is the sole proposer cannot veto a compromised proposer,
+           and a canceller that is the deployer shares a machine with it. The
+           contract rejects zero and rejects a proposer; these two are the ones a
+           script is better placed to catch. */
+        require(canceller != address(0), "GOVERNANCE_CANCELLER not set - a zero canceller is the old hole");
+        require(canceller != safe, "GOVERNANCE_CANCELLER must not be the Safe");
+        require(canceller != deployer, "GOVERNANCE_CANCELLER must not be the deployer");
 
         /* Sole proposer: the Safe. */
         address[] memory proposers = new address[](1);
@@ -71,43 +116,50 @@ contract DeployGovernanceMainnetScript is Script {
         vm.startBroadcast(pk);
 
         LatchTimelock custody =
-            new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours, proposers, executors);
-        LatchTimelock policy =
-            new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours, proposers, executors);
+            new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours, proposers, executors, canceller);
 
         vm.stopBroadcast();
 
         /* ---- post-flight: assert the deployed reality, not the intent ----- */
         bytes32 PROPOSER = custody.PROPOSER_ROLE();
         bytes32 EXECUTOR = custody.EXECUTOR_ROLE();
+        bytes32 CANCELLER = custody.CANCELLER_ROLE();
         bytes32 ADMIN = custody.DEFAULT_ADMIN_ROLE();
 
         require(custody.getMinDelay() == 48 hours, "custody delay wrong");
-        require(policy.getMinDelay() == 6 hours, "policy delay wrong");
-
+        require(custody.minDelayFloor() == 48 hours, "custody floor wrong");
         require(custody.hasRole(PROPOSER, safe), "custody: safe is not proposer");
-        require(policy.hasRole(PROPOSER, safe), "policy: safe is not proposer");
+
+        // The role the first deployment never looked at. Without an independent
+        // holder, a compromised Safe queueing `updateDelay(0)` is unopposable.
+        require(custody.hasRole(CANCELLER, canceller), "custody: canceller role not granted");
+        require(!custody.hasRole(PROPOSER, canceller), "custody: canceller is also a proposer");
+        require(!custody.hasRole(EXECUTOR, canceller), "custody: canceller should not need EXECUTOR");
 
         // The deployer must hold NOTHING. This is the assertion that would have
         // caught the Sepolia deployment, where the deployer is still proposer.
         require(!custody.hasRole(PROPOSER, deployer), "custody: deployer is proposer");
-        require(!policy.hasRole(PROPOSER, deployer), "policy: deployer is proposer");
+        require(!custody.hasRole(CANCELLER, deployer), "custody: deployer is canceller");
         require(!custody.hasRole(ADMIN, deployer), "custody: deployer is admin");
-        require(!policy.hasRole(ADMIN, deployer), "policy: deployer is admin");
 
         // Open execution, confirmed on chain rather than assumed from the input.
         require(custody.hasRole(EXECUTOR, address(0)), "custody: execution not open");
-        require(policy.hasRole(EXECUTOR, address(0)), "policy: execution not open");
 
         console.log("");
-        console.log("=== Paste these into packages/core/script/config/latch-<chain>.json ===");
+        console.log("=== Paste this into packages/core/script/config/latch-<chain>.json ===");
         console.log('  "poolOwner":                  ', address(custody));
-        console.log('  "protocolFeeControllerOwner": ', address(policy));
+        console.log("");
+        console.log("  \"protocolFeeControllerOwner\" is now the SAFE, not a timelock:");
+        console.log("                                ", safe);
         console.log("");
         console.log("CUSTODY (48h) ", address(custody));
-        console.log("POLICY  (6h)  ", address(policy));
         console.log("proposer      ", safe);
+        console.log("canceller     ", canceller);
         console.log("executor       open - anyone may execute a matured operation");
-        console.log("admin          none - the timelocks self-administer");
+        console.log("admin          none - the timelock self-administers");
+        console.log("");
+        console.log("No Policy timelock is deployed. Everything previously marked Policy in the");
+        console.log("ownership table is transferred to the Safe DIRECTLY (Ownable2Step: transfer");
+        console.log("then accept, the Safe accepting in its own transaction with no queue).");
     }
 }

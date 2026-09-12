@@ -121,7 +121,11 @@ contract ExerciseRevShareSepolia is Script {
 
         /* ------------------------------------------------------- 2. hook and pool key */
 
-        RevShareHook hook = new RevShareHook(ICLPoolManager(CL_POOL_MANAGER), me, me);
+        /* Sepolia is a ~12s chain, so 1200 centis, and 3600 blocks x 12s is the 12h the old
+           `constant CONFIG_DELAY_BLOCKS` was always documented as. That the same literal now has
+           to be spelled out alongside the block time is the point: on Robinhood (10 centis) 3600
+           blocks is six minutes, and the constructor rejects it. */
+        RevShareHook hook = new RevShareHook(ICLPoolManager(CL_POOL_MANAGER), me, me, 3600, 1200, 8);
 
         (Currency c0, Currency c1) = address(votes) < address(pair)
             ? (Currency.wrap(address(votes)), Currency.wrap(address(pair)))

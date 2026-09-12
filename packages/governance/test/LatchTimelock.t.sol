@@ -21,14 +21,19 @@ contract LatchTimelockTest is Test {
     address internal stranger = address(0xBAD);
     address internal guardian = address(0x69A2D);
 
+    /// @dev An independent veto. `TimelockController` grants CANCELLER only to proposers,
+    /// so with a sole proposer there was nobody who could stop a compromised one. It is a
+    /// constructor argument now, and the constructor refuses to let it BE the proposer.
+    address internal canceller = address(0xCA11);
+
     function _one(address a) internal pure returns (address[] memory arr) {
         arr = new address[](1);
         arr[0] = a;
     }
 
     function setUp() public {
-        custody = new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours, _one(multisig), _one(multisig));
-        policy = new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours, _one(multisig), _one(multisig));
+        custody = new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours, _one(multisig), _one(multisig), canceller);
+        policy = new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours, _one(multisig), _one(multisig), canceller);
 
         // The policy timelock owns fee policy; the guardian is a separate, one-way de-risking path.
         fees = new LatchProtocolFeeController(address(policy), guardian);
@@ -46,7 +51,7 @@ contract LatchTimelockTest is Test {
                 LatchTimelock.DelayBelowTierFloor.selector, LatchTimelock.Tier.Custody, 0, 48 hours
             )
         );
-        new LatchTimelock(LatchTimelock.Tier.Custody, 0, _one(multisig), _one(multisig));
+        new LatchTimelock(LatchTimelock.Tier.Custody, 0, _one(multisig), _one(multisig), canceller);
     }
 
     function test_rejectsDelayJustBelowCustodyFloor() public {
@@ -55,7 +60,7 @@ contract LatchTimelockTest is Test {
                 LatchTimelock.DelayBelowTierFloor.selector, LatchTimelock.Tier.Custody, 48 hours - 1, 48 hours
             )
         );
-        new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours - 1, _one(multisig), _one(multisig));
+        new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours - 1, _one(multisig), _one(multisig), canceller);
     }
 
     function test_rejectsDelayJustBelowPolicyFloor() public {
@@ -64,7 +69,7 @@ contract LatchTimelockTest is Test {
                 LatchTimelock.DelayBelowTierFloor.selector, LatchTimelock.Tier.Policy, 6 hours - 1, 6 hours
             )
         );
-        new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours - 1, _one(multisig), _one(multisig));
+        new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours - 1, _one(multisig), _one(multisig), canceller);
     }
 
     /// @notice A custody delay must never be accepted merely because it clears the policy floor.
@@ -74,7 +79,7 @@ contract LatchTimelockTest is Test {
                 LatchTimelock.DelayBelowTierFloor.selector, LatchTimelock.Tier.Custody, 6 hours, 48 hours
             )
         );
-        new LatchTimelock(LatchTimelock.Tier.Custody, 6 hours, _one(multisig), _one(multisig));
+        new LatchTimelock(LatchTimelock.Tier.Custody, 6 hours, _one(multisig), _one(multisig), canceller);
     }
 
     function testFuzz_anyAcceptedDelayMeetsItsFloor(uint32 delay, bool isCustody) public {
@@ -83,9 +88,9 @@ contract LatchTimelockTest is Test {
 
         if (delay < floor) {
             vm.expectRevert();
-            new LatchTimelock(tier, delay, _one(multisig), _one(multisig));
+            new LatchTimelock(tier, delay, _one(multisig), _one(multisig), canceller);
         } else {
-            LatchTimelock t = new LatchTimelock(tier, delay, _one(multisig), _one(multisig));
+            LatchTimelock t = new LatchTimelock(tier, delay, _one(multisig), _one(multisig), canceller);
             assertGe(t.getMinDelay(), t.minDelayFloor(), "accepted delay must meet its own floor");
         }
     }
@@ -104,13 +109,13 @@ contract LatchTimelockTest is Test {
     function test_rejectsNoProposers() public {
         address[] memory none = new address[](0);
         vm.expectRevert(LatchTimelock.NoProposers.selector);
-        new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours, none, _one(multisig));
+        new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours, none, _one(multisig), canceller);
     }
 
     function test_rejectsNoExecutors() public {
         address[] memory none = new address[](0);
         vm.expectRevert(LatchTimelock.NoExecutors.selector);
-        new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours, _one(multisig), none);
+        new LatchTimelock(LatchTimelock.Tier.Policy, 6 hours, _one(multisig), none, canceller);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -250,5 +255,173 @@ contract LatchTimelockTest is Test {
 
         (, uint16 zeroForOne,) = fees.defaultFee();
         assertEq(zeroForOne, 1000, "cancelled operation must never take effect");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+       updateDelay(0) - THE TIER FLOOR THAT WAS CHECKED ONCE AND NEVER AGAIN
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev THE HOLE. OZ's `updateDelay` is `external virtual`, gated only on
+    /// `msg.sender == address(this)`, and re-validates nothing; the tier floor was checked in the
+    /// constructor and nowhere else. So ONE queued operation targeting the timelock itself set
+    /// `_minDelay = 0`, after which every later operation - `Vault.registerApp` included -
+    /// executed in the block it was queued. The tier stopped existing, and with `CANCELLER_ROLE`
+    /// held only by the compromised proposer there was nobody left to stop it.
+    ///
+    /// It is rejected at `_execute`, not in an override of `updateDelay`: Solidity cannot reach an
+    /// `external` base function through `super` and OZ's `_minDelay` is private, so an override
+    /// could refuse a bad delay but never apply a good one. `_execute` is the only place the
+    /// timelock ever calls out, so nothing reaches the base implementation around it.
+    ///
+    /// FAILS AGAINST THE PRE-FIX CODE: the execution succeeds and `getMinDelay()` returns 0.
+    function test_updateDelayToZeroIsRejectedAtExecution() public {
+        bytes memory data = abi.encodeWithSignature("updateDelay(uint256)", uint256(0));
+
+        vm.prank(multisig);
+        custody.schedule(address(custody), 0, data, bytes32(0), bytes32(0), 48 hours);
+        vm.warp(block.timestamp + 48 hours);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(LatchTimelock.DelayBelowTierFloor.selector, LatchTimelock.Tier.Custody, 0, 48 hours)
+        );
+        vm.prank(multisig);
+        custody.execute(address(custody), 0, data, bytes32(0), bytes32(0));
+
+        assertEq(custody.getMinDelay(), 48 hours, "the tier still exists");
+    }
+
+    /// @dev Anything under the floor, not only zero. 47h59m is the same attack with a less obvious
+    /// number, and 47 hours of warning is not what the Custody tier promises.
+    function test_updateDelayJustBelowTheFloorIsRejected() public {
+        bytes memory data = abi.encodeWithSignature("updateDelay(uint256)", uint256(48 hours - 1));
+
+        vm.prank(multisig);
+        custody.schedule(address(custody), 0, data, bytes32(0), bytes32(0), 48 hours);
+        vm.warp(block.timestamp + 48 hours);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LatchTimelock.DelayBelowTierFloor.selector, LatchTimelock.Tier.Custody, 48 hours - 1, 48 hours
+            )
+        );
+        vm.prank(multisig);
+        custody.execute(address(custody), 0, data, bytes32(0), bytes32(0));
+    }
+
+    /// @dev RAISING the delay is untouched. The guard has to be a floor, not a freeze: governance
+    /// that cannot lengthen its own delay has been handed a different problem.
+    function test_updateDelayUpwardsStillWorks() public {
+        bytes memory data = abi.encodeWithSignature("updateDelay(uint256)", uint256(72 hours));
+
+        vm.prank(multisig);
+        custody.schedule(address(custody), 0, data, bytes32(0), bytes32(0), 48 hours);
+        vm.warp(block.timestamp + 48 hours);
+        vm.prank(multisig);
+        custody.execute(address(custody), 0, data, bytes32(0), bytes32(0));
+
+        assertEq(custody.getMinDelay(), 72 hours);
+
+        // And the raised delay is real: a 48h schedule is refused afterwards.
+        bytes memory noop = abi.encodeCall(LatchProtocolFeeController.setFeesDisabled, (true));
+        vm.prank(multisig);
+        vm.expectRevert();
+        custody.schedule(address(fees), 0, noop, bytes32(0), bytes32(0), 48 hours);
+    }
+
+    /// @dev The second layer, and the reason the guard is not one-deep. `_schedule` reads
+    /// `getMinDelay()` rather than the storage slot, so even a `_minDelay` driven below the floor
+    /// by some route nobody has thought of leaves every future `schedule` still demanding it.
+    function test_getMinDelayNeverReportsBelowTheTierFloor() public view {
+        assertGe(custody.getMinDelay(), custody.minDelayFloor());
+        assertGe(policy.getMinDelay(), policy.minDelayFloor());
+    }
+
+    /// @dev A batch is the same door. `executeBatch` loops through the same `_execute`, so an
+    /// `updateDelay(0)` hidden among innocuous calls is rejected along with them.
+    function test_updateDelayToZeroIsRejectedInsideABatch() public {
+        address[] memory targets = new address[](2);
+        uint256[] memory values = new uint256[](2);
+        bytes[] memory payloads = new bytes[](2);
+
+        // A legitimate raise first, so the batch is not obviously hostile, then the drop to zero.
+        targets[0] = address(custody);
+        payloads[0] = abi.encodeWithSignature("updateDelay(uint256)", uint256(72 hours));
+        targets[1] = address(custody);
+        payloads[1] = abi.encodeWithSignature("updateDelay(uint256)", uint256(0));
+
+        vm.prank(multisig);
+        custody.scheduleBatch(targets, values, payloads, bytes32(0), bytes32(0), 48 hours);
+        vm.warp(block.timestamp + 48 hours);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(LatchTimelock.DelayBelowTierFloor.selector, LatchTimelock.Tier.Custody, 0, 48 hours)
+        );
+        vm.prank(multisig);
+        custody.executeBatch(targets, values, payloads, bytes32(0), bytes32(0));
+
+        assertEq(custody.getMinDelay(), 48 hours);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+       AN INDEPENDENT VETO - CANCELLER_ROLE AS A CONSTRUCTOR ARGUMENT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev `TimelockController` grants `CANCELLER_ROLE` to proposers and nobody else. With the
+    /// Safe as sole proposer, a 2-of-3 compromise that queued anything bought the public 48 hours
+    /// of VISIBILITY with no party able to act on it. The role is an explicit argument now, and
+    /// its holder is the right thing to keep on a lone hot key precisely because its only power is
+    /// refusal: losing it costs nothing a queued `grantRole` cannot restore, and stealing it
+    /// achieves griefing and nothing else.
+    ///
+    /// FAILS AGAINST THE PRE-FIX CODE: there was no such argument, and no such holder.
+    function test_theCancellerCanVetoWhatTheProposerQueued() public {
+        bytes memory data = abi.encodeCall(LatchProtocolFeeController.setDefaultFee, (4000, 4000));
+        bytes32 id = custody.hashOperation(address(fees), 0, data, bytes32(0), bytes32(0));
+
+        vm.prank(multisig);
+        custody.schedule(address(fees), 0, data, bytes32(0), bytes32(0), 48 hours);
+        assertTrue(custody.isOperationPending(id));
+
+        vm.prank(canceller);
+        custody.cancel(id);
+
+        assertFalse(custody.isOperation(id), "the veto landed");
+    }
+
+    /// @dev And the canceller can do nothing else. That is the entire safety argument for handing
+    /// it to a key that is not behind a multisig.
+    function test_theCancellerCanOnlyCancel() public {
+        bytes memory data = abi.encodeCall(LatchProtocolFeeController.setDefaultFee, (4000, 4000));
+
+        vm.prank(canceller);
+        vm.expectRevert();
+        custody.schedule(address(fees), 0, data, bytes32(0), bytes32(0), 48 hours);
+
+        assertFalse(custody.hasRole(custody.PROPOSER_ROLE(), canceller));
+        assertFalse(custody.hasRole(custody.DEFAULT_ADMIN_ROLE(), canceller));
+        assertTrue(custody.hasRole(custody.CANCELLER_ROLE(), canceller));
+    }
+
+    /// @dev A zero canceller reproduces the exact hole the argument exists to close, while making
+    /// the deployment look like it had been closed. `schedule` uses `onlyRole`, NOT
+    /// `onlyRoleOrOpenRole`, so a zero address here is a dead role rather than an open one.
+    function test_rejectsAZeroCanceller() public {
+        vm.expectRevert(LatchTimelock.ZeroCanceller.selector);
+        new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours, _one(multisig), _one(multisig), address(0));
+    }
+
+    /// @dev A canceller that IS the sole proposer cannot veto a compromised proposer, which is the
+    /// only scenario the role was added for.
+    function test_rejectsACancellerThatIsAProposer() public {
+        vm.expectRevert(abi.encodeWithSelector(LatchTimelock.CancellerMustNotBeAProposer.selector, multisig));
+        new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours, _one(multisig), _one(multisig), multisig);
+    }
+
+    /// @dev Length alone was checked, which `[address(0)]` passes. The result looks correctly
+    /// configured, clears `NoProposers`, and can queue nothing for anybody - and because OZ grants
+    /// `CANCELLER_ROLE` to each proposer, it hands that to nobody either.
+    function test_rejectsAZeroProposer() public {
+        vm.expectRevert(LatchTimelock.ZeroProposer.selector);
+        new LatchTimelock(LatchTimelock.Tier.Custody, 48 hours, _one(address(0)), _one(multisig), canceller);
     }
 }

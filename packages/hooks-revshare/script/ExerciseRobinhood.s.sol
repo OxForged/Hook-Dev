@@ -119,10 +119,37 @@ contract ExerciseRobinhoodScript is Script {
               distributorBps must be 0 when `distributor` is address(0) or
               _validateParams reverts DistributorRequired. The three shares must
               also sum to EXACTLY 10000; the check is not a ceiling. */
+        /* THREE STEPS, AND THE ORDER IS LOAD-BEARING. `setBeneficiaries` needs an
+           owner, and ownership is established by the first `configure`. But a
+           `configure` naming a non-zero `beneficiaryBps` is now rejected while the
+           roster is empty - the twin of `DistributorRequired`, added because the
+           deployed hook happily accepted "80% to a roster of nobody" and
+           `freezeConfig` then made that permanent. So: claim LP-only, set the
+           roster, then configure for real. All three run before `initialize`, so
+           nothing has traded and there is nothing to sandwich. */
         hook.configure(
             key,
             RevShareHook.ConfigParams({
                 feePips: 3000, // 0.3% of the swap, on top of the LP fee
+                lpDonateBps: 10_000,
+                beneficiaryBps: 0,
+                distributorBps: 0,
+                distributor: address(0),
+                enabled: true
+            })
+        );
+        console.log("[3] pool claimed (LP-only, so no roster is needed yet)");
+
+        // The deployer is the only beneficiary for now, so the take is traceable.
+        RevShareHook.Beneficiary[] memory roster = new RevShareHook.Beneficiary[](1);
+        roster[0] = RevShareHook.Beneficiary({recipient: me, weight: 1});
+        hook.setBeneficiaries(key, roster);
+        console.log("    roster set: deployer, weight 1");
+
+        hook.configure(
+            key,
+            RevShareHook.ConfigParams({
+                feePips: 3000,
                 lpDonateBps: 2000,
                 beneficiaryBps: 8000,
                 distributorBps: 0,
@@ -130,13 +157,7 @@ contract ExerciseRobinhoodScript is Script {
                 enabled: true
             })
         );
-        console.log("[3] pool claimed + configured");
-
-        // The deployer is the only beneficiary for now, so the take is traceable.
-        RevShareHook.Beneficiary[] memory roster = new RevShareHook.Beneficiary[](1);
-        roster[0] = RevShareHook.Beneficiary({recipient: me, weight: 1});
-        hook.setBeneficiaries(key, roster);
-        console.log("    roster set: deployer, weight 1");
+        console.log("    configured: 20% LPs / 80% roster");
 
         /* 4. Initialize at 1:1 — meaningless for real tokens, correct for two
               test tokens minted in equal supply. */

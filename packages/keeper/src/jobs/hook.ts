@@ -127,12 +127,14 @@ export function applyPendingConfigJob(targets: readonly WatchTarget[]): Job {
             abi: REV_SHARE_HOOK_ABI,
             functionName: 'getPendingConfig',
             args: [t.poolId],
-          })) as readonly [readonly [number, unknown]] | readonly [number, unknown]
+          })) as readonly [readonly [number, number, unknown]] | readonly [number, number, unknown]
 
-          // The struct is (uint48 effectiveBlock, ConfigParams params); viem
-          // hands it back as a nested tuple. `0` means no proposal outstanding.
+          // The struct is (uint48 effectiveBlock, uint48 expiryBlock, ConfigParams
+          // params); viem hands it back as a nested tuple. `0` means no proposal
+          // outstanding.
           const flat = Array.isArray(pending[0]) ? (pending[0] as readonly unknown[]) : (pending as readonly unknown[])
           const effectiveBlock = BigInt(String(flat[0] ?? 0))
+          const expiryBlock = BigInt(String(flat[1] ?? 0))
 
           if (effectiveBlock === 0n) {
             out.push(notDue(`${label}: no proposal outstanding`))
@@ -141,6 +143,16 @@ export function applyPendingConfigJob(targets: readonly WatchTarget[]): Job {
           if (ctx.blockNumber < effectiveBlock) {
             out.push(
               notDue(`${label}: proposal lands at block ${effectiveBlock}, ${effectiveBlock - ctx.blockNumber} to go`),
+            )
+            continue
+          }
+          // A proposal now has a WINDOW, not a deadline. Past `expiryBlock` the call
+          // reverts `PendingConfigExpired`, so simulating would still be safe - but it
+          // would be a permanent, pointless simulation on every tick for a proposal
+          // nobody can ever apply. Reading the second field turns that into a skip.
+          if (expiryBlock !== 0n && ctx.blockNumber > expiryBlock) {
+            out.push(
+              notDue(`${label}: proposal expired at block ${expiryBlock}; the owner has to propose again`),
             )
             continue
           }

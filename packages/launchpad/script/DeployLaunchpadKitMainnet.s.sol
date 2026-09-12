@@ -150,7 +150,7 @@ contract DeployLaunchpadKitMainnetScript is Script {
 
     function runWith(Wiring memory w) public returns (LaunchpadKit kit) {
         _preflight(w);
-        _reportSchedule(uint32(w.blockTimeCentis));
+        _reportSchedule(uint32(w.blockTimeCentis), LaunchGuardHook(w.hook).MAX_DECAY_BLOCKS());
 
         vm.startBroadcast(w.pk);
         kit = new LaunchpadKit(
@@ -267,22 +267,29 @@ contract DeployLaunchpadKitMainnetScript is Script {
     /// wrong `blockTimeCentis` becomes visible before it is permanent: the numbers below are what
     /// a launcher actually gets, and "300 seconds" turning into 60 is obvious here and invisible
     /// on a block explorer afterwards.
-    function _reportSchedule(uint32 centis) internal pure {
+    /// @param maxDecayBlocks Read off the hook rather than hardcoded. It used to be a literal
+    /// `1_000_000` here, which was the hook's old `constant` - and the moment that cap became a
+    /// per-chain argument, a literal in this script would have been asserting the environment
+    /// against a number the hook no longer uses.
+    function _reportSchedule(uint32 centis, uint32 maxDecayBlocks) internal pure {
         console.log("=== Preset windows at this block time ===");
-        _reportOne("FairLaunch          ", Preset.FairLaunch, centis);
-        _reportOne("AntiSniperAggressive", Preset.AntiSniperAggressive, centis);
-        _reportOne("Stealth             ", Preset.Stealth, centis);
-        _reportOne("NoTax               ", Preset.NoTax, centis);
+        _reportOne("FairLaunch          ", Preset.FairLaunch, centis, maxDecayBlocks);
+        _reportOne("AntiSniperAggressive", Preset.AntiSniperAggressive, centis, maxDecayBlocks);
+        _reportOne("Stealth             ", Preset.Stealth, centis, maxDecayBlocks);
+        _reportOne("NoTax               ", Preset.NoTax, centis, maxDecayBlocks);
         console.log("");
         console.log("If a 'real s' column does not match the preset's documented window,");
         console.log("LAUNCHPAD_BLOCK_TIME_CENTIS is wrong. Stop.");
         console.log("");
     }
 
-    function _reportOne(string memory name, Preset preset, uint32 centis) internal pure {
+    function _reportOne(string memory name, Preset preset, uint32 centis, uint32 maxDecayBlocks)
+        internal
+        pure
+    {
         uint32 windowSeconds = LaunchPresets.params(preset).windowSeconds;
         uint256 blocks = LaunchPresets.secondsToBlocks(windowSeconds, centis);
-        require(blocks <= 1_000_000, "a preset window exceeds MAX_DECAY_BLOCKS at this block time");
+        require(blocks <= maxDecayBlocks, "a preset window exceeds the hook's MAX_DECAY_BLOCKS at this block time");
         console.log(
             string.concat("  ", name, "  documented ", vm.toString(windowSeconds), "s")
         );

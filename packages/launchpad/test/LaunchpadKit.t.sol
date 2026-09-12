@@ -109,6 +109,13 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
     /// @dev 12s blocks, expressed in hundredths of a second.
     uint32 constant BLOCK_TIME_CENTIS = 1200;
 
+    /// @dev The hook's two block caps for a 12s chain. 1 000 000 blocks x 12s is 138.9 days, which
+    /// is what the old `constant` silently meant on Ethereum and emphatically did not mean on
+    /// Robinhood (28 hours). `test/DeployScripts.t.sol` runs the same hook at Robinhood's real
+    /// block time; this file stays on 12s because that is what the rest of its arithmetic assumes.
+    uint32 constant HOOK_MAX_DECAY = 1_000_000;
+    uint48 constant HOOK_MAX_START = 1_000_000;
+
     int24 constant TICK_SPACING = 60;
     int24 constant TICK_LOWER = -60_000;
     int24 constant TICK_UPPER = 60_000;
@@ -125,7 +132,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         ICLPositionDescriptor descriptor = new CLPositionDescriptorOffChain("https://latch.example/positions/");
         posm = new CLPositionManager(vault, poolManager, permit2, 100_000, descriptor, IWETH9(address(weth)));
 
-        hook = new LaunchGuardHook(poolManager);
+        hook = new LaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, HOOK_MAX_DECAY, HOOK_MAX_START);
 
         address[] memory none = new address[](0);
         registry = new LatchRegistry(REGISTRY_ADMIN, address(vault), none, none);
@@ -834,7 +841,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
 
     function test_constructor_rejectsAHookServingADifferentPoolManager() public {
         (, CLPoolManager otherManager) = createFreshManager();
-        LaunchGuardHook otherHook = new LaunchGuardHook(otherManager);
+        LaunchGuardHook otherHook = new LaunchGuardHook(otherManager, BLOCK_TIME_CENTIS, HOOK_MAX_DECAY, HOOK_MAX_START);
         vm.expectRevert(
             abi.encodeWithSelector(
                 ILaunchpadKit.HookPoolManagerMismatch.selector, address(poolManager), address(otherManager)

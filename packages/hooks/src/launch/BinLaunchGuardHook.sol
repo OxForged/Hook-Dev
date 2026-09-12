@@ -136,6 +136,12 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// @notice `decayBlocks` is zero or above `MAX_DECAY_BLOCKS`
     error InvalidDecayBlocks(uint32 decayBlocks);
 
+    /// @notice `blockTimeCentis` is zero or above `MAX_BLOCK_TIME_CENTIS`
+    error InvalidBlockTime(uint32 blockTimeCentis);
+
+    /// @notice A block cap's real-world duration is outside the wall-clock bounds
+    error LaunchWindowOutOfRange(uint256 realSeconds, uint256 minSeconds, uint256 maxSeconds);
+
     /// @notice The fee schedule is not a decay, or exceeds the caps this hook enforces
     error InvalidFeeSchedule(uint24 initialFeeBips, uint24 finalFeeBips);
 
@@ -188,11 +194,42 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// permanently hostile configuration can be, since config is immutable after `startBlock`.
     uint24 public constant MAX_FINAL_FEE = 20_000; // 2%
 
+    /**
+     * ############ WHY THE TWO BLOCK CAPS BELOW ARE ARGUMENTS, NOT CONSTANTS ############
+     *
+     * Identical reasoning to `LaunchGuardHook`, and kept in full here because the two hooks are
+     * deployed independently and a reader of one may never open the other.
+     *
+     * They were `1_000_000` blocks each, sized as "about 139 days at 12s blocks". Robinhood Chain
+     * (4663) produces a block every 0.102s, so on the chain this was actually built for the same
+     * number is 102 000 seconds - 28 HOURS - and an ordinary three-day fair launch reverts with
+     * `InvalidDecayBlocks`. A DURATION IN BLOCKS IS NOT A DURATION; it is a duration times an
+     * unknown the deployer picks later. Both caps are chosen per chain and validated against
+     * wall-clock bounds.
+     */
+
+    /// @notice Shortest real-world window the two caps may permit.
+    uint256 public constant MIN_LAUNCH_WINDOW_SECONDS = 3 days;
+
+    /// @notice Longest real-world window the two caps may permit.
+    uint256 public constant MAX_LAUNCH_WINDOW_SECONDS = 180 days;
+
+    /// @notice Largest block time accepted, in centiseconds: 600s per block.
+    uint32 public constant MAX_BLOCK_TIME_CENTIS = 60_000;
+
+    /*//////////////////////////////////////////////////////////////
+                               IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice This chain's block time in hundredths of a second. 1200 == 12s, 10 == 0.1s.
+    uint32 public immutable blockTimeCentis;
+
     /// @notice Hard cap on the decay window, so a "launch tax" cannot be a permanent tax.
-    uint32 public constant MAX_DECAY_BLOCKS = 1_000_000;
+    /// @dev Immutable rather than constant; SCREAMING_CASE retained as an existing ABI name.
+    uint32 public immutable MAX_DECAY_BLOCKS;
 
     /// @notice Hard cap on how far ahead `startBlock` may be set in any single write.
-    uint48 public constant MAX_START_DELAY = 1_000_000;
+    uint48 public immutable MAX_START_DELAY;
 
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
@@ -242,7 +279,34 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// @notice Launch state per pool id
     mapping(PoolId poolId => Launch) internal _launches;
 
-    constructor(IBinPoolManager _poolManager) BaseBinHook(_poolManager) {}
+    /// @param _poolManager The Bin singleton this hook serves, forever.
+    /// @param blockTimeCentis_ This chain's block time in hundredths of a second. Round DOWN.
+    /// @param maxDecayBlocks_ Ceiling on `decayBlocks`, bounded in wall-clock terms.
+    /// @param maxStartDelayBlocks_ Ceiling on how far ahead `startBlock` may be set.
+    constructor(
+        IBinPoolManager _poolManager,
+        uint32 blockTimeCentis_,
+        uint32 maxDecayBlocks_,
+        uint48 maxStartDelayBlocks_
+    ) BaseBinHook(_poolManager) {
+        if (blockTimeCentis_ == 0 || blockTimeCentis_ > MAX_BLOCK_TIME_CENTIS) {
+            revert InvalidBlockTime(blockTimeCentis_);
+        }
+
+        uint256 decaySeconds = (uint256(maxDecayBlocks_) * blockTimeCentis_) / 100;
+        if (decaySeconds < MIN_LAUNCH_WINDOW_SECONDS || decaySeconds > MAX_LAUNCH_WINDOW_SECONDS) {
+            revert LaunchWindowOutOfRange(decaySeconds, MIN_LAUNCH_WINDOW_SECONDS, MAX_LAUNCH_WINDOW_SECONDS);
+        }
+
+        uint256 startSeconds = (uint256(maxStartDelayBlocks_) * blockTimeCentis_) / 100;
+        if (startSeconds < MIN_LAUNCH_WINDOW_SECONDS || startSeconds > MAX_LAUNCH_WINDOW_SECONDS) {
+            revert LaunchWindowOutOfRange(startSeconds, MIN_LAUNCH_WINDOW_SECONDS, MAX_LAUNCH_WINDOW_SECONDS);
+        }
+
+        blockTimeCentis = blockTimeCentis_;
+        MAX_DECAY_BLOCKS = maxDecayBlocks_;
+        MAX_START_DELAY = maxStartDelayBlocks_;
+    }
 
     /// @inheritdoc IHooks
     /// @dev `beforeInitialize` rejects static-fee pools; `beforeSwap` gates trading and returns the

@@ -96,6 +96,9 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     /// @notice `minEpochDuration` is below `MIN_EPOCH_DURATION_FLOOR`.
     error MinEpochDurationTooShort(uint64 provided, uint64 required);
 
+    /// @notice `rootGracePeriod` is outside [`ROOT_GRACE_PERIOD_FLOOR`, `ROOT_GRACE_PERIOD_CEILING`]
+    error InvalidRootGracePeriod(uint64 provided, uint64 floorValue, uint64 ceilingValue);
+
     /// @notice `renounceOwnership` is permanently disabled. See the override.
     error RenounceDisabled();
 
@@ -197,10 +200,25 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     ///
     /// The grace does not make the race impossible at every timestamp; it moves the sweep back so
     /// that a poster aiming at the published deadline has a window behind it in which `rollover`
-    /// reverts for everyone. Sized longer than `LatchTimelock.CUSTODY_MIN_DELAY` on purpose: the
-    /// owner is meant to be a multisig behind a timelock, so "the root is queued and maturing" must
-    /// not be a losing position.
-    uint64 public constant ROOT_GRACE_PERIOD = 3 days;
+    /// reverts for everyone. It must be longer than the owner's own governance delay: the owner is
+    /// meant to be a multisig behind a timelock, so "the root is queued and maturing" must not be
+    /// a losing position.
+    ///
+    /// @dev THE FLOOR, not the value. 3 days was chosen against LATCH'S timelock
+    /// (`CUSTODY_MIN_DELAY`, 48h) and shipped as a `constant`, which quietly made one protocol's
+    /// governance schedule a property of every tenant's distributor. A tenant running a 7-day
+    /// timelock gets exactly the race this parameter exists to close, and cannot do anything about
+    /// it. The value is a constructor argument now; this is the line below which no deployment may
+    /// go, because a grace shorter than Latch's own delay was never defensible for anyone.
+    uint64 public constant ROOT_GRACE_PERIOD_FLOOR = 3 days;
+
+    /// @notice Longest grace this contract will accept at construction.
+    /// @dev The grace DELAYS `rollover`, which is the permissionless path that returns an
+    /// unclaimed epoch's value to the next one. An absurd value therefore strands holder money
+    /// behind an owner who has stopped posting roots, and there is no admin call that can shorten
+    /// it afterwards. Bounded generously - a 30-day governance delay is already extraordinary -
+    /// but bounded.
+    uint64 public constant ROOT_GRACE_PERIOD_CEILING = 30 days;
 
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
@@ -220,6 +238,13 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     /// @notice Seconds claims stay open after `claimableAt`. Unclaimed value rolls to the next
     /// epoch rather than being stranded.
     uint64 public immutable claimWindow;
+
+    /// @notice Extra time added to the no-root rollover deadline. See `ROOT_GRACE_PERIOD_FLOOR`
+    /// for what it closes and why it must exceed the OWNER'S governance delay, not Latch's.
+    /// @dev IMMUTABLE, NOT CONSTANT, and the SCREAMING_CASE name is kept because it is already an
+    /// ABI name three consumers read. Set it to at least the delay of whatever timelock owns this
+    /// distributor.
+    uint64 public immutable ROOT_GRACE_PERIOD;
 
     /// @notice May cancel a root inside the challenge window, and nothing else.
     /// @dev A wrong root is an emergency, and routing the fix through a timelock guarantees it
@@ -269,6 +294,9 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     /// never pull anything.
     /// @param owner_ The root poster. Should be a multisig + timelock, never an EOA.
     /// @param guardian_ May cancel a root inside the challenge window. May be zero.
+    /// @param rootGracePeriod_ Buffer in front of the no-root sweep. Set it to AT LEAST the delay
+    /// of the timelock that owns this contract, or a root queued at the published deadline can be
+    /// front-run by `rollover`. Bounded by `ROOT_GRACE_PERIOD_FLOOR`/`_CEILING`.
     constructor(
         IRevShareHook hook_,
         PoolKey memory key_,
@@ -276,7 +304,8 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
         address guardian_,
         uint64 minEpochDuration_,
         uint64 challengeDelay_,
-        uint64 claimWindow_
+        uint64 claimWindow_,
+        uint64 rootGracePeriod_
     ) Ownable(owner_) {
         if (address(hook_) == address(0)) revert InvalidHook();
         if (address(key_.hooks) != address(hook_)) revert InvalidPoolKey();
@@ -286,6 +315,9 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
         if (minEpochDuration_ < MIN_EPOCH_DURATION_FLOOR) {
             revert MinEpochDurationTooShort(minEpochDuration_, MIN_EPOCH_DURATION_FLOOR);
         }
+        if (rootGracePeriod_ < ROOT_GRACE_PERIOD_FLOOR || rootGracePeriod_ > ROOT_GRACE_PERIOD_CEILING) {
+            revert InvalidRootGracePeriod(rootGracePeriod_, ROOT_GRACE_PERIOD_FLOOR, ROOT_GRACE_PERIOD_CEILING);
+        }
 
         hook = hook_;
         _key = key_;
@@ -293,6 +325,7 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
         minEpochDuration = minEpochDuration_;
         challengeDelay = challengeDelay_;
         claimWindow = claimWindow_;
+        ROOT_GRACE_PERIOD = rootGracePeriod_;
 
         // The clock starts at deployment, not at the first close. `closeEpoch` used to exempt
         // epoch 0 from `minEpochDuration` entirely (`epochCount != 0 && ...`), because with

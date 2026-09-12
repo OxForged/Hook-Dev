@@ -34,7 +34,9 @@ import {BlacklistERC20} from "./mocks/Mocks.sol";
 contract SenderRecordingHook is RevShareHook {
     address public lastAfterSwapSender;
 
-    constructor(ICLPoolManager pm, address owner_, address guardian_) RevShareHook(pm, owner_, guardian_) {}
+    constructor(ICLPoolManager pm, address owner_, address guardian_, uint48 delayBlocks, uint32 centis)
+        RevShareHook(pm, owner_, guardian_, delayBlocks, centis, 8)
+    {}
 
     function _afterSwap(
         address sender,
@@ -76,9 +78,22 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
     uint24 constant FEE_PIPS = 10_000; // 1% of the unspecified amount
     int256 constant SWAP_AMOUNT = -1 ether;
 
+
+    /* ------------------------------------------------------------------
+       ROBINHOOD-LIKE PARAMETERS, on purpose.
+
+       The suite used to run against `CONFIG_DELAY_BLOCKS = 3600`, which is 12
+       hours on a 12s chain and SIX MINUTES on the chain this hook is actually
+       deployed to. Testing against 12s numbers is what let that ship. 10 centis
+       is Robinhood's real block time rounded down, and 432 000 blocks is the
+       smallest count that clears the hook's 12h wall-clock floor there.
+       ------------------------------------------------------------------ */
+    uint32 constant BLOCK_TIME_CENTIS = 10; // 0.1s blocks
+    uint48 constant CONFIG_DELAY = 432_000; // x 10 centis = 43 200s = 12h
+
     function setUp() public {
         (vault, poolManager) = createFreshManager();
-        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN);
+        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 8);
         router = new CLPoolManagerRouter(vault, poolManager);
 
         initializeTokens();
@@ -88,6 +103,16 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
         poolId = key.toId();
         controlKey = _key(IHooks(address(0)));
 
+        /* THREE STEPS, and the order is the fix landing rather than ceremony.
+           `_validateParams` now rejects a non-zero `beneficiaryBps` while
+           `totalWeight` is zero - the twin of `DistributorRequired`, whose
+           absence let a pool accrue 100% of its cut into a pot with nobody on
+           the other end and then `freezeConfig` the repair away. `configure`
+           is what establishes ownership, and `setBeneficiaries` needs an owner,
+           so the claim happens LP-only first. All three are pre-initialisation,
+           so nothing has traded. */
+        hook.configure(key, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
+        hook.setBeneficiaries(key, _roster(TREASURY, 1));
         hook.configure(key, _params(FEE_PIPS, 0, 10_000, 0, address(0)));
         poolManager.initialize(key, SQRT_RATIO_1_1);
         poolManager.initialize(controlKey, SQRT_RATIO_1_1);
@@ -305,12 +330,15 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
     /// that was rejected on its account becomes worth revisiting - and every one that was shipped
     /// on the assumption becomes suspect.
     function test_sender_isTheLockerNotTheTrader() public {
-        SenderRecordingHook recorder = new SenderRecordingHook(poolManager, GOVERNANCE, GUARDIAN);
+        SenderRecordingHook recorder = new SenderRecordingHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS);
         PoolKey memory k = _key(recorder);
         k.fee = 500;
         k.parameters =
             CLPoolParametersHelper.setTickSpacing(bytes32(uint256(recorder.getHooksRegistrationBitmap())), int24(10));
 
+        // Claim LP-only, set the roster, then take the beneficiary share. See `setUp`.
+        recorder.configure(k, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
+        recorder.setBeneficiaries(k, _roster(TREASURY, 1));
         recorder.configure(k, _params(FEE_PIPS, 0, 10_000, 0, address(0)));
         poolManager.initialize(k, SQRT_RATIO_1_1);
         _addLiquidity(k);
@@ -680,17 +708,118 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
         _assertSolvent();
     }
 
-    function test_route2_emptyRosterHoldsThePotRatherThanLosingIt() public {
+    /*//////////////////////////////////////////////////////////////
+       THE BENEFICIARY INVARIANT: A SHARE ALWAYS HAS SOMEBODY TO PAY
+
+       The deployed hook accepted `beneficiaryBps = 10_000` with an empty roster,
+       accrued into `pendingBeneficiary` forever, returned QUIETLY from
+       `settleBeneficiaries` rather than reverting, and let `freezeConfig` remove
+       the only repair. Three guards now make that state unreachable; each test
+       below fails against the deployed code.
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Guard 1 of 3, in `_validateParams`. The twin of `DistributorRequired`, whose absence
+    /// was the whole bug: route 3 fails loudly with no distributor, route 2 used to accrue into a
+    /// pot with nobody on the other end.
+    function test_FIX_configureRejectsABeneficiaryShareWithNoRoster() public {
+        PoolKey memory fresh = _key(hook);
+        fresh.fee = 500;
+        fresh.parameters =
+            CLPoolParametersHelper.setTickSpacing(bytes32(uint256(hook.getHooksRegistrationBitmap())), int24(10));
+        PoolId freshId = fresh.toId();
+
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.BeneficiariesRequired.selector, freshId));
+        hook.configure(fresh, _params(FEE_PIPS, 0, 10_000, 0, address(0)));
+
+        // And the documented three-step flow is the way through it.
+        hook.configure(fresh, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
+        hook.setBeneficiaries(fresh, _roster(TREASURY, 1));
+        hook.configure(fresh, _params(FEE_PIPS, 0, 10_000, 0, address(0)));
+        assertEq(hook.getConfig(freshId).beneficiaryBps, 10_000);
+    }
+
+    /// @dev Guard 2 of 3, in `setBeneficiaries`. `InvalidBeneficiaries` always documented itself
+    /// as "Roster is empty, too long, or contains an invalid entry"; the "empty" half was never
+    /// implemented. Emptying a roster is still allowed once the share is zero.
+    function test_FIX_setBeneficiariesRejectsAnEmptyRosterWhileTheShareIsLive() public {
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.BeneficiariesRequired.selector, poolId));
+        hook.setBeneficiaries(key, new RevShareHook.Beneficiary[](0));
+
+        // Take the share to zero first and the roster may go.
+        hook.proposeConfig(key, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
+        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        hook.applyPendingConfig(key);
+        hook.setBeneficiaries(key, new RevShareHook.Beneficiary[](0));
+        assertEq(hook.totalWeight(poolId), 0);
+    }
+
+    /// @dev Guard 3 of 3, on the one irreversible call a pool owner has, and it is DELIBERATELY
+    /// unreachable: guards 1 and 2 already make "live share, empty roster" impossible to write, so
+    /// no sequence of public calls can arrive at `freezeConfig` in that state. This test walks the
+    /// three doors and shows each one shut, which is the property worth pinning - the guard itself
+    /// is a backstop against a future edit reopening one of the other two.
+    function test_FIX_noSequenceReachesAFrozenPoolWithAnUnpayableShare() public {
+        PoolKey memory fresh = _key(hook);
+        fresh.fee = 500;
+        fresh.parameters =
+            CLPoolParametersHelper.setTickSpacing(bytes32(uint256(hook.getHooksRegistrationBitmap())), int24(10));
+        PoolId freshId = fresh.toId();
+
+        // Door 1: claim the pool straight into a beneficiary share. Refused.
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.BeneficiariesRequired.selector, freshId));
+        hook.configure(fresh, _params(FEE_PIPS, 0, 10_000, 0, address(0)));
+
+        hook.configure(fresh, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
+        hook.setBeneficiaries(fresh, _roster(TREASURY, 1));
+        hook.configure(fresh, _params(FEE_PIPS, 0, 10_000, 0, address(0)));
+
+        // Door 2: empty the roster out from under a live share. Refused.
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.BeneficiariesRequired.selector, freshId));
+        hook.setBeneficiaries(fresh, new RevShareHook.Beneficiary[](0));
+
+        // Door 3: with the share zeroed the roster may go - and then the share cannot come back.
+        hook.configure(fresh, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
+        hook.setBeneficiaries(fresh, new RevShareHook.Beneficiary[](0));
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.BeneficiariesRequired.selector, freshId));
+        hook.configure(fresh, _params(FEE_PIPS, 0, 10_000, 0, address(0)));
+
+        // So whatever is frozen is payable by construction.
+        hook.freezeConfig(fresh);
+        assertEq(hook.getConfig(freshId).beneficiaryBps, 0);
+        assertTrue(hook.getConfig(freshId).frozen);
+    }
+
+    /// @dev A pool that DOES have a roster freezes exactly as before. The guard must not have
+    /// turned `freezeConfig` into something a well-configured pool cannot use.
+    function test_FIX_freezeConfigStillWorksWithARoster() public {
+        assertGt(hook.totalWeight(poolId), 0);
+        hook.freezeConfig(key);
+        assertTrue(hook.getConfig(poolId).frozen);
+    }
+
+    /// @dev What the old `test_route2_emptyRosterHoldsThePotRatherThanLosingIt` asserted, now
+    /// inverted by the fix and worth pinning in its new form. `setBeneficiaries` settles the
+    /// OUTGOING roster before writing the new one, so the pot cannot be left waiting on nobody -
+    /// it is paid to the roster that earned it, and only rounding dust survives the change. The
+    /// early return in `settleBeneficiaries` therefore guards dust, not a fortune.
+    function test_route2_emptyingARosterPaysTheOutgoingOneFirst() public {
         _swap(key, SWAP_AMOUNT, true);
         uint256 pot = hook.pendingBeneficiary(poolId, currency1);
         assertGt(pot, 0);
+        assertEq(hook.claimable(TREASURY, currency1), 0, "nothing settled yet");
 
-        hook.settleBeneficiaries(key, currency1); // no-op, no roster
-        assertEq(hook.pendingBeneficiary(poolId, currency1), pot);
+        // Zero the share so the roster is allowed to go, then empty it.
+        hook.proposeConfig(key, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
+        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        hook.applyPendingConfig(key);
+        hook.setBeneficiaries(key, new RevShareHook.Beneficiary[](0));
 
-        hook.setBeneficiaries(key, _roster(TREASURY, 1));
-        hook.settleBeneficiaries(key, currency1);
-        assertEq(hook.claimable(TREASURY, currency1), pot, "the waiting pot is recoverable");
+        assertEq(hook.claimable(TREASURY, currency1), pot, "the outgoing roster was paid on the way out");
+        assertEq(hook.pendingBeneficiary(poolId, currency1), 0, "nothing left stranded behind it");
+        assertEq(hook.totalWeight(poolId), 0);
+
+        vm.prank(TREASURY);
+        assertEq(hook.claim(currency1, TREASURY), pot);
         _assertSolvent();
     }
 
@@ -816,9 +945,10 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
             )
         });
 
+        hook.configure(k, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
+        hook.setBeneficiaries(k, _roster(CHARITY, 1, TREASURY, 1));
         hook.configure(k, _params(FEE_PIPS, 0, 10_000, 0, address(0)));
         poolManager.initialize(k, SQRT_RATIO_1_1);
-        hook.setBeneficiaries(k, _roster(CHARITY, 1, TREASURY, 1));
 
         IERC20(address(hostile)).approve(address(router), type(uint256).max);
         IERC20(address(other)).approve(address(router), type(uint256).max);
@@ -1050,4 +1180,95 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
         assertGe(total, pendingB + pendingD, "total must be at least the retained parts");
     }
 
+
+    /*//////////////////////////////////////////////////////////////
+       CONSTRUCTOR BOUNDS - the three arguments that used to be constants
+
+       Each of these was a `constant` whose value was correct for a 12s chain and
+       wrong for the chain the hook shipped on. The tests below are about the
+       BOUNDS, not the values: a deployment picks the value, the contract refuses
+       to let the pick be meaningless.
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ctor_rejectsAZeroOrAbsurdBlockTime() public {
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.InvalidBlockTime.selector, uint32(0)));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, 0, 8);
+
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.InvalidBlockTime.selector, uint32(60_001)));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, 60_001, 8);
+
+        // 600s per block is the edge, and it is accepted. Nothing about a slow chain is unsafe.
+        RevShareHook slow = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, 72, 60_000, 8);
+        assertEq((uint256(slow.CONFIG_DELAY_BLOCKS()) * slow.blockTimeCentis()) / 100, 12 hours);
+    }
+
+    /// @dev A delay so long that the pool owner can never answer market conditions is its own
+    /// failure, and there is no admin anywhere that can shorten it after the fact.
+    function test_ctor_rejectsADelayBeyondTheCeiling() public {
+        // 14 days + 1 second's worth of blocks at 0.1s.
+        uint48 tooLong = 14 * 24 * 3600 * 10 + 10;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RevShareHook.ConfigDelayTooLong.selector, (uint256(tooLong) * BLOCK_TIME_CENTIS) / 100, 14 days
+            )
+        );
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, tooLong, BLOCK_TIME_CENTIS, 8);
+    }
+
+    function test_ctor_boundsMaxBeneficiaries() public {
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.InvalidMaxBeneficiaries.selector, 0, 32));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 0);
+
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.InvalidMaxBeneficiaries.selector, 33, 32));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 33);
+
+        RevShareHook wide = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 32);
+        assertEq(wide.MAX_BENEFICIARIES(), 32);
+        assertEq(wide.MAX_BENEFICIARIES_CEILING(), 32);
+    }
+
+    /// @dev The roster cap is enforced at the deployment's own value, not at the old literal 8.
+    /// `settleBeneficiaries` is permissionless and off the swap path, so this bounds gas, never a
+    /// trade - which is exactly why it is safe to make it a knob at all.
+    function test_ctor_theRosterCapIsTheDeployedValue() public {
+        assertEq(hook.MAX_BENEFICIARIES(), 8);
+
+        RevShareHook.Beneficiary[] memory nine = new RevShareHook.Beneficiary[](9);
+        for (uint256 i = 0; i < 9; ++i) {
+            nine[i] = RevShareHook.Beneficiary({recipient: address(uint160(0x1000 + i)), weight: 1});
+        }
+        vm.expectRevert(RevShareHook.InvalidBeneficiaries.selector);
+        hook.setBeneficiaries(key, nine);
+
+        RevShareHook.Beneficiary[] memory eight = new RevShareHook.Beneficiary[](8);
+        for (uint256 i = 0; i < 8; ++i) {
+            eight[i] = RevShareHook.Beneficiary({recipient: address(uint160(0x1000 + i)), weight: 1});
+        }
+        hook.setBeneficiaries(key, eight);
+        assertEq(hook.getBeneficiaries(poolId).length, 8);
+
+        // And settlement over the full roster still runs, which is the only thing the cap protects.
+        _swap(key, SWAP_AMOUNT, true);
+        hook.settleBeneficiaries(key, currency1);
+        assertGt(hook.claimable(address(uint160(0x1007)), currency1), 0);
+    }
+
+    /// @dev `proposeConfig` twice must leave ONE proposal, with a fresh window. A second proposal
+    /// silently stacking behind the first would be the expiry defeated.
+    function test_proposeConfig_replacesRatherThanStacks() public {
+        hook.proposeConfig(key, _params(50_000, 0, 10_000, 0, address(0)));
+        RevShareHook.PendingConfig memory first = hook.getPendingConfig(poolId);
+
+        vm.roll(block.number + 10);
+        hook.proposeConfig(key, _params(60_000, 0, 10_000, 0, address(0)));
+        RevShareHook.PendingConfig memory second = hook.getPendingConfig(poolId);
+
+        assertEq(second.effectiveBlock, first.effectiveBlock + 10, "the clock restarted");
+        assertEq(second.params.feePips, 60_000, "and only the newer one survives");
+
+        vm.roll(second.effectiveBlock);
+        hook.applyPendingConfig(key);
+        assertEq(hook.getConfig(poolId).feePips, 60_000);
+        assertEq(hook.getPendingConfig(poolId).effectiveBlock, 0, "consumed");
+    }
 }

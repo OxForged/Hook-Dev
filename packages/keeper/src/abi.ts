@@ -22,7 +22,12 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   // --- reads used to decide whether the writes are worth sending ---
   'function pendingBeneficiary(bytes32 poolId, address currency) view returns (uint256)',
   'function pendingDistributorShare(bytes32 poolId, address currency) view returns (uint256)',
-  'function getPendingConfig(bytes32 poolId) view returns ((uint48,(uint24,uint16,uint16,uint16,address,bool)))',
+  // The tuple gained `uint48 expiryBlock` after `effectiveBlock` when the hook was
+  // redeployed. A matured proposal now dies of old age instead of staying armed
+  // forever. Reading this through the two-field shape does NOT error - it silently
+  // returns `expiryBlock` as `params.feePips`, which is the same trap as decoding one
+  // distributor's `getEpoch` through the other's ABI.
+  'function getPendingConfig(bytes32 poolId) view returns ((uint48,uint48,(uint24,uint16,uint16,uint16,address,bool)))',
   'function distributorOf(bytes32 poolId) view returns (address)',
 ])
 

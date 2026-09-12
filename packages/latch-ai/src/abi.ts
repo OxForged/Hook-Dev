@@ -69,7 +69,10 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   "function settleBeneficiaries((address,address,address,address,uint24,bytes32) key, address currency)",
   "function applyPendingConfig((address,address,address,address,uint24,bytes32) key)",
   "function pendingBeneficiary(bytes32 poolId, address currency) view returns (uint256)",
-  "function getPendingConfig(bytes32 poolId) view returns ((uint48,(uint24,uint16,uint16,uint16,address,bool)))",
+  // Gained `uint48 expiryBlock` after `effectiveBlock` in the redeploy: a matured
+  // proposal expires now instead of staying armed indefinitely. The old two-field
+  // shape decodes WITHOUT erroring and reports `expiryBlock` as `params.feePips`.
+  "function getPendingConfig(bytes32 poolId) view returns ((uint48,uint48,(uint24,uint16,uint16,uint16,address,bool)))",
   "function distributorOf(bytes32 poolId) view returns (address)",
 ]);
 

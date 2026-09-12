@@ -51,9 +51,26 @@ abstract contract DistributorFixture is Test, Deployers {
     uint24 constant FEE_PIPS = 50_000; // 5%, so an epoch pot is comfortably above dust
     int256 constant SWAP_AMOUNT = -10 ether;
 
+
+    /* ------------------------------------------------------------------
+       ROBINHOOD-LIKE PARAMETERS, on purpose.
+
+       The suite used to run against `CONFIG_DELAY_BLOCKS = 3600`, which is 12
+       hours on a 12s chain and SIX MINUTES on the chain this hook is actually
+       deployed to. Testing against 12s numbers is what let that ship. 10 centis
+       is Robinhood's real block time rounded down, and 432 000 blocks is the
+       smallest count that clears the hook's 12h wall-clock floor there.
+       ------------------------------------------------------------------ */
+    uint32 constant BLOCK_TIME_CENTIS = 10; // 0.1s blocks
+    uint48 constant CONFIG_DELAY = 432_000; // x 10 centis = 43 200s = 12h
+
+    /// @dev `rootGracePeriod` for every distributor built here. Equal to
+    /// `ROOT_GRACE_PERIOD_FLOOR`, which is also what the old `constant` was.
+    uint64 constant GRACE = 3 days;
+
     function _deployPool(address tokenA, address tokenB) internal {
         (vault, poolManager) = createFreshManager();
-        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN);
+        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 8);
         router = new CLPoolManagerRouter(vault, poolManager);
 
         (currency0, currency1) =
@@ -171,7 +188,7 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         // The distributor address must be known before `configure`, and `configure` must happen
         // before `initialize`, so the distributor is deployed against the key first.
         distributor = new MerkleEpochDistributor(
-            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW, GRACE
         );
         _configureAndSeed(address(distributor));
 
@@ -652,14 +669,14 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         wrong.hooks = IHooks(address(0x1234));
 
         vm.expectRevert(MerkleEpochDistributor.InvalidWindows.selector);
-        new MerkleEpochDistributor(IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, 0, CLAIM_WINDOW);
+        new MerkleEpochDistributor(IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, 0, CLAIM_WINDOW, GRACE);
 
         vm.expectRevert(MerkleEpochDistributor.InvalidWindows.selector);
-        new MerkleEpochDistributor(IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, 0);
+        new MerkleEpochDistributor(IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, 0, GRACE);
 
         vm.expectRevert(MerkleEpochDistributor.InvalidPoolKey.selector);
         new MerkleEpochDistributor(
-            IRevShareHook(address(hook)), wrong, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW
+            IRevShareHook(address(hook)), wrong, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW, GRACE
         );
     }
 
@@ -885,6 +902,58 @@ contract MerkleEpochDistributorTest is DistributorFixture {
               A2 - THE EPOCH COOLDOWN IS ENFORCED, NOT ADVISED
     //////////////////////////////////////////////////////////////*/
 
+    /*//////////////////////////////////////////////////////////////
+       ROOT_GRACE_PERIOD IS A TENANT'S PARAMETER, NOT LATCH'S
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev It was `uint64 public constant ROOT_GRACE_PERIOD = 3 days`, sized against
+    /// `LatchTimelock.CUSTODY_MIN_DELAY` - which quietly made ONE protocol's governance schedule a
+    /// property of every tenant's distributor. A tenant running a 7-day timelock gets exactly the
+    /// race the grace exists to close: the root is queued and maturing, `rollover` becomes
+    /// available first, and a griefer voids an allocation that took an off-chain job to compute.
+    ///
+    /// The floor stays at 3 days because a grace shorter than Latch's own delay was never
+    /// defensible for anybody. The ceiling exists because the grace DELAYS the permissionless path
+    /// that returns unclaimed value to the next epoch.
+    ///
+    /// FAILS AGAINST THE PRE-FIX CODE: there was no argument to reject.
+    function test_constructor_boundsTheRootGracePeriod() public {
+        uint64 floor_ = distributor.ROOT_GRACE_PERIOD_FLOOR();
+        uint64 ceil_ = distributor.ROOT_GRACE_PERIOD_CEILING();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(MerkleEpochDistributor.InvalidRootGracePeriod.selector, uint64(0), floor_, ceil_)
+        );
+        new MerkleEpochDistributor(
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW, 0
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(MerkleEpochDistributor.InvalidRootGracePeriod.selector, floor_ - 1, floor_, ceil_)
+        );
+        new MerkleEpochDistributor(
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW, floor_ - 1
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(MerkleEpochDistributor.InvalidRootGracePeriod.selector, ceil_ + 1, floor_, ceil_)
+        );
+        new MerkleEpochDistributor(
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW, ceil_ + 1
+        );
+    }
+
+    /// @dev The case the constant could not express: a tenant behind a 7-day timelock buys itself
+    /// room that actually covers it, and the no-root sweep moves back by exactly that much.
+    function test_aTenantWithALongerTimelockCanBuyItselfTheRoom() public {
+        MerkleEpochDistributor patient = new MerkleEpochDistributor(
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW, 7 days
+        );
+        assertEq(patient.ROOT_GRACE_PERIOD(), 7 days);
+        assertEq(distributor.ROOT_GRACE_PERIOD(), GRACE, "Latch's own sits at the floor");
+        assertEq(uint256(patient.ROOT_GRACE_PERIOD()) - distributor.ROOT_GRACE_PERIOD(), 4 days);
+    }
+
     /// @dev `minEpochDuration` was validated by nothing, so `0` was accepted - and a zero cooldown
     /// lets anybody shred the pot into one epoch per block, each needing its own root, its own
     /// challenge window and its own claim transaction. Exactly the griefing the parameter exists to
@@ -897,18 +966,18 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         vm.expectRevert(
             abi.encodeWithSelector(MerkleEpochDistributor.MinEpochDurationTooShort.selector, uint64(0), floor_)
         );
-        new MerkleEpochDistributor(IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, 0, CHALLENGE, CLAIM_WINDOW);
+        new MerkleEpochDistributor(IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, 0, CHALLENGE, CLAIM_WINDOW, GRACE);
 
         vm.expectRevert(
             abi.encodeWithSelector(MerkleEpochDistributor.MinEpochDurationTooShort.selector, floor_ - 1, floor_)
         );
         new MerkleEpochDistributor(
-            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, floor_ - 1, CHALLENGE, CLAIM_WINDOW
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, floor_ - 1, CHALLENGE, CLAIM_WINDOW, GRACE
         );
 
         // The floor itself is accepted: this is a floor, not a policy.
         new MerkleEpochDistributor(
-            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, floor_, CHALLENGE, CLAIM_WINDOW
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, floor_, CHALLENGE, CLAIM_WINDOW, GRACE
         );
     }
 
@@ -919,7 +988,7 @@ contract MerkleEpochDistributorTest is DistributorFixture {
     /// FAILS AGAINST THE PRE-FIX CODE: the first `closeEpoch` succeeds immediately.
     function test_closeEpoch_theFirstEpochIsNotExemptFromTheCooldown() public {
         MerkleEpochDistributor fresh = new MerkleEpochDistributor(
-            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW, GRACE
         );
         assertEq(fresh.lastCloseAt(), uint64(block.timestamp), "the cooldown clock starts at deployment");
 
@@ -1319,7 +1388,7 @@ contract EpochDistributorKindTest is DistributorFixture {
         // answering - which matters, because a consumer inspecting an address it was handed has no
         // way to know in advance whether it is wired to anything.
         merkle = new MerkleEpochDistributor(
-            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW
+            IRevShareHook(address(hook)), key, GOVERNANCE, GUARDIAN, MIN_EPOCH, CHALLENGE, CLAIM_WINDOW, GRACE
         );
         snapshot = new SnapshotEpochDistributor(
             IRevShareHook(address(hook)), key, IVotes(address(votes)), MIN_EPOCH, CLAIM_WINDOW

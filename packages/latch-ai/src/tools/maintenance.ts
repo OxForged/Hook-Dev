@@ -552,9 +552,11 @@ async function applyPendingConfig(
     args: [poolId],
   })) as unknown;
 
-  // (uint48 effectiveBlock, ConfigParams params); viem returns a nested tuple.
+  // (uint48 effectiveBlock, uint48 expiryBlock, ConfigParams params); viem returns a
+  // nested tuple.
   const flat = Array.isArray(pending) && Array.isArray(pending[0]) ? pending[0] : pending;
   const effectiveBlock = BigInt(String((flat as readonly unknown[])[0] ?? 0));
+  const expiryBlock = BigInt(String((flat as readonly unknown[])[1] ?? 0));
 
   if (effectiveBlock === 0n) {
     return {
@@ -576,6 +578,20 @@ async function applyPendingConfig(
       wouldSucceed: false,
       sent: false,
       reason: `the pending config takes effect at block ${effectiveBlock}; ${effectiveBlock - blockNumber} block(s) to go.`,
+    };
+  }
+
+  // A proposal has a WINDOW now, not a deadline: past `expiryBlock` it is dead and the
+  // owner has to propose again and wait the full delay again. Reported as not-due rather
+  // than left to a simulation, so a reader is told WHY nothing will happen.
+  if (expiryBlock !== 0n && blockNumber > expiryBlock) {
+    return {
+      action: "applyPendingConfig",
+      target: hook,
+      due: false,
+      wouldSucceed: false,
+      sent: false,
+      reason: `the pending config expired at block ${expiryBlock}; it can no longer be applied and the pool owner has to propose it again.`,
     };
   }
 

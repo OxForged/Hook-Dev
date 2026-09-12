@@ -76,6 +76,10 @@ contract CreatorReserve is IERC721Receiver, ReentrancyGuard {
 
     error NoRungs();
     error TooManyRungs(uint256 given, uint256 max);
+    /// @notice `maxRungs` is zero or above `MAX_RUNGS_CEILING`
+    error InvalidMaxRungs(uint256 given, uint256 ceiling);
+    /// @notice `rotationDelay` is outside [`MIN_ROTATION_DELAY`, `MAX_ROTATION_DELAY`]
+    error InvalidRotationDelay(uint64 given, uint64 minDelay, uint64 maxDelay);
     error NotOurPosition(uint256 tokenId);
     error RungWrongPool(uint256 tokenId);
     error RungOnTheWrongSide(uint256 index);
@@ -105,15 +109,54 @@ contract CreatorReserve is IERC721Receiver, ReentrancyGuard {
                                IMMUTABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev More rungs means finer harvesting and more gas at launch. The ceiling exists
-    ///      so a launch cannot be configured into a mint that runs out of block gas.
-    uint256 public constant MAX_RUNGS = 40;
+    /**
+     * ####### WHY THE TWO VALUES BELOW ARE ARGUMENTS UNDER CONSTANT BOUNDS #######
+     *
+     * THIS CONTRACT HAS NO ADMIN. That is stated in the header as a feature and it is
+     * one, but it has a consequence that a `constant` gets exactly backwards: a value
+     * that turns out to be wrong for a launch can NEVER be corrected for that launch.
+     * There is no owner, no pause, no setter and no migration. Whatever is compiled in
+     * is what that creator lives with for the life of the ladder.
+     *
+     * A constant is the right shape when the value is a safety invariant the deployment
+     * must not be trusted with. Neither of these is:
+     *
+     *   * `ROTATION_DELAY` is a notice period, and the right length depends on who the
+     *     payout address is. 72 hours is sensible for an EOA creator and absurd for a
+     *     Safe whose signers are the same people either way.
+     *   * `MAX_RUNGS` is a gas bound on a constructor loop, and the right number depends
+     *     on the chain's block gas limit, not on anything about the product.
+     *
+     * So both are per-launch arguments, each inside a constant range that no launch may
+     * leave. The bounds are the invariant; the values are the configuration.
+     */
+
+    /// @notice Absolute ceiling on the rung count, whatever a launch asks for.
+    /// @dev More rungs means finer harvesting and more gas at launch. This is the line past
+    ///      which a launch could be configured into a mint that runs out of block gas.
+    uint256 public constant MAX_RUNGS_CEILING = 40;
+
+    /// @notice Shortest rotation notice any launch may configure.
+    /// @dev Below this, "the creator's payout address changed" is not something an observer
+    ///      can act on, and the delay stops being a warning. Zero would make a stolen key an
+    ///      instant, silent redirect - the exact failure the delay exists for.
+    uint64 public constant MIN_ROTATION_DELAY = 24 hours;
+
+    /// @notice Longest rotation notice any launch may configure.
+    /// @dev The other end of the same trade. An enormous delay does not protect anybody; it
+    ///      just means a creator who loses a key waits weeks, and there is no admin here to
+    ///      shorten it.
+    uint64 public constant MAX_ROTATION_DELAY = 30 days;
+
+    /// @notice Maximum rungs in this reserve's ladder. Fixed at construction.
+    /// @dev SCREAMING_CASE retained for continuity with the pre-argument version.
+    uint256 public immutable MAX_RUNGS;
 
     /// @notice A nominated payout address waits this long before it can accept.
     /// @dev Not immutable ownership: a lost creator key would strand the reserve forever.
     ///      Not instant either: a stolen key would redirect it silently. The delay plus a
     ///      public event is what gives everyone else time to notice a hostile rotation.
-    uint64 public constant ROTATION_DELAY = 72 hours;
+    uint64 public immutable ROTATION_DELAY;
 
     ICLPositionManager public immutable positionManager;
     ICLPoolManager public immutable poolManager;
@@ -170,17 +213,34 @@ contract CreatorReserve is IERC721Receiver, ReentrancyGuard {
      * @param payout           Where proceeds go. Rotatable, with a delay.
      * @param tokenIds         Rung positions, already minted to this address, in
      *                         ascending fill order (the order price reaches them).
+     * @param maxRungs_        Ladder ceiling for this reserve. 1..`MAX_RUNGS_CEILING`.
+     * @param rotationDelay_   Notice period on a payout rotation.
+     *                         `MIN_ROTATION_DELAY`..`MAX_ROTATION_DELAY`.
      */
     constructor(
         ICLPositionManager positionManager_,
         PoolKey memory key,
         Currency launchToken,
         address payout,
-        uint256[] memory tokenIds
+        uint256[] memory tokenIds,
+        uint256 maxRungs_,
+        uint64 rotationDelay_
     ) {
+        /* Parameter bounds FIRST, before anything that reads chain state. These are the
+           two values this contract can never correct, so they should fail on a value the
+           caller typed rather than after twenty `ownerOf` calls have already passed. */
+        if (maxRungs_ == 0 || maxRungs_ > MAX_RUNGS_CEILING) {
+            revert InvalidMaxRungs(maxRungs_, MAX_RUNGS_CEILING);
+        }
+        if (rotationDelay_ < MIN_ROTATION_DELAY || rotationDelay_ > MAX_ROTATION_DELAY) {
+            revert InvalidRotationDelay(rotationDelay_, MIN_ROTATION_DELAY, MAX_ROTATION_DELAY);
+        }
+        MAX_RUNGS = maxRungs_;
+        ROTATION_DELAY = rotationDelay_;
+
         if (payout == address(0)) revert InvalidPayout();
         if (tokenIds.length == 0) revert NoRungs();
-        if (tokenIds.length > MAX_RUNGS) revert TooManyRungs(tokenIds.length, MAX_RUNGS);
+        if (tokenIds.length > maxRungs_) revert TooManyRungs(tokenIds.length, maxRungs_);
 
         positionManager = positionManager_;
         poolManager = ICLPoolManager(address(key.poolManager));

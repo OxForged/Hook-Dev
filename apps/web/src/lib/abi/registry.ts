@@ -9,6 +9,11 @@ export const registryAbi = [
         "internalType": "address"
       },
       {
+        "name": "vault_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "curators",
         "type": "address[]",
         "internalType": "address[]"
@@ -147,6 +152,131 @@ export const registryAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "adminCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "attestFromPool",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "poolManager",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "attestFromPoolKey",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "key",
+        "type": "tuple",
+        "internalType": "struct PoolKey",
+        "components": [
+          {
+            "name": "currency0",
+            "type": "address",
+            "internalType": "Currency"
+          },
+          {
+            "name": "currency1",
+            "type": "address",
+            "internalType": "Currency"
+          },
+          {
+            "name": "hooks",
+            "type": "address",
+            "internalType": "contract IHooks"
+          },
+          {
+            "name": "poolManager",
+            "type": "address",
+            "internalType": "contract IPoolManager"
+          },
+          {
+            "name": "fee",
+            "type": "uint24",
+            "internalType": "uint24"
+          },
+          {
+            "name": "parameters",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "attestationOf",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "count",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "attestedPermissions",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "poolManager",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "attestedAt",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -301,6 +431,30 @@ export const registryAbi = [
   },
   {
     "type": "function",
+    "name": "effectivePermissions",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "permissions",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "source",
+        "type": "uint8",
+        "internalType": "enum PermissionSource"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getLatch",
     "inputs": [
       {
@@ -361,7 +515,32 @@ export const registryAbi = [
             "internalType": "bool"
           },
           {
+            "name": "attestedPermissions",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
             "name": "codehash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "attestedPoolManager",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "attestedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "attestationCount",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "attestedPoolId",
             "type": "bytes32",
             "internalType": "bytes32"
           },
@@ -441,6 +620,30 @@ export const registryAbi = [
   },
   {
     "type": "function",
+    "name": "hasAttestedPool",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "hasRole",
     "inputs": [
       {
@@ -450,6 +653,25 @@ export const registryAbi = [
       },
       {
         "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isAttested",
+    "inputs": [
+      {
+        "name": "hook",
         "type": "address",
         "internalType": "address"
       }
@@ -607,6 +829,25 @@ export const registryAbi = [
   },
   {
     "type": "function",
+    "name": "permissionsConcealed",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "permissionsOf",
     "inputs": [
       {
@@ -630,6 +871,11 @@ export const registryAbi = [
         "name": "valid",
         "type": "bool",
         "internalType": "bool"
+      },
+      {
+        "name": "source",
+        "type": "uint8",
+        "internalType": "enum PermissionSource"
       }
     ],
     "stateMutability": "view"
@@ -694,6 +940,61 @@ export const registryAbi = [
   },
   {
     "type": "function",
+    "name": "registerWithPool",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "metadata",
+        "type": "tuple",
+        "internalType": "struct LatchMetadata",
+        "components": [
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "description",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "sourceURI",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "auditURI",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "chainIds",
+            "type": "uint256[]",
+            "internalType": "uint256[]"
+          }
+        ]
+      },
+      {
+        "name": "poolManager",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "renounceRole",
     "inputs": [
       {
@@ -749,6 +1050,35 @@ export const registryAbi = [
   },
   {
     "type": "function",
+    "name": "riskAssessmentOf",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "class",
+        "type": "uint8",
+        "internalType": "enum RiskClass"
+      },
+      {
+        "name": "source",
+        "type": "uint8",
+        "internalType": "enum PermissionSource"
+      },
+      {
+        "name": "attestationCount",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "riskClassOf",
     "inputs": [
       {
@@ -762,6 +1092,25 @@ export const registryAbi = [
         "name": "",
         "type": "uint8",
         "internalType": "enum RiskClass"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "selfReportedPermissionsOf",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "stateMutability": "view"
@@ -957,6 +1306,19 @@ export const registryAbi = [
     "stateMutability": "nonpayable"
   },
   {
+    "type": "function",
+    "name": "vault",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IVaultAppRegistry"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "event",
     "name": "LatchListingChanged",
     "inputs": [
@@ -1093,6 +1455,92 @@ export const registryAbi = [
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LatchPermissionsUnderstated",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "selfReported",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "attested",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "concealed",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LatchPoolAttested",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "attestor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "poolManager",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "poolPermissions",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "attestedPermissions",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "selfReportedPermissions",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "attestationCount",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
       }
     ],
     "anonymous": false
@@ -1300,6 +1748,22 @@ export const registryAbi = [
   },
   {
     "type": "error",
+    "name": "AdminRoleIsNotRenounceable",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AttestationRequired",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "AuditURIRequired",
     "inputs": []
   },
@@ -1343,6 +1807,16 @@ export const registryAbi = [
   {
     "type": "error",
     "name": "InvalidRange",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidRange",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LastAdminCannotBeRemoved",
     "inputs": []
   },
   {
@@ -1462,6 +1936,96 @@ export const registryAbi = [
   },
   {
     "type": "error",
+    "name": "PoolAlreadyAttested",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PoolHookMismatch",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "expected",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "found",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PoolHookMismatch",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "expected",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "found",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PoolNotFound",
+    "inputs": [
+      {
+        "name": "poolManager",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PoolNotFound",
+    "inputs": [
+      {
+        "name": "poolManager",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "ReservedBitsSet",
     "inputs": [
       {
@@ -1505,6 +2069,28 @@ export const registryAbi = [
         "name": "maximum",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UntrustedPoolManager",
+    "inputs": [
+      {
+        "name": "poolManager",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UntrustedPoolManager",
+    "inputs": [
+      {
+        "name": "poolManager",
+        "type": "address",
+        "internalType": "address"
       }
     ]
   },

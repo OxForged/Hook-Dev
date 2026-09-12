@@ -95,6 +95,12 @@ contract LaunchGuardHook is BaseCLHook {
     /// @notice `decayBlocks` is zero or above `MAX_DECAY_BLOCKS`
     error InvalidDecayBlocks(uint32 decayBlocks);
 
+    /// @notice `blockTimeCentis` is zero or above `MAX_BLOCK_TIME_CENTIS`
+    error InvalidBlockTime(uint32 blockTimeCentis);
+
+    /// @notice A block cap's real-world duration is outside the wall-clock bounds
+    error LaunchWindowOutOfRange(uint256 realSeconds, uint256 minSeconds, uint256 maxSeconds);
+
     /// @notice The fee schedule is not a decay, or exceeds the caps this hook enforces
     error InvalidFeeSchedule(uint24 initialFeeBips, uint24 finalFeeBips);
 
@@ -145,11 +151,59 @@ contract LaunchGuardHook is BaseCLHook {
     /// permanently hostile configuration can be, since config is immutable after `startBlock`.
     uint24 public constant MAX_FINAL_FEE = 100_000; // 10%
 
+    /**
+     * ############ WHY THE TWO BLOCK CAPS BELOW ARE ARGUMENTS, NOT CONSTANTS ############
+     *
+     * They used to be `uint32 constant MAX_DECAY_BLOCKS = 1_000_000` and
+     * `uint48 constant MAX_START_DELAY = 1_000_000`, sized as "about 139 days at 12s blocks" -
+     * comfortably generous for the only chain anybody had in mind.
+     *
+     * Robinhood Chain (4663) produces a block every 0.102s, measured over 500 000 blocks. On that
+     * chain those same constants are:
+     *
+     *     1 000 000 x 0.102 s = 102 000 seconds = 28 HOURS
+     *
+     * So a three-day fair launch - an entirely ordinary thing to want, and the single most common
+     * shape a launchpad sells - simply REVERTS with `InvalidDecayBlocks`. Nothing is unsafe; the
+     * product is unbuildable, and the error message points at the caller rather than at the cap.
+     *
+     * The general rule this hook now follows: A DURATION IN BLOCKS IS NOT A DURATION. It is a
+     * duration times an unknown the deployer picks later. Both caps are therefore chosen per chain
+     * and validated against WALL-CLOCK bounds, so a fast chain gets a bigger block count and the
+     * same real window.
+     *
+     * Note the direction differs from a delay: these are CEILINGS on what a launch owner may ask
+     * for, so the floor below is what guarantees a long-enough launch is POSSIBLE, and the ceiling
+     * is what keeps a "launch tax" from being a permanent one.
+     */
+
+    /// @notice Shortest real-world window the two caps may permit. A deployment whose
+    /// `MAX_DECAY_BLOCKS` is under three days of real time cannot host a three-day launch.
+    uint256 public constant MIN_LAUNCH_WINDOW_SECONDS = 3 days;
+
+    /// @notice Longest real-world window the two caps may permit. Past this a "launch tax" stops
+    /// being a launch tax, and a `startBlock` that far out is indistinguishable from never.
+    uint256 public constant MAX_LAUNCH_WINDOW_SECONDS = 180 days;
+
+    /// @notice Largest block time accepted, in centiseconds: 600s per block.
+    uint32 public constant MAX_BLOCK_TIME_CENTIS = 60_000;
+
+    /*//////////////////////////////////////////////////////////////
+                               IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice This chain's block time in hundredths of a second. 1200 == 12s, 10 == 0.1s.
+    /// @dev The unit `LaunchpadKit` already uses. Published so a UI can render the two caps below
+    /// as durations instead of as block counts nobody can convert.
+    uint32 public immutable blockTimeCentis;
+
     /// @notice Hard cap on the decay window, so a "launch tax" cannot be a permanent tax.
-    uint32 public constant MAX_DECAY_BLOCKS = 1_000_000;
+    /// @dev Immutable rather than constant; SCREAMING_CASE retained because it is an existing ABI
+    /// name that `LaunchpadKit` and the SDK already read.
+    uint32 public immutable MAX_DECAY_BLOCKS;
 
     /// @notice Hard cap on how far ahead `startBlock` may be set in any single write.
-    uint48 public constant MAX_START_DELAY = 1_000_000;
+    uint48 public immutable MAX_START_DELAY;
 
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
@@ -196,7 +250,42 @@ contract LaunchGuardHook is BaseCLHook {
     /// @notice Launch state per pool id
     mapping(PoolId poolId => Launch) internal _launches;
 
-    constructor(ICLPoolManager _poolManager) BaseCLHook(_poolManager) {}
+    /// @param _poolManager The CL singleton this hook serves, forever.
+    /// @param blockTimeCentis_ This chain's block time in hundredths of a second. Round DOWN when
+    /// it is not an integer: a smaller block time makes each cap's computed duration shorter, so
+    /// the constructor demands MORE blocks for the same window, which errs safe. Robinhood Chain
+    /// measures 10.2 - declare 10, never 11.
+    /// @param maxDecayBlocks_ Ceiling on `decayBlocks`. Its real duration must land inside
+    /// [`MIN_LAUNCH_WINDOW_SECONDS`, `MAX_LAUNCH_WINDOW_SECONDS`].
+    /// @param maxStartDelayBlocks_ Ceiling on how far ahead `startBlock` may be set, under the
+    /// same wall-clock bounds.
+    constructor(
+        ICLPoolManager _poolManager,
+        uint32 blockTimeCentis_,
+        uint32 maxDecayBlocks_,
+        uint48 maxStartDelayBlocks_
+    ) BaseCLHook(_poolManager) {
+        if (blockTimeCentis_ == 0 || blockTimeCentis_ > MAX_BLOCK_TIME_CENTIS) {
+            revert InvalidBlockTime(blockTimeCentis_);
+        }
+
+        // Floor division on both: a cap that lands between two seconds counts as the shorter one.
+        // For the floor check that is strict in the right direction; for the ceiling check it is
+        // the lenient direction, and a one-second slop on a 180-day bound is not worth code.
+        uint256 decaySeconds = (uint256(maxDecayBlocks_) * blockTimeCentis_) / 100;
+        if (decaySeconds < MIN_LAUNCH_WINDOW_SECONDS || decaySeconds > MAX_LAUNCH_WINDOW_SECONDS) {
+            revert LaunchWindowOutOfRange(decaySeconds, MIN_LAUNCH_WINDOW_SECONDS, MAX_LAUNCH_WINDOW_SECONDS);
+        }
+
+        uint256 startSeconds = (uint256(maxStartDelayBlocks_) * blockTimeCentis_) / 100;
+        if (startSeconds < MIN_LAUNCH_WINDOW_SECONDS || startSeconds > MAX_LAUNCH_WINDOW_SECONDS) {
+            revert LaunchWindowOutOfRange(startSeconds, MIN_LAUNCH_WINDOW_SECONDS, MAX_LAUNCH_WINDOW_SECONDS);
+        }
+
+        blockTimeCentis = blockTimeCentis_;
+        MAX_DECAY_BLOCKS = maxDecayBlocks_;
+        MAX_START_DELAY = maxStartDelayBlocks_;
+    }
 
     /// @inheritdoc IHooks
     /// @dev `beforeInitialize` rejects static-fee pools; `beforeSwap` gates trading and returns the

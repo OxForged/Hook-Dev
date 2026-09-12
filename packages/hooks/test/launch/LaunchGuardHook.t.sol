@@ -39,7 +39,9 @@ contract SenderRecordingLaunchGuardHook is LaunchGuardHook {
     address public lastSwapSender;
     uint256 public swapCount;
 
-    constructor(ICLPoolManager _pm) LaunchGuardHook(_pm) {}
+    constructor(ICLPoolManager _pm, uint32 centis, uint32 maxDecay, uint48 maxStart)
+        LaunchGuardHook(_pm, centis, maxDecay, maxStart)
+    {}
 
     function _beforeSwap(
         address sender,
@@ -87,9 +89,23 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     );
     event LaunchStarted(PoolId indexed poolId, uint256 blockNumber);
 
+
+    /* ------------------------------------------------------------------
+       ROBINHOOD-LIKE PARAMETERS, on purpose.
+
+       `MAX_DECAY_BLOCKS` and `MAX_START_DELAY` used to be `constant 1_000_000`,
+       sized as "~139 days at 12s blocks". On Robinhood Chain (0.102s blocks)
+       that is 28 HOURS, so a three-day fair launch reverted. Testing against 12s
+       numbers is exactly what let that ship. 10 centis is Robinhood's block time
+       rounded down; 26 000 000 blocks is ~30 days there.
+       ------------------------------------------------------------------ */
+    uint32 constant BLOCK_TIME_CENTIS = 10;
+    uint32 constant MAX_DECAY = 26_000_000;
+    uint48 constant MAX_START = 26_000_000;
+
     function setUp() public {
         (vault, poolManager) = createFreshManager();
-        hook = new LaunchGuardHook(poolManager);
+        hook = new LaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
         router = new CLPoolManagerRouter(vault, poolManager);
 
         initializeTokens();
@@ -456,7 +472,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     /// silently DISCARDS the fee the hook returns, so the launch tax would be a no-op that nobody
     /// notices until after the snipe. The hook refuses to let such a pool exist.
     function test_initialize_revertsOnStaticFeePool() public {
-        LaunchGuardHook openHook = new LaunchGuardHook(poolManager);
+        LaunchGuardHook openHook = new LaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
         PoolKey memory k = _key(openHook, 3000, 60);
 
         // Prove the static-fee pool is otherwise perfectly valid to core: same bitmap, same shape.
@@ -766,7 +782,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     //////////////////////////////////////////////////////////////*/
 
     function test_sender_isTheLockerNotTheBuyer() public {
-        SenderRecordingLaunchGuardHook spy = new SenderRecordingLaunchGuardHook(poolManager);
+        SenderRecordingLaunchGuardHook spy = new SenderRecordingLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
         PoolKey memory k = _key(spy, LPFeeLibrary.DYNAMIC_FEE_FLAG, 1);
         spy.configureLaunch(k, _defaultConfig());
         poolManager.initialize(k, SQRT_RATIO_1_1);
@@ -812,7 +828,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     /// Vault himself presents whatever `sender` he likes (his own contract) and whatever
     /// `hookData` he likes. Neither can be used as an identity.
     function test_sender_aSecondRouterPresentsADifferentSenderEntirely() public {
-        SenderRecordingLaunchGuardHook spy = new SenderRecordingLaunchGuardHook(poolManager);
+        SenderRecordingLaunchGuardHook spy = new SenderRecordingLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
         PoolKey memory k = _key(spy, LPFeeLibrary.DYNAMIC_FEE_FLAG, 1);
         spy.configureLaunch(k, _defaultConfig());
         poolManager.initialize(k, SQRT_RATIO_1_1);
@@ -932,5 +948,106 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
         uint24 applied = _swapAndReadAppliedFee(true, SWAP_AMOUNT);
         assertEq(applied, expected);
         assertLe(applied, LPFeeLibrary.ONE_HUNDRED_PERCENT_FEE);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+       THE TWO BLOCK CAPS ARE WALL-CLOCK BOUNDED NOW
+
+       `MAX_DECAY_BLOCKS` and `MAX_START_DELAY` were `constant 1_000_000`, sized
+       as "~139 days at 12s blocks". Robinhood Chain produces a block every
+       0.102s, so on the chain this hook was built for the same number is 28
+       HOURS - and a three-day fair launch, the single most common shape a
+       launchpad sells, reverts with `InvalidDecayBlocks` and blames the caller.
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev THE REGRESSION GUARD. The old constant, on the real chain. It has to be refused,
+    /// because 28 hours is not a cap on a launch tax - it is a cap on launches.
+    ///
+    /// FAILS AGAINST THE PRE-FIX CODE: there was no argument to reject.
+    function test_FIX_theOldConstantIsRejectedAtRobinhoodBlockTime() public {
+        // 1 000 000 blocks x 10 centis = 100 000 s = 27.8 hours.
+        vm.expectRevert(
+            abi.encodeWithSelector(LaunchGuardHook.LaunchWindowOutOfRange.selector, 100_000, 3 days, 180 days)
+        );
+        new LaunchGuardHook(poolManager, 10, 1_000_000, 1_000_000);
+
+        // The same literal is fine on a 12s chain, where it always meant 139 days.
+        LaunchGuardHook slow = new LaunchGuardHook(poolManager, 1200, 1_000_000, 1_000_000);
+        assertEq((uint256(slow.MAX_DECAY_BLOCKS()) * slow.blockTimeCentis()) / 100, 12_000_000);
+    }
+
+    /// @dev The product this was blocking. A three-day launch has to actually configure at
+    /// Robinhood's block time.
+    function test_FIX_aThreeDayFairLaunchConfiguresAtRobinhoodBlockTime() public {
+        LaunchGuardHook fast = new LaunchGuardHook(poolManager, 10, MAX_DECAY, MAX_START);
+
+        // Three days at 0.1s blocks.
+        uint32 threeDays = 3 * 24 * 3600 * 10;
+        assertLe(threeDays, fast.MAX_DECAY_BLOCKS(), "the cap must admit a three-day launch");
+
+        PoolKey memory k = _key(fast, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
+        LaunchGuardHook.LaunchConfig memory cfg = LaunchGuardHook.LaunchConfig({
+            startBlock: uint48(block.number + 1),
+            decayBlocks: threeDays,
+            initialFeeBips: 300_000,
+            finalFeeBips: 10_000,
+            maxBuyPerTx: 0,
+            launchTokenIsCurrency0: true,
+            enabled: true
+        });
+        fast.configureLaunch(k, cfg);
+        assertEq(fast.getLaunch(k.toId()).decayBlocks, threeDays);
+    }
+
+    function test_FIX_rejectsAZeroOrAbsurdBlockTime() public {
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidBlockTime.selector, uint32(0)));
+        new LaunchGuardHook(poolManager, 0, MAX_DECAY, MAX_START);
+
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidBlockTime.selector, uint32(60_001)));
+        new LaunchGuardHook(poolManager, 60_001, MAX_DECAY, MAX_START);
+    }
+
+    /// @dev The ceiling matters as much as the floor: past 180 days a "launch tax" is a tax, and
+    /// the configuration is immutable from `startBlock` onwards.
+    function test_FIX_rejectsACapThatWouldMakeTheTaxPermanent() public {
+        uint32 tooLong = 181 * 24 * 3600 * 10; // 181 days at 0.1s blocks
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LaunchGuardHook.LaunchWindowOutOfRange.selector,
+                (uint256(tooLong) * 10) / 100,
+                3 days,
+                180 days
+            )
+        );
+        new LaunchGuardHook(poolManager, 10, tooLong, MAX_START);
+    }
+
+    /// @dev Both caps are checked, not just the first. An early draft validated `maxDecayBlocks`
+    /// and passed `maxStartDelayBlocks` straight through.
+    function test_FIX_theStartDelayCapIsBoundedToo() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(LaunchGuardHook.LaunchWindowOutOfRange.selector, 100_000, 3 days, 180 days)
+        );
+        new LaunchGuardHook(poolManager, 10, MAX_DECAY, 1_000_000);
+    }
+
+    /// @dev No block time buys a window outside the bounds, in either direction. Understating the
+    /// block time forces MORE blocks for the same window; overstating it is caught by the ceiling.
+    function testFuzz_FIX_everyAcceptedCapIsAtLeastThreeRealDays(uint32 centis, uint32 decayBlocks) public {
+        centis = uint32(bound(centis, 1, 60_000));
+        decayBlocks = uint32(bound(decayBlocks, 1, type(uint32).max));
+
+        uint256 realSeconds = (uint256(decayBlocks) * centis) / 100;
+        if (realSeconds < 3 days || realSeconds > 180 days) {
+            vm.expectRevert();
+            new LaunchGuardHook(poolManager, centis, decayBlocks, decayBlocks);
+        } else {
+            LaunchGuardHook h = new LaunchGuardHook(poolManager, centis, decayBlocks, decayBlocks);
+            assertGe(
+                (uint256(h.MAX_DECAY_BLOCKS()) * h.blockTimeCentis()) / 100,
+                h.MIN_LAUNCH_WINDOW_SECONDS(),
+                "every accepted cap admits a three-day launch"
+            );
+        }
     }
 }

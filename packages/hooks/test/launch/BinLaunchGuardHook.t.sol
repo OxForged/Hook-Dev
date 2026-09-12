@@ -135,7 +135,9 @@ contract SenderRecordingBinLaunchGuardHook is BinLaunchGuardHook {
     address public lastMintSender;
     uint256 public swapCount;
 
-    constructor(IBinPoolManager _pm) BinLaunchGuardHook(_pm) {}
+    constructor(IBinPoolManager _pm, uint32 centis, uint32 maxDecay, uint48 maxStart)
+        BinLaunchGuardHook(_pm, centis, maxDecay, maxStart)
+    {}
 
     function _beforeSwap(
         address sender,
@@ -164,7 +166,9 @@ contract SenderRecordingBinLaunchGuardHook is BinLaunchGuardHook {
 /// with `beforeMint` left unregistered. Used to DEMONSTRATE the bin-only hole that motivates the
 /// real hook's extra permission bit. It is not a hook anybody should deploy.
 contract NaiveBinLaunchGuardHook is BinLaunchGuardHook {
-    constructor(IBinPoolManager _pm) BinLaunchGuardHook(_pm) {}
+    constructor(IBinPoolManager _pm, uint32 centis, uint32 maxDecay, uint48 maxStart)
+        BinLaunchGuardHook(_pm, centis, maxDecay, maxStart)
+    {}
 
     function getHooksRegistrationBitmap() public pure override returns (uint16) {
         return BEFORE_INITIALIZE | BEFORE_SWAP;
@@ -226,6 +230,20 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     );
     event LaunchStarted(PoolId indexed poolId, uint256 blockNumber);
 
+
+    /* ------------------------------------------------------------------
+       ROBINHOOD-LIKE PARAMETERS, on purpose.
+
+       `MAX_DECAY_BLOCKS` and `MAX_START_DELAY` used to be `constant 1_000_000`,
+       sized as "~139 days at 12s blocks". On Robinhood Chain (0.102s blocks)
+       that is 28 HOURS, so a three-day fair launch reverted. Testing against 12s
+       numbers is exactly what let that ship. 10 centis is Robinhood's block time
+       rounded down; 26 000 000 blocks is ~30 days there.
+       ------------------------------------------------------------------ */
+    uint32 constant BLOCK_TIME_CENTIS = 10;
+    uint32 constant MAX_DECAY = 26_000_000;
+    uint48 constant MAX_START = 26_000_000;
+
     function setUp() public {
         vault = new Vault();
         poolManager = new BinPoolManager(IVault(address(vault)));
@@ -243,7 +261,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         liquidityHelper = new BinLiquidityHelper(poolManager, vault);
         _approveAll(address(this));
 
-        hook = new BinLaunchGuardHook(poolManager);
+        hook = new BinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
         key = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, BIN_STEP);
         poolId = key.toId();
 
@@ -754,7 +772,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// guarded by `if (key.fee.isDynamicLPFee())`, which is `fee == 0x800000` EXACTLY - so the
     /// launch tax would be a no-op that nobody notices until after the snipe.
     function test_initialize_revertsOnStaticFeePool() public {
-        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager);
+        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
         PoolKey memory k = _key(openHook, 3000, 20);
 
         // Prove the static-fee pool is otherwise perfectly valid to core: same bitmap, same shape.
@@ -780,7 +798,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// that DO clear core's ceiling, which is exactly the dangerous case
     /// (`test_initialize_revertsOnStaticFeePool`).
     function test_initialize_nearMissDynamicFeeFlagIsRejectedByCoreFirst() public {
-        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager);
+        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
         uint24 nearMiss = LPFeeLibrary.DYNAMIC_FEE_FLAG | uint24(1); // 0x800001
         assertFalse(nearMiss.isDynamicLPFee());
         assertGt(nearMiss, LPFeeLibrary.TEN_PERCENT_FEE);
@@ -794,7 +812,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// exactly the bin ceiling, so core accepts it, and only the hook stops the pool being created
     /// with a launch tax that would be silently discarded on every swap.
     function test_initialize_rejectsStaticFeeAtCoresCeiling() public {
-        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager);
+        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
         uint24 staticMax = LPFeeLibrary.TEN_PERCENT_FEE;
         assertFalse(staticMax.isDynamicLPFee());
 
@@ -991,7 +1009,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// mint. Its composition fee is zero: a completely free swap around the launch tax, available
     /// even before `startBlock`, when its own `beforeSwap` still reverts.
     function test_mint_naivePortWithoutBeforeMintLeavesAFreeSwapRoute() public {
-        NaiveBinLaunchGuardHook naive = new NaiveBinLaunchGuardHook(poolManager);
+        NaiveBinLaunchGuardHook naive = new NaiveBinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
         assertEq(naive.getHooksRegistrationBitmap(), uint16(65)); // exactly the CL hook's bitmap
 
         PoolKey memory k = _key(naive, LPFeeLibrary.DYNAMIC_FEE_FLAG, BIN_STEP);
@@ -1283,7 +1301,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     //////////////////////////////////////////////////////////////*/
 
     function _deploySpyPool() internal returns (SenderRecordingBinLaunchGuardHook spy, PoolKey memory k) {
-        spy = new SenderRecordingBinLaunchGuardHook(poolManager);
+        spy = new SenderRecordingBinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
         k = _key(spy, LPFeeLibrary.DYNAMIC_FEE_FLAG, BIN_STEP);
         spy.configureLaunch(k, _defaultConfig());
         poolManager.initialize(k, ACTIVE_ID);
@@ -1483,5 +1501,47 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         assertLe(scheduled, LPFeeLibrary.TEN_PERCENT_FEE);
         assertLe(initialFee, LPFeeLibrary.TEN_PERCENT_FEE);
         assertLe(finalFee, scheduled);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+       THE TWO BLOCK CAPS ARE WALL-CLOCK BOUNDED NOW
+
+       Same finding as `LaunchGuardHook`, in the hook that was never deployed and
+       could therefore be fixed for free. `MAX_DECAY_BLOCKS` and `MAX_START_DELAY`
+       were `constant 1_000_000` - "~139 days at 12s blocks", and 28 HOURS on
+       Robinhood Chain, where a three-day fair launch reverts.
+    //////////////////////////////////////////////////////////////*/
+
+    /// FAILS AGAINST THE PRE-FIX CODE: there was no argument to reject.
+    function test_FIX_theOldConstantIsRejectedAtRobinhoodBlockTime() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(BinLaunchGuardHook.LaunchWindowOutOfRange.selector, 100_000, 3 days, 180 days)
+        );
+        new BinLaunchGuardHook(poolManager, 10, 1_000_000, 1_000_000);
+
+        BinLaunchGuardHook slow = new BinLaunchGuardHook(poolManager, 1200, 1_000_000, 1_000_000);
+        assertEq((uint256(slow.MAX_DECAY_BLOCKS()) * slow.blockTimeCentis()) / 100, 12_000_000);
+    }
+
+    function test_FIX_aThreeDayWindowFitsAtRobinhoodBlockTime() public {
+        BinLaunchGuardHook fast = new BinLaunchGuardHook(poolManager, 10, MAX_DECAY, MAX_START);
+        assertLe(uint32(3 * 24 * 3600 * 10), fast.MAX_DECAY_BLOCKS(), "a three-day launch must fit");
+        assertGe((uint256(fast.MAX_DECAY_BLOCKS()) * 10) / 100, fast.MIN_LAUNCH_WINDOW_SECONDS());
+    }
+
+    function test_FIX_rejectsAZeroOrAbsurdBlockTime() public {
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.InvalidBlockTime.selector, uint32(0)));
+        new BinLaunchGuardHook(poolManager, 0, MAX_DECAY, MAX_START);
+
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.InvalidBlockTime.selector, uint32(60_001)));
+        new BinLaunchGuardHook(poolManager, 60_001, MAX_DECAY, MAX_START);
+    }
+
+    /// @dev Both caps, not just the first.
+    function test_FIX_theStartDelayCapIsBoundedToo() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(BinLaunchGuardHook.LaunchWindowOutOfRange.selector, 100_000, 3 days, 180 days)
+        );
+        new BinLaunchGuardHook(poolManager, 10, MAX_DECAY, 1_000_000);
     }
 }

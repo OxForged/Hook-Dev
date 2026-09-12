@@ -23,21 +23,30 @@ import {CLPoolManagerRouter} from "infinity-core/test/pool-cl/helpers/CLPoolMana
 import {RevShareHook} from "../src/RevShareHook.sol";
 
 /**
- * ############ HAZARDS IN A CONTRACT THAT IS ALREADY DEPLOYED AND IMMUTABLE ############
+ * ####### THE HAZARDS OF THE DEPLOYED HOOK, AND THE FIXES THAT ANSWER THEM #######
  *
- * `RevShareHook` is live at `0x23CE34E8199927DD270dddd8579c947542bDE446` on Robinhood
- * Chain (4663). Nothing in this file is a bug report against code that can be changed;
- * every test below asserts the CURRENT behaviour, on purpose, because the only remedy
- * available is operational.
+ * `RevShareHook` is live and immutable at `0x23CE34E8199927DD270dddd8579c947542bDE446`
+ * on Robinhood Chain (4663). This file used to assert the CURRENT behaviour of that
+ * instance on purpose, so that CLAUDE.md's "Deployed and unfixable" section could be
+ * checked rather than believed - with the standing note that "if one of these tests
+ * starts FAILING against a new implementation, that is the fix landing".
  *
- * They exist because an operational rule that nobody can execute is a rule that rots. Each
- * one pins a claim made in CLAUDE.md's "Deployed and unfixable" section, so that section
- * can be checked rather than believed - and so that a future, redeployable version of this
- * hook has a ready-made list of what to fix. If one of these tests starts FAILING against a
- * new implementation, that is the fix landing, and the corresponding runbook rule can go.
+ * THE FIX HAS LANDED. Four of the five hazards are closed in this source tree, so the
+ * tests that pinned them have been inverted rather than deleted: each `test_FIXED_*`
+ * below asserts the new behaviour and states, in its own comment, what the deployed
+ * instance does instead. Read as a pair with the runbook, they are the difference
+ * between "we fixed it" and a demonstration.
  *
- * Naming: `test_HAZARD_*`, so they are greppable and so nobody mistakes a green run here
- * for a security property.
+ *   B1  renounceOwnership()          -> FIXED. Overridden to revert.
+ *   B3  empty roster + freezeConfig  -> FIXED. Three guards, none reachable around.
+ *   B4  freezeConfig is irreversible -> STILL TRUE, and correct. Unchanged below.
+ *   B5  a matured proposal is eternal-> FIXED. Expiry, plus clearing on reduce/disable.
+ *   3b  CONFIG_DELAY_BLOCKS = 6 min  -> FIXED. See `test_FIXED_B3b_*`.
+ *
+ * NONE OF THIS REACHES THE LIVE INSTANCE. The deployed hook keeps every one of these
+ * hazards until the pool at `poolKey.hooks == 0x23CE...` is replaced, which cannot
+ * happen for an existing pool because `poolKey.hooks` is immutable. The operational
+ * rules in CLAUDE.md stay in force for that instance and only for that instance.
  */
 contract DeployedHazardsTest is Test, Deployers, TokenFixture {
     Vault vault;
@@ -59,9 +68,22 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
     uint24 constant FEE_PIPS = 10_000; // 1%
     int256 constant SWAP_AMOUNT = -1 ether;
 
+
+    /* ------------------------------------------------------------------
+       ROBINHOOD-LIKE PARAMETERS, on purpose.
+
+       The suite used to run against `CONFIG_DELAY_BLOCKS = 3600`, which is 12
+       hours on a 12s chain and SIX MINUTES on the chain this hook is actually
+       deployed to. Testing against 12s numbers is what let that ship. 10 centis
+       is Robinhood's real block time rounded down, and 432 000 blocks is the
+       smallest count that clears the hook's 12h wall-clock floor there.
+       ------------------------------------------------------------------ */
+    uint32 constant BLOCK_TIME_CENTIS = 10; // 0.1s blocks
+    uint48 constant CONFIG_DELAY = 432_000; // x 10 centis = 43 200s = 12h
+
     function setUp() public {
         (vault, poolManager) = createFreshManager();
-        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN);
+        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 8);
         router = new CLPoolManagerRouter(vault, poolManager);
 
         initializeTokens();
@@ -73,6 +95,16 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
 
         // The whole cut to route 2, and NO roster. This is the configuration B3 is about, and
         // `_validateParams` accepts it without a murmur.
+        /* THREE STEPS, and the order is the fix landing rather than ceremony.
+           `_validateParams` now rejects a non-zero `beneficiaryBps` while
+           `totalWeight` is zero - the twin of `DistributorRequired`, whose
+           absence let a pool accrue 100% of its cut into a pot with nobody on
+           the other end and then `freezeConfig` the repair away. `configure`
+           is what establishes ownership, and `setBeneficiaries` needs an owner,
+           so the claim happens LP-only first. All three are pre-initialisation,
+           so nothing has traded. */
+        hook.configure(key, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
+        hook.setBeneficiaries(key, _roster(TREASURY, 1));
         hook.configure(key, _params(FEE_PIPS, 0, 10_000, 0, address(0)));
         poolManager.initialize(key, SQRT_RATIO_1_1);
         poolManager.initialize(controlKey, SQRT_RATIO_1_1);
@@ -147,56 +179,50 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
-       B1 - renounceOwnership() IS LIVE ON THE DEPLOYED HOOK
+       B1 - renounceOwnership() - FIXED, was live on the deployed hook
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Stock OZ `Ownable.renounceOwnership` is reachable: no override exists anywhere in
-    /// `packages/*/src`. What it costs is asymmetric - the guardian may only PAUSE, and only the
-    /// owner may unpause or move the guardian, so renouncing while paused freezes the hook off
-    /// permanently. It cannot reach user funds: `claim`, `redeem`, `settleBeneficiaries` and
-    /// `pullDistributorShare` are all permissionless and all keep working.
+    /// @dev THE DEPLOYED HOOK: stock OZ `Ownable.renounceOwnership` is reachable, and what it
+    /// costs is asymmetric. The guardian may only PAUSE; only the owner may unpause or move the
+    /// guardian. So renouncing while paused freezes the hook off permanently, and renouncing while
+    /// unpaused throws away the kill switch. Neither is a reduction in privilege.
     ///
-    /// GOVERNANCE MUST NEVER QUEUE THIS CALL. There is no on-chain guard; the guard is the runbook.
-    function test_HAZARD_B1_renounceOwnershipIsLiveAndLocksThePauseState() public {
+    /// THIS HOOK: overridden to revert for everybody, `MerkleEpochDistributor` being the
+    /// reference. `transferOwnership` - two-step, so it cannot land somewhere unreachable - is the
+    /// bounded form of the same intent and is untouched.
+    function test_FIXED_B1_renounceOwnershipReverts() public {
+        vm.prank(GOVERNANCE);
+        vm.expectRevert(RevShareHook.RenounceDisabled.selector);
+        hook.renounceOwnership();
+
+        assertEq(hook.owner(), GOVERNANCE, "ownership is exactly where it was");
+    }
+
+    /// @dev The specific outcome the override prevents: a hook paused forever with nobody able to
+    /// unpause it. On the deployed instance the second half of this test would succeed.
+    function test_FIXED_B1_thePauseSwitchSurvivesAnAttemptedRenounce() public {
         vm.prank(GUARDIAN);
         hook.setPaused(true);
 
         vm.prank(GOVERNANCE);
+        vm.expectRevert(RevShareHook.RenounceDisabled.selector);
         hook.renounceOwnership();
-        assertEq(hook.owner(), address(0), "no override: the owner really is gone");
 
-        // Nobody can turn it back on. The guardian was never allowed to, and now nobody is.
-        vm.prank(GUARDIAN);
-        vm.expectRevert(RevShareHook.NotGuardianOrOwner.selector);
-        hook.setPaused(false);
-        // `setPaused` is not `onlyOwner`; it compares against `owner()` by hand, and that is now
-        // `address(0)` - an address no transaction can be sent from. Same outcome, different
-        // error, and worth pinning because a runbook that greps for `OwnableUnauthorizedAccount`
-        // would miss this one entirely.
+        // The owner is still there, so the incident is still recoverable.
         vm.prank(GOVERNANCE);
-        vm.expectRevert(RevShareHook.NotGuardianOrOwner.selector);
         hook.setPaused(false);
-        vm.prank(GOVERNANCE);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, GOVERNANCE));
-        hook.setGuardian(ALICE);
+        assertFalse(hook.paused());
 
-        assertTrue(hook.paused(), "paused forever");
-
-        // No cut is ever taken again, on any pool.
         _swap(key, SWAP_AMOUNT, true);
-        assertEq(hook.pendingBeneficiary(poolId, currency1), 0, "a paused hook takes nothing");
+        assertGt(hook.pendingBeneficiary(poolId, currency1), 0, "the hook takes its cut again");
     }
 
-    /// @dev The bound on that damage, asserted so it is not overstated: accrued value stays
-    /// reachable. Renouncing is a permanent loss of the global switch, not a loss of funds.
-    function test_HAZARD_B1_renouncingDoesNotStrandAlreadyAccruedValue() public {
-        hook.setBeneficiaries(key, _roster(TREASURY, 1));
+    /// @dev The bound on the original damage, kept because it is what stops the finding being
+    /// overstated: even a successful renounce never stranded accrued value. `claim`,
+    /// `settleBeneficiaries`, `redeem` and `pullDistributorShare` are permissionless.
+    function test_FIXED_B1_accruedValueWasNeverAtRiskEitherWay() public {
         _swap(key, SWAP_AMOUNT, true);
 
-        vm.prank(GOVERNANCE);
-        hook.renounceOwnership();
-
-        // Permissionless, and unaffected by the missing owner.
         hook.settleBeneficiaries(key, currency1);
         uint256 owed = hook.claimable(TREASURY, currency1);
         assertGt(owed, 0);
@@ -205,61 +231,109 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
-       B3 - A NON-ZERO beneficiaryBps WITH AN EMPTY ROSTER, THEN FREEZE
+       B3 - beneficiaryBps > 0 WITH AN EMPTY ROSTER - FIXED
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev `_validateParams` enforces the distributor invariant (`distributorBps != 0` needs a
-    /// distributor address) and NOT its beneficiary twin, and `setBeneficiaries` accepts a
-    /// zero-length roster despite `InvalidBeneficiaries` being documented as "Roster is empty, too
-    /// long, or contains an invalid entry". With `_totalWeight == 0`, `settleBeneficiaries` returns
-    /// early rather than reverting, so the pot accrues silently. `freezeConfig` then removes the
-    /// only repair, because `setBeneficiaries` goes through `_requireOwner`, which reverts on a
-    /// frozen pool.
+    /// @dev THE DEPLOYED HOOK: `_validateParams` enforced the distributor invariant
+    /// (`distributorBps != 0` needs a distributor) and NOT its beneficiary twin, and
+    /// `setBeneficiaries` accepted a zero-length roster despite `InvalidBeneficiaries` being
+    /// documented as "Roster is empty, too long, or contains an invalid entry". With
+    /// `_totalWeight == 0`, `settleBeneficiaries` returned early rather than reverting, so the pot
+    /// accrued silently and no keeper log looked wrong. `freezeConfig` then removed the repair.
     ///
-    /// THE OPERATIONAL RULE: set the roster BEFORE the first swap, and never freeze a pool whose
-    /// `beneficiaryBps` is non-zero until `getBeneficiaries` is non-empty and
-    /// `pendingBeneficiary` for BOTH currencies has been settled to dust.
-    function test_HAZARD_B3_emptyRosterPlusFreezeStrandsTheBeneficiaryPotForever() public {
-        assertEq(hook.getConfig(poolId).beneficiaryBps, 10_000);
-        assertEq(hook.totalWeight(poolId), 0, "no roster, and nothing objected");
+    /// THIS HOOK: the configuration that starts that story cannot be written. `setUp` above is the
+    /// proof in miniature - it now takes three calls to reach the same pool, because the one-call
+    /// version is the bug.
+    function test_FIXED_B3_aBeneficiaryShareWithNoRosterIsUnwritable() public {
+        PoolKey memory fresh = _key(hook);
+        fresh.fee = 500;
+        fresh.parameters =
+            CLPoolParametersHelper.setTickSpacing(bytes32(uint256(hook.getHooksRegistrationBitmap())), int24(10));
 
-        _swap(key, SWAP_AMOUNT, true);
-        uint256 stranded = hook.pendingBeneficiary(poolId, currency1);
-        assertGt(stranded, 0);
-
-        // Silent no-op, not a revert. Nothing in a keeper log would look wrong.
-        hook.settleBeneficiaries(key, currency1);
-        assertEq(hook.pendingBeneficiary(poolId, currency1), stranded, "the pot did not move");
-        assertEq(hook.claimable(TREASURY, currency1), 0);
-
-        // An empty roster is accepted outright, which is the write that would otherwise have
-        // been the last chance to notice.
-        hook.setBeneficiaries(key, new RevShareHook.Beneficiary[](0));
-        assertEq(hook.totalWeight(poolId), 0);
-
-        // One immediate, irreversible call and the repair is gone.
-        hook.freezeConfig(key);
-        vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigFrozen.selector, poolId));
-        hook.setBeneficiaries(key, _roster(TREASURY, 1));
-
-        // The value is neither payable nor recoverable, and it keeps growing.
-        hook.settleBeneficiaries(key, currency1);
-        _swap(key, SWAP_AMOUNT, true);
-        assertGt(hook.pendingBeneficiary(poolId, currency1), stranded, "and it accumulates");
-        assertGe(hook.totalOwed(currency1), hook.pendingBeneficiary(poolId, currency1));
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.BeneficiariesRequired.selector, fresh.toId()));
+        hook.configure(fresh, _params(FEE_PIPS, 0, 10_000, 0, address(0)));
     }
 
-    /// @dev Not overstated: WITHOUT the freeze the pot is fine. `settleBeneficiaries` leaves it in
-    /// place rather than losing it, so a roster set late still collects everything that accrued.
-    /// The freeze is the irreversible half, which is why the rule is about ordering.
-    function test_HAZARD_B3_aLateRosterStillCollectsEverythingIfNobodyFroze() public {
-        _swap(key, SWAP_AMOUNT, true);
-        uint256 accrued = hook.pendingBeneficiary(poolId, currency1);
-        assertGt(accrued, 0);
+    /// @dev And the roster cannot be taken away afterwards either, which is the half that turned a
+    /// misconfiguration into a permanent one. On the deployed hook this call succeeds silently.
+    function test_FIXED_B3_theRosterCannotBeEmptiedUnderALiveShare() public {
+        assertEq(hook.getConfig(poolId).beneficiaryBps, 10_000);
+        assertGt(hook.totalWeight(poolId), 0);
 
-        hook.setBeneficiaries(key, _roster(TREASURY, 1));
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.BeneficiariesRequired.selector, poolId));
+        hook.setBeneficiaries(key, new RevShareHook.Beneficiary[](0));
+    }
+
+    /// @dev The end of the original story, asserted as unreachable. The pot always has a roster
+    /// behind it, so a freeze can never seal value away from everybody.
+    function test_FIXED_B3_whateverIsFrozenIsPayable() public {
+        _swap(key, SWAP_AMOUNT, true);
+        hook.freezeConfig(key);
+
         hook.settleBeneficiaries(key, currency1);
-        assertEq(hook.claimable(TREASURY, currency1), accrued, "nothing was lost by being late");
+        uint256 owed = hook.claimable(TREASURY, currency1);
+        assertGt(owed, 0, "a frozen pool's pot is still payable");
+        vm.prank(TREASURY);
+        assertEq(hook.claim(currency1, TREASURY), owed);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+       3b - CONFIG_DELAY_BLOCKS WAS SIX MINUTES ON THIS CHAIN - FIXED
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev THE DEPLOYED HOOK: `uint48 public constant CONFIG_DELAY_BLOCKS = 3600`, whose own
+    /// docstring read "roughly 12 hours at 12s blocks, or proportionally less on a faster chain -
+    /// documented rather than configurable so it cannot be shortened". Robinhood produces a block
+    /// every 0.102s, so 3600 blocks is 367 seconds. Six minutes. 118x shorter than the number in
+    /// the comment, on a chain where nobody watches a mempool for `proposeConfig`.
+    ///
+    /// THIS HOOK: the delay is a constructor argument in blocks PAIRED WITH THE BLOCK TIME, and
+    /// the product is checked against a wall-clock floor. There is no value of `blockTimeCentis`
+    /// that buys a shorter real window - a faster chain must pass a bigger block count.
+    function test_FIXED_B3b_theDelayIsTwelveRealHoursOnARobinhoodLikeChain() public view {
+        uint256 realSeconds = (uint256(hook.CONFIG_DELAY_BLOCKS()) * hook.blockTimeCentis()) / 100;
+        assertEq(hook.blockTimeCentis(), BLOCK_TIME_CENTIS, "fixture runs at Robinhood's block time");
+        assertGe(realSeconds, hook.MIN_CONFIG_DELAY_SECONDS(), "the delay clears its wall-clock floor");
+        assertEq(realSeconds, 12 hours, "and lands exactly on 12h at 432 000 blocks x 0.1s");
+    }
+
+    /// @dev THE REGRESSION GUARD THAT MATTERS. The deployed hook's exact parameters - 3600 blocks
+    /// on a 0.1s chain - must be rejected outright. This is the test that fails against the old
+    /// contract, because the old contract had no way to express the question.
+    function test_FIXED_B3b_aRobinhoodBlockTimeCannotProduceASubFloorDelay() public {
+        // 3600 x 10 centis = 360s. The deployed value, on the deployed chain.
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooShort.selector, 360, 12 hours));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, 3600, BLOCK_TIME_CENTIS, 8);
+
+        // One block short of the floor is still short. There is no rounding slack to exploit:
+        // 431 999 x 10 / 100 = 43 199s, and the floor is 43 200.
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooShort.selector, 43_199, 12 hours));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, 431_999, BLOCK_TIME_CENTIS, 8);
+
+        // And the same block count IS accepted on a 12s chain, where it always meant 12 hours.
+        RevShareHook slow = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, 3600, 1200, 8);
+        assertEq((uint256(slow.CONFIG_DELAY_BLOCKS()) * slow.blockTimeCentis()) / 100, 12 hours);
+    }
+
+    /// @dev A deployment cannot buy a shorter window by lying about the block time in either
+    /// direction: understating it makes the constructor demand MORE blocks, and overstating it is
+    /// rejected once the claimed product leaves the accepted range.
+    function testFuzz_FIXED_B3b_noBlockTimeBuysASubFloorDelay(uint48 delayBlocks, uint32 centis) public {
+        centis = uint32(bound(centis, 1, 60_000));
+        delayBlocks = uint48(bound(delayBlocks, 1, type(uint40).max));
+
+        uint256 realSeconds = (uint256(delayBlocks) * centis) / 100;
+        if (realSeconds < 12 hours || realSeconds > 14 days) {
+            vm.expectRevert();
+            new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, delayBlocks, centis, 8);
+        } else {
+            RevShareHook h = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, delayBlocks, centis, 8);
+            assertGe(
+                (uint256(h.CONFIG_DELAY_BLOCKS()) * h.blockTimeCentis()) / 100,
+                h.MIN_CONFIG_DELAY_SECONDS(),
+                "every accepted delay is at least 12 real hours"
+            );
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -295,51 +369,97 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
-       B5 - A MATURED PROPOSAL NEVER EXPIRES, AND disable() DOES NOT CLEAR IT
+       B5 - A MATURED PROPOSAL NEVER EXPIRED, AND disable() LEFT IT ARMED - FIXED
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev `reduceFee` and `disable` write `_configs` and never touch `_pending`, and a matured
-    /// proposal has no expiry. So the last `ConfigUpdated` a pool emitted can read
-    /// `feePips: 0, enabled: false` - "revenue share turned off" to any indexer or UI - while a
-    /// 10%/enabled proposal sits armed, applicable by ANYONE, at any time, including in the same
-    /// block as and immediately in front of a large swap.
+    /// @dev THE DEPLOYED HOOK: `reduceFee` and `disable` wrote `_configs` and never touched
+    /// `_pending`, and a matured proposal had no expiry. So the last `ConfigUpdated` a pool emitted
+    /// could read `feePips: 0, enabled: false` - "revenue share turned off" to any indexer or UI -
+    /// while a 10%/enabled proposal sat armed, applicable by ANYBODY, at any time, including in
+    /// the block immediately in front of a large swap.
     ///
-    /// THE OPERATIONAL RULE: `disable` and `reduceFee` are not "off". Only `cancelPendingConfig`
-    /// or `freezeConfig` clears a proposal, and a UI that renders a pool's cut must read
-    /// `getPendingConfig` alongside `getConfig` and show an armed proposal as armed.
-    function test_HAZARD_B5_aMaturedProposalSurvivesDisableAndCanBeFiredByAnyone() public {
+    /// THIS HOOK: a public reduction means what it says. Both calls clear the proposal and emit
+    /// `ConfigProposalCancelled`, so there is no armed state hiding behind an "off" pool.
+    function test_FIXED_B5_disableClearsAMaturedProposal() public {
+        hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
+        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        assertGt(hook.getPendingConfig(poolId).effectiveBlock, 0, "armed and due");
+
+        vm.expectEmit(true, false, false, false, address(hook));
+        emit RevShareHook.ConfigProposalCancelled(poolId);
+        hook.disable(key);
+
+        assertEq(hook.getPendingConfig(poolId).effectiveBlock, 0, "disable retracted it");
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.NoPendingConfig.selector, poolId));
+        hook.applyPendingConfig(key);
+    }
+
+    /// @dev The same for `reduceFee`, which is the one a UI is more likely to render as "the fee
+    /// went down" and therefore the one more likely to mislead.
+    function test_FIXED_B5_reduceFeeClearsAMaturedProposal() public {
         hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
         vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
 
-        // Publicly, the pool turns its revenue share off.
         hook.reduceFee(key, 0);
-        hook.disable(key);
-        assertEq(hook.getConfig(poolId).feePips, 0);
-        assertFalse(hook.getConfig(poolId).enabled);
+        assertEq(hook.getPendingConfig(poolId).effectiveBlock, 0);
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.NoPendingConfig.selector, poolId));
+        hook.applyPendingConfig(key);
 
         _swap(key, SWAP_AMOUNT, true);
-        assertEq(hook.pendingBeneficiary(poolId, currency1), 0, "and it really is off, for now");
+        assertEq(hook.pendingBeneficiary(poolId, currency1), 0, "off is off, and stays off");
+    }
 
-        // The proposal is still there, matured, and belongs to nobody.
-        assertGt(hook.getPendingConfig(poolId).effectiveBlock, 0);
+    /// @dev The other half: even an untouched proposal now dies of old age. A pool owner who wants
+    /// to hold a raise indefinitely has to keep re-proposing, and each re-proposal restarts the
+    /// full delay in public.
+    function test_FIXED_B5_aMaturedProposalExpires() public {
+        hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
+        RevShareHook.PendingConfig memory pending = hook.getPendingConfig(poolId);
+        assertGt(pending.expiryBlock, pending.effectiveBlock, "a window, not a deadline");
+
+        // Inside the window it applies.
+        vm.roll(pending.effectiveBlock);
         vm.prank(ALICE);
         hook.applyPendingConfig(key);
         assertEq(hook.getConfig(poolId).feePips, hook.MAX_FEE_PIPS());
-        assertTrue(hook.getConfig(poolId).enabled);
 
-        _swap(key, SWAP_AMOUNT, true);
-        assertGt(hook.pendingBeneficiary(poolId, currency1), 0, "10% is live again, with no owner action");
+        // Propose again and let this one rot.
+        hook.reduceFee(key, 1);
+        hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
+        RevShareHook.PendingConfig memory second = hook.getPendingConfig(poolId);
+        vm.roll(uint256(second.expiryBlock) + 1);
+
+        vm.prank(ALICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(RevShareHook.PendingConfigExpired.selector, poolId, second.expiryBlock)
+        );
+        hook.applyPendingConfig(key);
+        assertEq(hook.getConfig(poolId).feePips, 1, "the ambush never fired");
     }
 
-    /// @dev THE HONEST MITIGATION, checked rather than asserted. The cut lands on the unspecified
-    /// currency and `CLHooks.afterSwap` does `delta = delta - hookDelta`, so the amount the SWAPPER
-    /// receives is already net of it - which is the exact quantity a router compares against
-    /// `amountOutMinimum` (`CLRouterBase._swapExactInputSingle` ->
-    /// `IInfinityRouter.TooLittleReceived`). A trader with any sane slippage bound reverts rather
-    /// than being charged, because `MAX_FEE_PIPS` is 10% and slippage tolerances are not.
+    /// @dev The TTL is wall-clock too, for the same reason the delay is. Three days on a 0.1s
+    /// chain is 2 592 000 blocks, not three days' worth of somebody else's blocks.
+    function test_FIXED_B5_theProposalWindowIsThreeRealDays() public view {
+        uint256 ttlSeconds = (uint256(hook.CONFIG_PROPOSAL_TTL_BLOCKS()) * hook.blockTimeCentis()) / 100;
+        assertGe(ttlSeconds, hook.CONFIG_PROPOSAL_TTL_SECONDS(), "rounded up, never short");
+        assertEq(ttlSeconds, 3 days);
+    }
+
+    /// @dev THE HONEST MITIGATION on the deployed hook, kept because it is what bounds the finding
+    /// there and it is still worth knowing. The cut lands on the unspecified currency and
+    /// `CLHooks.afterSwap` does `delta = delta - hookDelta`, so the amount the SWAPPER receives is
+    /// already net of it - the exact quantity a router compares against `amountOutMinimum`
+    /// (`CLRouterBase._swapExactInputSingle` -> `IInfinityRouter.TooLittleReceived`). A trader with
+    /// any sane slippage bound reverts rather than being charged, because `MAX_FEE_PIPS` is 10%
+    /// and slippage tolerances are not.
     ///
-    /// It bounds nothing for a caller that takes its own vault lock, or sets the minimum to zero.
-    function test_HAZARD_B5_theAmbushIsVisibleInTheCallerDeltaARouterBoundsOn() public {
+    /// It bounds NOTHING for a caller that takes its own vault lock, or sets the minimum to zero,
+    /// which is why the expiry above is the real fix and this is only the floor under it.
+    function test_theAmbushIsVisibleInTheCallerDeltaARouterBoundsOn() public {
         // Gross output for the same swap through an identical hookless pool.
         BalanceDelta control = _swap(controlKey, SWAP_AMOUNT, true);
         uint256 gross = uint256(int256(control.amount1()));

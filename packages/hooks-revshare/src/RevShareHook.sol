@@ -139,24 +139,67 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// is a constant so it cannot be raised by governance, by a pool owner, or by an upgrade.
     uint24 public constant MAX_FEE_PIPS = 100_000;
 
-    /// @notice Maximum number of weighted beneficiaries per pool.
-    /// @dev Bounds `settleBeneficiaries`, the only loop in this contract. It is not on the swap
-    /// path, but an unbounded roster would still let a pool owner make settlement unrunnable and
-    /// so strand route 2 permanently.
-    uint256 public constant MAX_BENEFICIARIES = 8;
+    /// @notice Absolute ceiling on `MAX_BENEFICIARIES`, whatever a deployment asks for.
+    /// @dev The roster loop lives in `settleBeneficiaries`, which is permissionless and off the
+    /// swap path, so this bounds GAS rather than protecting funds - a long roster makes settlement
+    /// expensive, never impossible, and never touches a trade. The per-deployment value below is
+    /// therefore a tuning knob; this is the line past which it stops being one.
+    uint256 public constant MAX_BENEFICIARIES_CEILING = 32;
 
     /// @notice Maximum sum of beneficiary weights. Keeps `weight * amount` far from overflowing
     /// even before `Math.mulDiv` is applied.
     uint256 public constant MAX_TOTAL_WEIGHT = 1e18;
 
-    /// @notice Blocks a proposed configuration must wait before it can be applied.
-    /// @dev Only PRIVILEGE ESCALATION is delayed. Raising the fee, or redirecting the split away
-    /// from LPs, is a change a pool owner could otherwise land in the same block as a large trade,
-    /// which is a sandwich the trader cannot price. Reductions (`reduceFee`, `disable`) and
-    /// `freeze` bypass the delay entirely, because delay belongs on taking more, never on taking
-    /// less. Roughly 12 hours at 12s blocks, or proportionally less on a faster chain - set by the
-    /// deployer's chain choice, and documented rather than configurable so it cannot be shortened.
-    uint48 public constant CONFIG_DELAY_BLOCKS = 3600;
+    /// @notice The WALL-CLOCK floor on the configuration delay. Not negotiable by a deployment.
+    ///
+    /// @dev ############ WHY THIS IS SECONDS AND NOT BLOCKS ############
+    ///
+    /// This used to read `uint48 public constant CONFIG_DELAY_BLOCKS = 3600`, documented as
+    /// "roughly 12 hours at 12s blocks, or proportionally less on a faster chain - documented
+    /// rather than configurable so it cannot be shortened".
+    ///
+    /// Robinhood Chain (4663) produces a block every 0.102s, measured over 500 000 blocks. So on
+    /// the chain this contract was actually deployed to, 3600 blocks is:
+    ///
+    ///     3 600 x 0.102 s = 367 seconds = 6.1 MINUTES
+    ///
+    /// 118x shorter than the number in the docstring. That is not "proportionally less"; it is the
+    /// mechanism defeated. The delay exists so a pool owner cannot land a fee rise in front of a
+    /// large trade, and six minutes of notice on a chain where nobody watches a mempool for
+    /// `proposeConfig` does not buy a trader anything.
+    ///
+    /// The lesson generalises and is worth stating once: A DURATION EXPRESSED IN BLOCKS IS NOT A
+    /// DURATION. It is a duration multiplied by an unknown the deployer chooses later. So the
+    /// delay is now a constructor argument in blocks, paired with the chain's block time, and the
+    /// PRODUCT is checked against this floor. A tenant on a fast chain must pass a bigger block
+    /// count to get the same protection; there is no value of `blockTimeCentis` that buys a
+    /// shorter real-world window. The "cannot be shortened" property the old docstring claimed is
+    /// finally delivered rather than asserted.
+    uint256 public constant MIN_CONFIG_DELAY_SECONDS = 12 hours;
+
+    /// @notice Wall-clock ceiling on the configuration delay.
+    /// @dev A long delay is directionally safe - it only makes ESCALATION harder - but an absurd
+    /// one ends a pool owner's ability to ever answer market conditions, and there is no admin
+    /// anywhere that can shorten it. Bounded so a fat-fingered block count is a revert rather than
+    /// a permanent condition of the pool.
+    uint256 public constant MAX_CONFIG_DELAY_SECONDS = 14 days;
+
+    /// @notice How long a MATURED proposal stays applicable before it must be proposed again.
+    ///
+    /// @dev The other half of the sandwich the delay exists to prevent. Previously a proposal that
+    /// had waited out its delay stayed armed forever and `applyPendingConfig` is permissionless,
+    /// so the real sequence was: propose once, wait, then hold a 10%/enabled configuration that
+    /// ANYBODY can fire, indefinitely, for the moment a large trade appears. A delay with no
+    /// expiry is a scheduling inconvenience, not a protection.
+    ///
+    /// Converted to blocks with the same `blockTimeCentis` as the delay, so it means three days on
+    /// every chain rather than three days on one of them.
+    uint256 public constant CONFIG_PROPOSAL_TTL_SECONDS = 3 days;
+
+    /// @notice Largest block time this contract will accept, in centiseconds: 600s per block.
+    /// @dev Matches `LaunchpadKit`'s bound. Only zero and the absurd are refused; sub-second
+    /// chains are explicitly in scope, which is the whole reason this parameter exists.
+    uint32 public constant MAX_BLOCK_TIME_CENTIS = 60_000;
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -199,11 +242,34 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// @notice Roster is empty, too long, or contains an invalid entry
     error InvalidBeneficiaries();
 
+    /// @notice A non-zero beneficiary share was configured, or frozen, with no roster to pay.
+    /// @dev The beneficiary twin of `DistributorRequired`. Its absence is what let a pool accrue
+    /// into `pendingBeneficiary` with `_totalWeight == 0` and then `freezeConfig` the repair away.
+    error BeneficiariesRequired(PoolId poolId);
+
     /// @notice There is no pending configuration, or it is not due yet
     error NoPendingConfig(PoolId poolId);
 
     /// @notice A pending configuration exists but its effective block has not arrived
     error PendingConfigNotDue(PoolId poolId, uint48 effectiveBlock);
+
+    /// @notice A pending configuration matured but was not applied inside its window
+    error PendingConfigExpired(PoolId poolId, uint48 expiryBlock);
+
+    /// @notice `blockTimeCentis` is zero or above `MAX_BLOCK_TIME_CENTIS`
+    error InvalidBlockTime(uint32 blockTimeCentis);
+
+    /// @notice `configDelayBlocks * blockTimeCentis` is below `MIN_CONFIG_DELAY_SECONDS`
+    error ConfigDelayTooShort(uint256 realSeconds, uint256 required);
+
+    /// @notice `configDelayBlocks * blockTimeCentis` is above `MAX_CONFIG_DELAY_SECONDS`
+    error ConfigDelayTooLong(uint256 realSeconds, uint256 allowed);
+
+    /// @notice `maxBeneficiaries` is zero or above `MAX_BENEFICIARIES_CEILING`
+    error InvalidMaxBeneficiaries(uint256 given, uint256 ceiling);
+
+    /// @notice `renounceOwnership` is permanently disabled. See the override.
+    error RenounceDisabled();
 
     /// @notice Caller is not the pool's configured distributor
     error NotDistributor(PoolId poolId, address caller);
@@ -241,7 +307,10 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
         address distributor,
         bool enabled
     );
-    event ConfigProposed(PoolId indexed poolId, uint48 effectiveBlock);
+    /// @param effectiveBlock First block at which `applyPendingConfig` succeeds.
+    /// @param expiryBlock Last block at which it succeeds. A proposal that is not applied inside
+    /// `[effectiveBlock, expiryBlock]` is dead and has to be proposed again.
+    event ConfigProposed(PoolId indexed poolId, uint48 effectiveBlock, uint48 expiryBlock);
     event ConfigProposalCancelled(PoolId indexed poolId);
     event ConfigFrozenForever(PoolId indexed poolId);
     event OwnershipTransferProposed(PoolId indexed poolId, address indexed from, address indexed to);
@@ -300,8 +369,17 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     }
 
     /// @notice A configuration waiting out `CONFIG_DELAY_BLOCKS`.
+    ///
+    /// @dev SHAPE CHANGE, and it is a breaking one. `expiryBlock` is new. Any consumer holding a
+    /// hand-written ABI for the two-field version will decode `expiryBlock` as `params.feePips`
+    /// and report nonsense WITHOUT erroring - the same class of trap as reading one distributor's
+    /// `getEpoch` through the other's ABI. Regenerate the ABI; do not pattern-match the old one.
+    ///
+    /// @param effectiveBlock 0 == no proposal outstanding. Otherwise the first applicable block.
+    /// @param expiryBlock Last applicable block. Always non-zero when `effectiveBlock` is.
     struct PendingConfig {
         uint48 effectiveBlock; // 0 == no proposal outstanding
+        uint48 expiryBlock;
         ConfigParams params;
     }
 
@@ -318,6 +396,36 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
 
     /// @notice The vault that custodies every token this hook ever holds a claim on.
     IVault public immutable vault;
+
+    /// @notice Blocks a proposed configuration must wait before it can be applied.
+    ///
+    /// @dev IMMUTABLE, NOT CONSTANT, and SCREAMING_CASE is kept deliberately: it is the same name
+    /// the deployed hook exposes, so every reader keeps working. What changed is that the value is
+    /// now chosen per chain and validated against `MIN_CONFIG_DELAY_SECONDS` in real seconds.
+    ///
+    /// Only PRIVILEGE ESCALATION is delayed. Raising the fee, or redirecting the split away from
+    /// LPs, is a change a pool owner could otherwise land in the same block as a large trade,
+    /// which is a sandwich the trader cannot price. Reductions (`reduceFee`, `disable`) and
+    /// `freezeConfig` bypass the delay entirely, because delay belongs on taking more, never on
+    /// taking less.
+    uint48 public immutable CONFIG_DELAY_BLOCKS;
+
+    /// @notice Blocks a MATURED proposal stays applicable for, after which it is dead.
+    /// @dev Derived from `CONFIG_PROPOSAL_TTL_SECONDS` at construction, rounded UP so the window
+    /// is never shorter than the wall-clock figure it is named for.
+    uint48 public immutable CONFIG_PROPOSAL_TTL_BLOCKS;
+
+    /// @notice This chain's block time in hundredths of a second. 1200 == 12s, 10 == 0.1s.
+    /// @dev The unit `LaunchpadKit` already uses. Published so a UI can render both windows above
+    /// as durations rather than as block counts nobody can convert.
+    uint32 public immutable blockTimeCentis;
+
+    /// @notice Maximum number of weighted beneficiaries per pool.
+    /// @dev Bounds `settleBeneficiaries`, the only loop in this contract. Permissionless and off
+    /// the swap path, so this is a gas bound, not a fund-safety bound: a long roster makes a
+    /// settlement expensive, it can never make a trade fail. Per-deployment under
+    /// `MAX_BENEFICIARIES_CEILING`; SCREAMING_CASE retained because it is an existing ABI name.
+    uint256 public immutable MAX_BENEFICIARIES;
 
     /// @notice Global kill switch. When true no pool takes any cut. Claims are unaffected.
     /// @dev Packed with `guardian` into one slot so the swap path pays for one SLOAD, not two.
@@ -392,15 +500,80 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// @param owner_ Governance. Should be the multisig + timelock that governs
     /// `Vault.registerApp`, never an EOA on a chain holding real funds.
     /// @param guardian_ May pause instantly during an incident. May be zero.
-    constructor(ICLPoolManager _poolManager, address owner_, address guardian_)
-        BaseCLHook(_poolManager)
-        Ownable(owner_)
-    {
+    /// @param configDelayBlocks_ Blocks a fee RAISE must wait. Chosen for the chain, and checked
+    /// against `MIN_CONFIG_DELAY_SECONDS` in real seconds rather than trusted.
+    /// @param blockTimeCentis_ This chain's block time in hundredths of a second. Round DOWN when
+    /// it is not an integer: a smaller block time makes the computed window shorter, so the
+    /// constructor demands MORE blocks, which errs safe. Robinhood Chain measures 10.2 - declare
+    /// 10, never 11.
+    /// @param maxBeneficiaries_ Roster ceiling for `settleBeneficiaries`. 1..
+    /// `MAX_BENEFICIARIES_CEILING`.
+    constructor(
+        ICLPoolManager _poolManager,
+        address owner_,
+        address guardian_,
+        uint48 configDelayBlocks_,
+        uint32 blockTimeCentis_,
+        uint256 maxBeneficiaries_
+    ) BaseCLHook(_poolManager) Ownable(owner_) {
+        if (blockTimeCentis_ == 0 || blockTimeCentis_ > MAX_BLOCK_TIME_CENTIS) {
+            revert InvalidBlockTime(blockTimeCentis_);
+        }
+        if (maxBeneficiaries_ == 0 || maxBeneficiaries_ > MAX_BENEFICIARIES_CEILING) {
+            revert InvalidMaxBeneficiaries(maxBeneficiaries_, MAX_BENEFICIARIES_CEILING);
+        }
+
+        // THE WALL-CLOCK CHECK. Floor division, so a delay that lands between two seconds counts
+        // as the shorter one and has to be padded with another block. Rounding the other way would
+        // let a deployment buy back the fraction it was short by.
+        uint256 realSeconds = (uint256(configDelayBlocks_) * blockTimeCentis_) / 100;
+        if (realSeconds < MIN_CONFIG_DELAY_SECONDS) {
+            revert ConfigDelayTooShort(realSeconds, MIN_CONFIG_DELAY_SECONDS);
+        }
+        if (realSeconds > MAX_CONFIG_DELAY_SECONDS) {
+            revert ConfigDelayTooLong(realSeconds, MAX_CONFIG_DELAY_SECONDS);
+        }
+
+        // Ceiling division, the opposite rounding to the delay and for the same reason: the TTL is
+        // a window a pool owner needs, so it must never come out shorter than advertised.
+        uint256 ttlBlocks = (CONFIG_PROPOSAL_TTL_SECONDS * 100 + blockTimeCentis_ - 1) / blockTimeCentis_;
+
+        CONFIG_DELAY_BLOCKS = configDelayBlocks_;
+        CONFIG_PROPOSAL_TTL_BLOCKS = uint48(ttlBlocks);
+        blockTimeCentis = blockTimeCentis_;
+        MAX_BENEFICIARIES = maxBeneficiaries_;
+
         // Read the vault off the manager rather than taking it as an argument: a mismatched pair
         // would mint claims against a vault that never credits this hook a delta.
         vault = IProtocolFees(address(_poolManager)).vault();
         guardian = guardian_;
         emit GuardianUpdated(address(0), guardian_);
+    }
+
+    /**
+     * Permanently disabled. Reverts for everybody, including the owner.
+     *
+     * `MerkleEpochDistributor` is the reference for this override and the reasoning is the same
+     * shape, with a different consequence. Here the owner is the ONLY party that can restore the
+     * hook after an incident:
+     *
+     *   * `setPaused(false)` compares against `owner()` by hand. The guardian may only ever pause.
+     *   * `setGuardian` is `onlyOwner`, so a compromised or dead guardian could never be replaced.
+     *
+     * Renounce while paused and the hook is off forever: no pool takes a cut again, on any chain,
+     * for any owner. Renounce while unpaused and the global kill switch is gone at the moment it
+     * is most needed. Neither is a reduction in privilege; both are a permanent loss of the only
+     * lever that can walk an incident back.
+     *
+     * No user funds strand either way - `claim`, `redeem`, `settleBeneficiaries` and
+     * `pullDistributorShare` are permissionless and unaffected - which is precisely why this was
+     * easy to under-rate on the deployed instance, where the call is still live.
+     *
+     * The bounded form of the same intent is untouched: `transferOwnership`, two-step via
+     * `Ownable2Step`, so ownership cannot land somewhere unreachable by typo.
+     */
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
     }
 
     /// @notice Accepts native currency taken out of the vault by `redeem`.
@@ -483,33 +656,39 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
             if (_isInitialized(poolId)) revert PoolAlreadyConfigured(poolId);
         }
 
-        _validateParams(params);
+        _validateParams(poolId, params);
         _writeConfig(poolId, params);
     }
 
     /// @notice Queue a configuration change on an initialised pool. Applies after the delay.
+    /// @dev Replaces any proposal already outstanding, so a pool never carries two.
     function proposeConfig(PoolKey calldata key, ConfigParams calldata params) external {
         PoolId poolId = _requireOwner(key);
-        _validateParams(params);
+        _validateParams(poolId, params);
 
         uint48 effectiveBlock = uint48(block.number) + CONFIG_DELAY_BLOCKS;
-        _pending[poolId] = PendingConfig({effectiveBlock: effectiveBlock, params: params});
+        uint48 expiryBlock = effectiveBlock + CONFIG_PROPOSAL_TTL_BLOCKS;
+        _pending[poolId] = PendingConfig({effectiveBlock: effectiveBlock, expiryBlock: expiryBlock, params: params});
 
-        emit ConfigProposed(poolId, effectiveBlock);
+        emit ConfigProposed(poolId, effectiveBlock, expiryBlock);
     }
 
     /// @notice Apply a due proposal. Permissionless: the delay is the protection, not the caller.
+    /// @dev Applicable only inside `[effectiveBlock, expiryBlock]`. Outside it the proposal is
+    /// dead and the owner has to propose again, waiting the delay again. That window is what stops
+    /// "propose once, then hold an armed 10% forever, waiting for a large trade".
     function applyPendingConfig(PoolKey calldata key) external {
         PoolId poolId = key.toId();
         PendingConfig memory pending = _pending[poolId];
         if (pending.effectiveBlock == 0) revert NoPendingConfig(poolId);
         if (block.number < pending.effectiveBlock) revert PendingConfigNotDue(poolId, pending.effectiveBlock);
+        if (block.number > pending.expiryBlock) revert PendingConfigExpired(poolId, pending.expiryBlock);
         if (_configs[poolId].frozen) revert ConfigFrozen(poolId);
 
         delete _pending[poolId];
-        // Re-validated on apply: the caps are constants, but re-checking costs little and means a
-        // proposal can never become applicable through a change in this contract's invariants.
-        _validateParams(pending.params);
+        // Re-validated on apply: the caps are constants, but the ROSTER is not - a proposal made
+        // while a roster existed must not become applicable after it was emptied.
+        _validateParams(poolId, pending.params);
         _writeConfig(poolId, pending.params);
     }
 
@@ -521,12 +700,29 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
         emit ConfigProposalCancelled(poolId);
     }
 
+    /// @dev Drops an outstanding proposal if there is one, quietly if there is not. Separate from
+    /// `cancelPendingConfig` because the callers below have already done their own access control
+    /// and must not revert just because no proposal happened to exist.
+    function _clearPending(PoolId poolId) internal {
+        if (_pending[poolId].effectiveBlock != 0) {
+            delete _pending[poolId];
+            emit ConfigProposalCancelled(poolId);
+        }
+    }
+
     /// @notice Lower the cut immediately. Cannot raise it; that is what `proposeConfig` is for.
+    ///
+    /// @dev CLEARS ANY OUTSTANDING PROPOSAL, and that is not housekeeping. Without it a pool could
+    /// emit `ConfigUpdated(feePips: 0)` - which every indexer reads as "the cut went away" - while
+    /// a matured 10% proposal sat armed behind it, applicable by anyone, in front of a large
+    /// trade. A public reduction must mean what it says, so lowering the take retracts any queued
+    /// raise. An owner who wants both has to propose again and wait the delay again.
     function reduceFee(PoolKey calldata key, uint24 feePips) external {
         PoolId poolId = _requireOwner(key);
         PoolConfig storage config = _configs[poolId];
         if (feePips >= config.feePips) revert FeeNotReduced(config.feePips, feePips);
         config.feePips = feePips;
+        _clearPending(poolId);
         emit ConfigUpdated(
             poolId,
             feePips,
@@ -539,10 +735,13 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     }
 
     /// @notice Stop taking a cut immediately. Accrued balances remain claimable.
+    /// @dev Clears any outstanding proposal, for the reason spelled out on `reduceFee`: "off" must
+    /// not be a state that anybody can undo for the price of gas.
     function disable(PoolKey calldata key) external {
         PoolId poolId = _requireOwner(key);
         PoolConfig storage config = _configs[poolId];
         config.enabled = false;
+        _clearPending(poolId);
         emit ConfigUpdated(
             poolId,
             config.feePips,
@@ -557,8 +756,19 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// @notice Permanently freeze this pool's configuration. One-way, and the strongest promise a
     /// pool owner can make to traders: after this the fee and the split can never move again.
     /// @dev Any outstanding proposal is discarded, so a freeze cannot be used to sneak one in.
+    ///
+    /// REFUSES TO FREEZE A POOL THAT CANNOT PAY ITS BENEFICIARY SHARE. `freezeConfig` is the one
+    /// irreversible call a pool owner has, and it removes `setBeneficiaries` along with everything
+    /// else. Freezing with `beneficiaryBps != 0` and an empty roster therefore sealed the pool
+    /// into accruing a pot nothing could ever distribute - permanently, silently, and with every
+    /// view reporting the pool healthy. The other two guards (`_validateParams` and
+    /// `setBeneficiaries`) already make that state unreachable; this one is the backstop on the
+    /// call that would make it permanent, and it costs one SLOAD on a function used once.
     function freezeConfig(PoolKey calldata key) external {
         PoolId poolId = _requireOwner(key);
+        if (_configs[poolId].beneficiaryBps != 0 && _totalWeight[poolId] == 0) {
+            revert BeneficiariesRequired(poolId);
+        }
         delete _pending[poolId];
         _configs[poolId].frozen = true;
         emit ConfigFrozenForever(poolId);
@@ -599,6 +809,11 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
 
         uint256 count = roster.length;
         if (count > MAX_BENEFICIARIES) revert InvalidBeneficiaries();
+        // An EMPTY roster is only honest when the pool routes nothing to one. The error's own
+        // docstring always said "Roster is empty, too long, or contains an invalid entry"; the
+        // "empty" half was never implemented, which is how a pool ended up taking a beneficiary
+        // share with nobody to pay it to.
+        if (count == 0 && _configs[poolId].beneficiaryBps != 0) revert BeneficiariesRequired(poolId);
 
         delete _beneficiaries[poolId];
         uint256 total = 0;
@@ -638,7 +853,20 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
         if (config.frozen) revert ConfigFrozen(poolId);
     }
 
-    function _validateParams(ConfigParams memory params) internal pure {
+    /// @dev No longer `pure`: the beneficiary check reads the pool's roster.
+    ///
+    /// ORDERING CONSEQUENCE, stated because it is the one thing a pool owner has to learn. A
+    /// roster can only be set by the pool's owner, and ownership is established by the first
+    /// `configure` call, so a pool wanting a beneficiary share is configured in two steps while it
+    /// is still uninitialised and untraded:
+    ///
+    ///   1. `configure(key, {lpDonateBps: 10_000, ...})`  - claims the pool, no roster needed
+    ///   2. `setBeneficiaries(key, roster)`
+    ///   3. `configure(key, {beneficiaryBps: ..., ...})`  - now the roster exists
+    ///
+    /// The alternative was to let step 3 happen first and catch it later, which is exactly what
+    /// the deployed hook does and exactly how a pool ends up accruing to nobody.
+    function _validateParams(PoolId poolId, ConfigParams memory params) internal view {
         if (params.feePips > MAX_FEE_PIPS) revert FeeTooHigh(params.feePips);
 
         uint256 sum = uint256(params.lpDonateBps) + params.beneficiaryBps + params.distributorBps;
@@ -647,6 +875,10 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
         if (sum != SPLIT_DENOMINATOR) revert SplitMustSumToDenominator(sum);
 
         if (params.distributorBps != 0 && params.distributor == address(0)) revert DistributorRequired();
+        // The twin of the line above, and its absence was a fund-stranding bug rather than a
+        // symmetry complaint: route 3 fails loudly with no distributor, route 2 used to accrue
+        // into a pot with nobody on the other end.
+        if (params.beneficiaryBps != 0 && _totalWeight[poolId] == 0) revert BeneficiariesRequired(poolId);
     }
 
     function _writeConfig(PoolId poolId, ConfigParams memory params) internal {
@@ -890,7 +1122,13 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
         if (amount == 0) return;
 
         uint256 total = _totalWeight[poolId];
-        if (total == 0) return; // no roster yet: the pot waits rather than being lost
+        // Unreachable while the pool still routes to route 2: `_validateParams` and
+        // `setBeneficiaries` between them make "beneficiaryBps != 0 with no roster" impossible to
+        // write. It survives for the one residual case - a pool that took its share to zero and
+        // then emptied its roster, leaving a settled-down remainder - where returning leaves the
+        // value in place for a roster set later, and reverting would only strand it harder. It
+        // also lets `setBeneficiaries` call this unconditionally.
+        if (total == 0) return;
 
         Beneficiary[] storage roster = _beneficiaries[poolId];
         uint256 count = roster.length;
