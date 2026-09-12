@@ -30,6 +30,7 @@ export * from "./core/math.js";
 export * from "./core/format.js";
 
 export * from "./adapters/protocol.js";
+export * from "./adapters/sale.js";
 export { createMockAdapter, type MockAdapterOptions } from "./adapters/mock.js";
 export {
   createViemAdapter,

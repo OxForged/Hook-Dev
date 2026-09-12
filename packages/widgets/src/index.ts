@@ -26,6 +26,7 @@ export * from "./core/format.js";
 
 // --- chain boundary --------------------------------------------------------
 export * from "./adapters/protocol.js";
+export * from "./adapters/sale.js";
 export { createMockAdapter, type MockAdapterOptions } from "./adapters/mock.js";
 export {
   createViemAdapter,

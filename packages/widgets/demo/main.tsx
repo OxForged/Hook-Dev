@@ -46,7 +46,7 @@ const DEMO_CHAIN: ChainConfig = {
     clPositionManager: "0x00000000000000000000000000000000000000a5",
     binPositionManager: "0x00000000000000000000000000000000000000a6",
     permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
-    launchpad: "0x00000000000000000000000000000000000000a7",
+    launchGuardHook: "0x00000000000000000000000000000000000000a7",
   },
   defaultDeadlineSeconds: 20 * 60,
 };
@@ -222,7 +222,10 @@ function Harness(): JSX.Element {
               <LaunchWidget />
             </div>
             <p className="note">
-              The launchpad ABI is a proposed interface, not a deployed contract.
+              A launch is a pool with LaunchGuardHook attached and a decaying LP
+              fee. The mock advances one block per second, so the schedule moves
+              from &ldquo;not open&rdquo; through the decay to a settled fee
+              while you watch.
             </p>
           </section>
         </div>

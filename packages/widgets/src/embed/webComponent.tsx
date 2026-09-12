@@ -245,7 +245,7 @@ export class LatchLiquidityWidgetElement extends LatchWidgetElement {
 /** `<latch-launch-widget>`. */
 export class LatchLaunchWidgetElement extends LatchWidgetElement {
   static override get observedAttributes(): readonly string[] {
-    return [...COMMON_ATTRIBUTES, "launch-id", "account"];
+    return [...COMMON_ATTRIBUTES, "pool-id", "account"];
   }
 
   protected override component(): ComponentType<Record<string, unknown>> {
@@ -253,10 +253,12 @@ export class LatchLaunchWidgetElement extends LatchWidgetElement {
   }
 
   protected override widgetProps(): Record<string, unknown> {
-    const launchId = this.getAttribute("launch-id");
+    // A pool id, not a launchpad address: LaunchGuardHook keys every launch
+    // by PoolId, and there is no per-launch contract to point at.
+    const poolId = this.getAttribute("pool-id");
     return {
       ...super.widgetProps(),
-      ...(launchId === null ? {} : { launchId }),
+      ...(poolId === null ? {} : { poolId }),
     };
   }
 }

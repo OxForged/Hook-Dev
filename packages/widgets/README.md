@@ -80,7 +80,7 @@ Every one of these **throws at provider mount**, not at swap time. A misconfigur
 
 **Liquidity.** `TAKE_PORTION` splits an output currency; adding liquidity has no output, and removing it returns the user's own principal. Skimming that is a withdrawal charge, not a referral fee. The `integrator` config is still carried through the liquidity path so you can record attribution in analytics, but nothing is taken on-chain.
 
-**Launches** pass `referrer` and `referrerFeeBps` as arguments to the launchpad's `buy`. See [Launch widget status](#launch-widget-status) — that interface is proposed, not deployed.
+**Launches** are fee-bearing, because a launch buy *is* a swap. There is no separate launch call path: `buildLaunchBuyCall` checks the hook's gates and then calls `buildSwapCall`, so the `TAKE_PORTION` step is the same one. See [Launch](#launch).
 
 ---
 
@@ -187,7 +187,7 @@ function MySwapForm({ tokenIn, tokenOut, amountIn }) {
 
 Going headless does **not** opt you out of fee validation: `WidgetProvider` validates the config, and the call-path builders refuse anything that did not come from it.
 
-Available hooks: `useSwapQuote`, `useSwapExecute`, `useSlippageSetting`, `useAddLiquidityQuote`, `useAddLiquidityExecute`, `usePositions`, `useRemoveLiquidity`, `useLaunch`, `useLaunchList`, `useLaunchAccountState`, `useLaunchBuy`, `useTokenList`, `useTokenBalance`, `useAccount`, `usePools`, `usePoolState`.
+Available hooks: `useSwapQuote`, `useSwapExecute`, `useSlippageSetting`, `useAddLiquidityQuote`, `useAddLiquidityExecute`, `usePositions`, `useRemoveLiquidity`, `useLaunch`, `useLaunchList`, `useLaunchBuy`, `useTokenList`, `useTokenBalance`, `useAccount`, `usePools`, `usePoolState`.
 
 ---
 
@@ -313,7 +313,7 @@ interface ChainConfig {
     binPositionManager?: Address; // required for bin liquidity
     permit2?: Address;            // required to pull the input token
     quoter?: Address;
-    launchpad?: Address;
+    launchGuardHook?: Address;    // required to read a launch schedule
   };
   transport?: Transport;          // viem transport, if the adapter reads directly
   blockExplorerUrl?: string;
@@ -385,13 +385,42 @@ Both emit the same `LiquidityRange` union, so everything above the range editor 
 
 ### Launch
 
-Sale progress, amount raised against the hard cap, per-wallet cap remaining, time gates with a live countdown, and an inline price-curve chart (fixed, linear or exponential).
+**A Latch launch is not a token sale.** It is a concentrated-liquidity pool with `LaunchGuardHook` named in its `PoolKey`, a dynamic LP fee, and a fee that decays from `initialFeeBips` to `finalFeeBips` over `decayBlocks` blocks starting at `startBlock`. There is no `buy`, no soft cap, no hard cap, no allocation and no claim. **Buying into a launch is an ordinary swap.**
 
-Every gate is evaluated by `evaluateLaunchPurchase` and surfaced as a specific reason — "Sale has not started yet", "You have reached the per-wallet cap" — on a disabled button, rather than as a reverted transaction the user pays for.
+So `<LaunchWidget />` is a launch-aware swap panel. It reads, from `LaunchGuardHook`, keyed by pool id:
 
-#### Launch widget status
+| Read | From |
+|---|---|
+| the whole schedule — `startBlock`, `decayBlocks`, `enabled`, the owner | `getLaunch(poolId)` |
+| the fee being charged **right now** | `currentFee(poolId)` |
+| the block those two were true at | `eth_blockNumber` |
 
-**The launchpad ABI in [`src/callpath/launch.ts`](src/callpath/launch.ts) is a proposed interface, not a deployed contract.** Unlike the swap and liquidity paths — encoded against the real periphery and router sources in this repo — there is no launchpad in the tree to encode against. When one ships, either it implements this interface or that file changes. If you have your own sale contract, implement `buildLaunchBuy` in your adapter rather than bending this encoder.
+and then renders the decay curve by evaluating `launchFeeAtBlock`, an exact mirror of the hook's `feeAt` — flooring included, so the projected fee rounds up toward the LPs the way the contract does. If the chain's `currentFee` and the local projection ever disagree for the same block, the widget shows the chain's number and says the curve may be wrong.
+
+Buying delegates to the swap path. `useLaunchBuy` composes `useSwapQuote` and `useSwapExecute`, and `buildLaunchBuyCall` checks the hook's gates and then calls `buildSwapCall`. A launch buy that took a different code path from a swap would be a second call path to keep correct, and the second one always rots.
+
+#### `maxBuyPerTx` is per transaction, not per wallet
+
+The widget says this on screen, because it is the field most likely to be read as an allocation. From the hook's own source:
+
+> Splitting a buy across N wallets or N transactions in the same block is NOT prevented and cannot be. `maxBuyPerTx` bounds one transaction, nothing more.
+
+The reason is structural: `beforeSwap` receives the *locker* as `sender`, which under a shared router is the router for every buyer alike. No identity-based rule is implementable at that layer, so there is no per-wallet cap to display and the widget does not invent one. The cap also stops being enforced once the decay window ends.
+
+#### Four states, and no fallback
+
+| State | When | What it says |
+|---|---|---|
+| loading | a read is in flight | "Reading the launch schedule from chain" |
+| **not-configured** | `contracts.launchGuardHook` is unset | names the chain, says no hook is deployed there, and tells you which config key to set. **No address is invented.** |
+| empty | the hook answered and holds no record for the pool | explains that a pool id is only claimed by `configureLaunch` |
+| error | the read failed | the error, plus "nothing is shown in place of the schedule" |
+
+The adapters keep *not-configured* and *empty* apart deliberately: `listLaunches` throws `ChainConfigError` when no hook address is configured and returns `[]` when the hook is there and no pool uses it. An empty array in the first case would read as "the launchpad is here and nobody has launched", which is a different and untrue statement.
+
+#### If you run your own sale contract
+
+Latch has none, but you might. [`src/adapters/sale.ts`](src/adapters/sale.ts) defines `TokenSaleAdapter` — caps, allocations, per-wallet limits, price curves — as an optional `ProtocolAdapter.sale`. It defines the shape of an *answer*, not the shape of your contract: your `buildBuy` returns a `WidgetTransactionRequest` encoded against your own ABI. Nothing in this package reads it, and the styled `LaunchWidget` binds to `LaunchGuardHook` and to nothing else.
 
 ---
 

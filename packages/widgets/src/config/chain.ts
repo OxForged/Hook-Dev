@@ -41,8 +41,17 @@ export interface ContractAddresses {
   readonly permit2?: Address;
   /** Off-path quoter, if one is deployed. */
   readonly quoter?: Address;
-  /** Launchpad contract backing the launch widget. */
-  readonly launchpad?: Address;
+  /**
+   * `LaunchGuardHook`, the hook that backs the launch widget.
+   *
+   * Not a launchpad and not a sale contract: it is the hook a launch pool names
+   * in its `PoolKey`, and the launch widget reads its per-pool schedule. Leave
+   * it unset on a chain where no `LaunchGuardHook` is deployed — the widget
+   * renders a "not configured on this chain" state, which is the truth. Setting
+   * it to an address that is not a `LaunchGuardHook` produces read failures,
+   * not a fallback.
+   */
+  readonly launchGuardHook?: Address;
 }
 
 /** Everything the widgets need to know about the chain they are pointed at. */

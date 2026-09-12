@@ -23,11 +23,25 @@ import {
   buildCLDecreaseCall,
   buildCLMintCall,
 } from "../src/callpath/liquidity.js";
-import { buildLaunchBuyCall, LAUNCHPAD_ABI } from "../src/callpath/launch.js";
+import {
+  buildLaunchBuyCall,
+  decodeLaunchGuard,
+  evaluateLaunchBuy,
+  hopIsLaunchBuy,
+  isLaunchConfigured,
+  launchFeeAtBlock,
+  launchScheduleAt,
+  type LaunchGuard,
+} from "../src/callpath/launch.js";
 import { buildSwapCall, type SwapHop } from "../src/callpath/swap.js";
 import { NO_INTEGRATOR_FEE, validateIntegratorConfig } from "../src/config/integrator.js";
 import { createMockAdapter, buildUniformBinDistribution } from "../src/adapters/mock.js";
-import type { ChainConfig } from "../src/config/chain.js";
+import { ChainConfigError, type ChainConfig } from "../src/config/chain.js";
+import {
+  buildLaunchView,
+  isLaunchpadNotConfigured,
+  resolveLaunchDataState,
+} from "../src/hooks/useLaunch.js";
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 const TOKEN_A = "0x000000000000000000000000000000000000000a" as const;
@@ -54,6 +68,29 @@ const BIN_KEY = createBinPoolKey({
   fee: 100,
   binStep: 25,
 });
+
+/**
+ * Decodes a bare action plan - the `abi.encode(bytes actions, bytes[] params)`
+ * blob the router hands to `_executeActions`.
+ *
+ * A swap's `inputs[0]` is this, NOT function calldata: `Dispatcher` passes the
+ * input straight through without decoding a selector. Running it through
+ * `unwrapPlan` reads the first four bytes as a selector and fails.
+ */
+function decodePlan(encoded: `0x${string}`): {
+  actionIds: number[];
+  params: readonly `0x${string}`[];
+} {
+  const [actions, params] = decodeAbiParameters(
+    [
+      { name: "actions", type: "bytes" },
+      { name: "params", type: "bytes[]" },
+    ],
+    encoded,
+  );
+  const actionIds = (actions.slice(2).match(/../g) ?? []).map((byte) => Number.parseInt(byte, 16));
+  return { actionIds, params };
+}
 
 function unwrapPlan(data: `0x${string}`): {
   actionIds: number[];
@@ -336,43 +373,382 @@ describe("buildUniformBinDistribution", () => {
   });
 });
 
-describe("launch call path", () => {
-  it("passes the referrer and fee as call arguments", () => {
-    const config = validateIntegratorConfig({ referrer: REFERRER, feeBps: 50 });
-    const call = buildLaunchBuyCall({
-      launchpad: "0x00000000000000000000000000000000000000a7",
-      paymentToken: TOKEN_A,
-      amountIn: 1_000n,
-      minTokensOut: 900n,
-      recipient: OWNER,
-      integrator: config,
-      deadline: 1n,
+/**
+ * The launch path.
+ *
+ * These assert the two things a launch adds to a swap - the fee schedule and
+ * the gates - against `LaunchGuardHook`'s actual semantics, and then assert
+ * that the buy itself is a swap and nothing else.
+ */
+describe("launch schedule", () => {
+  function guard(overrides: Partial<LaunchGuard> = {}): LaunchGuard {
+    return {
+      owner: OWNER,
+      startBlock: 1_000n,
+      decayBlocks: 100,
+      enabled: true,
+      initialFeePips: 250_000,
+      finalFeePips: 3_000,
+      maxBuyPerTx: 0n,
+      launchTokenIsCurrency0: true,
+      launched: false,
+      ...overrides,
+    };
+  }
+
+  it("decodes the struct as the ABI returns it, widening startBlock", () => {
+    const decoded = decodeLaunchGuard({
+      owner: OWNER,
+      startBlock: 1_000,
+      decayBlocks: 100,
+      enabled: true,
+      initialFeeBips: 250_000,
+      finalFeeBips: 3_000,
+      maxBuyPerTx: 5n,
+      launchTokenIsCurrency0: false,
+      launched: true,
     });
-    const decoded = decodeFunctionData({ abi: LAUNCHPAD_ABI, data: call.data });
-    expect(decoded.functionName).toBe("buy");
-    const args = decoded.args as readonly unknown[];
-    expect(args[3]).toBe(REFERRER);
-    expect(args[4]).toBe(50);
-    expect(call.value).toBe(0n);
+    expect(decoded.startBlock).toBe(1_000n);
+    // Named for the unit the contract's FEE_DENOMINATOR actually implies.
+    expect(decoded.initialFeePips).toBe(250_000);
+    expect(decoded.finalFeePips).toBe(3_000);
   });
 
-  it("sends the zero address, not the buyer, when no fee is configured", () => {
-    const call = buildLaunchBuyCall({
-      launchpad: "0x00000000000000000000000000000000000000a7",
-      paymentToken: ZERO,
-      amountIn: 1_000n,
-      minTokensOut: 0n,
-      recipient: OWNER,
+  it("treats the zero owner as an unclaimed pool, not a launch at zero fee", () => {
+    const unclaimed = guard({ owner: ZERO });
+    expect(isLaunchConfigured(unclaimed)).toBe(false);
+    expect(launchFeeAtBlock(unclaimed, 1_050n)).toBeNull();
+    expect(launchScheduleAt(unclaimed, 1_050n).phase).toBe("unclaimed");
+  });
+
+  it("reproduces LaunchGuardHook._decayedFee at the boundaries", () => {
+    const g = guard();
+    // elapsed == 0 -> exactly the initial fee.
+    expect(launchFeeAtBlock(g, 1_000n)).toBe(250_000);
+    // elapsed == decayBlocks -> exactly the final fee; the window is half-open.
+    expect(launchFeeAtBlock(g, 1_100n)).toBe(3_000);
+    expect(launchFeeAtBlock(g, 1_101n)).toBe(3_000);
+    // The last taxed block is strictly above the final fee.
+    expect(launchFeeAtBlock(g, 1_099n)).toBeGreaterThan(3_000);
+  });
+
+  it("rounds the fee UP, toward the LPs and away from the sniper", () => {
+    // spread 10, window 3: the floored discount keeps the fee above the exact
+    // linear value at every interior block.
+    const g = guard({ initialFeePips: 10, finalFeePips: 0, decayBlocks: 3 });
+    expect(launchFeeAtBlock(g, 1_000n)).toBe(10);
+    // exact linear would be 6.67 and 3.33; flooring the discount gives 7 and 4.
+    expect(launchFeeAtBlock(g, 1_001n)).toBe(7);
+    expect(launchFeeAtBlock(g, 1_002n)).toBe(4);
+    expect(launchFeeAtBlock(g, 1_003n)).toBe(0);
+  });
+
+  it("never leaves the [finalFee, initialFee] range and never increases", () => {
+    const g = guard();
+    let previous = Number.POSITIVE_INFINITY;
+    for (let block = 995n; block <= 1_110n; block += 1n) {
+      const fee = launchFeeAtBlock(g, block)!;
+      expect(fee).toBeLessThanOrEqual(250_000);
+      expect(fee).toBeGreaterThanOrEqual(3_000);
+      if (block >= 1_000n) expect(fee).toBeLessThanOrEqual(previous);
+      previous = fee;
+    }
+  });
+
+  it("reports a disabled launch as ungated and untaxed, not as closed", () => {
+    const schedule = launchScheduleAt(guard({ enabled: false }), 900n);
+    expect(schedule.phase).toBe("disabled");
+    // `beforeSwap` returns finalFeeBips and returns early: no gate, no cap.
+    expect(schedule.tradingOpen).toBe(true);
+    expect(schedule.feePips).toBe(3_000);
+    expect(schedule.maxBuyPerTxEnforced).toBe(false);
+  });
+
+  it("walks pending -> decaying -> settled", () => {
+    const g = guard({ maxBuyPerTx: 500n });
+    expect(launchScheduleAt(g, 990n).phase).toBe("pending");
+    expect(launchScheduleAt(g, 990n).blocksUntilOpen).toBe(10n);
+    expect(launchScheduleAt(g, 990n).tradingOpen).toBe(false);
+
+    const mid = launchScheduleAt(g, 1_050n);
+    expect(mid.phase).toBe("decaying");
+    expect(mid.blocksRemaining).toBe(50n);
+    expect(mid.decayProgressBps).toBe(5_000);
+    expect(mid.maxBuyPerTxEnforced).toBe(true);
+
+    const done = launchScheduleAt(g, 1_100n);
+    expect(done.phase).toBe("settled");
+    // The hook only checks the cap while `elapsed < decayBlocks`.
+    expect(done.maxBuyPerTxEnforced).toBe(false);
+  });
+});
+
+describe("launch gates", () => {
+  function guard(overrides: Partial<LaunchGuard> = {}): LaunchGuard {
+    return {
+      owner: OWNER,
+      startBlock: 1_000n,
+      decayBlocks: 100,
+      enabled: true,
+      initialFeePips: 250_000,
+      finalFeePips: 3_000,
+      maxBuyPerTx: 500n,
+      launchTokenIsCurrency0: true,
+      launched: false,
+      ...overrides,
+    };
+  }
+
+  it("names the revert a blocked buy would produce", () => {
+    expect(evaluateLaunchBuy({ guard: guard(), blockNumber: 900n, amountIn: 1n }).revert).toBe(
+      "TradingNotOpen",
+    );
+    expect(
+      evaluateLaunchBuy({ guard: guard(), blockNumber: 1_050n, amountIn: 501n }).revert,
+    ).toBe("BuyExceedsMaxPerTx");
+    expect(
+      evaluateLaunchBuy({ guard: guard({ owner: ZERO }), blockNumber: 1_050n, amountIn: 1n })
+        .revert,
+    ).toBe("LaunchNotConfigured");
+  });
+
+  it("allows a buy at exactly the cap, which is what the contract allows", () => {
+    // `if (amountIn > maxBuyPerTx) revert` - strictly greater.
+    expect(
+      evaluateLaunchBuy({ guard: guard(), blockNumber: 1_050n, amountIn: 500n }).reason,
+    ).toBeNull();
+  });
+
+  it("stops enforcing the cap once the window has elapsed", () => {
+    expect(
+      evaluateLaunchBuy({ guard: guard(), blockNumber: 1_100n, amountIn: 10_000n }).reason,
+    ).toBeNull();
+  });
+
+  it("checks the schedule even with no amount entered", () => {
+    expect(evaluateLaunchBuy({ guard: guard(), blockNumber: 900n, amountIn: null }).reason).toBe(
+      "trading-not-open",
+    );
+    expect(
+      evaluateLaunchBuy({ guard: guard(), blockNumber: 1_050n, amountIn: null }).reason,
+    ).toBeNull();
+  });
+});
+
+describe("launch buy call path", () => {
+  const LAUNCH_HOOK = "0x00000000000000000000000000000000000000a8" as const;
+  const ROUTER = "0x00000000000000000000000000000000000000a4" as const;
+
+  const LAUNCH_KEY = createCLPoolKey({
+    currency0: TOKEN_A,
+    currency1: TOKEN_B,
+    hooks: LAUNCH_HOOK,
+    poolManager: MANAGER,
+    // Dynamic fee: the hook rejects a static-fee pool at beforeInitialize.
+    fee: 0x800000,
+    tickSpacing: 60,
+    hooksRegistrationBitmap: 0x0041,
+  });
+
+  // TOKEN_A is currency0 and is the launch token, so a BUY spends TOKEN_B.
+  const BUY_HOP: SwapHop = {
+    poolKey: LAUNCH_KEY,
+    poolType: "CL",
+    currencyIn: TOKEN_B,
+    currencyOut: TOKEN_A,
+  };
+
+  const GUARD: LaunchGuard = {
+    owner: OWNER,
+    startBlock: 1_000n,
+    decayBlocks: 100,
+    enabled: true,
+    initialFeePips: 250_000,
+    finalFeePips: 3_000,
+    maxBuyPerTx: 500n,
+    launchTokenIsCurrency0: true,
+    launched: false,
+  };
+
+  function args(overrides: Record<string, unknown> = {}) {
+    return {
+      router: ROUTER,
+      hop: BUY_HOP,
+      guard: GUARD,
+      blockNumber: 1_050n,
+      amountIn: 100n,
+      minAmountOutGross: 90n,
+      minAmountOutNet: 90n,
       integrator: NO_INTEGRATOR_FEE,
+      recipient: OWNER,
+      sender: OWNER,
+      deadline: 1n,
+      ...overrides,
+    } as Parameters<typeof buildLaunchBuyCall>[0];
+  }
+
+  it("identifies the buy direction the way the hook does", () => {
+    expect(hopIsLaunchBuy(BUY_HOP, GUARD)).toBe(true);
+    const sellHop: SwapHop = {
+      poolKey: LAUNCH_KEY,
+      poolType: "CL",
+      currencyIn: TOKEN_A,
+      currencyOut: TOKEN_B,
+    };
+    expect(hopIsLaunchBuy(sellHop, GUARD)).toBe(false);
+    // Flip which side is the launch token and the answer flips with it.
+    expect(hopIsLaunchBuy(sellHop, { ...GUARD, launchTokenIsCurrency0: false })).toBe(true);
+  });
+
+  it("encodes the ordinary swap plan, not a launch-specific call", () => {
+    const call = buildLaunchBuyCall(args());
+    const direct = buildSwapCall({
+      router: ROUTER,
+      hops: [BUY_HOP],
+      amountIn: 100n,
+      minAmountOutGross: 90n,
+      minAmountOutNet: 90n,
+      integrator: NO_INTEGRATOR_FEE,
+      recipient: OWNER,
+      sender: OWNER,
       deadline: 1n,
     });
-    const decoded = decodeFunctionData({ abi: LAUNCHPAD_ABI, data: call.data });
-    const args = decoded.args as readonly unknown[];
-    expect(args[3]).toBe(ZERO);
-    expect(args[4]).toBe(0);
-    // Native payment carries value.
-    expect(call.value).toBe(1_000n);
-    expect(call.integratorFee).toBeNull();
+    expect(call.data).toBe(direct.data);
+    expect(call.to).toBe(ROUTER);
+    // One INFI_SWAP command, and a plan of swap / settle / take.
+    expect(call.commands).toBe("0x10");
+    const { actionIds } = decodePlan(call.inputs[0]!);
+    expect(actionIds).toEqual([
+      ACTIONS.CL_SWAP_EXACT_IN_SINGLE,
+      ACTIONS.SETTLE_ALL,
+      ACTIONS.TAKE_ALL,
+    ]);
+  });
+
+  it("still threads the integrator fee, because it is still a swap", () => {
+    const config = validateIntegratorConfig({ referrer: REFERRER, feeBps: 50 });
+    const call = buildLaunchBuyCall(args({ integrator: config, minAmountOutNet: 89n }));
+    expect(call.integratorFee?.referrer).toBe(REFERRER);
+    expect(call.integratorFee?.feeBps).toBe(50);
+    const { actionIds } = decodePlan(call.inputs[0]!);
+    expect(actionIds).toContain(ACTIONS.TAKE_PORTION);
+  });
+
+  it("refuses to encode a buy the hook would revert", () => {
+    expect(() => buildLaunchBuyCall(args({ blockNumber: 900n }))).toThrowError(
+      /TradingNotOpen/,
+    );
+    expect(() => buildLaunchBuyCall(args({ amountIn: 501n }))).toThrowError(
+      /BuyExceedsMaxPerTx/,
+    );
+  });
+
+  it("refuses a sell, which is an ordinary swap and not this function's job", () => {
+    const sellHop: SwapHop = {
+      poolKey: LAUNCH_KEY,
+      poolType: "CL",
+      currencyIn: TOKEN_A,
+      currencyOut: TOKEN_B,
+    };
+    expect(() => buildLaunchBuyCall(args({ hop: sellHop }))).toThrowError(/sells the launch token/);
+  });
+
+  it("refuses a bin pool: BinLaunchGuardHook is a different contract", () => {
+    const binHop: SwapHop = {
+      poolKey: BIN_KEY,
+      poolType: "BIN",
+      currencyIn: TOKEN_B,
+      currencyOut: TOKEN_A,
+    };
+    expect(() => buildLaunchBuyCall(args({ hop: binHop }))).toThrowError(
+      /concentrated-liquidity pools only/,
+    );
+  });
+});
+
+describe("launch reads and the four states", () => {
+  const LAUNCH_CHAIN: ChainConfig = {
+    chainId: 31337,
+    name: "Mock chain",
+    nativeCurrency: { name: "Mock gas", symbol: "MOCK-GAS", decimals: 18 },
+    contracts: {
+      vault: "0x00000000000000000000000000000000000000a1",
+      clPoolManager: MANAGER,
+      binPoolManager: "0x00000000000000000000000000000000000000a3",
+      universalRouter: "0x00000000000000000000000000000000000000a4",
+      permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      launchGuardHook: "0x00000000000000000000000000000000000000a8",
+    },
+  };
+
+  /** The same config with the hook removed: a chain with no launchpad on it. */
+  const NO_LAUNCHPAD_CHAIN: ChainConfig = {
+    ...LAUNCH_CHAIN,
+    contracts: { ...LAUNCH_CHAIN.contracts, launchGuardHook: undefined },
+  };
+
+  it("throws ChainConfigError, not an empty list, when no hook is configured", async () => {
+    const adapter = createMockAdapter({ chain: NO_LAUNCHPAD_CHAIN, account: OWNER });
+    // An empty array would read as "the launchpad is here and nobody has
+    // launched", which is a different and untrue statement.
+    await expect(adapter.listLaunches()).rejects.toBeInstanceOf(ChainConfigError);
+    const error: Error | null = await adapter
+      .listLaunches()
+      .then(() => null)
+      .catch((cause: unknown) => cause as Error);
+    expect(isLaunchpadNotConfigured(error)).toBe(true);
+    expect(resolveLaunchDataState({ status: "error", error, data: null })).toBe("not-configured");
+  });
+
+  it("reads a launch keyed by pool id, in pips, labelled mock", async () => {
+    const adapter = createMockAdapter({ chain: LAUNCH_CHAIN, account: OWNER });
+    const launches = await adapter.listLaunches();
+    expect(launches.length).toBe(1);
+    const launch = launches[0]!;
+    expect(launch.source).toBe("mock");
+    expect(launch.hook).toBe(LAUNCH_CHAIN.contracts.launchGuardHook);
+    expect(launch.launchToken.symbol).toBe("MOCK-NEW");
+    // Inside the hook's own caps: MAX_INITIAL_FEE 500_000, MAX_FINAL_FEE 100_000.
+    expect(launch.guard.initialFeePips).toBeLessThanOrEqual(500_000);
+    expect(launch.guard.finalFeePips).toBeLessThanOrEqual(100_000);
+    expect(launch.guard.initialFeePips).toBeGreaterThanOrEqual(launch.guard.finalFeePips);
+    // The pool must carry the dynamic-fee marker or the hook's override is discarded.
+    expect(launch.pool.lpFeePips).toBe(0x800000);
+
+    const byId = await adapter.getLaunch(launch.poolId);
+    expect(byId?.poolId).toBe(launch.poolId);
+  });
+
+  it("reports a pool with no launch record as empty, not as an error", async () => {
+    const adapter = createMockAdapter({ chain: LAUNCH_CHAIN, account: OWNER });
+    const pools = await adapter.listPools();
+    const plain = pools.find((pool) => pool.hooks === ZERO)!;
+    const result = await adapter.getLaunch(plain.id);
+    expect(result).toBeNull();
+    expect(resolveLaunchDataState({ status: "success", error: null, data: result })).toBe("empty");
+    expect(resolveLaunchDataState({ status: "success", error: null, data: [] })).toBe("empty");
+  });
+
+  it("derives the view from the block the launch was read at", async () => {
+    const adapter = createMockAdapter({ chain: LAUNCH_CHAIN, account: OWNER });
+    const launch = (await adapter.listLaunches())[0]!;
+    const view = buildLaunchView(launch);
+    expect(view.schedule.blockNumber).toBe(launch.readAtBlock);
+    // The chain read and the local projection of the same block must agree.
+    expect(view.feeProjectionDriftPips).toBe(0);
+  });
+
+  it("quotes a launch buy through the pool, at the guard's decayed fee", async () => {
+    const adapter = createMockAdapter({ chain: LAUNCH_CHAIN, account: OWNER });
+    const launch = (await adapter.listLaunches())[0]!;
+    const quote = await adapter.quoteSwap({
+      tokenIn: launch.quoteToken,
+      tokenOut: launch.launchToken,
+      amountIn: 10n ** 6n,
+    });
+    // Not the dynamic-fee marker: the rate the hook would override with.
+    expect(quote.lpFeePips).toBe(launch.currentFeePips);
+    expect(quote.grossAmountOut).toBeGreaterThan(0n);
   });
 });
 

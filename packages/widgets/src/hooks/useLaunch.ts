@@ -1,327 +1,237 @@
 // SPDX-License-Identifier: MIT
 /**
- * Headless launch (token sale) participation.
+ * Headless launch participation.
  *
- * A launch buy has three gates a swap does not: a time window, a per-wallet cap
- * and a minimum purchase. All three are evaluated here so the UI can disable
- * the button *and say why* - "Sale has not started" is a better failure than a
- * reverted transaction.
+ * A launch is a pool with `LaunchGuardHook` attached, so buying into one is a
+ * swap and this module owns exactly two things a swap does not have:
+ *
+ * 1. **The schedule.** `startBlock`, `decayBlocks`, and the fee decaying from
+ *    `initialFeePips` to `finalFeePips` between them. All block-denominated,
+ *    never time-denominated: the hook counts blocks, and converting to seconds
+ *    would require a block time this package cannot know.
+ * 2. **The gates.** `TradingNotOpen` before the open, and `BuyExceedsMaxPerTx`
+ *    while the window is live. Both are evaluated here so the button can be
+ *    disabled with the reason, rather than reverting inside the vault lock
+ *    after the user has paid for the whole plan.
+ *
+ * There is no third thing. In particular there is no per-account state to load:
+ * the hook cannot identify a buyer (see {@link ../callpath/launch.js}), so a
+ * "your remaining allocation" row would be fiction with a number on it.
  */
 
-import { useCallback, useMemo, useState } from "react";
-import type { Address, Hex } from "viem";
-import type {
-  ApprovalRequirement,
-  LaunchAccountState,
-  LaunchBuyQuote,
-  LaunchInfo,
-} from "../adapters/protocol.js";
-import { WalletNotConnectedError } from "../adapters/protocol.js";
-import { defaultDeadline } from "../config/chain.js";
+import { useCallback, useMemo } from "react";
+import type { Hex } from "viem";
+import type { PoolId } from "@latchprotocol/sdk";
+import type { LaunchInfo } from "../adapters/protocol.js";
+import {
+  evaluateLaunchBuy,
+  launchScheduleAt,
+  type LaunchBuyGate,
+  type LaunchSchedule,
+} from "../callpath/launch.js";
+import { ChainConfigError } from "../config/chain.js";
 import { useWidgetContext } from "../context/WidgetProvider.js";
-import { minimumReceived, progressPercent } from "../core/math.js";
+import type { QuoteBreakdown } from "../core/math.js";
 import { useAsyncResource, type AsyncResource, type AsyncStatus } from "./useAsyncResource.js";
+import { useSwapExecute, type UseSwapExecuteResult } from "./useSwapExecute.js";
+import { useSwapQuote } from "./useSwapQuote.js";
 
-/** Lifecycle of a launch purchase. */
-export type LaunchBuyStep =
-  | "idle"
-  | "needs-approval"
-  | "approving"
-  | "building"
-  | "awaiting-signature"
-  | "pending"
-  | "success"
-  | "error";
+/**
+ * The four states a launch surface can be in, plus the one where it works.
+ *
+ * They are kept distinct on purpose, because they call for four different
+ * sentences and only one of them is the user's problem:
+ *
+ * - `loading` — a read is in flight.
+ * - `error` — the read failed. The chain is unreachable or the address is not
+ *   a `LaunchGuardHook`. Say so; never fall back to an example.
+ * - `not-configured` — this chain's config carries no `launchGuardHook`
+ *   address, because no `LaunchGuardHook` is deployed on it. Nothing is wrong
+ *   and nothing will load.
+ * - `empty` — the hook is there and answered, and no launch is registered for
+ *   the pool (or for any configured pool).
+ * - `ready` — a launch record was read.
+ */
+export type LaunchDataState = "loading" | "error" | "not-configured" | "empty" | "ready";
 
-/** Why a purchase is currently not allowed. `null` means it is. */
-export type LaunchBlockReason =
-  | "not-started"
-  | "ended"
-  | "sold-out"
-  | "cancelled"
-  | "paused"
-  | "wallet-cap-reached"
-  | "below-minimum"
-  | "exceeds-wallet-cap"
-  | "exceeds-hard-cap"
-  | "insufficient-balance"
-  | "no-wallet"
-  | null;
-
-/** Everything a launch UI needs about the sale's current standing. */
-export interface LaunchSaleView {
-  readonly launch: LaunchInfo;
-  /** Sale progress as a percentage of `totalForSale`. */
-  readonly progressPercent: number;
-  /** Raised as a percentage of the hard cap. */
-  readonly raisedPercent: number;
-  /** Seconds until the sale starts, or `null` if it already has. */
-  readonly secondsUntilStart: number | null;
-  /** Seconds until the sale ends, or `null` if it already has. */
-  readonly secondsUntilEnd: number | null;
-  readonly isMock: boolean;
+/**
+ * `true` when the failure was "there is no launchpad on this chain" rather than
+ * "the read broke".
+ *
+ * The adapters signal it by throwing `ChainConfigError` naming
+ * `launchGuardHook`, which is the same mechanism every other missing-contract
+ * path in this package uses.
+ */
+export function isLaunchpadNotConfigured(error: Error | null): boolean {
+  return error instanceof ChainConfigError && error.contract === "launchGuardHook";
 }
 
-/** Derives the presentational view of a sale. Pure. */
-export function buildLaunchSaleView(
-  launch: LaunchInfo,
-  nowSeconds: number,
-  isMock: boolean,
-): LaunchSaleView {
-  const start = Number(launch.startTime);
-  const end = Number(launch.endTime);
-  return {
-    launch,
-    progressPercent: progressPercent(launch.sold, launch.totalForSale),
-    raisedPercent: progressPercent(launch.raised, launch.hardCap),
-    secondsUntilStart: nowSeconds < start ? start - nowSeconds : null,
-    secondsUntilEnd: nowSeconds < end ? end - nowSeconds : null,
-    isMock,
-  };
+/** Maps an async resource onto {@link LaunchDataState}. */
+export function resolveLaunchDataState(resource: {
+  readonly status: AsyncStatus;
+  readonly error: Error | null;
+  readonly data: unknown;
+}): LaunchDataState {
+  if (resource.status === "error") {
+    return isLaunchpadNotConfigured(resource.error) ? "not-configured" : "error";
+  }
+  if (resource.status === "loading" || resource.status === "idle") return "loading";
+  if (resource.data === null) return "empty";
+  if (Array.isArray(resource.data) && resource.data.length === 0) return "empty";
+  return "ready";
 }
 
-/** Evaluates every gate that could block a purchase. Pure and exhaustive. */
-export function evaluateLaunchPurchase(args: {
-  readonly launch: LaunchInfo;
-  readonly accountState: LaunchAccountState | null;
-  readonly amountIn: bigint | null;
-  readonly balance: bigint | null;
-  readonly nowSeconds: number;
-}): { readonly reason: LaunchBlockReason; readonly message: string | null } {
-  const { launch, accountState, amountIn, balance, nowSeconds } = args;
-
-  if (launch.status === "cancelled") return { reason: "cancelled", message: "Sale was cancelled" };
-  if (launch.status === "paused") return { reason: "paused", message: "Sale is paused" };
-  if (nowSeconds < Number(launch.startTime)) {
-    return { reason: "not-started", message: "Sale has not started yet" };
-  }
-  if (nowSeconds > Number(launch.endTime)) {
-    return { reason: "ended", message: "Sale has ended" };
-  }
-  if (launch.sold >= launch.totalForSale) {
-    return { reason: "sold-out", message: "Sale is sold out" };
-  }
-  if (accountState === null) {
-    return { reason: "no-wallet", message: "Connect a wallet to participate" };
-  }
-  if (accountState.capRemaining !== null && accountState.capRemaining <= 0n) {
-    return { reason: "wallet-cap-reached", message: "You have reached the per-wallet cap" };
-  }
-  if (amountIn === null || amountIn <= 0n) {
-    return { reason: null, message: null };
-  }
-  if (amountIn < launch.minPurchase) {
-    return { reason: "below-minimum", message: "Amount is below the minimum purchase" };
-  }
-  if (accountState.capRemaining !== null && amountIn > accountState.capRemaining) {
-    return { reason: "exceeds-wallet-cap", message: "Amount exceeds your remaining wallet cap" };
-  }
-  if (launch.raised + amountIn > launch.hardCap) {
-    return { reason: "exceeds-hard-cap", message: "Amount exceeds the sale's remaining capacity" };
-  }
-  if (balance !== null && amountIn > balance) {
-    return { reason: "insufficient-balance", message: "Insufficient balance" };
-  }
-  return { reason: null, message: null };
-}
-
-/** Loads a launch by address. */
-export function useLaunch(launchId: Address | null): AsyncResource<LaunchInfo | null> {
-  const { adapter } = useWidgetContext();
-  const loader = useCallback(async (): Promise<LaunchInfo | null> => {
-    if (launchId === null) return null;
-    return adapter.getLaunch(launchId);
-  }, [adapter, launchId]);
-  return useAsyncResource(loader, [adapter, launchId], {
-    enabled: launchId !== null,
-    refetchIntervalMs: 20_000,
-  });
-}
-
-/** Every launch the adapter surfaces. */
+/**
+ * Every launch the adapter surfaces.
+ *
+ * Polled, because the schedule is a function of the block height and a stale
+ * "opens in 12 blocks" is worse than no number.
+ */
 export function useLaunchList(): AsyncResource<readonly LaunchInfo[]> {
   const { adapter } = useWidgetContext();
-  return useAsyncResource(useCallback(() => adapter.listLaunches(), [adapter]), [adapter]);
+  return useAsyncResource(
+    useCallback(() => adapter.listLaunches(), [adapter]),
+    [adapter],
+    { refetchIntervalMs: 12_000 },
+  );
 }
 
-/** The connected wallet's standing in a launch. */
-export function useLaunchAccountState(
-  launchId: Address | null,
-  account: Address | null,
-): AsyncResource<LaunchAccountState | null> {
+/** One launch, by pool id. */
+export function useLaunch(poolId: PoolId | null): AsyncResource<LaunchInfo | null> {
   const { adapter } = useWidgetContext();
-  const loader = useCallback(async (): Promise<LaunchAccountState | null> => {
-    if (launchId === null || account === null) return null;
-    return adapter.getLaunchAccountState(launchId, account);
-  }, [adapter, launchId, account]);
-  return useAsyncResource(loader, [adapter, launchId, account], {
-    enabled: launchId !== null && account !== null,
-    refetchIntervalMs: 20_000,
+  const loader = useCallback(async (): Promise<LaunchInfo | null> => {
+    if (poolId === null) return null;
+    return adapter.getLaunch(poolId);
+  }, [adapter, poolId]);
+  return useAsyncResource(loader, [adapter, poolId], {
+    enabled: poolId !== null,
+    refetchIntervalMs: 12_000,
   });
+}
+
+/** Everything a launch UI needs, derived from one read. Pure. */
+export interface LaunchView {
+  readonly launch: LaunchInfo;
+  /** The schedule as of the block the launch was read at. */
+  readonly schedule: LaunchSchedule;
+  /**
+   * Where the fee the hook is charging sits between `initialFeePips` and
+   * `finalFeePips`, in bps: `0` at the opening tax, `10_000` once settled.
+   * `null` when the two ends are equal, where there is no span to be inside of.
+   */
+  readonly feeSpanProgressBps: number | null;
+  /**
+   * `currentFeePips` (read from the hook) minus the locally projected fee for
+   * the same block.
+   *
+   * Expected to be exactly `0`: {@link ../callpath/launch.js | launchFeeAtBlock}
+   * reproduces `LaunchGuardHook.feeAt` including its rounding. Anything else
+   * means the two disagree, and a UI should show the chain's number and say the
+   * projection is off rather than quietly preferring one.
+   */
+  readonly feeProjectionDriftPips: number | null;
+}
+
+/** Derives the presentational view of a launch. Pure. */
+export function buildLaunchView(launch: LaunchInfo): LaunchView {
+  const schedule = launchScheduleAt(launch.guard, launch.readAtBlock);
+  const { initialFeePips, finalFeePips } = launch.guard;
+  const span = initialFeePips - finalFeePips;
+  const feeSpanProgressBps =
+    span <= 0
+      ? null
+      : Math.max(
+          0,
+          Math.min(10_000, Math.round(((initialFeePips - launch.currentFeePips) * 10_000) / span)),
+        );
+  return {
+    launch,
+    schedule,
+    feeSpanProgressBps,
+    feeProjectionDriftPips:
+      schedule.feePips === null ? null : launch.currentFeePips - schedule.feePips,
+  };
 }
 
 /** Parameters for {@link useLaunchBuy}. */
 export interface UseLaunchBuyParams {
   readonly launch: LaunchInfo | null;
+  /** Input amount in the quote currency's smallest unit. */
   readonly amountIn: bigint | null;
   readonly slippageBps?: number;
-  readonly recipient?: Address;
+  readonly recipient?: `0x${string}`;
   readonly onSuccess?: (hash: Hex) => void;
 }
 
 /** Result of {@link useLaunchBuy}. */
 export interface UseLaunchBuyResult {
-  readonly quote: LaunchBuyQuote | null;
+  /** The hook's gates, evaluated against the block the launch was read at. */
+  readonly gate: LaunchBuyGate;
+  /** Swap quote breakdown, or `null` while there is nothing to quote. */
+  readonly breakdown: QuoteBreakdown | null;
   readonly quoteStatus: AsyncStatus;
   readonly quoteError: Error | null;
-  readonly step: LaunchBuyStep;
-  readonly error: Error | null;
-  readonly txHash: Hex | null;
-  readonly approvals: readonly ApprovalRequirement[];
-  readonly needsApproval: boolean;
-  readonly statusMessage: string;
-  approve(): Promise<void>;
-  execute(): Promise<void>;
-  reset(): void;
+  readonly quoteIsRefreshing: boolean;
+  /** Output units per input unit, for display only. */
+  readonly rate: number | null;
+  /** The swap execution controller. Approvals, signature, confirmation. */
+  readonly execution: UseSwapExecuteResult;
+  /** `true` when the gates pass and the swap layer is ready to send. */
+  readonly canBuy: boolean;
 }
 
-function toError(cause: unknown): Error {
-  return cause instanceof Error ? cause : new Error(String(cause));
-}
-
-/** Quotes and executes a launch purchase, threading the integrator referrer. */
+/**
+ * Quotes and executes a launch buy.
+ *
+ * Deliberately a thin composition of `useSwapQuote` and `useSwapExecute` rather
+ * than a parallel implementation: a launch buy that took a different code path
+ * from a swap would be a second call path to keep correct, and the second one
+ * is always the one that rots.
+ *
+ * Quoting is suppressed while the hook would reject the swap. Quoting a trade
+ * that reverts in `beforeSwap` gets a revert, not a price, and rendering that
+ * as a failed quote would blame the pool for a closed gate.
+ */
 export function useLaunchBuy(params: UseLaunchBuyParams): UseLaunchBuyResult {
-  const { adapter, chain, integrator, defaultSlippageBps } = useWidgetContext();
   const { launch, amountIn } = params;
-  const slippageBps = params.slippageBps ?? defaultSlippageBps;
 
-  const [step, setStep] = useState<LaunchBuyStep>("idle");
-  const [error, setError] = useState<Error | null>(null);
-  const [txHash, setTxHash] = useState<Hex | null>(null);
-  const [approvalToken, setApprovalToken] = useState(0);
-
-  const accountResource = useAsyncResource(
-    useCallback(() => adapter.getAccount(), [adapter]),
-    [adapter],
-  );
-  const account = accountResource.data;
-
-  const quoteLoader = useCallback(async (): Promise<LaunchBuyQuote | null> => {
-    if (launch === null || amountIn === null || amountIn <= 0n) return null;
-    return adapter.quoteLaunchBuy(launch, amountIn);
-  }, [adapter, launch, amountIn]);
-
-  const quoteResource = useAsyncResource<LaunchBuyQuote | null>(
-    quoteLoader,
-    [adapter, launch?.id ?? null, amountIn?.toString() ?? null],
-    { enabled: launch !== null && amountIn !== null && amountIn > 0n },
-  );
-
-  const approvalLoader = useCallback(async (): Promise<readonly ApprovalRequirement[]> => {
-    if (launch === null || amountIn === null || account === null) return [];
-    return adapter.getApprovalRequirements(launch.paymentToken, account, amountIn);
-  }, [adapter, launch, amountIn, account]);
-
-  const approvalResource = useAsyncResource<readonly ApprovalRequirement[]>(
-    approvalLoader,
-    [adapter, launch?.id ?? null, amountIn?.toString() ?? null, account, approvalToken],
-    { enabled: launch !== null && amountIn !== null && amountIn > 0n && account !== null },
-  );
-  const approvals = approvalResource.data ?? [];
-
-  const approve = useCallback(async (): Promise<void> => {
-    const next = approvals[0];
-    if (next === undefined) return;
-    setError(null);
-    setStep("approving");
-    try {
-      const transaction = await adapter.buildApproval(next);
-      const hash = await adapter.sendTransaction(transaction);
-      await adapter.waitForTransaction(hash);
-      setApprovalToken((token) => token + 1);
-      setStep("idle");
-    } catch (cause: unknown) {
-      setError(toError(cause));
-      setStep("error");
+  const gate = useMemo<LaunchBuyGate>(() => {
+    if (launch === null) {
+      return { reason: "not-configured", message: "No launch loaded", revert: null };
     }
-  }, [adapter, approvals]);
+    return evaluateLaunchBuy({
+      guard: launch.guard,
+      blockNumber: launch.readAtBlock,
+      amountIn,
+    });
+  }, [launch, amountIn]);
 
-  const execute = useCallback(async (): Promise<void> => {
-    const quote = quoteResource.data;
-    if (quote === null) return;
-    if (account === null) {
-      setError(new WalletNotConnectedError("buy into this launch"));
-      setStep("error");
-      return;
-    }
-    setError(null);
-    setStep("building");
-    try {
-      const transaction = await adapter.buildLaunchBuy({
-        quote,
-        minTokensOut: minimumReceived(quote.tokensOut, slippageBps),
-        recipient: params.recipient ?? account,
-        deadline: defaultDeadline(chain),
-        integrator,
-      });
-      setStep("awaiting-signature");
-      const hash = await adapter.sendTransaction(transaction);
-      setTxHash(hash);
-      setStep("pending");
-      const outcome = await adapter.waitForTransaction(hash);
-      if (outcome.status === "reverted") throw new Error(`Purchase reverted (${hash})`);
-      setStep("success");
-      params.onSuccess?.(hash);
-    } catch (cause: unknown) {
-      setError(toError(cause));
-      setStep("error");
-    }
-  }, [adapter, account, chain, integrator, params, quoteResource.data, slippageBps]);
+  const quote = useSwapQuote({
+    tokenIn: launch?.quoteToken ?? null,
+    tokenOut: launch?.launchToken ?? null,
+    amountIn,
+    ...(params.slippageBps === undefined ? {} : { slippageBps: params.slippageBps }),
+    enabled: launch !== null && gate.reason === null,
+  });
 
-  const reset = useCallback(() => {
-    setStep("idle");
-    setError(null);
-    setTxHash(null);
-  }, []);
-
-  const effectiveStep: LaunchBuyStep =
-    step === "idle" && approvals.length > 0 ? "needs-approval" : step;
-
-  const statusMessage = useMemo(() => {
-    const mockPrefix = adapter.isMock ? "Simulated (mock adapter): " : "";
-    switch (effectiveStep) {
-      case "needs-approval":
-        return `Approve ${approvals[0]?.token.symbol ?? "the payment token"} before buying`;
-      case "approving":
-        return `${mockPrefix}Waiting for the approval to confirm`;
-      case "building":
-        return `${mockPrefix}Preparing the purchase`;
-      case "awaiting-signature":
-        return `${mockPrefix}Confirm the transaction in your wallet`;
-      case "pending":
-        return `${mockPrefix}Purchase submitted, waiting for confirmation`;
-      case "success":
-        return `${mockPrefix}Purchase confirmed`;
-      case "error":
-        return error === null ? "Something went wrong" : error.message;
-      case "idle":
-      default:
-        return "";
-    }
-  }, [effectiveStep, approvals, error, adapter.isMock]);
+  const execution = useSwapExecute({
+    tokenIn: launch?.quoteToken ?? null,
+    tokenOut: launch?.launchToken ?? null,
+    amountIn,
+    quote: quote.quote,
+    breakdown: quote.breakdown,
+    ...(params.recipient === undefined ? {} : { recipient: params.recipient }),
+    ...(params.onSuccess === undefined ? {} : { onSuccess: params.onSuccess }),
+  });
 
   return {
-    quote: quoteResource.data,
-    quoteStatus: quoteResource.status,
-    quoteError: quoteResource.error,
-    step: effectiveStep,
-    error,
-    txHash,
-    approvals,
-    needsApproval: approvals.length > 0,
-    statusMessage,
-    approve,
-    execute,
-    reset,
+    gate,
+    breakdown: quote.breakdown,
+    quoteStatus: quote.status,
+    quoteError: quote.error,
+    quoteIsRefreshing: quote.isRefreshing,
+    rate: quote.rate,
+    execution,
+    canBuy: gate.reason === null && execution.canExecute && quote.status === "success",
   };
 }

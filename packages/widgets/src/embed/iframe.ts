@@ -85,9 +85,6 @@ export type BridgeMethod = Extract<
   | "buildRemoveLiquidity"
   | "listLaunches"
   | "getLaunch"
-  | "getLaunchAccountState"
-  | "quoteLaunchBuy"
-  | "buildLaunchBuy"
   | "sendTransaction"
   | "waitForTransaction"
 >;
@@ -443,9 +440,6 @@ export async function createIframeBridgeAdapter(
     buildRemoveLiquidity: call("buildRemoveLiquidity"),
     listLaunches: call("listLaunches"),
     getLaunch: call("getLaunch"),
-    getLaunchAccountState: call("getLaunchAccountState"),
-    quoteLaunchBuy: call("quoteLaunchBuy"),
-    buildLaunchBuy: call("buildLaunchBuy"),
     sendTransaction: call("sendTransaction"),
     waitForTransaction: call("waitForTransaction"),
   };

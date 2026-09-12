@@ -21,8 +21,10 @@
 
 import type { Address, Hex } from "viem";
 import type { PoolKey, PoolId } from "@latchprotocol/sdk";
+import type { LaunchGuard } from "../callpath/launch.js";
 import type { ChainConfig } from "../config/chain.js";
 import type { ResolvedIntegratorConfig } from "../config/integrator.js";
+import type { TokenSaleAdapter } from "./sale.js";
 
 /** Which flavour of pool a key addresses. */
 export type PoolType = "CL" | "BIN";
@@ -254,76 +256,42 @@ export interface RemoveLiquidityQuote {
   readonly source: DataSource;
 }
 
-/** Lifecycle of a token sale. */
-export type LaunchStatus = "upcoming" | "live" | "paused" | "ended" | "sold-out" | "cancelled";
-
-/** Shape of a sale's price curve. */
-export type LaunchPriceCurve =
-  | { readonly kind: "fixed"; readonly price: bigint }
-  | { readonly kind: "linear"; readonly startPrice: bigint; readonly endPrice: bigint }
-  | {
-      readonly kind: "exponential";
-      readonly startPrice: bigint;
-      readonly endPrice: bigint;
-      /** Curvature exponent, scaled to 1e18. */
-      readonly exponent: bigint;
-    };
-
-/** A token launch the launch widget can buy into. */
+/**
+ * A Latch launch.
+ *
+ * Not a token sale. A launch is a concentrated-liquidity pool with
+ * `LaunchGuardHook` named in its `PoolKey` and a fee that decays from
+ * `initialFeePips` to `finalFeePips` over `decayBlocks` blocks. Everything the
+ * hook knows is keyed by `PoolId`, and every field below is read from it or
+ * from the pool key — there is no sale record, no cap, no allocation and no
+ * per-account state to read, because none of those exist.
+ *
+ * Buying into a launch is an ordinary swap, quoted with `quoteSwap` and
+ * executed with `buildSwap`, which is why this interface adds no buy method.
+ */
 export interface LaunchInfo {
-  readonly id: Address;
-  readonly token: TokenInfo;
-  /** Currency buyers pay in. */
-  readonly paymentToken: TokenInfo;
-  readonly status: LaunchStatus;
-  readonly totalForSale: bigint;
-  readonly sold: bigint;
-  readonly raised: bigint;
-  readonly softCap: bigint | null;
-  readonly hardCap: bigint;
-  /** Unix seconds. */
-  readonly startTime: bigint;
-  readonly endTime: bigint;
-  /** Maximum a single wallet may spend, in the payment currency. */
-  readonly perWalletCap: bigint | null;
-  readonly minPurchase: bigint;
-  readonly priceCurve: LaunchPriceCurve;
+  readonly poolId: PoolId;
+  /** The pool itself: key, tokens, tick spacing. */
+  readonly pool: PoolInfo;
+  /** The `LaunchGuardHook` the pool key names. */
+  readonly hook: Address;
+  /** The token being launched, resolved from `guard.launchTokenIsCurrency0`. */
+  readonly launchToken: TokenInfo;
+  /** The other side of the pool: what buyers pay with, and what caps are in. */
+  readonly quoteToken: TokenInfo;
+  /** The decoded `getLaunch(poolId)` record. */
+  readonly guard: LaunchGuard;
+  /**
+   * `currentFee(poolId)` as the hook answered it, in pips.
+   *
+   * Read from chain rather than derived, so the number on screen is the number
+   * the contract will charge. {@link ../callpath/launch.js | launchFeeAtBlock}
+   * reproduces the same maths locally for the projected schedule.
+   */
+  readonly currentFeePips: number;
+  /** Block height the reads above were taken at. */
+  readonly readAtBlock: bigint;
   readonly source: DataSource;
-}
-
-/** A single account's standing in a launch. */
-export interface LaunchAccountState {
-  readonly launchId: Address;
-  readonly account: Address;
-  /** Payment currency already spent by this wallet. */
-  readonly spent: bigint;
-  /** Tokens already allocated to this wallet. */
-  readonly allocated: bigint;
-  /** Remaining spend allowed under the per-wallet cap. Null when uncapped. */
-  readonly capRemaining: bigint | null;
-  /** Whether the wallet is permitted to buy right now, and why not. */
-  readonly eligible: boolean;
-  readonly ineligibleReason: string | null;
-  readonly source: DataSource;
-}
-
-/** Quote for a launch purchase. */
-export interface LaunchBuyQuote {
-  readonly launch: LaunchInfo;
-  readonly amountIn: bigint;
-  readonly tokensOut: bigint;
-  /** Effective price paid, in payment units per whole token. */
-  readonly effectivePrice: bigint;
-  readonly source: DataSource;
-}
-
-/** Request to build a launch purchase transaction. */
-export interface LaunchBuyExecutionRequest {
-  readonly quote: LaunchBuyQuote;
-  readonly minTokensOut: bigint;
-  readonly recipient: Address;
-  readonly deadline: bigint;
-  readonly integrator: ResolvedIntegratorConfig;
 }
 
 /** Result of waiting on a transaction. */
@@ -384,11 +352,24 @@ export interface ProtocolAdapter {
     request: RemoveLiquidityExecutionRequest,
   ): Promise<WidgetTransactionRequest>;
 
+  /**
+   * Launch pools this deployment surfaces.
+   *
+   * Must throw — not return `[]` — when the chain config carries no
+   * `launchGuardHook` address. An empty array means "the hook is deployed and
+   * no pool uses it"; a `ChainConfigError` means "there is no hook here". A UI
+   * has to be able to tell those apart, and only one of them is a launchpad
+   * that does not exist on this chain.
+   */
   listLaunches(): Promise<readonly LaunchInfo[]>;
-  getLaunch(id: Address): Promise<LaunchInfo | null>;
-  getLaunchAccountState(id: Address, account: Address): Promise<LaunchAccountState>;
-  quoteLaunchBuy(launch: LaunchInfo, amountIn: bigint): Promise<LaunchBuyQuote>;
-  buildLaunchBuy(request: LaunchBuyExecutionRequest): Promise<WidgetTransactionRequest>;
+  /** One launch by pool id, or `null` when that pool has no launch record. */
+  getLaunch(poolId: PoolId): Promise<LaunchInfo | null>;
+
+  /**
+   * Optional. A third-party token sale contract, which Latch does not have.
+   * Nothing in this package reads it; see {@link ./sale.js}.
+   */
+  readonly sale?: TokenSaleAdapter;
 
   sendTransaction(request: WidgetTransactionRequest): Promise<Hex>;
   waitForTransaction(hash: Hex): Promise<TransactionOutcome>;

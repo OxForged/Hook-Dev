@@ -2,9 +2,10 @@
 /**
  * Mock protocol adapter - **DEVELOPMENT ONLY. NOT MARKET DATA.**
  *
- * No LatchProtocol contracts are deployed and there is no RPC endpoint, so this
- * adapter exists to let the widgets be built and reviewed end to end. Every
- * number it returns is invented by a deterministic simulator over fake reserves.
+ * This adapter exists so the widgets can be built, styled and reviewed end to
+ * end with no chain attached. Every number it returns is invented by a
+ * deterministic simulator over fake reserves. Latch itself IS deployed - point
+ * `createViemAdapter` at it if you want real numbers.
  *
  * Three rules keep that from becoming a lie users can act on:
  *
@@ -21,9 +22,21 @@
  */
 
 import { keccak256, stringToHex, type Address, type Hex } from "viem";
-import { createCLPoolKey, createBinPoolKey, poolKeyToId } from "@latchprotocol/sdk";
+import {
+  createCLPoolKey,
+  createBinPoolKey,
+  poolKeyToId,
+  DYNAMIC_FEE_FLAG,
+  type PoolId,
+} from "@latchprotocol/sdk";
 import type { ChainConfig } from "../config/chain.js";
+import { requireContract } from "../config/chain.js";
 import { BIN_DISTRIBUTION_SCALE } from "../callpath/constants.js";
+import {
+  isLaunchConfigured,
+  launchFeeAtBlock,
+  type LaunchGuard,
+} from "../callpath/launch.js";
 import {
   NoRouteError,
   UnsupportedOperationError,
@@ -33,9 +46,6 @@ import {
   type AddLiquidityQuoteRequest,
   type ApprovalRequirement,
   type BinLiquidityShare,
-  type LaunchAccountState,
-  type LaunchBuyExecutionRequest,
-  type LaunchBuyQuote,
   type LaunchInfo,
   type PoolInfo,
   type PoolState,
@@ -87,7 +97,21 @@ const MOCK_TOKENS: readonly TokenInfo[] = [
     name: "Mock stable unit (fictional)",
     decimals: 6,
   },
+  {
+    address: mockAddress("launch-token"),
+    symbol: "MOCK-NEW",
+    name: "Mock launch token (fictional)",
+    decimals: 18,
+  },
 ];
+
+/**
+ * Block height the mock's clock starts from.
+ *
+ * Any number would do; a round one makes it obvious in a screenshot that this
+ * is not a chain's real height.
+ */
+const MOCK_BASE_BLOCK = 1_000_000n;
 
 function tokenBySymbol(symbol: string): TokenInfo {
   const token = MOCK_TOKENS.find((candidate) => candidate.symbol === symbol);
@@ -161,15 +185,15 @@ class MockProtocolAdapter implements ProtocolAdapter {
   readonly #erc20Allowances = new Map<string, bigint>();
   readonly #permit2Allowances = new Map<string, bigint>();
   readonly #positions: PositionInfo[] = [];
-  readonly #launches: LaunchInfo[];
-  readonly #launchSpend = new Map<string, bigint>();
+  readonly #launchGuards = new Map<PoolId, LaunchGuard>();
+  readonly #startedAtMs = Date.now();
   #nonce = 0;
 
   constructor(options: MockAdapterOptions) {
     this.#options = options;
     this.chain = options.chain;
     this.#pools = this.#buildPools();
-    this.#launches = this.#buildLaunches();
+    this.#seedLaunchGuards();
     this.#seedBalances();
     this.#seedPositions();
   }
@@ -243,6 +267,44 @@ class MockProtocolAdapter implements ProtocolAdapter {
       });
     }
 
+    // The launch pool. A launch is not a sale contract: it is this - a CL pool
+    // with LaunchGuardHook in its key and a DYNAMIC fee, which is why `fee` is
+    // the dynamic-fee marker rather than a number. The hook rejects a
+    // static-fee pool at `beforeInitialize`, so a mock with a static fee here
+    // would be a pool the real hook could not have created.
+    const launchHook = this.chain.contracts.launchGuardHook;
+    if (launchHook !== undefined) {
+      const [t0, t1] = sortPair(tokenBySymbol("MOCK-NEW"), usd);
+      const key = createCLPoolKey({
+        currency0: t0.address,
+        currency1: t1.address,
+        hooks: launchHook,
+        poolManager: clManager,
+        fee: DYNAMIC_FEE_FLAG,
+        tickSpacing: 60,
+        // beforeInitialize (bit 0) | beforeSwap (bit 6), what
+        // LaunchGuardHook.getHooksRegistrationBitmap() returns.
+        hooksRegistrationBitmap: 0x0041,
+      });
+      const reserves = reservesFor(t0, t1, 1n);
+      pools.push({
+        info: {
+          id: poolKeyToId(key),
+          key,
+          poolType: "CL",
+          token0: t0,
+          token1: t1,
+          lpFeePips: DYNAMIC_FEE_FLAG,
+          tickSpacing: 60,
+          hooks: launchHook,
+        },
+        reserve0: reserves[0],
+        reserve1: reserves[1],
+        currentTick: 0,
+        activeId: 0,
+      });
+    }
+
     {
       const [t0, t1] = sortPair(a, b);
       const key = createBinPoolKey({
@@ -275,38 +337,43 @@ class MockProtocolAdapter implements ProtocolAdapter {
     return pools;
   }
 
-  #buildLaunches(): LaunchInfo[] {
-    const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
-    const usd = tokenBySymbol("mUSD");
-    const launchToken: TokenInfo = {
-      address: mockAddress("launch-token"),
-      symbol: "MOCK-NEW",
-      name: "Mock launch token (fictional sale)",
-      decimals: 18,
-    };
-    return [
-      {
-        id: this.chain.contracts.launchpad ?? mockAddress("launchpad"),
-        token: launchToken,
-        paymentToken: usd,
-        status: "live",
-        totalForSale: 1_000_000n * 10n ** 18n,
-        sold: 412_500n * 10n ** 18n,
-        raised: 82_500n * 10n ** 6n,
-        softCap: 50_000n * 10n ** 6n,
-        hardCap: 200_000n * 10n ** 6n,
-        startTime: nowSeconds - 3_600n * 30n,
-        endTime: nowSeconds + 3_600n * 42n,
-        perWalletCap: 2_500n * 10n ** 6n,
-        minPurchase: 10n * 10n ** 6n,
-        priceCurve: {
-          kind: "linear",
-          startPrice: 150_000n,
-          endPrice: 300_000n,
-        },
-        source: "mock",
-      },
-    ];
+  /**
+   * A fake `LaunchGuardHook` record for the fake launch pool.
+   *
+   * The shape is the contract's, not a convenient approximation: the same nine
+   * fields, the same units (pips, with `FEE_DENOMINATOR = 1_000_000`), and a
+   * schedule the hook would accept — `initialFeePips <= MAX_INITIAL_FEE`,
+   * `finalFeePips <= MAX_FINAL_FEE`, `initialFeePips >= finalFeePips`. A mock
+   * that produced a configuration the real hook would reject would train the UI
+   * on states that cannot occur.
+   *
+   * It opens 60 mock blocks after the adapter is constructed and decays over
+   * 600, so a developer sees `pending`, then `decaying`, then `settled` without
+   * touching anything.
+   */
+  #seedLaunchGuards(): void {
+    const hook = this.chain.contracts.launchGuardHook;
+    if (hook === undefined) return;
+    for (const pool of this.#pools) {
+      if (pool.info.poolType !== "CL" || pool.info.hooks !== hook) continue;
+      const launchTokenIsCurrency0 = pool.info.token0.symbol === "MOCK-NEW";
+      const quoteDecimals = launchTokenIsCurrency0
+        ? pool.info.token1.decimals
+        : pool.info.token0.decimals;
+      this.#launchGuards.set(pool.info.id, {
+        owner: mockAddress("launch-owner"),
+        startBlock: MOCK_BASE_BLOCK + 60n,
+        decayBlocks: 600,
+        enabled: true,
+        // 25% at the open decaying to 0.30%: a plausible sniper tax, inside the
+        // hook's MAX_INITIAL_FEE (500_000) and MAX_FINAL_FEE (100_000) caps.
+        initialFeePips: 250_000,
+        finalFeePips: 3_000,
+        maxBuyPerTx: 500n * 10n ** BigInt(quoteDecimals),
+        launchTokenIsCurrency0,
+        launched: false,
+      });
+    }
   }
 
   #seedBalances(): void {
@@ -490,7 +557,7 @@ class MockProtocolAdapter implements ProtocolAdapter {
         pool.info.token0.address.toLowerCase() === hop.tokenIn.address.toLowerCase();
       const reserveIn = zeroForOne ? pool.reserve0 : pool.reserve1;
       const reserveOut = zeroForOne ? pool.reserve1 : pool.reserve0;
-      const feePips = pool.info.lpFeePips;
+      const feePips = this.#effectiveFeePips(pool.info);
       const hopFee = (amount * BigInt(feePips)) / 1_000_000n;
       if (steps.length === 0) lpFeeAmount = hopFee;
       amount = constantProductOut(amount, reserveIn, reserveOut, feePips);
@@ -654,82 +721,86 @@ class MockProtocolAdapter implements ProtocolAdapter {
     };
   }
 
+  /**
+   * Launch pools, selected exactly the way the live adapter selects them: every
+   * CL pool whose key names the configured `launchGuardHook`.
+   *
+   * Throws when no hook address is configured, so a host can exercise the
+   * widget's "not configured on this chain" state against the mock instead of
+   * discovering it in production.
+   */
   async listLaunches(): Promise<readonly LaunchInfo[]> {
     await this.#tick();
-    return this.#launches;
+    const hook = requireContract(this.chain, "launchGuardHook", "read a launch schedule");
+    return this.#pools
+      .filter((pool) => pool.info.poolType === "CL" && pool.info.hooks === hook)
+      .map((pool) => this.#launchFor(pool.info, hook))
+      .filter((launch): launch is LaunchInfo => launch !== null);
   }
 
-  async getLaunch(id: Address): Promise<LaunchInfo | null> {
+  async getLaunch(poolId: PoolId): Promise<LaunchInfo | null> {
     await this.#tick();
-    return this.#launches.find((launch) => launch.id.toLowerCase() === id.toLowerCase()) ?? null;
+    const hook = requireContract(this.chain, "launchGuardHook", "read a launch schedule");
+    const pool = this.#pools.find((candidate) => candidate.info.id === poolId);
+    if (pool === undefined) return null;
+    if (pool.info.poolType !== "CL" || pool.info.hooks !== hook) return null;
+    return this.#launchFor(pool.info, hook);
   }
 
-  async getLaunchAccountState(id: Address, account: Address): Promise<LaunchAccountState> {
-    await this.#tick();
-    const launch = this.#launches.find((entry) => entry.id.toLowerCase() === id.toLowerCase());
-    if (launch === undefined) {
-      throw new UnsupportedOperationError("getLaunchAccountState", `unknown launch ${id}`);
+  /**
+   * The fake launch record.
+   *
+   * The schedule advances: `#mockBlockNumber` ticks one block per second of
+   * wall clock from a fixed base, so the fee decay, the countdown and the phase
+   * transitions can all be watched happening. It is a simulation of a block
+   * height, not a block height, which is what `isMock` and `source: "mock"`
+   * exist to say.
+   */
+  #launchFor(pool: PoolInfo, hook: Address): LaunchInfo | null {
+    const guard = this.#launchGuards.get(pool.id);
+    if (guard === undefined || !isLaunchConfigured(guard)) return null;
+    const readAtBlock = this.#mockBlockNumber();
+    const feePips = launchFeeAtBlock(guard, readAtBlock);
+    if (feePips === null) return null;
+    const [launchToken, quoteToken] = guard.launchTokenIsCurrency0
+      ? [pool.token0, pool.token1]
+      : [pool.token1, pool.token0];
+    return {
+      poolId: pool.id,
+      pool,
+      hook,
+      launchToken,
+      quoteToken,
+      guard,
+      currentFeePips: feePips,
+      readAtBlock,
+      source: "mock",
+    };
+  }
+
+  #mockBlockNumber(): bigint {
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - this.#startedAtMs) / 1000));
+    return MOCK_BASE_BLOCK + BigInt(elapsedSeconds);
+  }
+
+  /**
+   * The fee a swap through this pool pays right now.
+   *
+   * `lpFeePips` on a dynamic-fee pool is the marker `0x800000`, not a rate;
+   * feeding it to the constant-product simulator would compute a fee of 838%
+   * and return a negative output. On a launch pool the rate comes from the
+   * guard's decay schedule, which is where it comes from on chain too.
+   */
+  #effectiveFeePips(pool: PoolInfo): number {
+    if (pool.lpFeePips !== DYNAMIC_FEE_FLAG) return pool.lpFeePips;
+    const guard = this.#launchGuards.get(pool.id);
+    if (guard === undefined) {
+      throw new UnsupportedOperationError(
+        "quoteSwap",
+        `mock pool ${pool.id} has a dynamic fee and no hook the mock knows how to ask`,
+      );
     }
-    const spent = this.#launchSpend.get(`${id.toLowerCase()}:${account.toLowerCase()}`) ?? 0n;
-    const capRemaining = launch.perWalletCap === null ? null : launch.perWalletCap - spent;
-    const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
-    let ineligibleReason: string | null = null;
-    if (nowSeconds < launch.startTime) ineligibleReason = "Sale has not started";
-    else if (nowSeconds > launch.endTime) ineligibleReason = "Sale has ended";
-    else if (capRemaining !== null && capRemaining <= 0n) {
-      ineligibleReason = "Per-wallet cap reached";
-    }
-    return {
-      launchId: launch.id,
-      account,
-      spent,
-      allocated: 0n,
-      capRemaining,
-      eligible: ineligibleReason === null,
-      ineligibleReason,
-      source: "mock",
-    };
-  }
-
-  async quoteLaunchBuy(launch: LaunchInfo, amountIn: bigint): Promise<LaunchBuyQuote> {
-    await this.#tick();
-    const price = launchPriceAt(launch);
-    const tokensOut =
-      price === 0n ? 0n : (amountIn * 10n ** BigInt(launch.token.decimals)) / price;
-    return {
-      launch,
-      amountIn,
-      tokensOut,
-      effectivePrice: price,
-      source: "mock",
-    };
-  }
-
-  async buildLaunchBuy(request: LaunchBuyExecutionRequest): Promise<WidgetTransactionRequest> {
-    await this.#tick();
-    return {
-      to: request.quote.launch.id,
-      data: "0x",
-      value:
-        request.quote.launch.paymentToken.address === NATIVE ? request.quote.amountIn : 0n,
-      summary:
-        `${MOCK_LABEL}: buy ${request.quote.tokensOut} ${request.quote.launch.token.symbol}` +
-        (request.integrator.active
-          ? ` (referrer ${request.integrator.referrer}, ${request.integrator.feeBps} bps)`
-          : ""),
-      ...(request.integrator.active
-        ? {
-            integratorFee: {
-              referrer: request.integrator.referrer,
-              feeBps: request.integrator.feeBps,
-              currency: request.quote.launch.paymentToken.address,
-              expectedAmount:
-                (request.quote.amountIn * BigInt(request.integrator.feeBps)) / 10_000n,
-            },
-          }
-        : {}),
-      source: "mock",
-    };
+    return launchFeeAtBlock(guard, this.#mockBlockNumber()) ?? guard.finalFeePips;
   }
 
   async sendTransaction(request: WidgetTransactionRequest): Promise<Hex> {
@@ -865,22 +936,6 @@ export function buildUniformBinDistribution(
     void index;
   });
   return shares;
-}
-
-/** Current price on a launch's curve, given how much of the sale has cleared. */
-export function launchPriceAt(launch: LaunchInfo): bigint {
-  const curve = launch.priceCurve;
-  if (curve.kind === "fixed") return curve.price;
-  if (launch.totalForSale <= 0n) return curve.startPrice;
-  const progress = (launch.sold * 10_000n) / launch.totalForSale;
-  const span = curve.endPrice - curve.startPrice;
-  if (curve.kind === "linear") {
-    return curve.startPrice + (span * progress) / 10_000n;
-  }
-  // Exponential: price = start + span * progress^exponent, all fixed-point.
-  const normalized = (progress * 10n ** 18n) / 10_000n;
-  const squared = (normalized * normalized) / 10n ** 18n;
-  return curve.startPrice + (span * squared) / 10n ** 18n;
 }
 
 /**

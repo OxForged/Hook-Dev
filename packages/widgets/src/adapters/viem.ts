@@ -8,12 +8,15 @@
  *
  * ## What it can and cannot do today
  *
- * No LatchProtocol deployment exists, so this adapter has never executed against
- * a chain. What it does is bounded honestly:
+ * Bounded honestly, feature by feature:
  *
  * - **Encoding** is complete and unit-tested. `buildSwap`, `buildAddLiquidity`
  *   and `buildRemoveLiquidity` produce the exact calldata the router and
  *   position managers decode, integrator fee step included.
+ * - **Launches** are read from `LaunchGuardHook`, keyed by pool id. They need
+ *   `contracts.launchGuardHook`; without it every launch read throws
+ *   `ChainConfigError` rather than guessing an address. On a chain with no
+ *   `LaunchGuardHook` deployed, that is the correct and only answer.
  * - **Token, balance and allowance reads** are ordinary ERC-20 and Permit2
  *   calls and will work against any chain that has them.
  * - **Pool discovery** is not on-chain: the singleton has no pool enumeration.
@@ -31,6 +34,7 @@ import {
   type Hex,
   type PublicClient,
 } from "viem";
+import type { PoolId } from "@latchprotocol/sdk";
 import type { ChainConfig } from "../config/chain.js";
 import { requireContract } from "../config/chain.js";
 import {
@@ -47,7 +51,12 @@ import {
   buildCLDecreaseCall,
   buildCLMintCall,
 } from "../callpath/liquidity.js";
-import { buildLaunchBuyCall, LAUNCHPAD_ABI } from "../callpath/launch.js";
+import {
+  decodeLaunchGuard,
+  isLaunchConfigured,
+  LAUNCH_GUARD_HOOK_ABI,
+  type RawLaunchGuard,
+} from "../callpath/launch.js";
 import {
   UnsupportedOperationError,
   WalletNotConnectedError,
@@ -55,9 +64,6 @@ import {
   type AddLiquidityQuote,
   type AddLiquidityQuoteRequest,
   type ApprovalRequirement,
-  type LaunchAccountState,
-  type LaunchBuyExecutionRequest,
-  type LaunchBuyQuote,
   type LaunchInfo,
   type PoolInfo,
   type PoolState,
@@ -117,10 +123,14 @@ export interface ViemAdapterOptions {
   readonly wallet?: WidgetWallet;
   /** Tokens offered in the picker. There is no on-chain token registry. */
   readonly tokens: readonly TokenInfo[];
-  /** Pools this integrator supports. There is no on-chain pool enumeration. */
+  /**
+   * Pools this integrator supports. There is no on-chain pool enumeration.
+   *
+   * Launch pools live in this list too: a launch is a pool. `listLaunches`
+   * selects the ones whose key names `contracts.launchGuardHook`, so there is
+   * no separate launch list to keep in sync.
+   */
   readonly pools: readonly PoolInfo[];
-  /** Launches this integrator surfaces, by launchpad address. */
-  readonly launches?: readonly Address[];
   readonly overrides?: ViemAdapterOverrides;
 }
 
@@ -539,137 +549,88 @@ class ViemProtocolAdapter implements ProtocolAdapter {
     };
   }
 
+  /**
+   * Every configured CL pool whose key names the chain's `LaunchGuardHook`.
+   *
+   * There is no on-chain enumeration of launches any more than there is of
+   * pools, so the candidate set is the pool list the host supplied. Throws
+   * `ChainConfigError` when no hook address is configured, which is how a
+   * caller distinguishes "no launchpad on this chain" from "no launches yet".
+   */
   async listLaunches(): Promise<readonly LaunchInfo[]> {
-    const ids = this.#options.launches ?? [];
-    const launches = await Promise.all(ids.map((id) => this.getLaunch(id)));
+    const hook = requireContract(
+      this.chain,
+      "launchGuardHook",
+      "read a launch schedule",
+    );
+    const candidates = this.#options.pools.filter(
+      (pool) => pool.poolType === "CL" && isAddressEqual(pool.hooks, hook),
+    );
+    const launches = await Promise.all(
+      candidates.map((pool) => this.#readLaunch(pool, hook)),
+    );
     return launches.filter((launch): launch is LaunchInfo => launch !== null);
   }
 
-  async getLaunch(id: Address): Promise<LaunchInfo | null> {
-    const info = await this.#client.readContract({
-      address: id,
-      abi: LAUNCHPAD_ABI,
-      functionName: "saleInfo",
-    });
-    const [
-      tokenAddress,
-      paymentTokenAddress,
-      totalForSale,
-      sold,
-      raised,
-      hardCap,
-      softCap,
-      startTime,
-      endTime,
-      perWalletCap,
-      minPurchase,
-    ] = info;
+  async getLaunch(poolId: PoolId): Promise<LaunchInfo | null> {
+    const hook = requireContract(
+      this.chain,
+      "launchGuardHook",
+      "read a launch schedule",
+    );
+    const pool = this.#options.pools.find((candidate) => candidate.id === poolId);
+    if (pool === undefined) {
+      throw new UnsupportedOperationError(
+        "getLaunch",
+        `pool ${poolId} is not in the configured pool list. The singleton has no pool ` +
+          "enumeration, so the widget can only read pools the host declared.",
+      );
+    }
+    if (pool.poolType !== "CL" || !isAddressEqual(pool.hooks, hook)) return null;
+    return this.#readLaunch(pool, hook);
+  }
 
-    const [token, paymentToken] = await Promise.all([
-      this.getToken(tokenAddress),
-      this.getToken(paymentTokenAddress),
+  /**
+   * Reads one launch record, the fee the hook is charging right now, and the
+   * block those two were true at.
+   *
+   * `getLaunch` first and alone: `currentFee` reverts `LaunchNotConfigured` on
+   * an unclaimed pool id, so calling both in one batch would turn "no launch
+   * here" into a read failure.
+   */
+  async #readLaunch(pool: PoolInfo, hook: Address): Promise<LaunchInfo | null> {
+    const raw = await this.#client.readContract({
+      address: hook,
+      abi: LAUNCH_GUARD_HOOK_ABI,
+      functionName: "getLaunch",
+      args: [pool.id],
+    });
+    const guard = decodeLaunchGuard(raw as unknown as RawLaunchGuard);
+    if (!isLaunchConfigured(guard)) return null;
+
+    const [currentFeePips, readAtBlock] = await Promise.all([
+      this.#client.readContract({
+        address: hook,
+        abi: LAUNCH_GUARD_HOOK_ABI,
+        functionName: "currentFee",
+        args: [pool.id],
+      }),
+      this.#client.getBlockNumber(),
     ]);
-    if (token === null || paymentToken === null) return null;
 
-    const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
-    const status =
-      nowSeconds < BigInt(startTime)
-        ? "upcoming"
-        : nowSeconds > BigInt(endTime)
-          ? "ended"
-          : sold >= totalForSale
-            ? "sold-out"
-            : "live";
+    const [launchToken, quoteToken] = guard.launchTokenIsCurrency0
+      ? [pool.token0, pool.token1]
+      : [pool.token1, pool.token0];
 
     return {
-      id,
-      token,
-      paymentToken,
-      status,
-      totalForSale,
-      sold,
-      raised,
-      softCap: softCap === 0n ? null : softCap,
-      hardCap,
-      startTime: BigInt(startTime),
-      endTime: BigInt(endTime),
-      perWalletCap: perWalletCap === 0n ? null : perWalletCap,
-      minPurchase,
-      // The proposed launchpad interface does not expose curve parameters; a
-      // real deployment should, and this is where they would be read.
-      priceCurve: { kind: "fixed", price: sold === 0n ? 0n : raised / sold },
-      source: "live",
-    };
-  }
-
-  async getLaunchAccountState(id: Address, account: Address): Promise<LaunchAccountState> {
-    const [spent, allocated] = await this.#client.readContract({
-      address: id,
-      abi: LAUNCHPAD_ABI,
-      functionName: "accountState",
-      args: [account],
-    });
-    const launch = await this.getLaunch(id);
-    const capRemaining =
-      launch === null || launch.perWalletCap === null ? null : launch.perWalletCap - spent;
-    const ineligibleReason =
-      launch === null
-        ? "Sale not found"
-        : launch.status !== "live"
-          ? `Sale is ${launch.status}`
-          : capRemaining !== null && capRemaining <= 0n
-            ? "Per-wallet cap reached"
-            : null;
-    return {
-      launchId: id,
-      account,
-      spent,
-      allocated,
-      capRemaining,
-      eligible: ineligibleReason === null,
-      ineligibleReason,
-      source: "live",
-    };
-  }
-
-  async quoteLaunchBuy(launch: LaunchInfo, amountIn: bigint): Promise<LaunchBuyQuote> {
-    const tokensOut = await this.#client.readContract({
-      address: launch.id,
-      abi: LAUNCHPAD_ABI,
-      functionName: "quote",
-      args: [amountIn],
-    });
-    const effectivePrice =
-      tokensOut === 0n ? 0n : (amountIn * 10n ** BigInt(launch.token.decimals)) / tokensOut;
-    return { launch, amountIn, tokensOut, effectivePrice, source: "live" };
-  }
-
-  async buildLaunchBuy(request: LaunchBuyExecutionRequest): Promise<WidgetTransactionRequest> {
-    const call = buildLaunchBuyCall({
-      launchpad: request.quote.launch.id,
-      paymentToken: request.quote.launch.paymentToken.address,
-      amountIn: request.quote.amountIn,
-      minTokensOut: request.minTokensOut,
-      recipient: request.recipient,
-      integrator: request.integrator,
-      deadline: request.deadline,
-    });
-    return {
-      to: call.to,
-      data: call.data,
-      value: call.value,
-      summary: `Buy ${request.quote.launch.token.symbol}`,
-      ...(call.integratorFee
-        ? {
-            integratorFee: {
-              referrer: call.integratorFee.referrer,
-              feeBps: call.integratorFee.feeBps,
-              currency: request.quote.launch.paymentToken.address,
-              expectedAmount:
-                (request.quote.amountIn * BigInt(call.integratorFee.feeBps)) / 10_000n,
-            },
-          }
-        : {}),
+      poolId: pool.id,
+      pool,
+      hook,
+      launchToken,
+      quoteToken,
+      guard,
+      currentFeePips: Number(currentFeePips),
+      readAtBlock,
       source: "live",
     };
   }
