@@ -4,7 +4,7 @@ pragma solidity 0.8.26;
 
 import "forge-std/Script.sol";
 import {LatchRegistry} from "../src/LatchRegistry.sol";
-import {LatchMetadata, Verification, RiskClass} from "../src/ILatchRegistry.sol";
+import {LatchMetadata, Verification, RiskClass, PermissionSource} from "../src/ILatchRegistry.sol";
 import {LaunchGuardHook} from "latch-hooks/src/launch/LaunchGuardHook.sol";
 import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";
 
@@ -42,9 +42,8 @@ contract RegisterLaunchGuardScript is Script {
 
         vm.startBroadcast(pk);
 
-        LaunchGuardHook hook = redeploy
-            ? new LaunchGuardHook(ICLPoolManager(CL_POOL_MANAGER))
-            : LaunchGuardHook(EXISTING_HOOK);
+        LaunchGuardHook hook =
+            redeploy ? new LaunchGuardHook(ICLPoolManager(CL_POOL_MANAGER)) : LaunchGuardHook(EXISTING_HOOK);
 
         uint256[] memory chains = new uint256[](1);
         chains[0] = 11155111;
@@ -60,7 +59,11 @@ contract RegisterLaunchGuardScript is Script {
             })
         );
 
-        reg.setVerification(address(hook), Verification.SourceVerified, "Source published; not audited.");
+        bytes32 poolId = vm.envOr("POOL_ID", bytes32(0));
+        if (poolId != bytes32(0)) {
+            reg.attestFromPool(address(hook), CL_POOL_MANAGER, poolId);
+            reg.setVerification(address(hook), Verification.SourceVerified, "Source published; not audited.");
+        }
 
         vm.stopBroadcast();
 
@@ -68,9 +71,18 @@ contract RegisterLaunchGuardScript is Script {
         uint16 stored = reg.getLatch(address(hook)).permissions;
         require(stored == declared, "registry did not read permissions from the hook");
 
+        (uint16 effective, PermissionSource source) = reg.effectivePermissions(address(hook));
+        if (poolId != bytes32(0)) {
+            require(source != PermissionSource.SelfReported, "attestation did not land");
+            require(reg.permissionsConcealed(address(hook)) == 0, "hook understated its permissions to the registry");
+        }
+
         console.log("LaunchGuardHook      ", address(hook));
         console.log("  bitmap on hook     ", declared);
         console.log("  bitmap in registry ", stored);
+        console.log("  effective bitmap   ", effective);
+        console.log("  permission source  ", uint8(source));
+        console.log("  attestations       ", uint256(reg.getLatch(address(hook)).attestationCount));
         console.log("  risk class         ", uint8(reg.classify(stored)));
         console.log("  takesSwapCut       ", reg.takesSwapCut(stored));
         console.log("  canBlockSwaps      ", reg.canBlockSwaps(stored));

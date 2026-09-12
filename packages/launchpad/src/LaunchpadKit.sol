@@ -167,8 +167,23 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
         ) {
             revert ZeroAddress();
         }
-        // 0.5s to 600s. Outside that range the preset windows would be nonsense.
-        if (_blockTimeCentis < 50 || _blockTimeCentis > 60_000) revert InvalidBlockTime(_blockTimeCentis);
+        // Any non-zero block time up to 600s.
+        //
+        // The floor used to be 50 (0.5s) on the assumption that nothing ships faster. Robinhood
+        // Chain (4663) produces a block every 0.102s - 10 centis - so that floor made this kit
+        // literally unconstructable on the chain it was written for, and the tempting workaround
+        // (pass the floor value, 50) is worse than the revert: `secondsToBlocks` divides by this
+        // number, so a block time declared 5x too slow makes every preset window 5x too SHORT.
+        // A "five minute fair launch" would have lifted its tax after sixty seconds, silently, in
+        // the direction that favours the sniper.
+        //
+        // Zero is the only value that is actually unusable (it divides by zero in
+        // `LaunchPresets.secondsToBlocks`). The upper bound stays: past 600s per block the
+        // presets' second-denominated windows round to a handful of blocks and stop meaning
+        // anything. The lower end needs no separate guard - the longest preset window is 1800s,
+        // which at 1 centis is 180 000 blocks, still well inside `MAX_DECAY_BLOCKS` (1e6), and
+        // `DecayWindowTooLong` catches the case anyway.
+        if (_blockTimeCentis == 0 || _blockTimeCentis > 60_000) revert InvalidBlockTime(_blockTimeCentis);
 
         address hookManager = address(_hook.poolManager());
         if (hookManager != address(_clPoolManager)) {

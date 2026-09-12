@@ -128,7 +128,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         hook = new LaunchGuardHook(poolManager);
 
         address[] memory none = new address[](0);
-        registry = new LatchRegistry(REGISTRY_ADMIN, none, none);
+        registry = new LatchRegistry(REGISTRY_ADMIN, address(vault), none, none);
 
         kit = new LaunchpadKit(
             poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), BLOCK_TIME_CENTIS
@@ -846,8 +846,57 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
     }
 
     function test_constructor_rejectsANonsenseBlockTime() public {
-        vm.expectRevert(abi.encodeWithSelector(ILaunchpadKit.InvalidBlockTime.selector, uint32(1)));
-        new LaunchpadKit(poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), 1);
+        // Zero divides by zero in `secondsToBlocks`.
+        vm.expectRevert(abi.encodeWithSelector(ILaunchpadKit.InvalidBlockTime.selector, uint32(0)));
+        new LaunchpadKit(poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), 0);
+
+        // Ten minutes a block. Past this the presets' second-denominated windows round to a
+        // handful of blocks and stop meaning anything.
+        vm.expectRevert(abi.encodeWithSelector(ILaunchpadKit.InvalidBlockTime.selector, uint32(60_001)));
+        new LaunchpadKit(poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), 60_001);
+    }
+
+    /// @dev The regression that made this kit undeployable on its own target chain. Robinhood
+    /// Chain (4663) produces a block every 0.102s; the old constructor floor of 50 centis rejected
+    /// it, and the only in-range workaround (declare 0.5s blocks) would have made every preset
+    /// window five times shorter than it says on the tin - the tax lifting early, in the sniper's
+    /// favour, with nothing on chain to show for it.
+    function test_constructor_acceptsASubSecondChain() public {
+        uint32 robinhoodCentis = 10; // 0.1s blocks
+
+        LaunchpadKit fast = new LaunchpadKit(
+            poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), robinhoodCentis
+        );
+        assertEq(fast.blockTimeCentis(), robinhoodCentis);
+
+        // The five-minute FairLaunch window has to survive the conversion at this block time, and
+        // land at or above five minutes of real time rather than below it.
+        uint256 blocks = LaunchPresets.secondsToBlocks(300, robinhoodCentis);
+        assertEq(blocks, 3000);
+        assertLe(blocks, hook.MAX_DECAY_BLOCKS(), "preset window must still fit the hook's cap");
+
+        // The most punitive preset is the longest window; it must fit too.
+        assertLe(
+            LaunchPresets.secondsToBlocks(1800, robinhoodCentis),
+            hook.MAX_DECAY_BLOCKS(),
+            "AntiSniperAggressive must fit at 0.1s blocks"
+        );
+
+        // And the whole thing has to actually resolve through the kit, not just through the library.
+        LaunchParams memory p = _noSeed(_params());
+        p.launchOperator = OPERATOR;
+        LaunchGuardHook.LaunchConfig memory cfg = fast.previewSchedule(p);
+        assertEq(cfg.decayBlocks, 3000, "FairLaunch decay at 0.1s blocks");
+    }
+
+    /// @dev One centis (0.01s) is the fastest the constructor accepts. Nothing in the preset table
+    /// may overflow `MAX_DECAY_BLOCKS` there, or the bound would be admitting a value that cannot
+    /// launch anything.
+    function test_constructor_acceptsTheFastestPermittedBlockTime() public {
+        LaunchpadKit fastest =
+            new LaunchpadKit(poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), 1);
+        assertEq(fastest.blockTimeCentis(), 1);
+        assertLe(LaunchPresets.secondsToBlocks(1800, 1), fastest.hook().MAX_DECAY_BLOCKS());
     }
 
     function test_constructor_rejectsZeroAddresses() public {
@@ -877,7 +926,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
     }
 
     function testFuzz_secondsToBlocksNeverReturnsZero(uint32 secondsValue, uint32 blockTimeCentis) public pure {
-        blockTimeCentis = uint32(bound(blockTimeCentis, 50, 60_000));
+        blockTimeCentis = uint32(bound(blockTimeCentis, 1, 60_000));
         uint256 blocks = LaunchPresets.secondsToBlocks(secondsValue, blockTimeCentis);
         assertGt(blocks, 0);
         // Rounds up: never fewer blocks than the duration actually spans.

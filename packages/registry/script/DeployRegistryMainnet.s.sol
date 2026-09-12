@@ -30,22 +30,46 @@ import {LatchRegistry} from "../src/LatchRegistry.sol";
  *     to be immediate. The guardian can only ever flag or unlist — it cannot
  *     mint an audit badge or clear a warning — so a hot key is the right trade.
  *
+ *   VAULT -> the LatchProtocol Vault. Not a role: it is the trust anchor for
+ *     `attestFromPool`, the only permission source a hook cannot lie to. The registry
+ *     believes a pool manager iff `vault.isAppRegistered(manager)`, which is onlyOwner
+ *     on the 48h custody timelock. A wrong Vault here silently voids every attestation,
+ *     so it is asserted against the pool manager below rather than merely accepted.
+ *
  * Usage:
  *   REGISTRY_ADMIN=0x...  (the Safe)
  *   REGISTRY_OPS=0x...    (curator + guardian)
+ *   REGISTRY_VAULT=0x...  (the Vault)
+ *   REGISTRY_POOL_MANAGER=0x...  (a live pool manager, to prove the Vault is the right one)
  *   forge script script/DeployRegistryMainnet.s.sol --rpc-url <chain> --broadcast --slow
  */
+interface IVaultAppCheck {
+    function isAppRegistered(address app) external view returns (bool);
+}
+
 contract DeployRegistryMainnetScript is Script {
     function run() public {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
         address admin = vm.envAddress("REGISTRY_ADMIN");
         address ops = vm.envAddress("REGISTRY_OPS");
+        address vault = vm.envAddress("REGISTRY_VAULT");
+        address poolManager = vm.envAddress("REGISTRY_POOL_MANAGER");
 
         // A typo'd admin is almost always an EOA or an empty slot, and nothing
         // downstream would ever notice that governance is one key.
         require(admin.code.length > 0, "REGISTRY_ADMIN has no code - not a contract");
         require(admin != deployer, "REGISTRY_ADMIN must not be the deployer");
+
+        /* Prove the Vault is the real one BEFORE deploying against it. A Vault that does
+           not know the live pool manager is either the wrong address or an impostor, and
+           either way every attestation the registry ever records would be meaningless.
+           Reading it back afterwards would be too late: the address is immutable. */
+        require(vault.code.length > 0, "REGISTRY_VAULT has no code");
+        require(
+            IVaultAppCheck(vault).isAppRegistered(poolManager),
+            "REGISTRY_VAULT does not know REGISTRY_POOL_MANAGER - wrong Vault"
+        );
 
         address[] memory curators = new address[](1);
         curators[0] = ops;
@@ -53,11 +77,12 @@ contract DeployRegistryMainnetScript is Script {
         guardians[0] = ops;
 
         vm.startBroadcast(pk);
-        LatchRegistry registry = new LatchRegistry(admin, curators, guardians);
+        LatchRegistry registry = new LatchRegistry(admin, vault, curators, guardians);
         vm.stopBroadcast();
 
         /* Assert the deployed reality, not the intent. */
         bytes32 ADMIN_ROLE = registry.DEFAULT_ADMIN_ROLE();
+        require(address(registry.vault()) == vault, "vault not wired");
         require(registry.hasRole(ADMIN_ROLE, admin), "admin role not held by REGISTRY_ADMIN");
         require(registry.hasRole(registry.CURATOR_ROLE(), ops), "curator not set");
         require(registry.hasRole(registry.GUARDIAN_ROLE(), ops), "guardian not set");
@@ -82,6 +107,7 @@ contract DeployRegistryMainnetScript is Script {
         }
 
         console.log("LatchRegistry ", address(registry));
+        console.log("  vault       ", vault);
         console.log("  admin       ", admin);
         console.log("  curator     ", ops);
         console.log("  guardian    ", ops);

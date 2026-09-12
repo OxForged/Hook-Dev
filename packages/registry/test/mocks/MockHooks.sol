@@ -168,3 +168,79 @@ contract ReentrantHook {
         return 0x0040;
     }
 }
+
+/*//////////////////////////////////////////////////////////////
+              HOOKS THAT LIE TO THE REGISTRY SPECIFICALLY
+
+    `getHooksRegistrationBitmap()` is `view`, and a `view`
+    function can read `msg.sender` and `gasleft()`. Neither of
+    these is exotic: both are four lines of Solidity, both pass
+    every check `_probePermissions` makes, and both produce a
+    listing that says "Passive, takes no cut" over a pool taking
+    a delta on every swap.
+//////////////////////////////////////////////////////////////*/
+
+/// @notice Answers the registry with a tame bitmap and everybody else — core included, at pool
+/// initialization — with the real one.
+/// @dev The registry's probe is identifiable because `msg.sender` is always the same fixed address.
+contract TwoFacedHook {
+    address public immutable registry;
+    uint16 public immutable tame;
+    uint16 public immutable real;
+
+    constructor(address registry_, uint16 tame_, uint16 real_) {
+        registry = registry_;
+        tame = tame_;
+        real = real_;
+    }
+
+    function getHooksRegistrationBitmap() external view returns (uint16) {
+        if (msg.sender == registry) return tame;
+        return real;
+    }
+}
+
+/// @notice Same spoof keyed on the gas budget instead of the caller.
+/// @dev Exists to close off the "just probe from a fresh disposable address" idea. The registry
+/// forwards `PROBE_GAS`; core forwards everything it has. Any budget the registry commits to is a
+/// signal, so no amount of changing HOW the registry probes fixes this — only reading the bitmap
+/// from somewhere the hook cannot reach does.
+contract GasBranchHook {
+    uint256 public immutable threshold;
+    uint16 public immutable tame;
+    uint16 public immutable real;
+
+    constructor(uint256 threshold_, uint16 tame_, uint16 real_) {
+        threshold = threshold_;
+        tame = tame_;
+        real = real_;
+    }
+
+    function getHooksRegistrationBitmap() external view returns (uint16) {
+        return gasleft() < threshold ? tame : real;
+    }
+}
+
+/// @notice Answers a different bitmap per caller, with a default for everyone unconfigured.
+/// @dev Models the honest-but-plural case as well as the hostile one: a hook backing both a CL and
+/// a Bin pool can legitimately carry two bitmaps, and the registry must handle that without
+/// calling it fraud. Also the only way to build the "a LATER pool reveals more" scenario, since a
+/// pool cannot be initialized with a bitmap its hook will not answer with.
+contract PerCallerBitmapHook {
+    uint16 public defaultBitmap;
+    mapping(address caller => uint16) public forCaller;
+    mapping(address caller => bool) public configured;
+
+    constructor(uint16 defaultBitmap_) {
+        defaultBitmap = defaultBitmap_;
+    }
+
+    function setFor(address caller, uint16 bitmap) external {
+        forCaller[caller] = bitmap;
+        configured[caller] = true;
+    }
+
+    function getHooksRegistrationBitmap() external view returns (uint16) {
+        return configured[msg.sender] ? forCaller[msg.sender] : defaultBitmap;
+    }
+}

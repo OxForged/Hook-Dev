@@ -4,6 +4,11 @@ pragma solidity 0.8.26;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IHooks} from "infinity-core/src/interfaces/IHooks.sol";
+import {IPoolManager} from "infinity-core/src/interfaces/IPoolManager.sol";
+import {PoolKey} from "infinity-core/src/types/PoolKey.sol";
+import {PoolId, PoolIdLibrary} from "infinity-core/src/types/PoolId.sol";
+import {Currency} from "infinity-core/src/types/Currency.sol";
+import {ParametersHelper} from "infinity-core/src/libraries/math/ParametersHelper.sol";
 
 import {
     ILatchRegistry,
@@ -12,6 +17,7 @@ import {
     DecodedPermissions,
     Verification,
     Listing,
+    PermissionSource,
     RiskClass,
     PERM_BEFORE_INITIALIZE,
     PERM_AFTER_INITIALIZE,
@@ -33,6 +39,16 @@ import {
     PERM_BEFORE_MASK
 } from "./ILatchRegistry.sol";
 
+/// @notice The one thing this registry needs from the Vault.
+/// @dev Declared locally rather than importing `IVault` because upstream declares
+/// `isAppRegistered` as `external returns (bool)` — non-view — while the implementation is a
+/// public mapping getter and therefore genuinely `view`. Importing the upstream interface would
+/// force every read path here to be non-view for no reason. Never rename this function: it is the
+/// Vault's ABI.
+interface IVaultAppRegistry {
+    function isAppRegistered(address app) external view returns (bool);
+}
+
 /// @title LatchRegistry
 /// @notice The discovery and safety surface for LatchProtocol hooks.
 ///
@@ -52,6 +68,10 @@ import {
 ///      a submitter can declare, suggest or influence what their hook is allowed to do. A registry
 ///      that took the submitter's word for it would be worse than no registry, because it would
 ///      launder a lie through an official-looking surface.
+///
+///      AND THAT IS NOT SUFFICIENT ON ITS OWN — see the next section. Reading the bitmap off the
+///      hook removes the SUBMITTER from the loop. It does not remove the HOOK from the loop, and
+///      the hook is the party with the motive.
 ///
 ///   2. NOBODY CAN PROMOTE THEMSELVES. Every hook enters at `Unverified`. Only a curator moves it
 ///      up the ladder, and any subsequent change to the metadata or to the hook's own code knocks
@@ -108,8 +128,67 @@ import {
 ///
 /// A hostile hook can therefore make its own registration fail. It cannot make anyone else's fail,
 /// and it cannot cost a caller more than the probe budget.
+///
+/// ############### WHY THE PROBE ALONE CANNOT BE BELIEVED: ATTESTATION ###############
+///
+/// `getHooksRegistrationBitmap()` is `view`, and a `view` function can read `msg.sender` and
+/// `gasleft()`. Everything the probe does is defensive about the CALL; none of it makes the ANSWER
+/// true. A hook can branch:
+///
+///     function getHooksRegistrationBitmap() external view returns (uint16) {
+///         if (msg.sender == LATCH_REGISTRY) return TAME;   // afterSwap only
+///         return TAME | BEFORE_SWAP | BEFORE_SWAP_RETURNS_DELTA;   // takes a cut
+///     }
+///
+/// and the registry records `TAME`. `classify` then returns `Passive`, `takesSwapCut` returns
+/// false, and the marketplace shows "observes only, takes no cut" above a pool that is skimming
+/// every trade. `refreshPermissions` is permissionless but still calls FROM this address, so it
+/// re-reads the same lie forever and the codehash never moves.
+///
+/// Probing differently does not fix this and the road is a dead end. A fresh disposable prober
+/// beats the `msg.sender` branch but not `if (gasleft() < N)`. Raising `PROBE_GAS` moves the
+/// threshold. Any budget this contract commits to is itself a signal the hook can key off. The
+/// fixed point of that game is: an untrusted `view` function is a claim, never a measurement.
+///
+/// So the registry reads the bitmap from somewhere the hook cannot reach — A POOL CORE HAS ALREADY
+/// VALIDATED. The chain of custody:
+///
+///   - `CLPoolManager.initialize` / `BinPoolManager.initialize` call `Hooks.validateHookConfig`,
+///     which requires `poolKey.hooks.getHooksRegistrationBitmap() == poolKey.parameters` bitmap.
+///     That is the only time core ever asks the hook.
+///   - Immediately after, the manager writes `poolIdToPoolKey[id] = key`.
+///   - Every dispatch from then on reads `key.parameters`, never the hook — see
+///     `CLHooks.shouldCall`. `parameters` is part of the pool id, so it is IMMUTABLE for the life
+///     of that pool.
+///
+/// Therefore `poolIdToPoolKey[id].parameters` is a bitmap that (a) the hook answered with at least
+/// once, under core's own eyes and not ours, and (b) is what that pool actually enforces today.
+/// `attestFromPool` reads exactly that. A hook cannot lie to it, because a lie there would have
+/// prevented the pool from existing.
+///
+/// The trust anchor is the Vault, not a list this contract keeps. A pool manager is believed iff
+/// `Vault.isAppRegistered(manager)`, which is `onlyOwner` on the 48h custody timelock and grants
+/// permanent authority to move Vault funds. Anything already trusted that far is trusted to report
+/// its own pool keys. The alternative — a curator-managed allowlist — would let an Ops hot key
+/// enroll a fake "pool manager" and mint attestations for any bitmap it liked, which is precisely
+/// the laundering this whole mechanism exists to stop.
+///
+/// What an attestation is and is not:
+///   - It proves the hook presented that bitmap to core for that pool. It does NOT prove the hook
+///     presents the same bitmap everywhere. The same hook can back a CL pool and a Bin pool with
+///     different bitmaps, honestly.
+///   - `attestedPermissions` is therefore the UNION over every attested pool, and attestations are
+///     monotone: they only ever add bits, and no role can clear them. Overstating is a survivable
+///     error; understating is the one that costs somebody their money.
+///   - `effectivePermissions` is `selfReported | attested`, so no combination of hook behaviour and
+///     attestation order can produce a bitmap milder than something already observed.
+///   - Anyone may attest. There is no way to use it to make a record look cleaner, so there is no
+///     reason to gate it.
 /// ###############################################################################
 contract LatchRegistry is ILatchRegistry, AccessControl {
+    using PoolIdLibrary for PoolKey;
+    using ParametersHelper for bytes32;
+
     /*//////////////////////////////////////////////////////////////
                                  ROLES
     //////////////////////////////////////////////////////////////*/
@@ -164,7 +243,17 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
                                 STORAGE
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice The Vault this registry believes about pool managers.
+    /// @dev Immutable. The Vault is the protocol root and there is exactly one; making this
+    /// settable would hand whoever can set it the power to mint attestations from a contract of
+    /// their own choosing, which is the entire attack this mechanism closes.
+    IVaultAppRegistry public immutable vault;
+
     mapping(address hook => LatchRecord) private _records;
+
+    /// @dev Which pools have already been counted for a hook, so `attestationCount` means
+    /// "distinct live pools" and re-attesting the same pool cannot inflate it or spam the log.
+    mapping(address hook => mapping(bytes32 poolId => bool counted)) private _attestedPools;
 
     /// @dev Append-only. Index positions are stable forever, which is what lets an indexer page
     /// through the registry without worrying about entries shifting underneath it.
@@ -173,12 +262,20 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
     /// @dev Append-only, same guarantee.
     mapping(address submitter => address[] hooks) private _submitted;
 
+    /// @dev How many accounts hold DEFAULT_ADMIN_ROLE. Maintained by the `_grantRole` /
+    /// `_revokeRole` overrides so the last one cannot be dropped. See those overrides for why.
+    uint256 private _adminCount;
+
     /// @param admin Holds DEFAULT_ADMIN_ROLE and therefore decides who curates. Should be
-    /// LatchTimelock on any live chain, never an EOA.
+    /// LatchTimelock or the governance Safe on any live chain, never an EOA.
+    /// @param vault_ The LatchProtocol Vault. Pool managers are believed iff this Vault has
+    /// registered them as apps.
     /// @param curators Initial curators. May be empty; the admin can appoint later.
     /// @param guardians Initial guardians. May be empty.
-    constructor(address admin, address[] memory curators, address[] memory guardians) {
+    constructor(address admin, address vault_, address[] memory curators, address[] memory guardians) {
         if (admin == address(0)) revert ZeroAddress();
+        if (vault_ == address(0)) revert ZeroAddress();
+        vault = IVaultAppRegistry(vault_);
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         for (uint256 i; i < curators.length; ++i) {
             _grantRole(CURATOR_ROLE, curators[i]);
@@ -199,9 +296,30 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
     /// stylistic objections: core calls the same function during pool initialization, so such a
     /// hook can never back a pool. Listing it would create an official-looking entry for something
     /// that is unusable, and "permissions unknown" is the one thing this registry must never say.
+    ///
+    /// What this DOES NOT establish: that the bitmap is true. It is the hook's answer to a caller
+    /// the hook can identify. A fresh listing is `PermissionSource.SelfReported` and a front end
+    /// must say so. Call `attestFromPool` — or use `registerWithPool` — the moment a live pool
+    /// exists. Registration is deliberately still open to hooks with no pool yet: refusing to list
+    /// an unused hook would make the registry useless exactly when a developer needs it, at launch.
     /// @param hook Address of the deployed hook contract.
     /// @param metadata Human-readable listing data. Purely descriptive.
     function register(address hook, LatchMetadata calldata metadata) external {
+        _register(hook, metadata);
+    }
+
+    /// @notice List a hook and attest it against a live pool in the same transaction.
+    /// @dev The path a hook developer should take once their pool exists. Identical to `register`
+    /// followed by `attestFromPool`; it exists so the corroborated state is reachable in one call
+    /// and a UI never has to show a freshly listed hook in the weaker state.
+    function registerWithPool(address hook, LatchMetadata calldata metadata, address poolManager, bytes32 poolId)
+        external
+    {
+        _register(hook, metadata);
+        _attest(hook, poolManager, poolId);
+    }
+
+    function _register(address hook, LatchMetadata calldata metadata) private {
         if (hook == address(0)) revert ZeroAddress();
         LatchRecord storage record = _records[hook];
         if (record.submitter != address(0)) revert LatchAlreadyRegistered(hook);
@@ -231,9 +349,7 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
         _hookList.push(hook);
         _submitted[msg.sender].push(hook);
 
-        emit LatchRegistered(
-            hook, msg.sender, permissions, classify(permissions), codehash, uint64(block.timestamp)
-        );
+        emit LatchRegistered(hook, msg.sender, permissions, classify(permissions), codehash, uint64(block.timestamp));
         _emitMetadata(hook, metadata);
     }
 
@@ -288,6 +404,132 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
         );
 
         _demote(hook, record, "on-chain permissions or code changed");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           POOL ATTESTATION
+        The only un-spoofable permission source on chain. See the
+        contract-level notes for the full chain of custody.
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Record the bitmap a live pool actually enforces for this hook.
+    ///
+    /// @dev Permissionless, and safe to leave that way: every outcome of this function either adds
+    /// bits to `attestedPermissions` or reverts. There is no argument, ordering or repetition that
+    /// makes a record look milder, so there is nothing here for an attacker to want.
+    ///
+    /// The pool key is READ BACK from the manager rather than accepted from the caller. `poolId`
+    /// is only used to look it up, and the stored key is then required to hash back to that id, so
+    /// a caller supplying a doctored key changes the id and finds nothing.
+    ///
+    /// Effects on the record:
+    ///   - `attestedPermissions |= poolPermissions`. Monotone, never cleared.
+    ///   - If that union GREW, verification is reset to `Unverified`: a badge attests to a set of
+    ///     capabilities, and capabilities nobody had seen when it was granted are outside it. This
+    ///     is not griefable — the demotion is driven by an immutable on-chain fact, it can happen
+    ///     at most once per genuinely new bitmap, and a curator who attests every live pool before
+    ///     badging will never see it.
+    ///   - If the union exceeds what the hook told the registry, `LatchPermissionsUnderstated` is
+    ///     emitted and `PermissionSource` becomes `PoolAttestedDivergent`. The listing is NOT
+    ///     auto-flagged `Malicious`: divergence has an innocent explanation (one hook, two pool
+    ///     types, two bitmaps) and permissionless slander is not a power this contract hands out.
+    ///     Flagging stays a guardian decision, now made with the evidence in front of them.
+    ///
+    /// @param hook The registered hook the attestation speaks for.
+    /// @param poolManager A pool manager the Vault has registered as an app.
+    /// @param poolId The pool's id, i.e. `keccak256` over its `PoolKey`.
+    function attestFromPool(address hook, address poolManager, bytes32 poolId) external {
+        _attest(hook, poolManager, poolId);
+    }
+
+    /// @notice `attestFromPool` for callers that hold the `PoolKey` rather than the id.
+    /// @dev The key is used ONLY to derive the id. Every field is then re-read from the manager
+    /// and validated, so passing a doctored key cannot smuggle anything in — it just fails to
+    /// resolve. Kept as a convenience because periphery and the SDK carry keys, not ids.
+    function attestFromPoolKey(address hook, PoolKey calldata key) external {
+        PoolKey memory k = PoolKey({
+            currency0: key.currency0,
+            currency1: key.currency1,
+            hooks: key.hooks,
+            poolManager: key.poolManager,
+            fee: key.fee,
+            parameters: key.parameters
+        });
+        _attest(hook, address(key.poolManager), PoolId.unwrap(k.toId()));
+    }
+
+    function _attest(address hook, address poolManager, bytes32 poolId) private {
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
+
+        // The Vault is the trust anchor. Everything below reads state from `poolManager`, so if
+        // this check is wrong nothing after it means anything.
+        if (!vault.isAppRegistered(poolManager)) revert UntrustedPoolManager(poolManager);
+
+        if (_attestedPools[hook][poolId]) revert PoolAlreadyAttested(hook, poolId);
+
+        uint16 poolPermissions = _readPoolBitmap(hook, poolManager, poolId);
+
+        uint16 previousUnion = record.attestedPermissions;
+        uint16 union = previousUnion | poolPermissions;
+        uint32 count = record.attestationCount + 1;
+
+        _attestedPools[hook][poolId] = true;
+        record.attestedPermissions = union;
+        record.attestedPoolManager = poolManager;
+        record.attestedPoolId = poolId;
+        record.attestedAt = uint64(block.timestamp);
+        record.attestationCount = count;
+        record.updatedAt = uint64(block.timestamp);
+
+        uint16 selfReported = record.permissions;
+        emit LatchPoolAttested(hook, msg.sender, poolManager, poolId, poolPermissions, union, selfReported, count);
+
+        uint16 concealed = union & ~selfReported;
+        if (concealed != 0) {
+            emit LatchPermissionsUnderstated(hook, selfReported, union, concealed);
+        }
+
+        // Only when new capability appears. An attestation that merely re-confirms what was
+        // already known must not cost an honest listing its badge.
+        if (union != previousUnion) {
+            _demote(hook, record, "a live pool revealed permissions not covered by this attestation");
+        }
+    }
+
+    /// @dev Resolve `poolId` on `poolManager` and return the bitmap that pool enforces.
+    /// Three independent checks, each closing a different way the lookup could be meaningless:
+    ///   1. the stored key names this manager — core's own `poolManagerMatch` guarantees it at
+    ///      initialization, so a mismatch means the entry was never written by `initialize`;
+    ///   2. the stored key hashes back to the id asked for — a manager that returned one fixed key
+    ///      for every id would fail here;
+    ///   3. the stored key's `hooks` is the hook being attested. An uninitialized slot returns the
+    ///      zero key, whose `hooks` is `address(0)`, and `register` already rejects `address(0)`,
+    ///      so an unused id can never attest anything.
+    function _readPoolBitmap(address hook, address poolManager, bytes32 poolId) private view returns (uint16) {
+        (
+            Currency currency0,
+            Currency currency1,
+            IHooks hooks,
+            IPoolManager keyManager,
+            uint24 fee,
+            bytes32 parameters
+        ) = IPoolManager(poolManager).poolIdToPoolKey(PoolId.wrap(poolId));
+
+        if (address(keyManager) != poolManager) revert PoolNotFound(poolManager, poolId);
+
+        PoolKey memory key = PoolKey({
+            currency0: currency0,
+            currency1: currency1,
+            hooks: hooks,
+            poolManager: keyManager,
+            fee: fee,
+            parameters: parameters
+        });
+        if (PoolId.unwrap(key.toId()) != poolId) revert PoolNotFound(poolManager, poolId);
+        if (address(hooks) != hook) revert PoolHookMismatch(poolId, hook, address(hooks));
+
+        return parameters.getHooksRegistrationBitmap();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -347,11 +589,17 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
     ///   - Nothing can be promoted while flagged `Malicious`. Rehabilitation is two transactions
     ///     so it leaves two separately reviewable log entries.
     ///   - Nothing can be promoted while its permissions are unreadable or invalid.
+    ///   - NOTHING CAN BE PROMOTED WITHOUT AT LEAST ONE POOL ATTESTATION. A badge on a record whose
+    ///     only evidence is the hook's own answer to a caller it can identify is exactly the lie
+    ///     this registry exists to prevent — an official-looking "Audited · Passive · takes no cut"
+    ///     over a hook skimming every swap. The badge waits for a live pool.
+    ///
+    ///     This applies to `SourceVerified` too, not just `Audited`. `SourceVerified` reads to a
+    ///     user as "the registry checked something", and the thing most worth checking is the
+    ///     capability line printed next to it. The cost is real and accepted: a hook listed before
+    ///     any pool uses it cannot carry a badge yet. Nobody is exposed to it yet either.
     /// @param note Short free-text rationale, emitted with the event. May be empty.
-    function setVerification(address hook, Verification level, string calldata note)
-        external
-        onlyRole(CURATOR_ROLE)
-    {
+    function setVerification(address hook, Verification level, string calldata note) external onlyRole(CURATOR_ROLE) {
         LatchRecord storage record = _records[hook];
         if (record.submitter == address(0)) revert LatchNotRegistered(hook);
         _boundString(bytes(note).length, MAX_NOTE_BYTES);
@@ -361,6 +609,7 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
             if (!record.permissionsReadable || !record.permissionsValid) {
                 revert PermissionsNotAttestable(hook);
             }
+            if (record.attestationCount == 0) revert AttestationRequired(hook);
             if (bytes(record.metadata.sourceURI).length == 0) revert SourceURIRequired();
             if (level == Verification.Audited && bytes(record.metadata.auditURI).length == 0) {
                 revert AuditURIRequired();
@@ -529,16 +778,109 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
         return record;
     }
 
-    function permissionsOf(address hook) external view returns (uint16 permissions, bool readable, bool valid) {
+    /// @notice The bitmap a consumer should actually act on, and where it came from.
+    /// @dev `selfReported | attested`. The union, not a choice between them, because each source
+    /// can be true of a different pool and only understating can hurt anybody. An unattested
+    /// record returns its self-report with `source == SelfReported`, which a UI must render as
+    /// "the hook says so", not as a fact.
+    function effectivePermissions(address hook) public view returns (uint16 permissions, PermissionSource source) {
         LatchRecord storage record = _records[hook];
         if (record.submitter == address(0)) revert LatchNotRegistered(hook);
-        return (record.permissions, record.permissionsReadable, record.permissionsValid);
+        return _effective(record);
     }
 
-    function riskClassOf(address hook) external view returns (RiskClass) {
+    function _effective(LatchRecord storage record) private view returns (uint16 permissions, PermissionSource source) {
+        uint16 selfReported = record.permissions;
+        if (record.attestationCount == 0) return (selfReported, PermissionSource.SelfReported);
+
+        uint16 attested = record.attestedPermissions;
+        permissions = selfReported | attested;
+        source =
+            (attested & ~selfReported) != 0 ? PermissionSource.PoolAttestedDivergent : PermissionSource.PoolAttested;
+    }
+
+    /// @notice Both halves of a permission read, so neither can be shown without the other.
+    /// @dev `permissions` is the effective (union) bitmap; `readable`/`valid` describe the last
+    /// self-report probe; `source` says whether any live pool corroborates it.
+    function permissionsOf(address hook)
+        external
+        view
+        returns (uint16 permissions, bool readable, bool valid, PermissionSource source)
+    {
         LatchRecord storage record = _records[hook];
         if (record.submitter == address(0)) revert LatchNotRegistered(hook);
-        return classify(record.permissions);
+        (permissions, source) = _effective(record);
+        return (permissions, record.permissionsReadable, record.permissionsValid, source);
+    }
+
+    /// @notice Exactly what the hook told this registry, with nothing merged in.
+    /// @dev Only useful for showing the two side by side. Do not size a risk warning off it.
+    function selfReportedPermissionsOf(address hook) external view returns (uint16) {
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
+        return record.permissions;
+    }
+
+    /// @notice Risk class of the EFFECTIVE bitmap. Never milder than either source alone.
+    function riskClassOf(address hook) external view returns (RiskClass) {
+        (uint16 permissions,) = effectivePermissions(hook);
+        return classify(permissions);
+    }
+
+    /// @notice The class and its provenance in one call.
+    /// @dev Use this, not `riskClassOf`, anywhere a badge or a class label is rendered. A
+    /// `Passive` on a `SelfReported` record and a `Passive` on a `PoolAttested` record are two
+    /// very different statements, and separate calls make it easy to ship only the first.
+    function riskAssessmentOf(address hook)
+        external
+        view
+        returns (RiskClass class, PermissionSource source, uint32 attestationCount)
+    {
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
+        uint16 permissions;
+        (permissions, source) = _effective(record);
+        return (classify(permissions), source, record.attestationCount);
+    }
+
+    /// @notice True once at least one live pool has corroborated this hook.
+    function isAttested(address hook) external view returns (bool) {
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
+        return record.attestationCount > 0;
+    }
+
+    /// @notice The bits a live pool enforces that the hook did not admit to this registry.
+    /// @dev Non-zero is direct evidence that `getHooksRegistrationBitmap()` answers this address
+    /// differently than it answered core. Always zero for an unattested record — absence of
+    /// evidence, which is not the same as zero concealment.
+    function permissionsConcealed(address hook) external view returns (uint16) {
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
+        if (record.attestationCount == 0) return 0;
+        return record.attestedPermissions & ~record.permissions;
+    }
+
+    /// @notice The most recent attestation, for linking a badge back to the pool that earned it.
+    function attestationOf(address hook)
+        external
+        view
+        returns (uint32 count, uint16 attestedPermissions, address poolManager, bytes32 poolId, uint64 attestedAt)
+    {
+        LatchRecord storage record = _records[hook];
+        if (record.submitter == address(0)) revert LatchNotRegistered(hook);
+        return (
+            record.attestationCount,
+            record.attestedPermissions,
+            record.attestedPoolManager,
+            record.attestedPoolId,
+            record.attestedAt
+        );
+    }
+
+    /// @notice Whether this exact pool has already been counted towards `attestationCount`.
+    function hasAttestedPool(address hook, bytes32 poolId) external view returns (bool) {
+        return _attestedPools[hook][poolId];
     }
 
     function statusOf(address hook) external view returns (Verification verification, Listing listing) {
@@ -548,13 +890,19 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
     }
 
     /// @notice The single question a front end should ask before showing a trust badge.
-    /// @dev Never true for an unregistered hook, a flagged one, or one whose code has moved since
-    /// the audit was attested. Deliberately a view and not a modifier anywhere: this contract makes
-    /// no authorization decisions on anyone's behalf.
+    /// @dev Never true for an unregistered hook, a flagged one, one whose code has moved since the
+    /// audit was attested, or one no live pool has corroborated. Deliberately a view and not a
+    /// modifier anywhere: this contract makes no authorization decisions on anyone's behalf.
+    ///
+    /// The `attestationCount` term is redundant with the gate in `setVerification` — a record
+    /// cannot reach `Audited` without it and attestations are never removed. It is restated here
+    /// anyway, because this is the function integrators actually call and the invariant it depends
+    /// on lives in a different function.
     function isAudited(address hook) external view returns (bool) {
         LatchRecord storage record = _records[hook];
         return record.submitter != address(0) && record.verification == Verification.Audited
-            && record.listing == Listing.Active && record.permissionsReadable && record.permissionsValid;
+            && record.listing == Listing.Active && record.permissionsReadable && record.permissionsValid
+            && record.attestationCount > 0;
     }
 
     function latchCount() external view returns (uint256) {
@@ -582,11 +930,7 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
         return _page(_submitted[submitter], offset, limit);
     }
 
-    function _page(address[] storage list, uint256 offset, uint256 limit)
-        private
-        view
-        returns (address[] memory page)
-    {
+    function _page(address[] storage list, uint256 offset, uint256 limit) private view returns (address[] memory page) {
         uint256 length = list.length;
         if (offset > length) revert InvalidRange();
         // `limit = type(uint256).max` is the natural "give me the rest" idiom, so clamp before
@@ -596,6 +940,63 @@ contract LatchRegistry is ILatchRegistry, AccessControl {
         for (uint256 i; i < page.length; ++i) {
             page[i] = list[offset + i];
         }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        ADMIN ROLE CANNOT BE DROPPED
+
+        AccessControl's default behaviour lets the sole holder of
+        DEFAULT_ADMIN_ROLE walk away — `renounceRole`, or
+        `revokeRole` on itself. Here that is a one-way brick: the
+        admin role is the ONLY way to appoint a curator or a
+        guardian, and there is no other path to either. Listings
+        would keep working (register and refreshPermissions are
+        permissionless), but nothing could ever be badged again and
+        NOTHING COULD EVER BE FLAGGED MALICIOUS AGAIN. A safety
+        surface that cannot raise an alarm is worse than none,
+        because it still looks like one.
+
+        This is the registry's analogue of the `renounceOwnership`
+        finding open against the RWA hooks and the oracle. Two
+        guards, because the two paths are distinct: renouncing the
+        admin role is refused outright (there is never a good reason
+        — hand it to a successor instead), and revoking is refused
+        only when it would take the count to zero, so ordinary
+        rotation of a multi-admin setup still works.
+
+        Curator and guardian stay freely renounceable. Losing every
+        holder of those is recoverable in one admin transaction.
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc AccessControl
+    function renounceRole(bytes32 role, address callerConfirmation) public override {
+        if (role == DEFAULT_ADMIN_ROLE) revert AdminRoleIsNotRenounceable();
+        super.renounceRole(role, callerConfirmation);
+    }
+
+    function _grantRole(bytes32 role, address account) internal override returns (bool granted) {
+        granted = super._grantRole(role, account);
+        if (granted && role == DEFAULT_ADMIN_ROLE) {
+            unchecked {
+                ++_adminCount;
+            }
+        }
+    }
+
+    function _revokeRole(bytes32 role, address account) internal override returns (bool revoked) {
+        revoked = super._revokeRole(role, account);
+        if (revoked && role == DEFAULT_ADMIN_ROLE) {
+            // `revoked` is only true if the account held the role, so the count is at least 1.
+            if (_adminCount == 1) revert LastAdminCannotBeRemoved();
+            unchecked {
+                --_adminCount;
+            }
+        }
+    }
+
+    /// @notice How many accounts hold DEFAULT_ADMIN_ROLE. Never zero after construction.
+    function adminCount() external view returns (uint256) {
+        return _adminCount;
     }
 
     /*//////////////////////////////////////////////////////////////

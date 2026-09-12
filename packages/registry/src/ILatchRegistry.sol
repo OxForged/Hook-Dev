@@ -69,6 +69,33 @@ enum Listing {
     Malicious
 }
 
+/// @notice Where a record's permission bitmap actually came from.
+///
+/// @dev This exists because `getHooksRegistrationBitmap()` is a `view` function on a contract
+/// nobody has vetted, and a `view` function can read `msg.sender`. A hook can therefore answer the
+/// registry with a tame bitmap and answer core with the real one. Core validates the bitmap exactly
+/// ONCE — `Hooks.validateHookConfig` at pool initialization — and every dispatch after that reads
+/// `poolKey.parameters`, never the hook. So the hook's answer to the registry and the permissions a
+/// pool actually enforces are two independent facts, and only the second one can hurt anybody.
+///
+/// A UI that renders a risk class without rendering this value is rendering a claim as if it were a
+/// measurement. `riskAssessmentOf` returns both together for that reason.
+enum PermissionSource {
+    /// @dev Only the hook's own answer has been read. Nothing on chain corroborates it. This is not
+    /// an accusation — it is the correct state for a hook that is listed but not yet used by any
+    /// pool — but it is the state in which the bitmap is a claim by the hook about itself.
+    SelfReported,
+    /// @dev At least one live pool's immutable `parameters` has been read back from a pool manager
+    /// the Vault has registered, and it agrees with what the hook told the registry.
+    PoolAttested,
+    /// @dev Attested, and a live pool enforces at least one permission the hook did not admit to
+    /// the registry. The recorded bitmap is the union of both, so it can only ever overstate.
+    /// This is the signature of the spoof described above. It is not automatically proof of malice
+    /// — a hook serving both a CL and a Bin pool may legitimately present two bitmaps — but it does
+    /// mean the hook's self-report is not a safe thing to show a user on its own.
+    PoolAttestedDivergent
+}
+
 /// @notice Capability class derived purely from the on-chain bitmap. No human judgement.
 enum RiskClass {
     /// @dev Only `after*` callbacks that cannot return a delta. The hook observes; it cannot
@@ -100,12 +127,18 @@ struct LatchMetadata {
 /// @notice The full registry record for one hook address.
 /// @dev Field order is chosen for storage packing, not for prose:
 /// slot 0 = submitter|submittedAt|permissions|verification|listing (exactly 32 bytes),
-/// slot 1 = steward|updatedAt|permissionsValid|permissionsReadable, slot 2 = codehash.
+/// slot 1 = steward|updatedAt|permissionsValid|permissionsReadable|attestedPermissions (32),
+/// slot 2 = codehash,
+/// slot 3 = attestedPoolManager|attestedAt|attestationCount (exactly 32 bytes),
+/// slot 4 = attestedPoolId.
 struct LatchRecord {
     /// @dev Who called `register`. Immutable, historical. Non-zero iff the hook is registered.
     address submitter;
     uint64 submittedAt;
-    /// @dev Read from `getHooksRegistrationBitmap()` on the hook itself. Never submitter-supplied.
+    /// @dev SELF-REPORTED. Read from `getHooksRegistrationBitmap()` on the hook itself, so it is
+    /// never submitter-supplied — but it is still the hook's own account of the hook, delivered to
+    /// a caller the hook can identify. Read `attestedPermissions` before believing it, and prefer
+    /// `effectivePermissions` / `riskAssessmentOf` over either field alone.
     uint16 permissions;
     Verification verification;
     Listing listing;
@@ -117,8 +150,21 @@ struct LatchRecord {
     /// @dev False if a refresh could no longer read the bitmap at all. `permissions` then holds
     /// the last value that was successfully read, and must be treated as stale.
     bool permissionsReadable;
+    /// @dev The union of every bitmap this hook has been observed enforcing in a live pool, taken
+    /// from that pool's immutable `parameters`. Monotone: attestations only ever add bits, and no
+    /// role can clear them. Zero and meaningless until `attestationCount > 0`.
+    uint16 attestedPermissions;
     /// @dev `hook.codehash` at the time permissions were last read.
     bytes32 codehash;
+    /// @dev Pool manager of the most recent attestation. Zero until first attested.
+    address attestedPoolManager;
+    /// @dev Timestamp of the most recent attestation.
+    uint64 attestedAt;
+    /// @dev How many DISTINCT live pools have corroborated this hook. Each pool counts once,
+    /// forever. Zero means nothing on chain has confirmed the self-report.
+    uint32 attestationCount;
+    /// @dev Pool id of the most recent attestation, so a UI can link to the pool that vouched.
+    bytes32 attestedPoolId;
     LatchMetadata metadata;
 }
 
@@ -177,7 +223,9 @@ interface ILatchRegistry {
         address indexed hook, address indexed actor, Verification previous, Verification current, string note
     );
 
-    event LatchListingChanged(address indexed hook, address indexed actor, Listing previous, Listing current, string reason);
+    event LatchListingChanged(
+        address indexed hook, address indexed actor, Listing previous, Listing current, string reason
+    );
 
     event LatchStewardTransferred(address indexed hook, address indexed previous, address indexed current);
 
@@ -191,6 +239,27 @@ interface ILatchRegistry {
         bool readable,
         bool valid
     );
+
+    /// @notice A live pool has corroborated this hook's permissions.
+    /// @param poolPermissions The bitmap this one pool enforces, from its immutable `parameters`.
+    /// @param attestedPermissions The union across every pool attested so far, after this call.
+    /// @param selfReportedPermissions What the hook told the registry, for side-by-side comparison.
+    event LatchPoolAttested(
+        address indexed hook,
+        address indexed attestor,
+        address indexed poolManager,
+        bytes32 poolId,
+        uint16 poolPermissions,
+        uint16 attestedPermissions,
+        uint16 selfReportedPermissions,
+        uint32 attestationCount
+    );
+
+    /// @notice A live pool enforces permissions the hook never admitted to the registry.
+    /// @dev This is the event a marketplace should surface loudest. It is emitted only when
+    /// `concealed != 0`, i.e. the hook's answer to the registry was strictly weaker than reality.
+    /// @param concealed `attested & ~selfReported` — the bits the hook kept back.
+    event LatchPermissionsUnderstated(address indexed hook, uint16 selfReported, uint16 attested, uint16 concealed);
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -228,6 +297,44 @@ interface ILatchRegistry {
     /// @notice Verification cannot be raised on a hook whose on-chain permissions are unreadable
     /// or invalid. You cannot attest to what you cannot read.
     error PermissionsNotAttestable(address hook);
+
+    /*//////////////////////////////////////////////////////////////
+                          ATTESTATION ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The pool manager named is not an app the Vault has registered, so nothing it says
+    /// about its own pools can be trusted. `Vault.registerApp` is the gate here on purpose: it is
+    /// `onlyOwner` on the 48h custody timelock, which is the strictest approval in the protocol.
+    error UntrustedPoolManager(address poolManager);
+
+    /// @notice The manager holds no pool under that id, or the key it holds does not hash back to
+    /// it. Either way there is no initialized pool to read permissions from.
+    error PoolNotFound(address poolManager, bytes32 poolId);
+
+    /// @notice The pool exists, but its `hooks` field is a different contract. An attestation only
+    /// ever speaks for the hook the pool actually runs.
+    error PoolHookMismatch(bytes32 poolId, address expected, address found);
+
+    /// @notice That exact pool has already been counted. Re-attesting adds no information and
+    /// would only spam the log — attest a different pool, or read the record.
+    error PoolAlreadyAttested(address hook, bytes32 poolId);
+
+    /// @notice A curator tried to badge a record that no live pool has corroborated. Verification
+    /// is a statement about a deployment, and until a pool exists the only evidence available is
+    /// the hook's own account of itself.
+    error AttestationRequired(address hook);
+
+    /*//////////////////////////////////////////////////////////////
+                             ROLE ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice `DEFAULT_ADMIN_ROLE` cannot be renounced. It is the only role that can appoint
+    /// curators and guardians; dropping the last holder would permanently freeze the safety
+    /// surface with no way back. Transfer it by granting the successor and then revoking.
+    error AdminRoleIsNotRenounceable();
+
+    /// @notice Revoking that account would leave `DEFAULT_ADMIN_ROLE` with no holder. Same reason.
+    error LastAdminCannotBeRemoved();
 
     error AuditURIRequired();
     error SourceURIRequired();

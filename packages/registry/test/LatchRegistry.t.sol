@@ -4,6 +4,10 @@ pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {IHooks} from "infinity-core/src/interfaces/IHooks.sol";
+import {IPoolManager} from "infinity-core/src/interfaces/IPoolManager.sol";
+import {PoolKey} from "infinity-core/src/types/PoolKey.sol";
+import {Currency} from "infinity-core/src/types/Currency.sol";
 
 import {LatchRegistry} from "../src/LatchRegistry.sol";
 import {
@@ -13,6 +17,7 @@ import {
     DecodedPermissions,
     Verification,
     Listing,
+    PermissionSource,
     RiskClass,
     PERM_BEFORE_INITIALIZE,
     PERM_AFTER_INITIALIZE,
@@ -47,11 +52,16 @@ import {
     ReturnBombHook,
     RawButHonestHook,
     NoBitmapHook,
-    ReentrantHook
+    ReentrantHook,
+    TwoFacedHook,
+    GasBranchHook
 } from "./mocks/MockHooks.sol";
+import {MockVault, MockPoolManager, NotAPoolManager} from "./mocks/MockPools.sol";
 
 contract LatchRegistryTest is Test {
     LatchRegistry internal registry;
+    MockVault internal vault;
+    MockPoolManager internal poolManager;
 
     address internal timelock = address(0x71E10);
     address internal curator = address(0xC0A70);
@@ -71,7 +81,10 @@ contract LatchRegistryTest is Test {
         curators[0] = curator;
         address[] memory guardians = new address[](1);
         guardians[0] = guardian;
-        registry = new LatchRegistry(timelock, curators, guardians);
+        vault = new MockVault();
+        poolManager = new MockPoolManager();
+        vault.registerApp(address(poolManager));
+        registry = new LatchRegistry(timelock, address(vault), curators, guardians);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -99,14 +112,55 @@ contract LatchRegistryTest is Test {
         });
     }
 
+    /// @dev Register AND attest against a live pool that enforces exactly what the hook reported.
+    /// Most tests here predate attestation and care about something else; this keeps them in the
+    /// corroborated state that a real listing reaches as soon as its pool exists. Tests that are
+    /// specifically about the UNattested state use `_registerOnly`.
     function _register(address who, address hook) internal {
+        _registerOnly(who, hook);
+        _attest(hook);
+    }
+
+    function _registerFull(address who, address hook, string memory source, string memory audit) internal {
+        _registerOnlyFull(who, hook, source, audit);
+        _attest(hook);
+    }
+
+    function _registerOnly(address who, address hook) internal {
         vm.prank(who);
         registry.register(hook, _meta());
     }
 
-    function _registerFull(address who, address hook, string memory source, string memory audit) internal {
+    function _registerOnlyFull(address who, address hook, string memory source, string memory audit) internal {
         vm.prank(who);
         registry.register(hook, _meta("Hook", source, audit));
+    }
+
+    /// @dev Distinct currencies per pool so every helper-built pool gets its own id.
+    uint160 internal _poolNonce;
+
+    function _poolKey(address hook, uint16 bitmap) internal returns (PoolKey memory key) {
+        _poolNonce += 1;
+        key = PoolKey({
+            currency0: Currency.wrap(address(_poolNonce)),
+            currency1: Currency.wrap(address(_poolNonce + 0x1000)),
+            hooks: IHooks(hook),
+            poolManager: IPoolManager(address(poolManager)),
+            fee: 3000,
+            // [0-16) hooks bitmap, [16-40) tickSpacing. Same layout core uses.
+            parameters: bytes32(uint256(bitmap) | (uint256(60) << 16))
+        });
+    }
+
+    /// @dev File a pool enforcing `bitmap` for `hook` and attest it.
+    function _attestWith(address hook, uint16 bitmap) internal returns (bytes32 poolId) {
+        poolId = poolManager.setPool(_poolKey(hook, bitmap));
+        registry.attestFromPool(hook, address(poolManager), poolId);
+    }
+
+    /// @dev Attest a pool that agrees with whatever the hook told the registry.
+    function _attest(address hook) internal returns (bytes32) {
+        return _attestWith(hook, registry.selfReportedPermissionsOf(hook));
     }
 
     /// @dev Drive a hook all the way to Audited/Active.
@@ -127,9 +181,7 @@ contract LatchRegistryTest is Test {
     }
 
     function _callRegister(address hook, uint256 gasCap) internal returns (bool ok, bytes memory ret) {
-        (ok, ret) = address(registry).call{gas: gasCap}(
-            abi.encodeCall(LatchRegistry.register, (hook, _meta()))
-        );
+        (ok, ret) = address(registry).call{gas: gasCap}(abi.encodeCall(LatchRegistry.register, (hook, _meta())));
     }
 
     function _selectorOf(bytes memory ret) internal pure returns (bytes4) {
@@ -256,7 +308,7 @@ contract LatchRegistryTest is Test {
         vm.prank(alice);
         registry.register(hook, lie);
 
-        (uint16 permissions,,) = registry.permissionsOf(hook);
+        (uint16 permissions,,,) = registry.permissionsOf(hook);
         assertEq(permissions, SWAP_TAX, "chain, not the submitter, decides");
         assertEq(uint8(registry.riskClassOf(hook)), uint8(RiskClass.ValueExtracting));
         assertTrue(registry.takesSwapCut(permissions), "bit 10 must surface as a swap cut");
@@ -293,12 +345,8 @@ contract LatchRegistryTest is Test {
             PERM_AFTER_ADD_LIQUIDITY_RETURNS_DELTA,
             PERM_AFTER_REMOVE_LIQUIDITY_RETURNS_DELTA
         ];
-        uint16[4] memory bases = [
-            PERM_BEFORE_SWAP,
-            PERM_AFTER_SWAP,
-            PERM_AFTER_ADD_LIQUIDITY,
-            PERM_AFTER_REMOVE_LIQUIDITY
-        ];
+        uint16[4] memory bases =
+            [PERM_BEFORE_SWAP, PERM_AFTER_SWAP, PERM_AFTER_ADD_LIQUIDITY, PERM_AFTER_REMOVE_LIQUIDITY];
         for (uint256 i; i < 4; ++i) {
             assertFalse(registry.isValidBitmap(orphans[i]), "orphan delta bit must be invalid");
             assertTrue(registry.isValidBitmap(orphans[i] | bases[i]), "paired must be valid");
@@ -393,7 +441,7 @@ contract LatchRegistryTest is Test {
     function test_hostile_rawButHonestAccepted() public {
         address hook = address(new RawButHonestHook(TAME));
         _register(alice, hook);
-        (uint16 p,,) = registry.permissionsOf(hook);
+        (uint16 p,,,) = registry.permissionsOf(hook);
         assertEq(p, TAME);
     }
 
@@ -508,9 +556,8 @@ contract LatchRegistryTest is Test {
         MutableHook hook = new MutableHook(TAME);
         _makeAudited(address(hook));
 
-        (bool ok, bytes memory ret) = address(registry).call{gas: 120_000}(
-            abi.encodeCall(LatchRegistry.refreshPermissions, (address(hook)))
-        );
+        (bool ok, bytes memory ret) =
+            address(registry).call{gas: 120_000}(abi.encodeCall(LatchRegistry.refreshPermissions, (address(hook))));
         assertFalse(ok);
         assertEq(_selectorOf(ret), ILatchRegistry.InsufficientGasForProbe.selector);
         assertEq(
@@ -760,17 +807,13 @@ contract LatchRegistryTest is Test {
         registry.setListing(hook, Listing.Malicious, "confirmed");
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                ILatchRegistry.GuardianCannotRelist.selector, Listing.Malicious, Listing.Active
-            )
+            abi.encodeWithSelector(ILatchRegistry.GuardianCannotRelist.selector, Listing.Malicious, Listing.Active)
         );
         vm.prank(guardian);
         registry.setListing(hook, Listing.Active, "never mind");
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                ILatchRegistry.GuardianCannotRelist.selector, Listing.Malicious, Listing.Malicious
-            )
+            abi.encodeWithSelector(ILatchRegistry.GuardianCannotRelist.selector, Listing.Malicious, Listing.Malicious)
         );
         vm.prank(guardian);
         registry.setListing(hook, Listing.Malicious, "again");
@@ -1032,7 +1075,7 @@ contract LatchRegistryTest is Test {
     function test_roles_zeroAdminRejected() public {
         address[] memory empty = new address[](0);
         vm.expectRevert(ILatchRegistry.ZeroAddress.selector);
-        new LatchRegistry(address(0), empty, empty);
+        new LatchRegistry(address(0), address(vault), empty, empty);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1047,7 +1090,7 @@ contract LatchRegistryTest is Test {
         vm.prank(alice);
         registry.register(hook, _meta());
 
-        (uint16 stored, bool readable, bool valid) = registry.permissionsOf(hook);
+        (uint16 stored, bool readable, bool valid,) = registry.permissionsOf(hook);
         assertEq(stored, permissions, "stored verbatim");
         assertTrue(readable);
         assertTrue(valid);

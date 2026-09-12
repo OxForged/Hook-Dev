@@ -21,11 +21,20 @@ import {LatchRegistry} from "../src/LatchRegistry.sol";
  * draining people" makes the flag useless.
  *
  * TESTNET: deployer holds all three so the marketplace can be exercised.
+ *
+ * VAULT: the registry believes a pool manager iff this Vault has registered it as an
+ * app. That is the trust anchor for `attestFromPool`, which is the only permission
+ * source a hook cannot lie to. Point it at the wrong Vault and every attestation
+ * becomes worthless, so it is required rather than defaulted.
+ *
+ *   REGISTRY_VAULT=0x...
  */
 contract DeployRegistryScript is Script {
     function run() public {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
+        address vault = vm.envAddress("REGISTRY_VAULT");
+        require(vault.code.length > 0, "REGISTRY_VAULT has no code - not a Vault");
 
         address[] memory curators = new address[](1);
         curators[0] = deployer;
@@ -33,14 +42,16 @@ contract DeployRegistryScript is Script {
         guardians[0] = deployer;
 
         vm.startBroadcast(pk);
-        LatchRegistry registry = new LatchRegistry(deployer, curators, guardians);
+        LatchRegistry registry = new LatchRegistry(deployer, vault, curators, guardians);
         vm.stopBroadcast();
 
         require(registry.hasRole(registry.CURATOR_ROLE(), deployer), "curator not set");
         require(registry.hasRole(registry.GUARDIAN_ROLE(), deployer), "guardian not set");
+        require(address(registry.vault()) == vault, "vault not wired");
 
         console.log("LatchRegistry  ", address(registry));
         console.log("  admin            ", deployer);
+        console.log("  vault            ", vault);
         console.log("  latchCount        ", registry.latchCount());
     }
 }

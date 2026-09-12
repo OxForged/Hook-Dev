@@ -193,7 +193,9 @@ interface ILaunchpadKit {
     error UnexpectedHookBitmap(uint16 expected, uint16 actual);
     /// @notice The hook serves a different pool manager than the one this kit was given.
     error HookPoolManagerMismatch(address expected, address actual);
-    /// @notice Block time must be between 0.5s and 600s, expressed in hundredths of a second.
+    /// @notice Block time must be non-zero and at most 600s, expressed in hundredths of a second.
+    /// @dev Sub-second chains are in scope: Robinhood Chain (4663) is 10 centis. Only zero is
+    /// rejected at the bottom, because it divides by zero in `LaunchPresets.secondsToBlocks`.
     error InvalidBlockTime(uint32 blockTimeCentis);
 
     /*//////////////////////////////////////////////////////////////
