@@ -2,7 +2,12 @@ const { sumTokens2 } = require("../helper/unwrapLPs");
 const { getLogs2 } = require("../helper/cache/getLogs");
 const { nullAddress } = require("../helper/tokenMapping");
 const { sliceIntoChunks } = require("../helper/utils");
-const { DEPLOYMENTS, enabledChains, poolManagers } = require("./config");
+const {
+  DEPLOYMENTS,
+  enabledChains,
+  poolManagers,
+  blacklistedTokens,
+} = require("./config");
 
 /**
  * Latch Protocol - TVL.
@@ -26,7 +31,29 @@ const { DEPLOYMENTS, enabledChains, poolManagers } = require("./config");
  *
  * Hooks: Latch hooks can take their own delta and custody tokens, exactly as in
  * Uniswap v4. Any pool with a non-null `hooks` address therefore also gets its pair
- * summed against that hook, mirroring `projects/uniswap-v4`.
+ * summed against that hook, mirroring `projects/uniswap-v4`. The hook address is
+ * taken from each pool's OWN Initialize log, never from a "current hook" constant:
+ * `poolKey.hooks` is part of the pool id, so a pool stays bound to the hook it was
+ * created with even after the protocol redeploys that hook. On Robinhood the
+ * RevShareHook was redeployed on 2026-09-12 and the only pool with history is
+ * still attached to the retired instance; reading the log is what keeps that
+ * pool's hook balance in scope. (RevShareHook's accrued fees are ERC-6909 claims
+ * INSIDE the Vault until someone calls `redeem`, so they are already inside the
+ * Vault's ERC20 balance; summing the hook's ERC20 balance as well cannot double
+ * count, because tokens sit in exactly one of the two places at a time.)
+ *
+ * ---------------------------------------------------------------------------
+ * UNPRICED TOKENS ARE EXCLUDED ON PURPOSE
+ * ---------------------------------------------------------------------------
+ * `config.js` names, per chain, tokens that must never be reported: today Latch's
+ * own throwaway test tokens (LTT1/LTT2 on Robinhood), which are the only tokens
+ * the Vault currently holds. They are dropped BEFORE the balance read, and the
+ * same list is passed to `sumTokens2` as `blacklistedTokens` so upstream's own
+ * filter agrees. The result is an honest $0 on a chain whose only deposits are
+ * test tokens - not a balance that the price server happens to value at nothing
+ * today and might value at something tomorrow. No token is ever given a price
+ * here, and none defaults to $1: pricing is upstream's job, and a token upstream
+ * cannot price contributes nothing rather than a guess.
  *
  * ---------------------------------------------------------------------------
  * TOPIC0 COLLISION
@@ -41,12 +68,12 @@ const { DEPLOYMENTS, enabledChains, poolManagers } = require("./config");
  * abi. Never query these by topic alone.
  *
  * ---------------------------------------------------------------------------
- * NOT DEPLOYED ON MAINNET
+ * WHAT IS EXPORTED
  * ---------------------------------------------------------------------------
- * As of 2026-09 Latch exists only on Sepolia, which DefiLlama does not index.
- * `enabledChains()` returns an empty list until a mainnet row in `config.js` is
- * filled in, so this file currently exports nothing. That is deliberate: an
- * adapter that exported a chain with no deployment would report $0 TVL as a fact.
+ * Exactly the chains in `config.js` that have contracts - Robinhood Chain
+ * ("robinhood") since 2026-09-11. An unfilled row is never exported, because an
+ * adapter that exported a chain with no deployment would report $0 TVL as a fact
+ * about a deployment rather than about the absence of one.
  */
 
 const CL_INITIALIZE_EVENT =
@@ -62,6 +89,7 @@ const initializeEventFor = (chain, manager) =>
 async function tvl(api) {
   const chain = api.chain;
   const { vault, fromBlock } = DEPLOYMENTS[chain];
+  const excluded = new Set(blacklistedTokens(chain));
 
   const tokenSet = new Set();
   const ownerTokens = [];
@@ -75,13 +103,17 @@ async function tvl(api) {
     });
 
     for (const log of logs) {
-      const token0 = String(log.currency0).toLowerCase();
-      const token1 = String(log.currency1).toLowerCase();
-      tokenSet.add(token0);
-      tokenSet.add(token1);
+      // Excluded tokens never reach a balance call, so a pool made only of them
+      // contributes nothing - not a zero, nothing.
+      const pair = [log.currency0, log.currency1]
+        .map((t) => String(t).toLowerCase())
+        .filter((t) => !excluded.has(t));
+      for (const token of pair) tokenSet.add(token);
       // A hook may hold its own balances (hook deltas / hook-owned liquidity).
-      if (String(log.hooks).toLowerCase() !== nullAddress) {
-        ownerTokens.push([[token0, token1], log.hooks]);
+      // The hook comes from THIS pool's log, so a pool bound to a retired hook
+      // deployment is still counted against that hook.
+      if (pair.length && String(log.hooks).toLowerCase() !== nullAddress) {
+        ownerTokens.push([pair, log.hooks]);
       }
     }
   }
@@ -92,12 +124,19 @@ async function tvl(api) {
     ownerTokens.push([tokens, vault]);
   }
 
-  return sumTokens2({ api, ownerTokens, permitFailure: true });
+  // The same exclusion is handed to sumTokens2 so upstream's filter and ours can
+  // never disagree about a token that slipped in through another path.
+  return sumTokens2({
+    api,
+    ownerTokens,
+    permitFailure: true,
+    blacklistedTokens: Array.from(excluded),
+  });
 }
 
 module.exports = {
   methodology:
-    "Latch is a singleton AMM: one Vault custodies every token for the whole protocol, and pool managers hold nothing. TVL is the Vault's balance of every token that has appeared as currency0 or currency1 in an Initialize event from CLPoolManager or BinPoolManager, plus any balance held by a pool's hook contract. Native currency appears as the zero address in a pool key and is read as the Vault's native balance.",
+    "Latch is a singleton AMM: one Vault custodies every token for the whole protocol, and pool managers hold nothing. TVL is the Vault's balance of every token that has appeared as currency0 or currency1 in an Initialize event from CLPoolManager or BinPoolManager, plus any balance held by the hook contract each pool was created with. Native currency appears as the zero address in a pool key and is read as the Vault's native balance. Latch's own test tokens (LTT1/LTT2 on Robinhood Chain) are excluded by address: they have no market and no price, and are not counted at any value.",
 };
 
 for (const chain of enabledChains()) {

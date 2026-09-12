@@ -1,6 +1,11 @@
 {
-  "_comment": "LOCAL HARNESS STUB - not the upstream file. Upstream helpers/coreAssets.json is ~300kB and lists every core asset per chain; only the handful the local tests exercise are here. `null` is the zero address, which is how native currency appears in a Latch pool key.",
+  "_comment": "LOCAL HARNESS STUB - not the upstream file. Upstream helpers/coreAssets.json is ~300kB and lists every core asset per chain; only the handful the local tests exercise are here. `null` is the zero address, which is how native currency appears in a Latch pool key. The `robinhood` block is upstream's verbatim as of 2026-09-12 - note it has NO `null` entry, so on Robinhood a native-ETH leg is not a core asset and addOneToken prices the other leg. LTT1/LTT2 are deliberately absent: they are Latch's own throwaway test tokens and are not core assets anywhere.",
   "null": "0x0000000000000000000000000000000000000000",
+  "robinhood": {
+    "WETH": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "USDe": "0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34",
+    "USDG": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
+  },
   "ethereum": {
     "null": "0x0000000000000000000000000000000000000000",
     "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",

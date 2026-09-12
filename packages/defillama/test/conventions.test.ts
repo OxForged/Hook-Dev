@@ -1,6 +1,10 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import adapter, { chainConfig, isConfigured } from "../dimension-adapters/dexs/latch.js";
+import adapter, {
+  LATCH_TEST_TOKENS,
+  chainConfig,
+  isConfigured,
+} from "../dimension-adapters/dexs/latch.js";
 import type { BaseAdapter } from "../dimension-adapters/adapters/types.js";
 import { CHAIN } from "../dimension-adapters/helpers/chains.js";
 
@@ -77,10 +81,36 @@ describe("dimension-adapters conventions", () => {
   it("exports only chains that actually have a deployment", () => {
     const exported = Object.keys(adapter.adapter ?? {});
     for (const chain of exported) expect(isConfigured(chainConfig[chain])).toBe(true);
-    // Today: nothing is deployed on a mainnet, so nothing is exported. When that
-    // changes this assertion is the reminder to re-check `start`.
     const configured = Object.keys(chainConfig).filter((c) => isConfigured(chainConfig[c]));
     expect(exported.sort()).toEqual(configured.sort());
+  });
+
+  it("exports exactly the one live mainnet, Robinhood Chain, with its real addresses", () => {
+    // Pinned on purpose. Adding a chain here is a deliberate act that should
+    // fail this test until the new row is acknowledged; a placeholder row that
+    // accidentally satisfies isConfigured() must not slip into the export.
+    expect(Object.keys(adapter.adapter ?? {})).toEqual([CHAIN.ROBINHOOD]);
+    const r = chainConfig[CHAIN.ROBINHOOD]!;
+    expect(r.vault).toBe("0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c");
+    expect(r.clPoolManager).toBe("0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66");
+    expect(r.binPoolManager).toBe("0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979");
+    for (const a of [r.vault, r.clPoolManager, r.binPoolManager])
+      expect(a).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(r.fromBlock).toBe(60124455);
+    expect(r.start).toBe("2026-09-11");
+  });
+
+  it("excludes Latch's test tokens on Robinhood and never a priced asset", () => {
+    const bl = (chainConfig[CHAIN.ROBINHOOD]!.blacklistTokens ?? []).map((t) => t.toLowerCase());
+    for (const t of LATCH_TEST_TOKENS[CHAIN.ROBINHOOD]!)
+      expect(bl, `${t} (test token) must be excluded`).toContain(t.toLowerCase());
+    // The real assets on the chain must never end up on the list by accident:
+    // excluding them would silently zero any future WETH/USDG pool.
+    const WETH = "0x0bd7d308f8e1639fab988df18a8011f41eacad73";
+    const USDG = "0x5fc5360d0400a0fd4f2af552add042d716f1d168";
+    expect(bl).not.toContain(WETH);
+    expect(bl).not.toContain(USDG);
+    expect(bl).not.toContain("0x0000000000000000000000000000000000000000");
   });
 
   it("gives every exported chain a YYYY-MM-DD start", () => {
@@ -113,6 +143,33 @@ describe("config parity across the two upstream repos", () => {
     for (const chain of Object.keys(chainConfig))
       expect(tvlConfig.isConfigured(chain)).toBe(isConfigured(chainConfig[chain]));
     expect(tvlConfig.enabledChains().sort()).toEqual(Object.keys(adapter.adapter ?? {}).sort());
+    // Not vacuous: at least one chain must be live for the parity above to have
+    // compared anything but empty strings.
+    expect(tvlConfig.enabledChains().length).toBeGreaterThan(0);
+  });
+
+  it("agrees on the excluded test tokens, chain by chain", () => {
+    // Same list in both repos: LATCH_TEST_TOKENS here, LATCH_TEST_TOKENS there.
+    // A test token excluded from volume but counted in TVL (or the reverse)
+    // would be the two adapters disagreeing about whether a token has value.
+    expect(Object.keys(tvlConfig.LATCH_TEST_TOKENS).sort()).toEqual(
+      Object.keys(LATCH_TEST_TOKENS).sort(),
+    );
+    for (const chain of Object.keys(LATCH_TEST_TOKENS)) {
+      const ts = LATCH_TEST_TOKENS[chain]!.map(normalize).sort();
+      const js = (tvlConfig.LATCH_TEST_TOKENS[chain] as string[]).map(normalize).sort();
+      expect(js, `${chain} test-token list differs`).toEqual(ts);
+      // and each side actually applies its own list
+      expect(tvlConfig.blacklistedTokens(chain).sort()).toEqual(js);
+      const dex = (chainConfig[chain]!.blacklistTokens ?? []).map(normalize);
+      for (const t of ts) expect(dex).toContain(t);
+    }
+  });
+
+  it("agrees on the chain id where the TVL config carries one", () => {
+    // Only the TVL side stores chainId. Pin the one live chain so the slug and
+    // the id cannot drift apart: "robinhood" is 4663 and nothing else.
+    expect(tvlConfig.DEPLOYMENTS[CHAIN.ROBINHOOD].chainId).toBe(4663);
   });
 });
 

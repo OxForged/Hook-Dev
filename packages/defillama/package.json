@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "run:sepolia": "vite-node scripts/run-sepolia.ts"
+    "run:sepolia": "vite-node scripts/run-sepolia.ts",
+    "run:robinhood": "vite-node scripts/run-robinhood.ts"
   },
   "dependencies": {
     "viem": "^2.21.0"

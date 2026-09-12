@@ -16,8 +16,12 @@ import { addOneToken } from "../helpers/prices";
  * Both emit their own `Swap`, and both carry the same two fee numbers, so one
  * code path covers them. See `FEE MODEL` below.
  *
- * Website: https://latch.exchange       (placeholder - fill in before submitting)
- * Twitter: https://x.com/latchprotocol  (placeholder - fill in before submitting)
+ * Twitter: https://x.com/Ox_Forged  (the DEVELOPER's account, confirmed by the project
+ *          owner 2026-09-12; there is no protocol account yet. `x.com/latchprotocol` was
+ *          a guess this repo used to link and is not ours.)
+ * Website: not yet public - latch.guru is the intended domain and is NXDOMAIN at the
+ *          .guru registry as of 2026-09-12, so it is not merely unrouted, it does not
+ *          resolve. Fill in before submitting; do not submit a URL that 404s.
  *
  * ---------------------------------------------------------------------------
  * TOPIC0 COLLISION - read before touching the log queries
@@ -80,15 +84,25 @@ import { addOneToken } from "../helpers/prices";
 // ---------------------------------------------------------------------------
 // Deployment registry. Adding a chain is one entry here and nothing else.
 //
-// Latch is NOT deployed on any mainnet yet (2026-09). Every row below is a
-// placeholder with empty addresses; `fetch` throws for a chain that has none, and
-// the adapter export skips those chains entirely, so an unfinished row cannot
-// report a silent zero. Fill in the addresses, `fromBlock` and `start` when a
-// chain ships.
+// ONE MAINNET IS LIVE: Robinhood Chain (4663, slug "robinhood"), since
+// 2026-09-11. Every other row below is a placeholder with empty addresses;
+// `fetch` throws for a chain that has none, and the adapter export skips those
+// chains entirely, so an unfinished row cannot report a silent zero. Fill in the
+// addresses, `fromBlock` and `start` when a chain ships.
 //
-// The only live deployment is Sepolia, and DefiLlama does not index testnets
-// (`helpers/chains.ts` has no `sepolia` member), so it is deliberately absent.
-// The local harness in packages/defillama supplies it separately.
+// Sepolia is deliberately absent: DefiLlama does not index testnets
+// (`helpers/chains.ts` has no `sepolia` member). The local harness in
+// packages/defillama supplies it separately.
+//
+// PROTOCOL REVENUE IS READ PER SWAP, NEVER ASSUMED FROM CONFIGURATION.
+// `dailyRevenue` is the `protocolFee` field each `Swap` actually carried. On
+// Robinhood both swaps to date carry protocolFee 0. Governance wired a
+// LatchProtocolFeeController (defaultFee 0.1% each way) to both pool managers
+// on 2026-09-12, AFTER those swaps; an existing pool keeps the protocol fee it
+// was initialized with until the controller updates it, and a new pool takes
+// the controller's default at initialize. None of that is modelled here - the
+// adapter does not read the controller and does not need to, because whatever
+// rate a pool had at the moment of a swap is in that swap's log.
 // ---------------------------------------------------------------------------
 export interface LatchChainConfig {
   /** Singleton custodian of every token. Used by the TVL adapter, not here. */
@@ -101,10 +115,51 @@ export interface LatchChainConfig {
   fromBlock: number;
   /** First date that returns data. */
   start: string;
+  /**
+   * Tokens whose swaps are dropped entirely. Two sources, merged: DefiLlama's
+   * central spam list for the chain, and `LATCH_TEST_TOKENS` below.
+   */
   blacklistTokens?: string[];
 }
 
+/**
+ * Latch's own throwaway test tokens - "Latch Test Token One/Two", 18 decimals,
+ * minted by the deployer to exercise the protocol end to end. They are the two
+ * currencies of the only Robinhood pool with any history (LTT1/LTT2 0.30%).
+ *
+ * Nothing prices them and nothing should. A swap between two such tokens has no
+ * dollar volume, and the honest report of it is nothing at all - not a zero and
+ * certainly not whatever a DEX-derived price feed might later infer from a dust
+ * pool. `addOneToken` would otherwise hand the leg to the price server, which
+ * returns no entry for either today (coins.llama.fi, 2026-09-12) and would drop
+ * it; excluding by address makes that a decision rather than a coincidence.
+ *
+ * Mirrored in DefiLlama-Adapters/projects/latch/config.js as
+ * `LATCH_TEST_TOKENS`; the parity test fails if the two lists disagree.
+ */
+export const LATCH_TEST_TOKENS: Record<string, string[]> = {
+  [CHAIN.ROBINHOOD]: [
+    "0x2A21c0826848f2D597B7C87A4B931dE1407958A6", // LTT1
+    "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4", // LTT2
+  ],
+};
+
 export const chainConfig: Record<string, LatchChainConfig> = {
+  // Robinhood Chain, chain id 4663. All addresses Sourcify-verified. The CL pool
+  // manager landed at block 60124455 and the Bin manager at 60124601, both on
+  // 2026-09-11 (Vault: 60122218; the timelocks, and the dapp's scan floor, at
+  // 60111836). `fromBlock` is the CL block: the earliest an Initialize can exist.
+  [CHAIN.ROBINHOOD]: {
+    vault: "0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c",
+    clPoolManager: "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
+    binPoolManager: "0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979",
+    fromBlock: 60124455,
+    start: "2026-09-11",
+    blacklistTokens: [
+      ...getDefaultDexTokensBlacklisted(CHAIN.ROBINHOOD),
+      ...LATCH_TEST_TOKENS[CHAIN.ROBINHOOD]!,
+    ],
+  },
   [CHAIN.ETHEREUM]: {
     vault: "",
     clPoolManager: "",
@@ -381,9 +436,11 @@ const fetch = async (options: FetchOptions) => {
   // dailySupplySideRevenue fee - protocolFee, the part that stays in the pool and
   //                        accrues to LP positions.
   // dailyRevenue           protocolFee, accrued into `protocolFeesAccrued` on the
-  //                        pool manager and withdrawable by its owner via
-  //                        `Vault.collectFee`. = dailyFees - dailySupplySideRevenue.
-  // dailyProtocolRevenue   the same number: it all goes to the treasury.
+  //                        pool manager and collectable only by its
+  //                        protocolFeeController. = dailyFees - dailySupplySideRevenue.
+  //                        Read from each swap's `protocolFee`; a pool with a zero
+  //                        protocol fee - every Robinhood swap so far - adds zero.
+  // dailyProtocolRevenue   the same number: whatever there is goes to the protocol.
   // dailyHoldersRevenue    omitted. Latch has no token, so there is no buyback,
   //                        burn or holder distribution to attribute.
   const dailyFees = swapFees.clone(1, METRIC.SWAP_FEES);
@@ -414,11 +471,12 @@ const adapter: SimpleAdapter = {
   fetch,
   adapter: {},
   methodology: {
-    Volume: "Gross input of every swap on CLPoolManager and BinPoolManager, one leg per swap.",
+    Volume:
+      "Gross input of every swap on CLPoolManager and BinPoolManager, one leg per swap. Swaps in Latch's own test tokens (LTT1/LTT2 on Robinhood Chain) are excluded: they have no market and no price.",
     Fees: "Total swap fee paid by traders, read from the `fee` field of each Swap event (hundredths of a bip). The protocol fee is charged on the input before the LP fee, so this single field already covers both.",
     UserFees: "Same as Fees - traders pay the entire swap fee; liquidity providers are not charged.",
     Revenue:
-      "The `protocolFee` slice of each swap, accrued to the pool manager and withdrawable to the Latch treasury.",
+      "The `protocolFee` slice of each swap, taken from the rate the Swap event itself carries - never from the fee controller's configuration. A pool with a zero protocol fee contributes zero; every swap on Robinhood Chain to date has carried a zero protocol fee.",
     ProtocolRevenue:
       "All of Revenue. Latch has no token, so nothing is diverted to holders.",
     SupplySideRevenue: "Swap fee minus the protocol slice - the part that accrues to liquidity providers.",
@@ -431,10 +489,12 @@ const adapter: SimpleAdapter = {
       [METRIC.SWAP_FEES]: "Total swap fee paid by traders across both pool managers.",
     },
     Revenue: {
-      [METRIC.PROTOCOL_REVENUE]: "Protocol fee slice of the swap fee, accrued to the treasury.",
+      [METRIC.PROTOCOL_REVENUE]:
+        "Protocol fee slice of the swap fee, at the rate each Swap event carried on chain.",
     },
     ProtocolRevenue: {
-      [METRIC.PROTOCOL_REVENUE]: "Protocol fee slice of the swap fee, accrued to the treasury.",
+      [METRIC.PROTOCOL_REVENUE]:
+        "Protocol fee slice of the swap fee, at the rate each Swap event carried on chain.",
     },
     SupplySideRevenue: {
       [METRIC.LP_REVENUE]: "Swap fee remaining after the protocol slice, earned by liquidity providers.",

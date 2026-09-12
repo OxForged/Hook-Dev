@@ -5,10 +5,18 @@ volume** and **fees**. The directory layout mirrors the two upstream repositorie
 so the files that ship are the files that were tested here - nothing is rewritten
 on the way out.
 
-> **Status: not submittable yet.** Latch is deployed only on Sepolia, and DefiLlama
-> does not index testnets. Both adapters therefore export **zero chains** today.
-> Filling in one mainnet row in the config tables is all that is required to change
-> that - see [Adding a chain](#adding-a-chain).
+> **Status: one mainnet row, Robinhood Chain (4663), exporting an honest nothing.**
+> Both adapters export `robinhood` - DefiLlama's own slug for the chain, present in
+> both upstream repos and in the published `@defillama/sdk` provider list, all
+> checked 2026-09-12. What they report today is **$0 TVL and no volume**, and that is
+> correct: the only pool with any history is LTT1/LTT2, two Latch test tokens that
+> nothing prices, and the adapters exclude them by address on purpose. The numbers
+> become non-zero the day a pool in real assets (WETH, USDG, native ETH - all three
+> priced by DefiLlama on this chain) sees a deposit or a swap.
+>
+> Whether DefiLlama will merge a listing whose first reading is zero is their
+> editorial call, not a property of this code. See
+> [What blocks listing](#what-blocks-listing-and-what-does-not).
 
 ---
 
@@ -30,12 +38,14 @@ packages/defillama/
 │
 ├── harness/                            runs the adapters against a real node
 │   ├── balances.ts                     minimal @defillama/sdk Balances
-│   ├── rpc.ts                          eth_getLogs + viem decoding
+│   ├── rpc.ts                          eth_getLogs + viem decoding, quota-aware
 │   ├── runFetch.ts                     assembles a FetchOptions
-│   └── sepolia.ts                      the one live deployment
+│   ├── robinhood.ts                    the live mainnet: RPC, range cap, measured facts
+│   └── sepolia.ts                      the testnet, injected by the harness only
 │
-├── scripts/run-sepolia.ts              end-to-end run, all three dimensions
-└── test/                               48 tests, 9 of them against live chain
+├── scripts/run-robinhood.ts            end-to-end run against the mainnet, nothing injected
+├── scripts/run-sepolia.ts              same against Sepolia
+└── test/                               68 tests, 18 of them against live chains
 ```
 
 Only the four files marked ★ are meant to leave this package. Everything else is
@@ -56,13 +66,47 @@ each other:
 | `DefiLlama-Adapters/projects/latch/config.js` → `DEPLOYMENTS` | TVL |
 
 `test/conventions.test.ts` fails the build if the two disagree on any address,
-block or start date, so the duplication cannot silently drift.
+block, start date or excluded token, so the duplication cannot silently drift. It
+also pins the export to exactly `["robinhood"]`, so a placeholder row that
+accidentally satisfies `isConfigured()` cannot slip out, and adding a chain is a
+deliberate act that touches the test.
 
-The live Sepolia deployment is **not** in either table. It lives in
+The Sepolia deployment is **not** in either table. It lives in
 `harness/sepolia.ts` and is injected only by the local harness, so a testnet can
 never leak into a submitted adapter.
 
-### Current deployment (Sepolia, chain id 11155111)
+### Live: Robinhood Chain (chain id 4663, slug `robinhood`)
+
+| Contract | Address | Deployed at block |
+|---|---|---|
+| Vault | `0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c` | 60122218 |
+| CLPoolManager | `0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66` | **60124455** (`fromBlock`) |
+| BinPoolManager | `0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979` | 60124601 |
+| LatchProtocolFeeController | `0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c` | wired to both managers 2026-09-12 |
+| RevShareHook (retired) | `0x23CE34E8199927DD270dddd8579c947542bDE446` | holds the only pool |
+| RevShareHook (current) | `0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2` | no pools yet |
+
+Deployment blocks were measured with `eth_getCode` binary-searched by block on
+2026-09-12, not copied from a script log. The timelocks landed earlier still, at
+60111836 - the `deployedAtBlock` the dapp scans from - which is a valid but wider
+floor. `start` is `2026-09-11`, the UTC day the pool managers landed.
+
+Excluded by address on this chain (`LATCH_TEST_TOKENS`, both tables):
+
+| Token | Address | Why |
+|---|---|---|
+| LTT1 | `0x2A21c0826848f2D597B7C87A4B931dE1407958A6` | Latch Test Token One, 18 dec |
+| LTT2 | `0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4` | Latch Test Token Two, 18 dec |
+
+Real assets on the chain, all priced by DefiLlama (`coins.llama.fi`, confidence
+0.99 on 2026-09-12) and all in upstream `coreAssets.json` under `robinhood`:
+WETH `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` (18 dec), USDG
+`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` (**6 dec**), native ETH. Decimals are
+upstream's concern when it prices a raw balance, but they matter to anyone reading
+the harness output: a USDG amount is 10^12 smaller in raw units than the same
+dollar value in WETH.
+
+### Testnet: Sepolia (chain id 11155111)
 
 | Contract | Address |
 |---|---|
@@ -77,9 +121,19 @@ Vault deployed at block 11672508 (2026-09-10T04:09:12Z).
 
 ## Adding a chain
 
+0. **Confirm DefiLlama has a slug for the chain before anything else.** Read
+   `helpers/chains.ts` in dimension-adapters and `projects/helper/chains.json` in
+   DefiLlama-Adapters, and check the published `@defillama/sdk` provider list
+   (`https://unpkg.com/@defillama/sdk@latest/build/providers.json`) has RPCs for
+   it. A slug that is missing from any of the three means the adapter cannot list
+   no matter how correct it is, and the work moves upstream. Copy the member into
+   the local `helpers/chains.ts` stub with the date you read it; never add one from
+   memory. Robinhood passed all three on 2026-09-12.
+
 1. **Fill in the row in both config tables.** Every target chain already has a
    placeholder row with empty addresses; a chain with no `vault`, no pool manager
-   or no `start` is filtered out by `isConfigured()` and never exported.
+   or no `start` is filtered out by `isConfigured()` and never exported. Measure
+   `fromBlock` with `eth_getCode` by block, not from a deploy log.
 
    ```ts
    // dimension-adapters/dexs/latch.ts
@@ -100,18 +154,20 @@ Vault deployed at block 11672508 (2026-09-10T04:09:12Z).
    ```
 
 2. **Run the tests.** `npm test` checks parity between the two tables, that the
-   slug is a real `CHAIN` enum value, and that `start` is a `YYYY-MM-DD` string.
+   slug is a real `CHAIN` enum value, that `start` is a `YYYY-MM-DD` string, and
+   that the export list is exactly what you expect - update the pinned list in
+   `test/conventions.test.ts` as part of the same change.
 
 3. **Point the harness at it** to get a real number before submitting:
-   set `LATCH_RPC_<chainId>` and adapt `scripts/run-sepolia.ts`, or add a live
-   test alongside `test/sepolia.live.test.ts`.
+   set `LATCH_RPC_<chainId>` and copy `scripts/run-robinhood.ts`, and add a live
+   test alongside `test/robinhood.live.test.ts` with a FIXED historical window.
 
 No adapter logic changes. Both files iterate their config table.
 
 Pre-wired target chains and their DefiLlama slugs (all verified against upstream
-`helpers/chains.ts`): Ethereum `ethereum`, Base `base`, BSC `bsc`, HyperEVM
-**`hyperliquid`** (not `hyperevm`), Monad `monad`, Plasma `plasma`, Stable
-`stable`.
+`helpers/chains.ts`): Robinhood **`robinhood`** (live), Ethereum `ethereum`, Base
+`base`, BSC `bsc`, HyperEVM **`hyperliquid`** (not `hyperevm`), Monad `monad`,
+Plasma `plasma`, Stable `stable`.
 
 ---
 
@@ -122,16 +178,22 @@ cd packages/defillama
 npm install
 
 npm run typecheck      # tsc --noEmit
-npm test               # vitest; hits Sepolia over a public RPC
-npm run run:sepolia    # end-to-end: volume, fees and TVL against the live chain
+npm test               # vitest; hits Robinhood and Sepolia over public RPCs
+npm run run:robinhood  # end-to-end against the mainnet, the real config row
+npm run run:sepolia    # same against Sepolia, injected by the harness
 LATCH_SKIP_LIVE=1 npm test    # offline: skips every live-chain test
 ```
 
-`npm run run:sepolia [blocks]` takes an optional lookback in blocks; with no
-argument it scans the whole deployment history.
+Both run scripts take an optional lookback in blocks; with no argument they scan
+the whole deployment history. On Robinhood that is ~120 paged `eth_getLogs`
+requests per event stream under a per-minute quota - expect minutes, and expect
+every dimension to print `(empty)` today. That is the measurement.
 
-A custom RPC can be supplied with `LATCH_RPC_11155111`. The default public
-endpoint caps `eth_getLogs` at 50 000 blocks and the harness pages accordingly.
+Custom RPCs: `LATCH_RPC_4663` and `LATCH_RPC_11155111`. The default Robinhood
+endpoint (`rpc-robinhood.blockmachine.io`) caps `eth_getLogs` at 10 000 blocks
+inclusive and meters requests per minute; `harness/rpc.ts` waits out the quota
+response rather than treating it as an empty result. The other public Robinhood
+endpoints answer `eth_chainId` but do not serve a real log scan.
 
 ### Testing the real thing, upstream
 
@@ -168,12 +230,79 @@ ERC20 balance.
 What still has to be enumerated is *which* tokens to ask about. That comes from the
 `Initialize` logs of both pool managers, which carry `currency0`/`currency1` for
 every pool ever created. The token set is then summed against the Vault with
-`sumTokens2({ api, ownerTokens, permitFailure: true })`, chunked 1000 at a time.
-Native currency is the zero address in a pool key, and `sumTokens2` routes
-`nullAddress` to `eth_getBalance`, so it needs no special case. Pools with a
-non-null `hooks` address additionally get their pair summed against the hook, since
-Latch hooks can take their own delta - the same treatment `projects/uniswap-v4`
-gives them.
+`sumTokens2({ api, ownerTokens, permitFailure: true, blacklistedTokens })`,
+chunked 1000 at a time. Native currency is the zero address in a pool key, and
+`sumTokens2` routes `nullAddress` to `eth_getBalance`, so it needs no special case.
+Pools with a non-null `hooks` address additionally get their pair summed against
+the hook, since Latch hooks can take their own delta - the same treatment
+`projects/uniswap-v4` gives them.
+
+### Unpriced tokens: excluded, not zeroed
+
+LTT1 and LTT2 are throwaway tokens the deployer minted to exercise the protocol.
+They are the two currencies of the only pool on Robinhood with any history, and the
+only tokens the Vault holds. Nothing prices them: `coins.llama.fi` returns no entry
+for either, so upstream would already contribute nothing for them.
+
+The adapters do not rely on that. Both tables carry `LATCH_TEST_TOKENS` and both
+adapters drop those addresses **before** any balance or volume is booked - the TVL
+adapter never asks the Vault about them, and the volume adapter skips a swap whose
+pool contains one. Three reasons this is the honest choice rather than letting the
+price server decide:
+
+- A token that is merely unpriced can become priced. A dust pool against WETH is
+  enough for a DEX-derived feed, and at that moment a test balance would start
+  reading as TVL with nobody having decided it should.
+- `$0` and "not counted" are different claims. `$0` says "we valued this and it is
+  worth nothing"; excluding it says "this has no value by construction and is not
+  in the total". The second is the true statement.
+- Nothing here assigns a price. No token defaults to `$1`, no stable is assumed, no
+  test token is mapped to a real one. Pricing is upstream's job, on real assets.
+
+`test/tvlExclusion.test.ts` pins this offline; `test/robinhood.live.test.ts`
+proves it on chain by reading the Vault's LTT balances directly, then showing the
+adapter counts none of it - and, with the exclusion lifted for one test, that the
+arithmetic would have reproduced the raw amounts to the wei.
+
+### Two RevShareHooks, and why neither is hardcoded
+
+RevShareHook was redeployed on 2026-09-12. The LTT1/LTT2 pool was created against
+the **retired** instance and stays there forever: `poolKey.hooks` is part of the
+pool id. The TVL adapter takes the hook from each pool's own `Initialize` log, so
+that pool's hook balance is in scope without anyone maintaining a hook list, and a
+future pool on the current hook is handled the same way. Swap volume and fees do
+not see hooks at all - `Swap` is emitted by the pool manager whichever hook the
+pool carries - so the split cannot hide volume.
+
+RevShareHook's own take (the revenue share it routes to a pool's beneficiaries) is
+**not** tracked here. It is a hook delta, invisible in `Swap.fee`, and it is the
+pool owner's revenue under their roster, not the protocol's - unless the treasury
+is on that roster, which no pool has done. Tracking it would mean reading each
+hook deployment's events, both of them, and attributing per beneficiary. That is a
+separate adapter if it is ever worth one; today the amount is dust in test tokens.
+
+### Protocol revenue is read per swap, and has been zero so far
+
+Both Robinhood swaps show `fee = 3000, protocolFee = 0` - the whole 0.30% is the
+LP fee, with nothing to compose. The adapter's `dailyRevenue` is the `protocolFee`
+each `Swap` carried, so it is a zero read from the log, not a default.
+
+The governance state behind that moved **while this package was being written**.
+At 10:50 UTC on 2026-09-12 `protocolFeeController()` read `address(0)` on both
+pool managers; at 11:05 UTC it read the `LatchProtocolFeeController`
+(`defaultFee = (true, 1000, 1000)`, 0.1% each way) on both. The two swaps predate
+the wiring. What it means going forward, from the pool manager's code rather than
+from a plan: a pool takes the controller's fee **at `initialize`**, so the existing
+LTT1/LTT2 pool keeps `protocolFee = 0` until the controller updates it
+specifically, and a new pool will carry 0.1% from its first swap. The adapter
+models none of this - it does not read the controller and does not need to,
+because whatever rate applied at the moment of a swap is in that swap's log.
+
+`test/robinhood.live.test.ts` therefore checks the wiring for coherence (both
+managers agree; a set controller has code and a fee within `MAX_PROTOCOL_FEE`) and
+deliberately does not assert its value. Asserting governance state that governance
+is entitled to change is how a live test breaks at 11:05 for a reason that has
+nothing to do with the adapter.
 
 ### Volume
 
@@ -217,8 +346,8 @@ what `BinPool.swap` reaches the long way round via
 | `dailyFees` | total swap fee | Gross Protocol Revenue: everything Latch *could* keep if it set the protocol fee to the whole swap fee. `fee` already includes the LP share, so this is one field. |
 | `dailyUserFees` | same | Swappers pay all of it. LPs are not charged, and there is no borrow/mint/redeem fee anywhere in the protocol. |
 | `dailySupplySideRevenue` | `fee − protocolFee` | Cost of Funds: stays in the pool and accrues to LP positions. |
-| `dailyRevenue` | `protocolFee` | Gross Profit. Accrues into `protocolFeesAccrued` on the pool manager, withdrawable by its owner through `Vault.collectFee`. Equals `dailyFees − dailySupplySideRevenue` by construction. |
-| `dailyProtocolRevenue` | same as `dailyRevenue` | All of it goes to the treasury. |
+| `dailyRevenue` | `protocolFee` | Gross Profit. Accrues into `protocolFeesAccrued` on the pool manager, collectable only by its `protocolFeeController`. Equals `dailyFees − dailySupplySideRevenue` by construction. Read per swap; zero for every Robinhood swap so far. |
+| `dailyProtocolRevenue` | same as `dailyRevenue` | All of it goes to the protocol. |
 | `dailyHoldersRevenue` | **omitted** | Latch has no token. There is no buyback, burn or holder distribution to attribute, and reporting `0` for a mechanism that does not exist is noise. |
 
 `dailyFees = dailyRevenue + dailySupplySideRevenue` holds per swap, not just in
@@ -310,6 +439,24 @@ It is exported for whoever extends this to bin liquidity flow.
 
 ## What has and has not been verified
 
+**Verified against the live Robinhood Chain deployment** (`npm test`, 9 live
+tests in `test/robinhood.live.test.ts`, all over a fixed historical window):
+
+- all four addresses have bytecode; both pool managers are registered apps;
+- the fee-controller wiring is coherent: both pool managers name the same
+  controller, it has code, and `defaultFee() = (true, 1000, 1000)` is within
+  `MAX_PROTOCOL_FEE` (it was `address(0)` fifteen minutes earlier - see above);
+- the pool managers first have code at exactly `fromBlock` (CL 60124455) and
+  60124601 (Bin), and not one block earlier;
+- decimals are WETH 18, USDG **6**, LTT1 18, LTT2 18;
+- exactly one `Initialize`, pool `0xcb1f…50e8`, LTT1/LTT2, `fee = 3000`, bound to
+  the retired RevShareHook `0x23CE…E446`;
+- both mainnet swaps decode with `fee = 3000, protocolFee = 0`;
+- the submitted adapters return **nothing** for that window, and with the
+  exclusion lifted reproduce volume and fees to the wei with an empty Revenue;
+- the Vault holds LTT1 and LTT2, the pool managers hold none, and the TVL adapter
+  counts none of it.
+
 **Verified against the live Sepolia deployment** (`npm test`, 9 live tests):
 
 - all four addresses have bytecode;
@@ -329,14 +476,19 @@ It is exported for whoever extends this to bin liquidity flow.
 
 **Not verified, and cannot be from here:**
 
-- **any USD figure.** The harness has no price feed by design. Volume, fees and TVL
-  are raw token units of two testnet tokens (`ltUSD`, `ltETH`) that nothing prices.
-- **any mainnet.** Nothing is deployed. The seven mainnet config rows are empty
-  placeholders and have never executed.
-- **meaningful magnitudes.** The only Sepolia activity is one pool, two swaps and a
-  couple of liquidity operations, evidently from a setup script. Nothing in this
-  package should be read as a production metric, and no sample output here is a
-  forecast of one.
+- **any USD figure.** The harness has no price feed by design. Everything it
+  prints is raw token units. On Robinhood the submitted adapters print nothing at
+  all today, because the only tokens involved are excluded.
+- **any other mainnet.** The remaining config rows are empty placeholders and have
+  never executed.
+- **meaningful magnitudes.** On both chains the only activity is one pool, two
+  swaps and a couple of liquidity operations from an exercise script. Nothing in
+  this package should be read as a production metric, and no sample output here is
+  a forecast of one.
+- **a non-zero reading from the submitted files.** No Robinhood pool exists yet in
+  WETH, USDG or native ETH, so the priced path - `addOneToken` choosing the
+  core-asset leg, upstream valuing a Vault balance - has run only on synthetic logs
+  in `test/adapter.test.ts` and `test/tvlExclusion.test.ts`.
 - **the bin pool path end to end.** `BinPoolManager` has no pools yet, so the bin
   `Initialize`/`Swap` branch has only ever been exercised against synthetic logs in
   `test/adapter.test.ts` and against a live query that correctly returned zero
@@ -375,15 +527,55 @@ and `isHeavyProtocol` is not set.
 
 ---
 
+## What blocks listing, and what does not
+
+**Not a blocker - established 2026-09-12:**
+
+- DefiLlama knows the chain. `ROBINHOOD = "robinhood"` in dimension-adapters
+  `helpers/chains.ts` (line 398); `"robinhood"` in DefiLlama-Adapters
+  `projects/helper/chains.json`; `robinhood` (and alias `robinhoodchain`) with
+  seven RPCs and `chainId: 4663` in the published `@defillama/sdk`
+  `build/providers.json`; "Robinhood Chain" on `api.llama.fi/v2/chains` with a
+  nine-figure TVL from other protocols already indexed there.
+- DefiLlama prices the real assets. `coins.llama.fi` returns WETH, USDG and native
+  ETH on `robinhood:` with confidence 0.99, and upstream `coreAssets.json` lists
+  WETH, USDe and USDG for the chain, so `addOneToken` picks a priced leg.
+- The adapters are correct against the chain, to the wei, over a fixed window.
+
+**Blockers, none of them in this repository's control:**
+
+1. **There is nothing priceable to report.** Every reading is zero because the only
+   pool is in excluded test tokens. DefiLlama reviewers ask whether a zero day is
+   correct; here the honest answer is "yes, and so is the zero week". Whether they
+   merge a listing on that basis is their call. A single pool in WETH/USDG or
+   ETH/USDG with a real deposit changes it - that is a protocol/liquidity decision,
+   not an adapter one.
+2. **No public website.** `latch.guru` is NXDOMAIN at the `.guru` registry as of
+   2026-09-12 — it does not resolve at all, so this is a registration/DNS gap rather
+   than a missing Caddy route. The dexs
+   header must not ship a URL that 404s.
+3. **Server-side wiring** (`dimensions: { dexs: "latch", fees: "latch" }` in
+   defillama-server, plus the protocol entry) is DefiLlama's step after the PRs.
+4. **Protocol revenue reads zero for every swap so far, and will for the existing
+   pool until the controller updates it.** The controller was wired on 2026-09-12;
+   new pools take 0.1% at initialize. Not a blocker to listing, but a reviewer
+   will ask why Revenue is empty, and the answer is in
+   [Protocol revenue is read per swap](#protocol-revenue-is-read-per-swap-and-has-been-zero-so-far).
+
 ## Before submitting
 
-- [ ] At least one mainnet row filled in, in **both** config tables.
-- [ ] `npm test` and `npm run typecheck` green.
-- [ ] Real website and Twitter URLs in the header of `dexs/latch.ts` (currently
-      placeholders).
+- [x] At least one mainnet row filled in, in **both** config tables (Robinhood).
+- [ ] `npm test` and `npm run typecheck` green, **including** the Robinhood live
+      tests (not just `LATCH_SKIP_LIVE=1`).
+- [ ] Real website URL in the header of `dexs/latch.ts`; the Twitter handle is the
+      one the landing page links.
 - [ ] Copy only the ★ files; leave every harness stub behind.
 - [ ] PR body answers what `AGENTS.md` says every review asks: is a 0-volume day
-      correct, why do the numbers differ from Latch's own dashboard, has the fee
-      split ever changed and when.
+      correct (yes - see above), why do the numbers differ from Latch's own
+      dashboard (the dapp shows LTT1/LTT2 activity in token units; DefiLlama
+      excludes it), has the fee split ever changed and when (never; protocol fee
+      has been zero on Robinhood since deployment).
+- [ ] State in the PR that LTT1/LTT2 are excluded and why, so a reviewer does not
+      "fix" it by removing the list.
 - [ ] Note in the PR that server-side wiring (`dimensions: { dexs: "latch", fees:
       "latch" }` in defillama-server) is a separate follow-up.

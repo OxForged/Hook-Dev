@@ -28,22 +28,45 @@ export interface RpcOptions {
   maxBlockRange?: number;
 }
 
+/** JSON-RPC error code some public nodes return for a per-minute quota. */
+const RATE_LIMITED = -32029;
+const MAX_RATE_LIMIT_RETRIES = 8;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export class Rpc {
   #id = 0;
   constructor(private readonly opts: RpcOptions) {}
 
   async call<T = any>(method: string, params: unknown[]): Promise<T> {
-    const res = await fetch(this.opts.url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: ++this.#id, method, params }),
-    });
-    if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`);
-    const json = (await res.json()) as { result?: T; error?: { message: string } };
-    // Never swallow an RPC error: a silent empty result would be reported as a
-    // real zero.
-    if (json.error) throw new Error(`${method}: ${json.error.message}`);
-    return json.result as T;
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(this.opts.url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: ++this.#id, method, params }),
+      });
+      // The same quota can arrive as an HTTP 429 with no JSON body at all.
+      if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+        const retryAfter = Number(res.headers.get("retry-after"));
+        await sleep((Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 10_000) + 500);
+        continue;
+      }
+      if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`);
+      const json = (await res.json()) as {
+        result?: T;
+        error?: { code?: number; message: string; data?: { retry_after_ms?: number } };
+      };
+      if (!json.error) return json.result as T;
+      // A quota response is not data. Wait it out the number of times a paced
+      // live test can need, then fail loudly - never return an empty result.
+      if (json.error.code === RATE_LIMITED && attempt < MAX_RATE_LIMIT_RETRIES) {
+        await sleep((json.error.data?.retry_after_ms ?? 10_000) + 500);
+        continue;
+      }
+      // Never swallow an RPC error: a silent empty result would be reported as a
+      // real zero.
+      throw new Error(`${method}: ${json.error.message}`);
+    }
   }
 
   async blockNumber(): Promise<number> {

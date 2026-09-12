@@ -35,15 +35,19 @@ const reachable = await (async () => {
 })();
 
 describe("TVL adapter export shape", () => {
-  it("exports no chains while no mainnet deployment exists", () => {
+  it("exports exactly Robinhood Chain and nothing without contracts", () => {
     // Loaded fresh, before the harness injects Sepolia. An adapter that exported a
-    // chain with no contracts would publish $0 as a fact.
+    // chain with no contracts would publish $0 as a fact; one that omitted the
+    // live chain would publish nothing about a real deployment.
     const config = require(`${TVL_DIR}/config.js`);
-    expect(config.enabledChains()).toEqual([]);
+    expect(config.enabledChains()).toEqual(["robinhood"]);
 
     const adapter = require(`${TVL_DIR}/index.js`);
-    expect(Object.keys(adapter)).toEqual(["methodology"]);
+    expect(Object.keys(adapter).sort()).toEqual(["methodology", "robinhood"]);
     expect(adapter.methodology).toMatch(/Vault/);
+    expect(adapter.methodology).toMatch(/LTT1\/LTT2/);
+    expect(adapter.robinhood.start).toBe("2026-09-11");
+    expect(adapter.robinhood.tvl).toBeTypeOf("function");
   });
 });
 
@@ -64,7 +68,7 @@ describe.skipIf(!reachable)("TVL adapter against live Sepolia", () => {
       fromBlock: SEPOLIA.fromBlock,
       start: SEPOLIA.start,
     };
-    expect(config.enabledChains()).toEqual(["sepolia"]);
+    expect(config.enabledChains().sort()).toEqual(["robinhood", "sepolia"]);
 
     // index.js builds its chain exports at evaluation time, and the shape test
     // above already loaded it with an empty chain list. Drop it from the require

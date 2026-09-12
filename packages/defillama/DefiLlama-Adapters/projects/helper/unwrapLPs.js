@@ -2,8 +2,8 @@
  * LOCAL HARNESS STUB - do not submit. Upstream this is
  * DefiLlama-Adapters/projects/helper/unwrapLPs.js (~1000 lines).
  *
- * Implements only `sumTokens2({ api, ownerTokens, tokens, owner, permitFailure })`,
- * flattened the same way upstream does:
+ * Implements only `sumTokens2({ api, ownerTokens, tokens, owner, permitFailure,
+ * blacklistedTokens })`, flattened the same way upstream does:
  *
  *   ownerTokens.map(([tokens, owner]) => tokens.forEach(t => tokensAndOwners.push([t, owner])))
  *
@@ -11,6 +11,10 @@
  * (or the 0xeee… gas-token sentinel) is answered with `eth_getBalance` on the
  * owner rather than `balanceOf`. That is what lets a Latch pool key's native
  * currency - the zero address - be passed straight through.
+ *
+ * `blacklistedTokens` is upstream's own parameter name (read from
+ * projects/helper/unwrapLPs.js on 2026-09-12) and has upstream's semantics: a
+ * blacklisted token is never queried and never appears in the result.
  */
 
 const { rpc } = require("../../_harness/chainApi.js");
@@ -19,7 +23,15 @@ const { nullAddress, gasTokens } = require("./tokenMapping.js");
 const BALANCE_OF = "0x70a08231";
 const word = (address) => String(address).slice(2).toLowerCase().padStart(64, "0");
 
-async function sumTokens2({ api, ownerTokens = [], tokens = [], owner, permitFailure = false }) {
+async function sumTokens2({
+  api,
+  ownerTokens = [],
+  tokens = [],
+  owner,
+  permitFailure = false,
+  blacklistedTokens = [],
+}) {
+  const blacklist = new Set(blacklistedTokens.map((t) => String(t).toLowerCase()));
   const tokensAndOwners = [];
   for (const [list, holder] of ownerTokens) {
     if (typeof holder !== "string") throw new Error("sumTokens2: invalid owner in ownerTokens");
@@ -31,6 +43,7 @@ async function sumTokens2({ api, ownerTokens = [], tokens = [], owner, permitFai
   const block = api.block ? "0x" + api.block.toString(16) : "latest";
 
   for (const [token, holder] of tokensAndOwners) {
+    if (blacklist.has(String(token).toLowerCase())) continue;
     const isNative =
       String(token).toLowerCase() === nullAddress ||
       gasTokens.includes(String(token).toLowerCase());
