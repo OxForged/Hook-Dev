@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "MIT-licensed TypeScript SDK for LatchProtocol: pool keys, hook permission bitmaps, typed events and an indexer data model.",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
