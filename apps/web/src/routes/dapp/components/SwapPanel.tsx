@@ -928,8 +928,9 @@ function SwapMethodology({
           </a>
           . The router pays the vault with <code>PERMIT2.transferFrom</code>, so an ERC-20 approval
           to the router does nothing on its own. The router&rsquo;s own <code>PERMIT2</code> is an
-          internal immutable with no getter, so this address comes from the deployment record and
-          the simulation is what proves the two agree.
+          internal immutable with no getter — but an immutable is inlined into runtime code, and
+          this address is present in the deployed router&rsquo;s bytecode. It was checked there
+          rather than assumed from convention.
         </p>
         <p>
           <strong>Fees.</strong> LP fee and protocol fee are read from{' '}

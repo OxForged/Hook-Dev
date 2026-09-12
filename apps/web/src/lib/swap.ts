@@ -77,9 +77,21 @@
        1. token.approve(PERMIT2, ...)                  ERC-20 -> Permit2
        2. PERMIT2.approve(token, router, amount, exp)  Permit2 -> router
 
-   The router's `PERMIT2` is `internal immutable` with no getter, so the address
-   cannot be read back off the router; it comes from `DEPLOYMENTS[…].permit2`,
-   and simulation is what actually proves the pair agree.
+   The router's `PERMIT2` is `internal immutable` with no getter, so it cannot
+   be READ back off the router. It can still be PROVEN: a Solidity immutable is
+   inlined into runtime code, and the deployed router's bytecode on Robinhood
+   contains `0x000000000022D473030F116dDEE9F6B43aC78BA3` — the canonical Permit2
+   this file uses — alongside the chain's WETH9, vault and CL pool manager, and
+   does NOT contain Sepolia's Permit2. Checked 2026-09-12 against
+   `0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c` (23,542 bytes of runtime code).
+
+   That check matters because the repo carries TWO contracts named
+   `DeployRobinhood`. `packages/router/script/deployParameters/DeployRobinhood
+   .s.sol` is the real one and names the canonical Permit2; the copy under
+   `deployParameters/mainnet/` is a stale template that names SEPOLIA's Permit2
+   and a vault that is not this chain's. The bytecode says which one shipped.
+   Do not take the address from a deploy script — take it from the deployment
+   record, and let the simulation be the final word.
 
    PROVEN AGAINST CHAIN, 2026-09-12, Robinhood Chain (4663)
    --------------------------------------------------------
@@ -103,6 +115,7 @@ import {
   concatHex,
   encodeAbiParameters,
   parseAbi,
+  parseAbiItem,
   type Abi,
   type AbiParameter,
   type Address,
@@ -1037,4 +1050,85 @@ export function explorerTxUrl(hash: Hex): string {
 
 export function explorerAddressUrl(address: string): string {
   return `${D.explorer}/address/${address}`
+}
+
+/* ============================================================================
+   Price history, from the only place it exists on chain: Swap logs.
+
+   `CLPoolManager.Swap` carries `sqrtPriceX96` — the price AFTER that swap — so
+   a pool's price history is already recorded, one point per trade, at a known
+   block. Nothing has to be indexed, stored or estimated to draw it.
+
+   WHY THIS IS THE ONLY HONEST CHART FOR THIS PAGE. The alternatives all
+   require inventing something. A candle chart needs time buckets, and block
+   times are not constant here (0.102s measured, not guaranteed), so bucketing
+   by wall clock turns a measurement into an estimate. A TVL line needs prices
+   for tokens nothing on this chain prices. A volume bar needs a common unit
+   across two different tokens. The price a swap executed at needs none of
+   that: it is a number the contract emitted.
+
+   X IS BLOCK HEIGHT, NOT TIME, for the same reason the rest of the app
+   refuses to convert one to the other.
+   ============================================================================ */
+
+const CL_SWAP_EVENT = parseAbiItem(
+  'event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee, uint16 protocolFee)',
+)
+
+export interface PricePoint {
+  readonly blockNumber: bigint
+  readonly sqrtPriceX96: bigint
+  readonly tick: number
+  /** token1 per token0, decimal-adjusted. Null when either decimals is unreadable. */
+  readonly price: number | null
+  /** Size of the trade that set this price, in token0 units, unsigned. */
+  readonly amount0Abs: bigint
+  readonly txHash: Hex
+}
+
+/* `priceFromSqrtX96` lives in `lib/prices.ts` and is imported above rather than
+   reimplemented here. Its version does the whole computation in bigint before
+   converting to Number; an implementation that casts `sqrtPriceX96` to Number
+   first loses precision, because a uint160 does not fit a double. The decimal
+   adjustment it applies is not optional — sqrtPriceX96 encodes the ratio in RAW
+   units, so a 6-decimal quote against an 18-decimal base is off by 10^12 before
+   correction. That is the trap that would have priced a USDG pool a million
+   times wrong. */
+
+/**
+ * Every price this pool has traded at, oldest first.
+ *
+ * Bounded by `fromBlock` rather than by a count, because "the last N swaps"
+ * silently changes meaning as a pool gets busier. A pool with two swaps
+ * returns two points, and the chart says so rather than drawing a line.
+ */
+export async function readPoolPriceSeries(pool: SwapPool): Promise<PricePoint[]> {
+  const c = client(SWAP_CHAIN_ID)
+
+  const logs = await c.getLogs({
+    address: CL_POOL_MANAGER,
+    event: CL_SWAP_EVENT,
+    args: { id: pool.poolId },
+    fromBlock: pool.createdAtBlock,
+    toBlock: 'latest',
+  })
+
+  return logs.map((log) => {
+    const sqrtPriceX96 = log.args.sqrtPriceX96 as bigint
+    const amount0 = log.args.amount0 as bigint
+    return {
+      blockNumber: log.blockNumber ?? 0n,
+      sqrtPriceX96,
+      tick: Number(log.args.tick ?? 0),
+      /* Decimals are nullable on SwapPool: a token whose `decimals()` could
+         not be read is listed but not tradeable, and a price computed from a
+         guessed 18 would be fiction. No decimals, no price point. */
+      price:
+        pool.token0.decimals === null || pool.token1.decimals === null
+          ? null
+          : priceFromSqrtX96(sqrtPriceX96, pool.token0.decimals, pool.token1.decimals),
+      amount0Abs: amount0 < 0n ? -amount0 : amount0,
+      txHash: log.transactionHash ?? ('0x' as Hex),
+    }
+  })
 }
