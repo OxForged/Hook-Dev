@@ -855,16 +855,15 @@ is why it is safe to keep somewhere merely DIFFERENT rather than somewhere maxim
 — and why it must not live on the shared VPS beside `0x304b…c9a9`, or one box compromise
 takes the attack and the defence together.
 
-**Two open items before it is load-bearing, both recorded because they are the ways this
-key silently fails:**
+**Both preconditions were met on 2026-09-12 and verified on chain:** the key holds gas
+(~0.0011 native) and its nonce is 1 — it signed a self-transfer, which is the cheapest
+possible proof of control and moves nothing. That second one is not ceremony. An address
+written down correctly and a key somebody can actually reach are different claims, and only
+the second matters at 3am with a compromised Safe forty-eight hours from executing
+`updateDelay(0)`.
 
-1. **It holds no gas** (balance 0 at the time of writing). A canceller that cannot pay for a
-   transaction cannot cancel one, and the moment it is needed is the worst moment to
-   discover that. Fund it with a small amount of native and leave it there.
-2. **Its nonce is 0 — the key has never signed anything.** Nobody has yet demonstrated
-   control of it. Before it becomes the only address that can veto a compromised Safe, send
-   one transaction from it. An address written down correctly and a key you can actually
-   reach are different claims, and only the second one matters at 3am.
+Keep gas in it. A canceller that cannot pay for a transaction cannot cancel one, and the
+moment it is needed is the worst moment to discover an empty balance.
 
 ### The governance Safe
 
