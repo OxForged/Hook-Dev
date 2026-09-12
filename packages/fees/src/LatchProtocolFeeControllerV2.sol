@@ -1,0 +1,363 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2026 LatchProtocol
+pragma solidity 0.8.26;
+
+import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {IProtocolFeeController} from "infinity-core/src/interfaces/IProtocolFeeController.sol";
+import {IProtocolFees} from "infinity-core/src/interfaces/IProtocolFees.sol";
+import {Currency} from "infinity-core/src/types/Currency.sol";
+import {PoolKey} from "infinity-core/src/types/PoolKey.sol";
+import {PoolId, PoolIdLibrary} from "infinity-core/src/types/PoolId.sol";
+import {LPFeeLibrary} from "infinity-core/src/libraries/LPFeeLibrary.sol";
+
+/// @title LatchProtocolFeeControllerV2
+/// @notice Decides the protocol fee for every LatchProtocol pool, and is the only address that
+/// can withdraw what those fees accrue.
+///
+/// @dev ####################### WHY V2 EXISTS: THE MONEY WAS UNREACHABLE #######################
+///
+/// `ProtocolFees.collectProtocolFees` is gated on `msg.sender == protocolFeeController`. V1
+/// (`0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c`, live on Robinhood Chain) has twelve external
+/// functions and NOT ONE of them calls it — no collect, no sweep, no fallback, no delegatecall.
+/// Its deployed bytecode was verified byte-for-byte identical to its source, so this is a fact
+/// about the deployment and not a stale reading.
+///
+/// The consequence: with V1 installed, every pip of protocol fee accrues into
+/// `protocolFeesAccrued[currency]` on the pool manager, and the only address permitted to
+/// withdraw it is a contract with no code path to do so. The fee was safe to turn on only in the
+/// sense that a locked room is safe.
+///
+/// Nothing accrued under V1 is lost. The caller check is evaluated at COLLECTION time and
+/// `protocolFeesAccrued` is ordinary storage on the manager, so installing this contract makes
+/// every previously-stranded balance collectable. That is why the ordering of the migration does
+/// not matter, and why V1 can be replaced at leisure rather than urgently.
+///
+/// ############################### THE FEE MODEL CHANGED TOO ################################
+///
+/// V1 charged a FLAT pip value with per-tier overrides. That is the wrong shape: a flat 0.1% is
+/// eleven times the total fee of a 0.01% stable pool and a rounding error on a 1% exotic one, so
+/// staying competitive meant hand-maintaining a tier table and hoping no pool opened at a tier
+/// nobody had enumerated — such a pool silently fell through to the flat default.
+///
+/// V2 takes a SHARE of the total swap fee, the way `infinity-core`'s own controller does, so
+/// every tier resolves proportionately and an unenumerated tier is impossible.
+///
+///     protocolFeeSplitRatio = 250000   // 25% of the total swap fee
+///
+/// PancakeSwap Infinity ships 33% (`ProtocolFeeController.sol:32`, `33 * 1e4`). Latch takes a
+/// quarter where they take a third: about 32% fewer pips per swap, because the pip needed to
+/// realise a share `s` of the total goes as `s / (1 - s)` rather than linearly in `s`.
+///
+/// What that means at the tiers that exist:
+///
+///     LP fee   protocol pips   protocol %   trader pays   protocol share
+///     0.01%    33              0.0033%      0.0133%       24.81%
+///     0.05%    166             0.0166%      0.0666%       24.92%
+///     0.25%    832             0.0832%      0.3330%       24.98%
+///     0.30%    999             0.0999%      0.3997%       24.99%
+///     1.00%    3322            0.3322%      1.3289%       24.99%
+///
+/// Two properties worth keeping: 0.30% pools — the common case — land at 0.0999%, and the
+/// trader's all-in cost stays under 0.4%. Pancake's 33% hits core's `MAX_PROTOCOL_FEE` cap at
+/// roughly a 0.9% LP fee, after which their share silently decays (28.65% at 1%, 16.72% at 2%);
+/// at 25% we stay under the cap through the 1% tier, so the share is constant and needs no
+/// asterisk.
+///
+/// FEE SEMANTICS, unchanged from V1 and verified in `ProtocolFeeLibrary`: the protocol fee comes
+/// off the swap INPUT first and the LP fee applies to the remainder, so it is ADDITIVE to what a
+/// swapper pays and does NOT come out of LP earnings:
+///
+///     totalSwapCost = protocolFee + lpFee - (protocolFee * lpFee / 1_000_000)
+///
+/// ############################ THE HOT-PATH RULE, INHERITED ################################
+///
+/// `ProtocolFees._fetchProtocolFee` staticcalls `protocolFeeForPool` while a pool is being
+/// INITIALIZED, forwarding all remaining gas and requiring exactly 32 bytes back. If it reverts,
+/// returns the wrong size, or burns excessive gas, POOL CREATION FAILS and the protocol is
+/// bricked for new pools until the controller is replaced.
+///
+/// So, as in V1 and for the same reason: `protocolFeeForPool` MUST NOT revert on any input.
+/// Every branch returns a value, every division is guarded against a zero denominator, all
+/// validation lives in the owner-only setters, and values are clamped on write rather than on
+/// read. The split arithmetic below is the one piece V1 did not have, and it is exactly where a
+/// division could be introduced carelessly — see `_splitDerivedFee`.
+///
+/// OWNERSHIP: this contract sets protocol revenue AND moves collected funds, which makes it
+/// strictly more valuable than V1. It must be owned by the governance Safe. `Ownable2Step`, and
+/// `renounceOwnership` reverts — an unowned controller cannot collect, and every future fee
+/// would accrue into the same locked room this contract exists to open.
+/// ###########################################################################################
+contract LatchProtocolFeeControllerV2 is IProtocolFeeController, Ownable2Step {
+    using PoolIdLibrary for PoolKey;
+    using LPFeeLibrary for uint24;
+
+    /// @notice Hard cap enforced by core (`ProtocolFeeLibrary.MAX_PROTOCOL_FEE`): 0.4%.
+    uint16 public constant MAX_PROTOCOL_FEE = 4000;
+
+    /// @notice Pips denominator, matching core. 1e6 == 100%.
+    uint256 public constant ONE_HUNDRED_PERCENT_RATIO = 1e6;
+
+    /// @notice Launch split: 25% of the total swap fee. See the header for the tier table.
+    uint256 public constant DEFAULT_SPLIT_RATIO = 250_000;
+
+    /// @notice Share of the TOTAL swap fee taken by the protocol, in hundredths of a bip.
+    /// @dev The base case for every static-fee pool. Overrides below take precedence.
+    uint256 public protocolFeeSplitRatio;
+
+    /// @dev One storage slot: 1 + 2 + 2 = 5 bytes. Read with a single SLOAD.
+    struct FeeConfig {
+        bool isSet;
+        uint16 zeroForOne;
+        uint16 oneForZero;
+    }
+
+    /// @notice Per-pool override. Highest precedence.
+    mapping(PoolId poolId => FeeConfig) private _poolFee;
+
+    /// @notice Per-LP-fee-tier override, keyed by the static LP fee. Beats the split ratio.
+    mapping(uint24 lpFeeTier => FeeConfig) private _tierFee;
+
+    /// @notice Applied to dynamic-fee pools, which have no static tier to derive a share from.
+    /// @dev A dynamic pool's LP fee is decided per swap by its hook, so there is no total to take
+    /// a percentage OF at initialization. Left unset, dynamic pools pay ZERO rather than a
+    /// guessed flat rate — charging a number we cannot justify is worse than charging nothing.
+    FeeConfig private _dynamicFee;
+
+    /// @notice Emergency switch: when true every pool reports a zero protocol fee.
+    bool public feesDisabled;
+
+    /// @notice Address that may switch fees OFF immediately, and do nothing else.
+    /// @dev Delay belongs on privilege escalation, never on privilege reduction. It can only ever
+    /// make the protocol take LESS. It CANNOT collect — see `collect`.
+    address public guardian;
+
+    event SplitRatioUpdated(uint256 previousRatio, uint256 newRatio);
+    event PoolFeeUpdated(PoolId indexed poolId, bool isSet, uint16 zeroForOne, uint16 oneForZero);
+    event TierFeeUpdated(uint24 indexed lpFeeTier, bool isSet, uint16 zeroForOne, uint16 oneForZero);
+    event DynamicFeeUpdated(bool isSet, uint16 zeroForOne, uint16 oneForZero);
+    event FeesDisabledSet(bool disabled);
+    event GuardianUpdated(address indexed previousGuardian, address indexed newGuardian);
+    event EmergencyFeesDisabled(address indexed caller);
+    event ProtocolFeesCollected(
+        address indexed poolManager, Currency indexed currency, address indexed recipient, uint256 amount
+    );
+
+    /// @notice A configured fee exceeds the 0.4% cap enforced by core.
+    error FeeExceedsMaximum(uint16 fee, uint16 maximum);
+    /// @notice A split ratio above 100% is not a share of anything.
+    error InvalidSplitRatio(uint256 ratio);
+    /// @notice Caller is neither the guardian nor the owner.
+    error NotGuardianOrOwner();
+    /// @notice Collecting to `address(0)` would burn the protocol's revenue.
+    error ZeroRecipient();
+    /// @notice `renounceOwnership` is disabled. See the header.
+    error RenounceDisabled();
+
+    /// @param owner_ The governance Safe. Never an EOA on a live chain.
+    /// @param guardian_ May disable fees instantly during an incident. May be `address(0)`.
+    constructor(address owner_, address guardian_) Ownable(owner_) {
+        guardian = guardian_;
+        emit GuardianUpdated(address(0), guardian_);
+        protocolFeeSplitRatio = DEFAULT_SPLIT_RATIO;
+        emit SplitRatioUpdated(0, DEFAULT_SPLIT_RATIO);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    HOT PATH - CALLED DURING POOL INIT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IProtocolFeeController
+    /// @dev MUST NOT revert. Precedence: kill switch > per-pool > tier/dynamic > split ratio.
+    function protocolFeeForPool(PoolKey memory poolKey) external view override returns (uint24) {
+        if (feesDisabled) return 0;
+
+        FeeConfig memory config = _poolFee[poolKey.toId()];
+        if (config.isSet) return _pack(config);
+
+        if (poolKey.fee.isDynamicLPFee()) {
+            config = _dynamicFee;
+            // Unset means zero: there is no static total to take a share of. See `_dynamicFee`.
+            return config.isSet ? _pack(config) : 0;
+        }
+
+        config = _tierFee[poolKey.fee];
+        if (config.isSet) return _pack(config);
+
+        uint16 derived = _splitDerivedFee(poolKey.fee);
+        return uint24(derived) | (uint24(derived) << 12);
+    }
+
+    /// @notice The protocol fee a static-fee pool at `lpFee` would be given, in pips per direction.
+    /// @dev Exposed so an integrator can quote the all-in cost of a pool BEFORE creating it,
+    /// rather than discovering it from a receipt.
+    function feeForLpFee(uint24 lpFee) external view returns (uint16) {
+        return _splitDerivedFee(lpFee);
+    }
+
+    /**
+     * @dev The share arithmetic, matching `infinity-core`'s controller so the two are comparable
+     * line by line.
+     *
+     * Solving `p / (p + l - p*l/ONE) == ratio` for `p` gives:
+     *
+     *     p = l * ONE / (l + ONE*ONE/ratio - ONE)
+     *
+     * EVERY DIVISION HERE IS GUARDED, because this runs inside pool creation and a revert bricks
+     * it. `ratio == 0` is special-cased before it can be a divisor. `denominator` cannot reach
+     * zero for any accepted ratio — with `ratio <= ONE`, `ONE*ONE/ratio >= ONE`, so
+     * `denominator >= lpFee`; the only way to zero is `lpFee == 0` together with `ratio == ONE`,
+     * which is special-cased above it. The explicit check remains anyway: the cost is one JUMPI
+     * and the alternative is a bricked protocol if a future edit weakens an invariant this
+     * comment is the only record of.
+     */
+    function _splitDerivedFee(uint24 lpFee) private view returns (uint16) {
+        uint256 ratio = protocolFeeSplitRatio;
+        if (ratio == 0) return 0;
+        if (ratio >= ONE_HUNDRED_PERCENT_RATIO) return MAX_PROTOCOL_FEE;
+
+        uint256 l = uint256(lpFee);
+        uint256 denominator = l + (ONE_HUNDRED_PERCENT_RATIO * ONE_HUNDRED_PERCENT_RATIO) / ratio
+            - ONE_HUNDRED_PERCENT_RATIO;
+        if (denominator == 0) return MAX_PROTOCOL_FEE;
+
+        uint256 fee = (l * ONE_HUNDRED_PERCENT_RATIO) / denominator;
+        return fee > MAX_PROTOCOL_FEE ? MAX_PROTOCOL_FEE : uint16(fee);
+    }
+
+    /// @dev Pack two directional fees into the uint24 layout core expects:
+    /// low 12 bits = zeroForOne, upper 12 bits = oneForZero.
+    function _pack(FeeConfig memory config) private pure returns (uint24) {
+        return uint24(config.zeroForOne) | (uint24(config.oneForZero) << 12);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        COLLECTION - THE V1 GAP
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Withdraw accrued protocol fees from a pool manager.
+     *
+     * @dev The function V1 did not have. `collectProtocolFees` on the manager admits only its
+     * configured controller, so this contract is the sole route to funds that would otherwise sit
+     * in `protocolFeesAccrued` forever.
+     *
+     * `poolManager` is an argument rather than immutable state because ONE controller serves both
+     * the CL and Bin managers on this deployment, and a third could be added. The parameter is
+     * harmless: the call only succeeds where this contract is the installed controller, so a
+     * wrong address wastes gas and moves nothing.
+     *
+     * OWNER ONLY, AND DELIBERATELY NOT THE GUARDIAN. The guardian's whole security argument is
+     * that it can only make the protocol take less; handing it a withdrawal would make a stolen
+     * guardian key a theft rather than an inconvenience.
+     *
+     * @param poolManager The manager holding the accrued balance.
+     * @param currency The token to withdraw.
+     * @param amount Pass `0` to sweep the entire accrued balance — core reads that as "all".
+     * @param recipient Where the funds go. The governance Safe, per the ownership table; there is
+     * no separate treasury address and one should not be introduced.
+     */
+    function collect(address poolManager, Currency currency, uint256 amount, address recipient)
+        external
+        onlyOwner
+        returns (uint256 amountCollected)
+    {
+        if (recipient == address(0)) revert ZeroRecipient();
+        amountCollected = IProtocolFees(poolManager).collectProtocolFees(recipient, currency, amount);
+        emit ProtocolFeesCollected(poolManager, currency, recipient, amountCollected);
+    }
+
+    /// @notice How much is waiting to be collected. A read, so anyone may call it.
+    function accrued(address poolManager, Currency currency) external view returns (uint256) {
+        return IProtocolFees(poolManager).protocolFeesAccrued(currency);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          GOVERNANCE - VALIDATED
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Set the share of the total swap fee the protocol takes.
+    /// @dev Only affects pools created AFTER this call — core stamps the protocol fee into the
+    /// pool at `initialize`. Existing pools are moved with `setPoolFee` plus the manager's own
+    /// `setProtocolFee`, one at a time and on purpose.
+    function setProtocolFeeSplitRatio(uint256 newRatio) external onlyOwner {
+        if (newRatio > ONE_HUNDRED_PERCENT_RATIO) revert InvalidSplitRatio(newRatio);
+        emit SplitRatioUpdated(protocolFeeSplitRatio, newRatio);
+        protocolFeeSplitRatio = newRatio;
+    }
+
+    /// @notice Override the fee for one pool. Highest precedence.
+    function setPoolFee(PoolId poolId, bool isSet, uint16 zeroForOne, uint16 oneForZero) external onlyOwner {
+        _validate(zeroForOne);
+        _validate(oneForZero);
+        _poolFee[poolId] = FeeConfig({isSet: isSet, zeroForOne: zeroForOne, oneForZero: oneForZero});
+        emit PoolFeeUpdated(poolId, isSet, zeroForOne, oneForZero);
+    }
+
+    /// @notice Override the fee for every pool at one static LP-fee tier.
+    function setTierFee(uint24 lpFeeTier, bool isSet, uint16 zeroForOne, uint16 oneForZero) external onlyOwner {
+        _validate(zeroForOne);
+        _validate(oneForZero);
+        _tierFee[lpFeeTier] = FeeConfig({isSet: isSet, zeroForOne: zeroForOne, oneForZero: oneForZero});
+        emit TierFeeUpdated(lpFeeTier, isSet, zeroForOne, oneForZero);
+    }
+
+    /// @notice Set the fee for dynamic-fee pools, which have no tier to derive a share from.
+    function setDynamicFee(bool isSet, uint16 zeroForOne, uint16 oneForZero) external onlyOwner {
+        _validate(zeroForOne);
+        _validate(oneForZero);
+        _dynamicFee = FeeConfig({isSet: isSet, zeroForOne: zeroForOne, oneForZero: oneForZero});
+        emit DynamicFeeUpdated(isSet, zeroForOne, oneForZero);
+    }
+
+    /// @notice Turn all protocol fees off, or back on. Owner-only in both directions.
+    function setFeesDisabled(bool disabled) external onlyOwner {
+        feesDisabled = disabled;
+        emit FeesDisabledSet(disabled);
+    }
+
+    /// @notice Switch every pool to a zero protocol fee immediately. One-way for the guardian.
+    /// @dev Re-enabling is an escalation and stays owner-only. A compromised guardian costs the
+    /// protocol revenue and nothing else — it cannot raise a fee, retarget one, collect, or
+    /// change who controls this contract.
+    function emergencyDisableFees() external {
+        if (msg.sender != guardian && msg.sender != owner()) revert NotGuardianOrOwner();
+        feesDisabled = true;
+        emit FeesDisabledSet(true);
+        emit EmergencyFeesDisabled(msg.sender);
+    }
+
+    /// @notice Appoint or remove the guardian.
+    function setGuardian(address newGuardian) external onlyOwner {
+        emit GuardianUpdated(guardian, newGuardian);
+        guardian = newGuardian;
+    }
+
+    /// @notice Disabled. An unowned controller cannot collect, and every fee accrued afterwards
+    /// would be permanently unreachable — the exact defect V2 exists to repair.
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
+    }
+
+    function _validate(uint16 fee) private pure {
+        if (fee > MAX_PROTOCOL_FEE) revert FeeExceedsMaximum(fee, MAX_PROTOCOL_FEE);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                 VIEWS
+    //////////////////////////////////////////////////////////////*/
+
+    function poolFee(PoolId poolId) external view returns (bool isSet, uint16 zeroForOne, uint16 oneForZero) {
+        FeeConfig memory c = _poolFee[poolId];
+        return (c.isSet, c.zeroForOne, c.oneForZero);
+    }
+
+    function tierFee(uint24 lpFeeTier) external view returns (bool isSet, uint16 zeroForOne, uint16 oneForZero) {
+        FeeConfig memory c = _tierFee[lpFeeTier];
+        return (c.isSet, c.zeroForOne, c.oneForZero);
+    }
+
+    function dynamicFee() external view returns (bool isSet, uint16 zeroForOne, uint16 oneForZero) {
+        FeeConfig memory c = _dynamicFee;
+        return (c.isSet, c.zeroForOne, c.oneForZero);
+    }
+}
