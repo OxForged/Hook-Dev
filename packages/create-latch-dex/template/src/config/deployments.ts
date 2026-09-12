@@ -47,7 +47,14 @@
 
 import {
   LATCH_DEPLOYMENTS as SDK_DEPLOYMENTS,
-  NATIVE_CURRENCY as SDK_NATIVE_CURRENCY,
+  /* CHAIN_NATIVE_CURRENCIES, not NATIVE_CURRENCY. This import wanted the
+     per-chain table and used to get it only because the SDK's barrel had two
+     bindings of that name — a star-exported zero-address sentinel and an
+     explicit re-export of the table — and ESM silently let the explicit one
+     win. The sentinel was unreachable from the root and
+     isNativeCurrency(NATIVE_CURRENCY) threw. The names are distinct now, and
+     this is the side that was depending on the collision. */
+  CHAIN_NATIVE_CURRENCIES as SDK_NATIVE_CURRENCY,
   isLatchChainId,
   type LatchDeployment,
 } from "@latchprotocol/sdk";
