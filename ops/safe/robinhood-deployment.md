@@ -13,7 +13,8 @@ script's own log. Owners are as of the last verification.
 | BinPoolManagerOwner | `0x98920e33313257Ffd942f94379A7ced216462665` | **Safe** |
 | CLProtocolFeeController | `0xb1cC5BDBADD19a2430131EaE332afD72fF6be64B` | **Safe** |
 | BinProtocolFeeController | `0x320feB54e940741AeB037E3944F2C95afAEE84af` | **Safe** |
-| LatchProtocolFeeController | `0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c` | **Safe** (guardian: ops key) |
+| LatchProtocolFeeControllerV2 | `0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB` | **Safe** (guardian: ops key) — IN FORCE on both managers since 2026-09-13 |
+| ~~LatchProtocolFeeController~~ (V1) | `0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c` | RETIRED, do not re-wire — see the 2026-09-13 entry below |
 | LatchRegistry | `0xE4395085De89365440A6Ee25cE24BE2bAD66AC86` | Safe = admin; ops = curator + guardian |
 | CustodyTimelock (48h) | `0x63F08A697Cc003d5eA61787712C34438559a7428` | self-administering; Safe = proposer |
 | PolicyTimelock (6h) | `0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A` | self-administering; Safe = proposer |
