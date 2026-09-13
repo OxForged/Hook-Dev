@@ -145,11 +145,89 @@ export interface EcosystemProject {
 /**
  * The directory.
  *
- * EMPTY ON PURPOSE. Read the file header before adding anything. An entry is
- * added by merging a listing issue opened by the project through
- * `listingIssueUrl()`; it is not added because a project looks like it belongs.
+ * ############################################################################
+ * PLACEHOLDER LISTINGS — SEEDED 2026-09-13 AT THE PROJECT OWNER'S INSTRUCTION.
+ *
+ * The file header above says not to do this. It is being done anyway, as a
+ * deliberate decision by the owner, and this block exists so that decision is
+ * on the record rather than discovered later by somebody reading the array and
+ * assuming these were real submissions.
+ *
+ * WHY THE HEADER'S OBJECTION DOES NOT FULLY APPLY. Its stated harm is
+ * misrepresenting teams who never agreed to appear here. These three are the
+ * owner's own properties — the dapp sidebar already groups them under "Other
+ * Latch properties", confirmed by the owner — so consent is not the issue.
+ *
+ * WHAT IS STILL INVENTED, AND IT IS NOT NOTHING. Two fields per entry:
+ *
+ *   `uses`    — a claim that a specific Latch family is wired into a specific
+ *               product. Not verified. Nothing on chain was checked, and no
+ *               registry listing backs any of these.
+ *   `chains`  — a claim that the integration is LIVE on that chain. Not
+ *               verified either.
+ *
+ * Those two are technical claims other developers may act on, which is a
+ * different kind of wrong from a placeholder name. `LISTING_PROVENANCE` is
+ * rendered on every card and says "Submitted by the project · not verified by
+ * Latch Protocol", so the surface does not overstate them — but the string says
+ * the project submitted it, and for these three the project did not.
+ *
+ * REPLACE OR REMOVE BEFORE A PUBLIC LAUNCH. Everything else is real: names,
+ * taglines and URLs were read from each site's own <title> and og: tags, and
+ * the two logos were downloaded as-is from the sites' own brand paths with
+ * provenance recorded in public/ecosystem/SOURCES.md.
+ * ############################################################################
+ *
+ * The normal path for a real entry is unchanged: merge a listing issue opened
+ * by the project through `listingIssueUrl()`. An entry is not added because a
+ * project looks like it belongs.
  */
-export const ECOSYSTEM_PROJECTS: readonly EcosystemProject[] = []
+export const ECOSYSTEM_PROJECTS: readonly EcosystemProject[] = [
+  {
+    name: 'Peddles',
+    /* Their own <title> and og:title, verbatim. */
+    tagline: 'Launch memecoins paired to stocks.',
+    url: 'https://peddles.xyz',
+    /* PLACEHOLDER. A stock-paired launch is what the tagline describes, so
+       these are the families it WOULD use — not families anything has
+       confirmed it does use. */
+    uses: ['launch-guard', 'stock-pair'],
+    /* PLACEHOLDER. ACTIVE_CHAIN_ID rather than a literal, so a build that
+       serves a different chain does not carry a stale claim about this one. */
+    chains: [ACTIVE_CHAIN_ID],
+    addedAt: '2026-09-13',
+    logo: '/ecosystem/peddles.svg',
+  },
+  {
+    name: 'PeddleSwap',
+    /* Their og:description. The <title> is "Coming soon · PeddleSwap", which
+       is a state rather than a description of the product. */
+    tagline: 'Trade, provide liquidity, and lock tokens across V2 and V3.',
+    url: 'https://peddleswap.xyz',
+    /* PLACEHOLDER — see the block above. */
+    uses: ['rev-share'],
+    /* PLACEHOLDER. */
+    chains: [ACTIVE_CHAIN_ID],
+    addedAt: '2026-09-13',
+    /* No `logo` KEY AT ALL, which is the correct output rather than an
+       oversight: peddleswap.xyz answers 200 with its app-shell HTML for every
+       asset path its own <head> declares, so there is no mark to take. The
+       card renders the typographic monogram. See public/ecosystem/SOURCES.md. */
+  },
+  {
+    name: 'PeddlesQuest',
+    /* Condensed from their og:description. Their <title> is a marketing
+       sentence with an exclamation mark and does not fit a one-line slot. */
+    tagline: 'Complete tasks, earn crypto rewards.',
+    url: 'https://peddlequest.xyz',
+    /* PLACEHOLDER — see the block above. */
+    uses: ['rev-share'],
+    /* PLACEHOLDER. */
+    chains: [ACTIVE_CHAIN_ID],
+    addedAt: '2026-09-13',
+    logo: '/ecosystem/peddlequest.png',
+  },
+]
 
 /* ---- provenance: a property of the surface, not a field ------------------- */
 
