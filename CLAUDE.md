@@ -453,11 +453,12 @@ source path is missing — keep it that way, and run `forge clean` after any con
 
 ### `packages/keeper` — MIT
 
-Four calls the protocol needs somebody to make, and nobody was making: `closeEpoch()`,
-`rollover(id)`, `settleBeneficiaries(key, currency)`, `applyPendingConfig(key)`. Without them an
-epoch never closes, unclaimed funds never roll over, and fees never reach a roster.
+Five calls the protocol needs somebody to make, and nobody was making: `closeEpoch()`,
+`rollover(id)`, `settleBeneficiaries(key, currency)`, `applyPendingConfig(key)`, and
+`LatchProtocolFeeControllerV2.sweep(poolManager, currency)` (`src/jobs/fees.ts`). Without them an
+epoch never closes, unclaimed funds never roll over, and fees never reach a roster or treasury.
 
-**All four are permissionless, and that is the security model.** The keeper holds no privileged
+**All five are permissionless, and that is the security model.** The keeper holds no privileged
 role. A stolen keeper key buys an attacker nothing they could not already do from any address —
 it can waste gas, not move funds. Never add an owner/curator/guardian-only call to that package;
 if a job needs a privileged role, it does not belong there.
@@ -482,22 +483,32 @@ reinterpreting**:
 Indices 0-3, 7 and 8 do agree, which is why this stayed latent. Read through the matching
 ABI. Never guess: the wrong ABI returns nonsense, not an error.
 
-**Use `kind()`. The selector probe this section used to prescribe is obsolete and every
-consumer is still running it.** Both distributors now implement
-`IEpochDistributor.kind()` (`SnapshotEpochDistributor.sol:246`, `MerkleEpochDistributor.sol:357`),
-returning domain-separated constants. The old advice — call `token()`, call
-`challengeDelay()`, exactly one must answer — was a two-round-trip guess that happens to
-still resolve, and breaks the day a third distributor exposes a `token()` getter. Three
-places still do it, two of them carrying a comment asserting `kind()` does not exist:
-`packages/keeper/src/abi.ts:31` and `src/jobs/epochs.ts:98`,
-`packages/latch-ai/src/abi.ts:91`, and `apps/web/src/routes/dapp/lib/revshare.ts:780`
-(`probeDistributor`). Fix the comment when you fix the call.
+**Use `kind()`, and never fall back.** Both distributors implement `IEpochDistributor.kind()`
+(`SnapshotEpochDistributor.sol:246`, `MerkleEpochDistributor.sol:390`), returning
+domain-separated constants:
 
-Also for the keeper: the rollover job's deadline arithmetic is now short by
-`ROOT_GRACE_PERIOD`. Harmless, because it simulates first and `NotExpiredYet` is a free
-read, but it should call `rolloverEligibleAt(id)` — the only view that knows which of the
-two clocks governs, since `cancelRoot` moves one of them and `getEpoch` does not record
-that it did.
+```
+snapshot  keccak256("latch.revshare.distributor.snapshot.v1") = 0x6c8c753e…a7c1
+merkle    keccak256("latch.revshare.distributor.merkle.v1")   = 0xa4c52bdd…a516
+```
+
+All three consumers read it (keeper `jobs/epochs.ts:48`, LatchAI `tools/maintenance.ts`
+`readDistributorKind`, web `dapp/lib/revshare.ts` `probeDistributor`). A revert or an
+unrecognised value is `unknown` — never a guess, and never the old `token()` /
+`challengeDelay()` probe, which is removed everywhere. That probe was also wrong in a way
+nobody noticed: a transport timeout on one selector while the other answered read as
+`snapshot`. In the web app a TRANSPORT failure now throws (error state) and only a
+contract-level revert means `unknown`.
+
+**Consequence to know:** a distributor deployed before `kind()` existed reads `unknown`
+everywhere. The only one on chain today — Sepolia `0x5A908Ad96Bd4770B65c8E83a9ede093C1Cb7966c`
+— is one of those. It needs a redeployed distributor to be serviceable. There is no
+distributor on Robinhood.
+
+**Rollover eligibility:** call `rolloverEligibleAt(id)` for merkle epochs — the only view that
+knows which of the two clocks governs, since `cancelRoot` moves one and `getEpoch` does not
+record it. `expiresAt` is 0 for a merkle epoch with no root. The keeper and LatchAI both do
+this now.
 
 ### `packages/latch-ai` (LatchAI) — MIT
 
@@ -539,11 +550,28 @@ something to hand an autonomous process.
 - **Open, MEDIUM** — a rogue issuer's `setHolidays` day overrides survive issuer rotation via
   `configureMarket`, and recovery is O(n) over an attacker-chosen n. Fix is a per-pool
   `calendarEpoch` keyed into `_dayOverrides`.
-- **Open, LOW–MEDIUM** — `EmptyWeekdayMask` is defeated by unused bit 7: `0x80` passes validation
-  and produces a pool that can never trade while every view reports it healthy.
-- **Open, LOW** — `renounceOwnership` is not disabled on any RWA hook or on the oracle.
-- **Not yet run:** the RWA hooks have never been exercised under `FOUNDRY_PROFILE=legacy`, which
-  the build-profile rules above require.
+  Design assessed 2026-09-13, not implemented: a `_calendarEpoch` counter keyed into the override
+  mapping plus an owner-only `resetCalendar(poolId)`, deliberately NOT wiped by `configureMarket`
+  (auto-wipe on rotation silently deletes legitimate holidays). ~2.1k gas on the swap path for
+  session-enabled pools only. Not patchable in place — a hook address is part of pool identity.
+  No RWA hook is deployed on any chain, so no live pool is affected.
+- **Open, untriaged** — two further findings are asserted in `SecurityReview.t.sol` and were never
+  listed here: `FINDING3` (a holiday on the day an overnight session ENDS does not close that
+  session's tail) and `FINDING4` (a pool can be initialized far outside its own price band).
+- **FIXED 2026-09-13, LOW–MEDIUM** — weekday mask bit 7. `0x80` used to pass validation and produce
+  a pool that could never trade while every view reported it healthy. Both mask entry points now
+  reject any bit outside `0x7F` with `InvalidWeekdayMask(uint8)`; `0` keeps `EmptyWeekdayMask`.
+  Guards: `test_FIX1_*` and a fuzz over every mask.
+- **FIXED 2026-09-13, LOW** — `renounceOwnership` now reverts `RenounceDisabled()` on
+  `MarketHoursHook`, `PermissionedPoolHook` (and `StockPairHook` through it),
+  `ManualPriceBandOracle`, `PythPriceBandAdapter` and `AllowlistComplianceOracle`, matching
+  `ChainlinkPriceBandAdapter`. Same selector everywhere. Guards: `test/RenounceDisabled.t.sol`.
+- **FIXED 2026-09-13, LOW** — `PythPriceBandAdapter` could not price any pool ratio ≥ 2⁶⁴ (e.g. a
+  0-decimal security token above ~18.45 against an 18-decimal stable) and reverted with OZ's
+  anonymous `MathOverflowedMulDiv`; core represents up to ~2¹²⁸. Now scale-switched exactly like
+  the Chainlink adapter, `RatioUnrepresentable(num, den)` at ≥ 2¹³⁰. The two Sepolia exercise
+  instances (`0x6283…8915`, `0xe0aa…00b9`) keep the bug; nothing on Robinhood.
+- hooks-rwa passes under BOTH profiles (205/205 each, 2026-09-13), all storage layouts unchanged.
 
 
 ---
@@ -555,13 +583,28 @@ patched. Each is a call governance is *able* to make, that no on-chain guard pre
 whose consequence cannot be walked back. Every mitigation is procedural — which means it
 only works if it is written here rather than remembered.
 
-Regression guards: `packages/hooks-revshare/test/DeployedHazards.t.sol` (`test_HAZARD_*`).
-Those tests assert the CURRENT behaviour on purpose. If one starts failing against a future
-redeploy, that is the fix landing, and the matching rule below can go.
+**Two RevShareHooks are live, and the hazards below split between them** (audited on chain
+2026-09-13):
 
-### 1. `renounceOwnership()` — live on four contracts, no override anywhere
+| Address | Record | State |
+|---|---|---|
+| `0x23CE34E8199927DD270dddd8579c947542bDE446` | retired in `packages/sdk/src/deployments/index.ts:373` | **Still hosts the only pool with liquidity** — LTT1/LTT2, `beneficiaryBps = 8000`, one roster entry, NOT frozen, `poolOwner = 0x304b…c9a9` (the shared-VPS key). Items 3, 3b, 4 and 5 all apply. |
+| `0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2` | current, `index.ts:395`; what the dapp reads | Runtime bytecode matches current `src/RevShareHook.sol` byte for byte. Items 3, 3b and 5 are FIXED; item 4 is unchanged by design; renounce reverts `RenounceDisabled`. No pools yet. |
 
-A repo-wide grep finds zero overrides in `packages/*/src`. OpenZeppelin ships this on the
+Retiring a hook in the address book does not retire its pools. The hazards on `0x23CE` last
+as long as LTT1/LTT2 does. The cheapest mitigation is moving that pool's ownership off
+`0x304b` (`MovePoolOwnershipToSafe.s.sol` exists; `pendingPoolOwner` read 0 on 2026-09-13).
+
+Regression guards: `packages/hooks-revshare/test/DeployedHazards.t.sol` deploys a fresh hook
+from CURRENT source, not either live address. `test_FIXED_*` assert the fixes that shipped in
+`0xfC00`; `test_HAZARD_B4_*` asserts item 4. **Nothing in the suite exercises `0x23CE`** — its
+hazards rest on the source at git `3c6edc8` and on-chain reads.
+
+### 1. `renounceOwnership()` — live on four contracts with no override
+
+These four have none. (Newer contracts do override it — `LatchProtocolFeeControllerV2:497`,
+`MerkleEpochDistributor:365`, `RevShareHook:575` in current source, `ChainlinkPriceBandAdapter:460`.)
+OpenZeppelin ships this on the
 premise that an owner who can no longer act is safer than one who can. That premise is
 inverted on all four.
 
@@ -569,7 +612,7 @@ inverted on all four.
 |---|---|---|
 | `Vault` | Custody 48h | `registerApp` is the only `onlyOwner` function (`Vault.sol:41`). No new pool manager, no new app, ever. The protocol cannot be extended, only replaced. |
 | `CLPoolManagerOwner` / `BinPoolManagerOwner` | Custody 48h | `unpausePoolManager`, `setProtocolFeeController`, `transferPoolManagerOwnership` and the pausable-role grants are all `onlyOwner`. The worst is `transferPoolManagerOwnership`: the manager can never be moved to a replacement wrapper. |
-| `RevShareHook` | Policy 6h | `setPaused(false)` and `setGuardian` are gone. Pool owners, `claim`, `redeem` and `settleBeneficiaries` are unaffected — no user funds strand — but the global switch is lost in whatever position it was left. |
+| `RevShareHook` `0x23CE…E446` (retired, hosts LTT1/LTT2) | Safe | Renounce still live there (eth_call from the Safe succeeds); `0xfC00…` reverts `RenounceDisabled`. `setPaused(false)` and `setGuardian` are gone. Pool owners, `claim`, `redeem` and `settleBeneficiaries` are unaffected — no user funds strand — but the global switch is lost in whatever position it was left. |
 
 **`pausePoolManager` is `onlyPausableRoleOrOwner`, not `onlyOwner`.** So a renounce does not
 brick pausing — it leaves the managers pausable by an Ops key and **unpausable by anyone**.
@@ -605,9 +648,18 @@ griefing against having no veto at all on a compromised Safe. The right holder i
 whose only failure mode is inaction. It fits the house rule, because cancelling is
 privilege *reduction*. Add a CANCELLER assertion to step 4 while doing it.
 
-### 3. `RevShareHook`: `beneficiaryBps > 0`, an empty roster, then `freezeConfig`
+### 3. `RevShareHook` `0x23CE…E446`: `beneficiaryBps > 0`, an empty roster, then `freezeConfig`
 
-`_validateParams` enforces the distributor invariant and not its beneficiary twin, and
+**Applies to `0x23CE` only.** Fixed in `0xfC00`: `_validateParams` rejects a beneficiary share
+with zero weight (`RevShareHook.sol:881`), `setBeneficiaries` rejects an empty roster under a
+live share (`:816`), and `freezeConfig` refuses that state (`:769`). `settleBeneficiaries`
+still returns early on zero weight (`:1131`), reachable only once the share is zero.
+
+**Exposed today:** on 2026-09-13 an eth_call of `setBeneficiaries(LTT1/LTT2 key, [])` from the
+pool owner `0x304b` succeeded. A stolen shared-VPS key empties the roster and freezes in two
+transactions, and every later beneficiary cut on that pool accrues to nobody, forever.
+
+On `0x23CE`, `_validateParams` enforces the distributor invariant and not its beneficiary twin, and
 `setBeneficiaries` accepts a zero-length roster — despite the `InvalidBeneficiaries` doc
 comment claiming otherwise. With `_totalWeight == 0`, `settleBeneficiaries` **returns early
 rather than reverting**, so the pot accrues silently and no keeper log looks wrong.
@@ -622,9 +674,13 @@ irreversible half, so the rule is about ordering, not the roster.**
 `pendingBeneficiary` settled to dust on **both** currencies. Any UI offering the button
 must check these and refuse.
 
-### 3b. `CONFIG_DELAY_BLOCKS` is six minutes on Robinhood, not twelve hours
+### 3b. `CONFIG_DELAY_BLOCKS` is six minutes on `0x23CE…E446`, not twelve hours
 
-`RevShareHook.sol:159` — `uint48 public constant CONFIG_DELAY_BLOCKS = 3600`, whose own
+**Applies to `0x23CE` only.** In `0xfC00` it is an immutable validated against a wall-clock
+window: reads `432000` blocks × `blockTimeCentis` 10 = 12h, constructor-bounded to 12h–14d
+(`RevShareHook.sol:529-535`). The retired hook reads `3600` on chain.
+
+Retired source (git `3c6edc8`, line 159) — `uint48 public constant CONFIG_DELAY_BLOCKS = 3600`, whose own
 docstring reads *"Roughly 12 hours at 12s blocks, or proportionally less on a faster chain -
 set by the deployer's chain choice, and documented rather than configurable so it cannot be
 shortened."*
@@ -645,14 +701,15 @@ Compounded by item 5: a matured proposal never expires, so the practical sequenc
 propose once, wait six minutes, and hold an armed 10% fee indefinitely for the moment a
 large trade appears.
 
-**Unfixable on the live hook** (`0x23CE34E8199927DD270dddd8579c947542bDE446`) because the
-value is a `constant` in immutable code. Mitigation is procedural and thin: monitor
-`ConfigProposed` on every pool that matters and treat one as an incident rather than a
-notification. The real fix is a redeploy in which this is a constructor argument validated
-against a WALL-CLOCK floor rather than a block count — see the same failure in
-`LaunchGuardHook` (`MAX_DECAY_BLOCKS` and `MAX_START_DELAY` are 1,000,000 blocks, ~139 days
-at 12 s, **28 hours** here, so a three-day fair launch reverts) and in `LaunchpadKit`, whose
-constructor rejected Robinhood's block time outright until it was fixed this week.
+**Unfixable on `0x23CE34E8199927DD270dddd8579c947542bDE446`** because the value is a
+`constant` in immutable code and LTT1/LTT2 is bound to that hook forever. Mitigation is
+procedural and thin: monitor `ConfigProposed(bytes32,uint48)` (the 2-arg event) on `0x23CE`
+and treat one as an incident. The redeploy fix — a constructor argument validated against a
+WALL-CLOCK floor — shipped in `0xfC00`. The same failure existed in `LaunchGuardHook`
+(`MAX_DECAY_BLOCKS` / `MAX_START_DELAY` as 1,000,000-block constants, **28 hours** here); in
+source they are now immutables (`BinLaunchGuardHook.sol:229,232`), but the DEPLOYED
+`LaunchGuardHook` has not been re-checked — verify before relying on it. `LaunchpadKit`'s
+constructor rejected Robinhood's block time outright until it was fixed.
 
 **The general rule, which is the actually useful output: this codebase was written assuming
 12-second blocks, and every duration expressed in blocks is 118x short on this chain.**
@@ -662,19 +719,26 @@ block count.
 
 ### 4. `freezeConfig` is irreversible and cheaper than raising a fee
 
-`proposeConfig` costs 3600 blocks and two transactions. `freezeConfig` is one call,
+Applies to both hooks. `proposeConfig` costs `CONFIG_DELAY_BLOCKS` (3600 blocks, ~6 min, on
+`0x23CE`; 432000 blocks, 12h, on `0xfC00`) and two transactions. `freezeConfig` is one call,
 immediate, and permanently ends `proposeConfig`, `reduceFee`, `disable`,
 `setBeneficiaries` and `transferPoolOwnership` for that pool.
 
 That asymmetry is *correct* under this contract's own rule — delay belongs on escalation,
 never on reduction, and a freeze only reduces the owner's power. It is recorded because the
-consequence is irreversible while the friction is one click, and because it is what turns
-item 3 from a mistake into a permanent one. **A UI must confirm it the way it confirms a
+consequence is irreversible while the friction is one click, and because on `0x23CE` it is
+what turns item 3 from a mistake into a permanent one (`0xfC00`'s freeze refuses that state). **A UI must confirm it the way it confirms a
 burn.**
 
-### 5. A matured proposal never expires, and `disable` does not clear it
+### 5. On `0x23CE…E446` a matured proposal never expires, and `disable` does not clear it
 
-`reduceFee` and `disable` write `_configs` and never touch `_pending`; a matured proposal
+**Applies to `0x23CE` only.** Fixed in `0xfC00`: `reduceFee` and `disable` call `_clearPending`
+(`RevShareHook.sol:725,744`), and a proposal applies only inside `[effectiveBlock, expiryBlock]`
+(`:685`; `CONFIG_PROPOSAL_TTL_BLOCKS` = 2,592,000 = 3 days). Its `PendingConfig` is 8 words,
+the retired one 7 — decode by length. Verified on an anvil fork: `disable` on `0x23CE` left
+the proposal armed. (The "stranger applies it days later" replay did not complete — RPC 429.)
+
+On `0x23CE`, `reduceFee` and `disable` write `_configs` and never touch `_pending`; a matured proposal
 has no expiry; `applyPendingConfig` is permissionless. So a pool can emit
 `ConfigUpdated(feePips: 0, enabled: false)` — which every indexer reads as "revenue share
 off" — while a 10%/enabled proposal sits armed, applicable by anyone, at any time,
@@ -688,8 +752,9 @@ rather than paying. It bounds **nothing** for a caller taking its own vault lock
 setting `amountOutMinimum = 0`.
 
 **Rule.** `disable` and `reduceFee` are not "off" — only `cancelPendingConfig` or
-`freezeConfig` clears a proposal. Any surface rendering a pool's cut MUST read
-`getPendingConfig` beside `getConfig` and show an armed matured proposal as armed. A screen
+`freezeConfig` clears a proposal. Any surface rendering a `0x23CE` pool's cut MUST read
+`getPendingConfig` beside `getConfig` and show an armed matured proposal as armed. On `0xfC00`,
+render `expiryBlock` beside `effectiveBlock`. A screen
 showing only the live config is telling a trader something that can stop being true in the
 next block, for free, at anyone's option.
 
@@ -829,9 +894,12 @@ has no claim on them and the deployment runbook must not touch them.
 epoch's balance to the owner, because that balance is holder money. It does **not** mean the
 protocol cannot be paid. Two separate paths exist and neither is affected by that rule:
 
-- **Protocol fees** — `ProtocolFees.collectProtocolFees(recipient, currency, amount)`, callable
-  only by the `protocolFeeController`. The controller sits behind Policy, so collection is a 6h
-  queued call to any recipient.
+- **Protocol fees** — `ProtocolFees.collectProtocolFees` is callable only by the installed
+  `protocolFeeController`, `LatchProtocolFeeControllerV2` `0x9c2c09EF…54aB` on both managers.
+  Two routes: `collect(poolManager, currency, amount, recipient)` is `onlyOwner` (the Safe,
+  directly, no delay — there is no Policy tier), and `sweep(poolManager, currency)` is
+  PERMISSIONLESS and pays only the stored `treasury` (currently the Safe; `setTreasury` is
+  owner-only). The keeper calls `sweep` every 12h.
 - **Revenue share** — the treasury is paid by being an entry on a pool's `Beneficiary[]` roster,
   credited to `claimable[recipient][currency]` and withdrawn with `claim`. An entitlement, not an
   admin power, and it needs the pool owner to have put the treasury on the roster.
