@@ -222,6 +222,9 @@ contract PermissionedPoolHook is BaseCLHook, Ownable2Step, Pausable {
     /// @notice A zero address was supplied where a real one is required
     error ZeroAddress();
 
+    /// @notice `renounceOwnership` is permanently disabled. See the override.
+    error RenounceDisabled();
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -474,6 +477,39 @@ contract PermissionedPoolHook is BaseCLHook, Ownable2Step, Pausable {
     /// @notice Resume swaps and liquidity additions
     function unpause() external onlyOwner {
         _unpause();
+    }
+
+    /**
+     * @notice Permanently disabled. Reverts for every caller.
+     *
+     * @dev CLAUDE.md § "Deployed and unfixable" makes this the house rule for every contract
+     * deployed from here on, and `MerkleEpochDistributor` is the reference.
+     *
+     * Every administrative function on this hook is `onlyOwner`, and most of them are the
+     * RESTRICTING levers a compliance venue needs in an incident. Renouncing removes all of them at
+     * once, permanently:
+     *
+     *   * `pause` becomes one-way. A hook renounced while paused refuses every swap and every
+     *     liquidity addition forever, because `unpause` is `onlyOwner`.
+     *   * The denylist freezes. No account can ever be added to it again, so the sanctions lever
+     *     is gone, and a denied account can never be released either.
+     *   * The trusted-router set freezes. A router later found to forward caller-supplied bytes —
+     *     which voids the identity gate entirely — can never be removed.
+     *   * The compliance oracle, the trade caps and the jurisdiction list can never change.
+     *
+     * LP exits survive, as the contract-level note guarantees. It is still an irreversible loss
+     * of every control this contract exists to provide, and `transferOwnership` is itself
+     * `onlyOwner`.
+     *
+     * Deliberately NOT `virtual`: `StockPairHook` inherits this override, and a subclass should
+     * not be able to re-enable renouncing by accident.
+     *
+     * The bounded form of the same intent already exists and is unaffected: an owner who wants out
+     * transfers to the address that should have it. `Ownable2Step` means that cannot land somewhere
+     * unreachable by typo.
+     */
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
     }
 
     /*//////////////////////////////////////////////////////////////

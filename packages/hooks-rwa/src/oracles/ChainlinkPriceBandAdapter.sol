@@ -576,9 +576,10 @@ contract ChainlinkPriceBandAdapter is IPriceBandOracle, Ownable2Step {
     /// It breaks at the HIGH end. `mulDiv` reverts once the quotient passes `2**256`, i.e. once
     /// `R >= 2**64` — while core happily represents ratios up to `R ~= 2**128.6`. A pool with a
     /// 6-decimal token as currency0 and an 18-decimal token as currency1 crosses that at a human
-    /// price of about 18.4, which is not an exotic pool. (`PythPriceBandAdapter` computes at the
-    /// single 2**192 scale and therefore reverts above the same threshold; see the review notes
-    /// accompanying this contract.)
+    /// price of about 18.4, which is not an exotic pool. (`PythPriceBandAdapter._toSqrtPriceX96`
+    /// handles this identically: the same two scales, the same exact branch condition, and the
+    /// same `RatioUnrepresentable` rejection at `R >= 2**130`, so for the same `num / den` the two
+    /// adapters return the same `sqrtPriceX96` or the same error.)
     ///
     /// So the scale is chosen from the ratio's magnitude, and the branch condition is exact:
     /// `(num >> 64) >= den` if and only if `num >= den * 2**64`, i.e. `R >= 2**64`.

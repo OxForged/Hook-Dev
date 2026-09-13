@@ -394,6 +394,99 @@ contract MarketHoursHookTest is Test, Deployers, TokenFixture {
         _setSettings(settings);
     }
 
+    /// Bit 7 names no weekday. `0x80` used to pass the `mask == 0` check and configure a pool that
+    /// could never trade; `0xFF` stored a number the calendar never enforces as written.
+    function test_calendar_reservedWeekdayBitIsRejectedByConfigureMarket() public {
+        uint8[3] memory bad = [uint8(0x80), uint8(0xFF), uint8(0x81)];
+        for (uint256 i = 0; i < bad.length; ++i) {
+            MarketHoursModule.MarketSettings memory settings = _defaultSettings();
+            settings.weekdayMask = bad[i];
+            vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.InvalidWeekdayMask.selector, bad[i]));
+            _setSettings(settings);
+
+            // Refused on a disabled session too: a reserved bit is meaningless in every mode, and
+            // storing it would let the nonsense survive until somebody enabled the session.
+            settings.sessionEnabled = false;
+            vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.InvalidWeekdayMask.selector, bad[i]));
+            _setSettings(settings);
+        }
+
+        // A zero mask on a DISABLED session still means "no schedule" and is still accepted.
+        MarketHoursModule.MarketSettings memory disabled = _defaultSettings();
+        disabled.weekdayMask = 0;
+        disabled.sessionEnabled = false;
+        _setSettings(disabled);
+
+        // Every day of the week, all seven valid bits, is accepted and trades on every day.
+        MarketHoursModule.MarketSettings memory everyDay = _defaultSettings();
+        everyDay.weekdayMask = 0x7F;
+        _setSettings(everyDay);
+        assertEq(hook.marketConfig(poolId).weekdayMask, 0x7F);
+        for (uint256 d = 0; d < 7; ++d) {
+            assertTrue(hook.isSessionOpenAt(poolId, MONDAY_MIDNIGHT + d * 1 days + OPEN), "0x7F trades every day");
+        }
+    }
+
+    /// The same rule on the issuer's un-timelocked lever, which is the more reachable of the two.
+    function test_calendar_reservedWeekdayBitIsRejectedBySetSessionHours() public {
+        vm.startPrank(ISSUER);
+        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.InvalidWeekdayMask.selector, uint8(0x80)));
+        hook.setSessionHours(poolId, 0x80, OPEN, CLOSE);
+        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.InvalidWeekdayMask.selector, uint8(0xFF)));
+        hook.setSessionHours(poolId, 0xFF, OPEN, CLOSE);
+        // Zero keeps its own, more specific error.
+        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.EmptyWeekdayMask.selector));
+        hook.setSessionHours(poolId, 0, OPEN, CLOSE);
+
+        hook.setSessionHours(poolId, 0x7F, OPEN, CLOSE);
+        vm.stopPrank();
+
+        assertEq(hook.marketConfig(poolId).weekdayMask, 0x7F);
+        vm.warp(MONDAY_MIDNIGHT + 6 days + 16 hours); // Sunday, in session
+        assertTrue(hook.isTradable(poolId), "0x7F includes Sunday");
+    }
+
+    /// The property the guard exists for, over every possible mask and through both entry points:
+    /// a mask that is ACCEPTED always yields at least one weekday on which the pool is actually in
+    /// session, and a mask is REFUSED only if it is zero or sets a reserved bit - so the fix
+    /// neither lets a dead calendar through nor rejects a live one.
+    function testFuzz_calendar_anyAcceptedMaskHasATradingWeekday(uint8 mask, bool viaIssuer) public {
+        bool accepted;
+        if (viaIssuer) {
+            vm.prank(ISSUER);
+            try hook.setSessionHours(poolId, mask, OPEN, CLOSE) {
+                accepted = true;
+            } catch {}
+        } else {
+            MarketHoursModule.MarketSettings memory settings = _defaultSettings();
+            settings.weekdayMask = mask;
+            try hook.configureMarket(key, settings) {
+                accepted = true;
+            } catch {}
+        }
+
+        bool shouldAccept = mask != 0 && (mask & 0x80) == 0;
+        assertEq(accepted, shouldAccept, "refused exactly the empty and reserved-bit masks");
+        if (!accepted) return;
+
+        assertEq(hook.marketConfig(poolId).weekdayMask, mask, "stored mask is the enforced mask");
+
+        // Seven consecutive days cover every weekday exactly once.
+        uint256 openDays;
+        for (uint256 d = 0; d < 7; ++d) {
+            uint256 inSession = MONDAY_MIDNIGHT + d * 1 days + OPEN;
+            bool open = hook.isSessionOpenAt(poolId, inSession);
+            // The weekday of `MONDAY_MIDNIGHT + d days` is (1 + d) % 7, 0 = Sunday.
+            assertEq(open, ((mask >> ((1 + d) % 7)) & 1) == 1, "each set bit is exactly one open weekday");
+            if (open) {
+                ++openDays;
+                vm.warp(inSession);
+                assertTrue(hook.isTradable(poolId), "and the view a router reads agrees");
+            }
+        }
+        assertGt(openDays, 0, "an accepted mask always has a trading weekday");
+    }
+
     /// @notice The DST lever. The issuer holds it because a schedule change that queues behind a
     /// governance timelock arrives after the session it describes.
     function test_calendar_issuerCanRecutTheScheduleWithoutGovernance() public {

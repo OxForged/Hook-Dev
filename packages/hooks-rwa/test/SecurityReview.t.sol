@@ -117,43 +117,42 @@ contract SecurityReviewCalendarTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
-      FINDING 1 - `EmptyWeekdayMask` is bypassed by the unused bit 7.
+      FINDING 1 (FIXED) - `EmptyWeekdayMask` was bypassed by the unused bit 7.
+
+      The guard exists to stop a pool being configured that "can never trade
+      while looking, in every event and every view, exactly like a configured
+      one". It only rejected `weekdayMask == 0`, but `_scheduleForDay` reads
+      bits 0..6 only, so `0x80` was non-zero, passed, and produced a
+      permanently closed market - reachable by the owner via `configureMarket`
+      and, with no timelock at all, by the issuer via `setSessionHours`.
+
+      `InvalidWeekdayMask` now refuses any bit outside 0..6 on both paths.
+      These tests previously asserted the defect; they now assert it is closed.
     //////////////////////////////////////////////////////////////*/
 
-    /// The guard exists (its own comment says so) to stop a pool being configured that "can never
-    /// trade while looking, in every event and every view, exactly like a configured one".
-    /// It only rejects `weekdayMask == 0`. `_scheduleForDay` matches bits 0..6 only, so any mask
-    /// consisting solely of bit 7 (0x80) is non-zero, passes validation, and is a permanently
-    /// closed market. Reachable by the OWNER via `configureMarket` and, with no timelock at all,
-    /// by the per-pool ISSUER via `setSessionHours`.
-    function test_FINDING1_reservedBit7DefeatsTheEmptyWeekdayMaskGuard() public {
+    function test_FIX1_reservedBit7IsRefusedByConfigureMarket() public {
         MarketHoursModule.MarketSettings memory s = _settings();
         s.weekdayMask = 0x80; // no weekday bit set at all
 
-        // Accepted. `EmptyWeekdayMask` does not fire.
+        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.InvalidWeekdayMask.selector, uint8(0x80)));
         hook.configureMarket(key, s);
-        assertEq(hook.marketConfig(poolId).weekdayMask, 0x80);
 
-        // The market is closed now, and stays closed for every day that will ever exist.
-        assertFalse(hook.isTradable(poolId), "closed at configuration time");
-        for (uint256 i = 0; i < 14; ++i) {
-            vm.warp(MONDAY_MIDNIGHT + i * 1 days + 16 hours);
-            assertFalse(hook.isSessionOpenAt(poolId, block.timestamp), "no day is ever a trading day");
-        }
-        vm.warp(MONDAY_MIDNIGHT + 4000 days);
-        assertFalse(hook.isTradable(poolId), "still closed 11 years later");
+        // The pool kept its previous, genuine schedule.
+        assertEq(hook.marketConfig(poolId).weekdayMask, WEEKDAYS, "rejected write left no trace");
+        assertTrue(hook.isTradable(poolId), "and it still trades");
 
-        // Compare: mask 0 IS rejected, which is the state this configuration is equivalent to.
+        // Mask 0 is still reported as the empty-mask mistake, not the reserved-bit one.
         s.weekdayMask = 0;
         vm.expectRevert(MarketHoursModule.EmptyWeekdayMask.selector);
         hook.configureMarket(key, s);
     }
 
-    /// The same gap on the issuer's fast, un-timelocked lever.
-    function test_FINDING1_issuerCanReachTheSameStateWithSetSessionHours() public {
+    /// The same gap on the issuer's fast, un-timelocked lever, now closed.
+    function test_FIX1_reservedBit7IsRefusedBySetSessionHours() public {
         vm.prank(ISSUER);
+        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.InvalidWeekdayMask.selector, uint8(0x80)));
         hook.setSessionHours(poolId, 0x80, OPEN, CLOSE);
-        assertFalse(hook.isTradable(poolId));
+        assertTrue(hook.isTradable(poolId), "the issuer could not close the market this way");
 
         vm.prank(ISSUER);
         vm.expectRevert(MarketHoursModule.EmptyWeekdayMask.selector);
@@ -254,28 +253,28 @@ contract SecurityReviewCalendarTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
-      FINDING 5 - renouncing ownership permanently freezes the market config.
+      FINDING 5 (FIXED) - renouncing ownership froze the market config.
+
+      `Ownable2Step.renounceOwnership` was not disabled. After it, no oracle
+      rotation, no band change, no issuer replacement and no guardian change
+      was possible for the life of the hook. `renounceOwnership` now reverts
+      `RenounceDisabled()` on every Ownable contract in this package; the full
+      per-contract coverage is `test/RenounceDisabled.t.sol`.
     //////////////////////////////////////////////////////////////*/
 
-    /// `Ownable2Step.renounceOwnership` is not disabled. After it, no oracle rotation, no band
-    /// change, no issuer replacement and no guardian change is possible for the life of the hook.
-    /// The pool keeps trading and LPs keep their exit, so this is a governance-availability
-    /// failure rather than a loss of funds - but it is one transaction away and irreversible.
-    function test_FINDING5_renounceOwnershipBricksAllMarketConfiguration() public {
+    function test_FIX5_renounceOwnershipIsRefusedAndMarketConfigurationSurvives() public {
+        vm.expectRevert(MarketHoursHook.RenounceDisabled.selector);
         hook.renounceOwnership();
+        assertEq(hook.owner(), address(this));
 
+        // Every recovery lever the renounce would have removed is still in governance's hands.
         MarketHoursModule.MarketSettings memory s = _settings();
-        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.NotMarketAdmin.selector, address(this)));
+        s.issuer = NEW_ISSUER;
         hook.configureMarket(key, s);
+        assertEq(hook.marketConfig(poolId).issuer, NEW_ISSUER, "a rogue issuer can still be replaced");
 
-        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.NotMarketAdmin.selector, address(this)));
         hook.setMarketGuardian(address(0xBEEF));
-
-        // The issuer still operates the market, so nothing is trapped - but the oracle, the band
-        // widths and the issuer address itself are now immutable.
-        vm.prank(ISSUER);
-        hook.halt(poolId, "incident");
-        assertFalse(hook.isTradable(poolId));
+        assertEq(hook.marketGuardian(), address(0xBEEF), "the guardian can still be rotated");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -530,6 +529,23 @@ contract SecurityReviewStockPairTest is Test, Deployers, TokenFixture {
 
         // Converging: selling token0 moves it back toward the band and is permitted.
         _swapAs(INVESTOR, true, -1 ether);
+    }
+
+    /// FINDING 1's fix lives in `MarketHoursModule`, which this contract mixes in without
+    /// overriding either entry point. Asserted here anyway, on both, so a future override in the
+    /// composition cannot quietly reopen it.
+    function test_FIX1_stockPairRefusesReservedWeekdayBitsOnBothEntryPoints() public {
+        MarketHoursModule.MarketSettings memory s = _marketSettings();
+        s.weekdayMask = 0xFF;
+        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.InvalidWeekdayMask.selector, uint8(0xFF)));
+        hook.configureMarket(key, s);
+
+        vm.prank(ISSUER);
+        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.InvalidWeekdayMask.selector, uint8(0x80)));
+        hook.setSessionHours(poolId, 0x80, OPEN, CLOSE);
+
+        assertEq(hook.marketConfig(poolId).weekdayMask, WEEKDAYS);
+        assertTrue(hook.isTradable(poolId));
     }
 
     /*//////////////////////////////////////////////////////////////

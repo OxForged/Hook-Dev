@@ -54,8 +54,9 @@ import {IPyth} from "../interfaces/IPyth.sol";
 ///   baseIsCurrency0 == false  (the stablecoin sorted below the RWA token)
 ///       the ratio is the RECIPROCAL of the above.
 ///
-/// Both are expressed below as an exact rational `num / den`, and the square root is taken once on
-/// `num * 2**192 / den`, so there is no intermediate rounding of the price itself.
+/// Both are expressed below as an exact rational `num / den`, and the square root is taken once, on
+/// `num * 2**192 / den` (or `num * 2**126 / den` for ratios at or above `2**64`; see
+/// `_toSqrtPriceX96`), so there is no intermediate rounding of the price itself.
 ///
 /// ####################### FAILURE IS A VALID ANSWER #######################
 ///
@@ -67,7 +68,8 @@ import {IPyth} from "../interfaces/IPyth.sol";
 ///   * Pyth's price is not strictly positive
 ///   * Pyth's publish time is older than `maxPublishAge`
 ///   * the confidence interval is wider than `maxConfBps` of the price
-///   * the converted price falls outside the range core can represent
+///   * the converted price falls outside the range core can represent (`PriceOutOfRange`, or
+///     `RatioUnrepresentable` when the ratio is too large even to compute)
 ///
 /// The first four are checked in `refresh`, so a bad feed never reaches the cache. The consumer
 /// separately rejects a cache that has gone stale, because `referencePrice` reports Pyth's own
@@ -97,9 +99,19 @@ contract PythPriceBandAdapter is IPriceBandOracle, Ownable2Step {
     /// @notice The converted price is outside the range core can represent as a pool price.
     error PriceOutOfRange(uint256 sqrtPriceX96);
 
+    /// @notice The price ratio `num / den` is so far above the representable range that even the
+    /// reduced fixed-point scale would overflow. Every such ratio is also above
+    /// `TickMath.MAX_SQRT_RATIO`, so this is `PriceOutOfRange` reported before it can be computed.
+    /// @dev Same name and shape as `ChainlinkPriceBandAdapter.RatioUnrepresentable`, so a keeper or
+    /// monitor decodes both adapters with one ABI entry.
+    error RatioUnrepresentable(uint256 num, uint256 den);
+
     /// @notice `expo` was outside the range any real feed uses.
     /// @dev Guards the `10**|expo|` below from becoming an absurd exponentiation.
     error ExponentOutOfRange(int32 expo);
+
+    /// @notice `renounceOwnership` is permanently disabled. See the override.
+    error RenounceDisabled();
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -216,6 +228,30 @@ contract PythPriceBandAdapter is IPriceBandOracle, Ownable2Step {
         emit FeedRemoved(poolId);
     }
 
+    /**
+     * @notice Permanently disabled. Reverts for every caller.
+     *
+     * @dev CLAUDE.md § "Deployed and unfixable" makes this the house rule for every contract
+     * deployed from here on, and `MerkleEpochDistributor` is the reference. The reason is the same
+     * one `ChainlinkPriceBandAdapter` gives.
+     *
+     * `configureFeed` and `removeFeed` are the only `onlyOwner` functions, and both are
+     * REVERSIBLE — the owner can only choose which Pyth feed prices a pool and how much confidence
+     * and staleness to accept, or withdraw a feed. Renouncing therefore removes no power that could
+     * be abused. What it removes is the ability to repoint a pool whose feed stops publishing, to
+     * tighten a `maxConfBps` or `maxPublishAge` that proves too loose, or to withdraw a price source
+     * nobody maintains any more. Every pool this adapter serves would be stuck with the
+     * configuration it had at that moment, permanently, because `transferOwnership` is itself
+     * `onlyOwner`.
+     *
+     * The bounded form of the same intent already exists and is unaffected: an owner who wants out
+     * transfers to the address that should have it. `Ownable2Step` means that cannot land somewhere
+     * unreachable by typo.
+     */
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
+    }
+
     /*//////////////////////////////////////////////////////////////
                                  REFRESH
     //////////////////////////////////////////////////////////////*/
@@ -282,6 +318,38 @@ contract PythPriceBandAdapter is IPriceBandOracle, Ownable2Step {
     ///
     /// Collecting every power of ten into one numerator and one denominator avoids computing `H`
     /// (which is fractional) at all.
+    ///
+    /// ---- THE TWO SCALES (mirrors `ChainlinkPriceBandAdapter._toSqrtPriceX96`) ----
+    ///
+    /// `sqrtPriceX96 = sqrt(R * 2**192)`, so the natural computation is
+    /// `sqrt(mulDiv(num, 2**192, den))`. That is exact, and loses nothing at the LOW end: core's
+    /// `MIN_SQRT_RATIO` is `R ~= 2**-128`, where `R * 2**192` is still `~2**64`.
+    ///
+    /// It breaks at the HIGH end. `mulDiv` reverts with OpenZeppelin's generic
+    /// `MathOverflowedMulDiv()` once the quotient reaches `2**256`, i.e. once `R >= 2**64` — while
+    /// core represents ratios up to `R ~= 2**128`. A 0-decimal security token priced against an
+    /// 18-decimal stablecoin crosses `2**64` at a human price of about 18.45. Before this branch
+    /// existed, such a pool's `refresh` reverted forever with an error naming neither this
+    /// contract nor the cause, and the pool could never trade.
+    ///
+    /// So the scale is chosen from the ratio's magnitude, and the branch condition is exact:
+    /// `(num >> 64) >= den` iff `num >= den * 2**64` iff `R >= 2**64` iff the single-scale
+    /// `mulDiv` would overflow. Every input the single-scale formula could compute therefore still
+    /// takes it, bit for bit.
+    ///
+    ///   R <  2**64    scale 2**192: `sqrt(R * 2**192)` directly.
+    ///   R >= 2**64    scale 2**126: `sqrt(R * 2**126) << 33`, since `sqrt(R * 2**126) = sqrt(R) * 2**63`
+    ///                 and `2**63 << 33 == 2**96`. Its input is at least `2**190`, so the root keeps
+    ///                 at least 95 significant bits; the shift floors the result to a multiple of
+    ///                 `2**33`, a relative error below `2**-95`, far under any band width.
+    ///   R >= 2**130   `RatioUnrepresentable`. `mulDiv(num, 2**126, den)` would overflow, and every
+    ///                 such ratio is already above `MAX_SQRT_RATIO` (whose `R` is below `2**128`),
+    ///                 so no representable price is rejected here.
+    ///
+    /// The range check against `TickMath` in `refresh`/`previewRefresh` is unchanged and still
+    /// decides the final answer for everything below `2**130`, including the low end, where a
+    /// ratio too small to represent floors below `MIN_SQRT_RATIO` (down to 0) and reverts
+    /// `PriceOutOfRange` with the computed value.
     function _toSqrtPriceX96(uint256 price, int32 expo, Feed memory feed)
         internal
         pure
@@ -309,11 +377,19 @@ contract PythPriceBandAdapter is IPriceBandOracle, Ownable2Step {
             (num, den) = (den, num);
         }
 
-        // sqrtPriceX96 = sqrt(R) * 2**96 = sqrt(R * 2**192).
-        // `mulDiv` carries the intermediate at 512 bits, so `num * 2**192` cannot overflow here
-        // even when num is large.
-        uint256 ratioX192 = Math.mulDiv(num, 1 << 192, den);
-        return Math.sqrt(ratioX192);
+        // `den` is a product of powers of ten or, after the swap, a price already rejected when
+        // non-positive, so it is never zero.
+        if ((num >> 64) >= den) {
+            // R >= 2**64: the 2**192 scale would overflow. Reject beyond 2**130 first, where even
+            // the reduced scale overflows and core could not represent the price anyway.
+            if ((num >> 130) >= den) revert RatioUnrepresentable(num, den);
+            // sqrt(R * 2**126) == sqrt(R) * 2**63; shifting up 33 gives sqrt(R) * 2**96.
+            return Math.sqrt(Math.mulDiv(num, 1 << 126, den)) << 33;
+        }
+
+        // R < 2**64, so `num * 2**192 / den < 2**256`. `mulDiv` carries the intermediate at 512
+        // bits, so the numerator itself cannot overflow either.
+        return Math.sqrt(Math.mulDiv(num, 1 << 192, den));
     }
 
     /*//////////////////////////////////////////////////////////////

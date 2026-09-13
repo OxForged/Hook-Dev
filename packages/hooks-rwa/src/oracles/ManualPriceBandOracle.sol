@@ -114,6 +114,9 @@ contract ManualPriceBandOracle is IPriceBandOracle, Ownable2Step {
     /// @notice A publisher tried to move the reference again before `minPublisherInterval` elapsed.
     error UpdateTooSoon(PoolId poolId, uint64 earliest);
 
+    /// @notice `renounceOwnership` is permanently disabled. See the override.
+    error RenounceDisabled();
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -220,6 +223,33 @@ contract ManualPriceBandOracle is IPriceBandOracle, Ownable2Step {
         maxPublisherDeviationBps = maxDeviationBps;
         minPublisherInterval = minUpdateInterval;
         emit PublisherBoundsSet(maxDeviationBps, minUpdateInterval);
+    }
+
+    /**
+     * @notice Permanently disabled. Reverts for every caller.
+     *
+     * @dev CLAUDE.md § "Deployed and unfixable" makes this the house rule for every contract
+     * deployed from here on, and `MerkleEpochDistributor` is the reference. The reason applies
+     * with more force here than almost anywhere, because the owner is the only check on the one
+     * fast key in this design that LOOSENS the band.
+     *
+     *   * `setPublisher` is the only way to REVOKE a publisher. After a renounce, a compromised
+     *     publisher key can never be removed, and it keeps walking the reference — and with it the
+     *     band — by up to `maxPublisherDeviationBps` per update for the life of the contract.
+     *   * `setPublisherBounds` is the only way to set `minPublisherInterval`. A deployment
+     *     renounced at the default of 0 can never be rate limited, which is the exact condition
+     *     under which the per-update bound stops meaning anything.
+     *   * The owner is the only seat exempt from the bound. A genuine re-anchor beyond it — a
+     *     split, a redenomination — would have no route except a public walk of in-bound steps.
+     *
+     * `transferOwnership` is itself `onlyOwner`, so none of this is recoverable.
+     *
+     * The bounded form of the same intent already exists and is unaffected: an owner who wants out
+     * transfers to the address that should have it. `Ownable2Step` means that cannot land somewhere
+     * unreachable by typo.
+     */
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
     }
 
     /// @notice Publish the reference price for one pool.

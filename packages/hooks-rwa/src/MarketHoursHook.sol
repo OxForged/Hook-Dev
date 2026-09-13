@@ -65,12 +65,45 @@ contract MarketHoursHook is BaseCLHook, MarketHoursModule, Ownable2Step {
     /// forever. Reject such a pool rather than silently running a free market.
     error PoolMustUseStaticFee(uint24 fee);
 
+    /// @notice `renounceOwnership` is permanently disabled. See the override.
+    error RenounceDisabled();
+
     /// @param _poolManager The CL pool manager this hook serves.
     /// @param initialOwner Governance seat. On mainnet this MUST be a timelock, not an EOA.
     constructor(ICLPoolManager _poolManager, address initialOwner)
         BaseCLHook(_poolManager)
         Ownable(initialOwner)
     {}
+
+    /**
+     * @notice Permanently disabled. Reverts for every caller.
+     *
+     * @dev CLAUDE.md § "Deployed and unfixable" makes this the house rule for every contract
+     * deployed from here on, and `MerkleEpochDistributor` is the reference.
+     *
+     * `configureMarket` and `setMarketGuardian` are the only owner-only functions, and
+     * `configureMarket` is the ONLY route by which a pool's issuer, oracle, band widths,
+     * `bandEnabled` and `sessionEnabled` ever change. Renouncing therefore removes no power that
+     * could be abused against a trader; what it removes is every recovery:
+     *
+     *   * A compromised or departed issuer can never be replaced. It keeps `resume`,
+     *     `setSessionHours` and the day overrides for the life of the hook, and the guardian's halt
+     *     is only as durable as the issuer's willingness not to `resume`.
+     *   * A band-enabled pool whose oracle is retired fails closed on every swap, and nobody can
+     *     repoint the oracle or switch the band off. The pool stops trading permanently.
+     *   * The guardian can never be rotated or removed.
+     *
+     * LP exits are unaffected either way — nothing in this hook gates removals — so this is a
+     * governance-availability failure, but an irreversible one, and `transferOwnership` is itself
+     * `onlyOwner`.
+     *
+     * The bounded form of the same intent already exists and is unaffected: an owner who wants out
+     * transfers to the address that should have it. `Ownable2Step` means that cannot land somewhere
+     * unreachable by typo.
+     */
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
+    }
 
     /// @inheritdoc IHooks
     /// @dev `beforeInitialize` refuses an unconfigured or dynamic-fee pool; `beforeSwap` applies

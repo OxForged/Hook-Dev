@@ -34,7 +34,8 @@ import {IPriceBandOracle} from "../interfaces/IPriceBandOracle.sol";
 /// A weekly base schedule plus per-day overrides, both resolved in O(1). Everything is UTC.
 ///
 ///   * `weekdayMask` - bit `i` set means weekday `i` is a trading day, with 0 = Sunday. Unix day 0
-///     (1970-01-01) was a Thursday, so the weekday of day index `d` is `(d + 4) % 7`.
+///     (1970-01-01) was a Thursday, so the weekday of day index `d` is `(d + 4) % 7`. Bit 7 is
+///     reserved and refused (`InvalidWeekdayMask`).
 ///   * `openSecondOfDay` / `closeSecondOfDay` - the session window within a trading day. `open <
 ///     close` is an ordinary same-day session. `open > close` WRAPS past midnight and the session
 ///     is attributed to the day it OPENED on, which is the day whose weekday bit and whose
@@ -150,6 +151,12 @@ abstract contract MarketHoursModule {
     /// @notice A session was enabled with no trading weekdays, which would close the pool forever
     error EmptyWeekdayMask();
 
+    /// @notice A weekday mask set a bit outside 0-6. There are seven weekdays; bit 7 names none.
+    /// @dev Distinct from `EmptyWeekdayMask` because the two are different mistakes: `0xFF` names
+    /// all seven days AND a reserved bit, so calling it "empty" would be false. Carries the mask,
+    /// like `InvalidSessionWindow` carries its window, so the caller sees what was refused.
+    error InvalidWeekdayMask(uint8 weekdayMask);
+
     /// @notice A downward band wider than 100%, which cannot be expressed as a price
     error InvalidBandWidth(uint32 maxDownPpm);
 
@@ -253,6 +260,11 @@ abstract contract MarketHoursModule {
     /// outside any expressible band, and clamping lets the squaring run in plain 256-bit
     /// arithmetic with no overflow rather than needing a second `mulDiv`.
     uint256 internal constant SQRT_RATIO_PPM_CLAMP = 1e15;
+
+    /// @dev The only bits of `weekdayMask` that `_scheduleForDay` ever reads: bit `i` for weekday
+    /// `i`, 0 = Sunday through 6 = Saturday. Any other bit is refused at every write, so the stored
+    /// mask and the enforced mask are always the same number.
+    uint8 internal constant WEEKDAY_MASK_BITS = 0x7F;
 
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
@@ -420,6 +432,7 @@ abstract contract MarketHoursModule {
         // field that is nonsense today becomes an enforced field the moment somebody enables the
         // session, and that is a bad moment to discover it.
         if (weekdayMask == 0) revert EmptyWeekdayMask();
+        _requireOnlyWeekdayBits(weekdayMask);
         _validateWindowTimes(openSecondOfDay, closeSecondOfDay);
 
         cfg.weekdayMask = weekdayMask;
@@ -806,12 +819,27 @@ abstract contract MarketHoursModule {
         if (settings.issuer == address(0)) revert MarketZeroAddress();
         if (settings.maxDownPpm > PPM) revert InvalidBandWidth(settings.maxDownPpm);
         if (settings.bandEnabled && address(settings.oracle) == address(0)) revert BandEnabledWithoutOracle();
+        // Reserved bits are refused whether or not the session is enabled. A zero mask on a
+        // disabled session means "no schedule" and is legitimate; a set bit 7 means nothing in any
+        // mode, so there is no configuration in which storing it is correct.
+        _requireOnlyWeekdayBits(settings.weekdayMask);
         if (settings.sessionEnabled) {
             // An empty mask is rejected because it configures a pool that can never trade while
             // looking, in every event and every view, exactly like a configured one.
             if (settings.weekdayMask == 0) revert EmptyWeekdayMask();
             _validateWindowTimes(settings.openSecondOfDay, settings.closeSecondOfDay);
         }
+    }
+
+    /// @dev Refuse any bit `_scheduleForDay` does not read.
+    ///
+    /// Checking `mask == 0` alone is not enough, and was the original defect: `0x80` is non-zero,
+    /// passed that check, and matched no weekday, so it configured a pool that could never trade
+    /// while `marketConfig`, `MarketConfigured` and `SessionHoursSet` all reported a non-empty
+    /// schedule. With this check in place, an accepted non-zero mask has at least one bit in 0-6,
+    /// i.e. at least one trading weekday.
+    function _requireOnlyWeekdayBits(uint8 weekdayMask) private pure {
+        if (weekdayMask & ~WEEKDAY_MASK_BITS != 0) revert InvalidWeekdayMask(weekdayMask);
     }
 
     /// @dev A session window must be unambiguous and in range.

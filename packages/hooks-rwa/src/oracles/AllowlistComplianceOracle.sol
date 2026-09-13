@@ -60,6 +60,9 @@ contract AllowlistComplianceOracle is IComplianceOracle, Ownable2Step {
     /// @notice Batch arguments had mismatched lengths
     error LengthMismatch(uint256 accountsLength, uint256 recordsLength);
 
+    /// @notice `renounceOwnership` is permanently disabled. See the override.
+    error RenounceDisabled();
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -116,6 +119,33 @@ contract AllowlistComplianceOracle is IComplianceOracle, Ownable2Step {
             r.permitted = false;
             emit ComplianceRecordSet(account, false, r.expiresAt, r.jurisdiction);
         }
+    }
+
+    /**
+     * @notice Permanently disabled. Reverts for every caller.
+     *
+     * @dev CLAUDE.md § "Deployed and unfixable" makes this the house rule for every contract
+     * deployed from here on, and `MerkleEpochDistributor` is the reference.
+     *
+     * `setRecord`, `setRecords` and `revoke` are the only `onlyOwner` functions, and they are the
+     * only writers of the register. Renouncing freezes it exactly as it stands:
+     *
+     *   * No account can ever be REVOKED. A sanctioned investor, or one whose KYC was withdrawn,
+     *     stays permitted for as long as their record's `expiresAt` allows — forever, for a record
+     *     written with `expiresAt == 0`.
+     *   * No new investor can ever be onboarded, and no expiring record renewed, so the permitted
+     *     set only ever shrinks toward nobody.
+     *
+     * A consuming hook's own denylist can still refuse an account, but only while THAT hook has an
+     * owner; this register would no longer be a compliance source anyone controls.
+     * `transferOwnership` is itself `onlyOwner`, so none of this is recoverable.
+     *
+     * The bounded form of the same intent already exists and is unaffected: an owner who wants out
+     * transfers to the address that should have it. `Ownable2Step` means that cannot land somewhere
+     * unreachable by typo.
+     */
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
     }
 
     function _setRecord(address account, Record calldata record) internal {
