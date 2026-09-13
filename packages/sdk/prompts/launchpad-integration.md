@@ -37,14 +37,17 @@ chain and does the whole launch in one call. I am NOT deploying the kit or the h
 
 - Chain: Robinhood Chain (4663)          <-- change if different
 - Quote token: USDG                       <-- what the launch trades against
-- My fee wallet: 0x0000000000000000000000000000000000000000   <-- REPLACE
+- My fee wallet: 0x0000000000000000000000000000000000000000   <-- REPLACE. Not
+  optional: on options (b) and (c) below a zero recipient does not revert, it
+  BURNS the revenue. Refuse to wire it and ask me for a real address.
 - Default preset: FairLaunch              <-- FairLaunch | AntiSniperAggressive | Stealth | NoTax | Custom
 
 ## Ground rules — follow these exactly
 
 1. ADDRESSES AND LAUNCH MATHS COME FROM THE SDK. DO NOT HAND-ROLL EITHER.
 
-   npm install @latchprotocol/sdk viem
+   # NOT ON npm YET — `npm install @latchprotocol/sdk` returns 404. Install from git:
+   npm install github:Latch-Protocol-Team/latch-sdk viem
 
    import {
      getDeployment, requireContract,
@@ -93,9 +96,15 @@ chain and does the whole launch in one call. I am NOT deploying the kit or the h
 4. VALIDATE LOCALLY, SIMULATE ON CHAIN, SHOW ME, THEN SEND. In that order.
 
    const issues = validateLaunchParams(params, {
-     blockTimeCentis,                      // from the kit: kit.blockTimeCentis()
-     maxDecayBlocks, maxStartDelayBlocks,  // from the hook: they are IMMUTABLES, read them
+     blockTimeCentis,        // kit.blockTimeCentis()
+     maxDecayBlocks,         // hook.MAX_DECAY_BLOCKS()   <- SCREAMING_SNAKE on chain
+     maxStartDelayBlocks,    // hook.MAX_START_DELAY()    <- and no camelCase alias
    })
+
+   Those two are Solidity `public immutable`, so their getters keep the
+   constant's own casing. `maxDecayBlocks()` does not exist and a probe for it
+   reverts. The SDK's option names are camelCase because they are TypeScript;
+   the CALLS are not.
 
    Render every issue — errors block, warnings are "did you mean this". Then call
    `previewSchedule(params)` and `computePoolKey(...)` on chain and show: the pool id, the
@@ -119,7 +128,31 @@ chain and does the whole launch in one call. I am NOT deploying the kit or the h
    is a hot key you lose, you lose the ability to fix a launch before it opens; if it is a
    multisig too slow to act inside the delay window, same result.
 
-7. NEVER SEND NATIVE TO THE KIT DIRECTLY.
+7. THERE ARE TWO REGISTRIES AND THE NAMES ARE ONE WORD APART.
+
+   `registry`        LatchRegistry       the HOOK registry. What
+                                         `kit.registry()` returns and what
+                                         `listHook` writes to.
+   `launchRegistry`  LatchLaunchRegistry the LAUNCH registry. A DIFFERENT
+                                         contract. Also real, also deployed.
+
+   Both are in the SDK address book, both answer calls, and wiring to the wrong
+   one fails in a way that looks like an empty result rather than an error.
+   Tell them apart by a CALL, never by the name:
+
+     LatchRegistry        latchCount() answers; MAX_NAME_BYTES() answers 64
+     LatchLaunchRegistry  latchCount() REVERTS; launchCount() answers
+
+   Which one you want:
+     listing a hook ................. `registry` (the kit does this for you)
+     one launch's own record ........ `LaunchpadKit.getLaunchRecord(poolId)`
+     the curated launch directory ... `launchRegistry.getLaunch(poolId)`
+
+   `LatchLaunchRegistry` reads CURATOR_ROLE and GUARDIAN_ROLE from
+   `LatchRegistry` rather than defining its own, which is why only one of them
+   appears in the ownership table.
+
+8. NEVER SEND NATIVE TO THE KIT DIRECTLY.
 
    It has no withdrawal function. Value goes in through the documented parameters of the
    call or not at all.
@@ -137,9 +170,9 @@ chain and does the whole launch in one call. I am NOT deploying the kit or the h
    handling of the refund path (the kit refunds unused seed amounts).
 4. A launch dashboard reading `getLaunchRecord(poolId)` and the guard's live fee, so a
    creator can watch the decay actually happen.
-5. Registry listing: the kit can list the hook for me. If it does not, list it in the SAME
-   session the launch happens — otherwise a stranger can list it first with hostile
-   metadata.
+5. Registry listing: the kit lists the HOOK in `registry` (LatchRegistry) for me — see
+   rule 7, it is not `launchRegistry`. If it does not, list it in the SAME session the
+   launch happens, or a stranger can list it first with hostile metadata.
 6. A verify script that asserts every configured address has code and answers a function
    only that contract answers. Exit non-zero on mismatch.
 
