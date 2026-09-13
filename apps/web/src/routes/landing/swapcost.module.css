@@ -1,3 +1,21 @@
+/* Transition durations are literal seconds scaled by control size, matching the
+   rest of the page: 0.15s tabs, 0.2-0.22s small controls and chips, 0.25s
+   buttons, 0.3s cards. `var(--dur)` is 320ms and is used ZERO times in
+   landing.module.css — adopting it here made every control in these panels take
+   roughly twice as long to respond as the identical control one section away,
+   which reads as lag with no visible cause. */
+
+/* THE SECTION BOX IS NOT THIS FILE'S JOB.
+
+   It comes from `.section` in landing.module.css, applied alongside these
+   classes in the TSX. Every top-level section on the page has to share one
+   max-width, one gutter and one top rhythm, and a component that declares its
+   own inevitably picks slightly different numbers — this file did, and so did
+   its three siblings, giving the page content edges at 238px, 263px and 278px
+   and four section boundaries with literally zero space between them.
+
+   So: layout INSIDE the section belongs here; the box AROUND it does not. */
+
 /* ============================================================================
    Swap cost simulator.
 
@@ -56,21 +74,25 @@
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 16px;
-  letter-spacing: 0.12em;
-  /* Uppercase and tracked, which is the condition tokens.css attaches to
-     --label-ink: it clears 3:1 but not 4.5:1, so the letterforms have to carry
-     part of the separation. */
+  /* 0.22em and --eyebrow-blue: the house eyebrow, matching .eyebrow in
+     landing.module.css. --label-ink was close enough to be invisible on the
+     paper theme (both resolve to #858b9b) and visibly wrong in dark, where this
+     eyebrow came out a lighter grey than every other one on the page. */
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--label-ink);
+  color: var(--eyebrow-blue);
 }
 
 .title {
   margin: 0;
-  font-family: var(--font-display);
-  font-size: 28px;
-  line-height: 32px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  /* The house section heading: serif 400 at a clamp, matching .h2 in
+     landing.module.css. A 28px bold sans heading between two 42px serif ones
+     made these read as SUB-sections of their neighbours rather than as peers. */
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(28px, 3.2vw, 42px);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
   color: var(--ink-bright);
 }
 
@@ -81,8 +103,8 @@
 .lead {
   margin: var(--s3) 0 0;
   max-width: 62ch;
-  font-size: 15px;
-  line-height: 24px;
+  font-size: 14.5px;
+  line-height: 1.65;
   color: var(--muted-ink);
 }
 
@@ -94,8 +116,8 @@
 .notice {
   margin: 0;
   padding: var(--s3) var(--s4);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--muted-ink);
   background: var(--dapp-badge-warn-bg);
   border: 1px solid var(--dapp-badge-warn-border);
@@ -138,11 +160,11 @@
 
 .label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 16px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--label-ink);
+  color: var(--eyebrow-blue);
 }
 
 /* ---- provenance chips ----
@@ -197,8 +219,8 @@
 
 .sizeUnit {
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--muted-ink);
 }
 
@@ -214,7 +236,7 @@
 .hint {
   margin: 0;
   font-size: 12px;
-  line-height: 20px;
+  line-height: 1.6;
   color: var(--muted-ink);
 }
 
@@ -249,13 +271,13 @@
   background: var(--panel);
   border: 1px solid var(--cta-border);
   border-radius: var(--r-btn);
-  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease),
-    background-color var(--dur) var(--ease);
+  transition: transform 0.22s var(--ease), border-color 0.22s var(--ease),
+    background-color 0.22s var(--ease);
 }
 
 .tier:hover {
   border-color: var(--border-hover);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
 
 .tierOn {
@@ -275,7 +297,7 @@
 
 .tierPips {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 16px;
   color: var(--label-ink);
 }
@@ -310,9 +332,9 @@
 
 .cellName {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 16px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--label-ink);
 }
@@ -328,25 +350,29 @@
 
 .cellAmount {
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   font-variant-numeric: tabular-nums;
   color: var(--muted-ink);
   /* Long amounts wrap rather than widening the grid track. */
   overflow-wrap: anywhere;
 }
 
+/* --muted-ink, not --label-ink. tokens.css states the rule: --label-ink is
+   3.4:1 on --panel and is valid ONLY for uppercase tracked micro-labels, where
+   the letterforms carry part of the separation. Sentence-case prose at 12px
+   needs --muted-ink (8.3:1). */
 .cellWho {
   margin-top: var(--s1);
   font-size: 12px;
   line-height: 16px;
-  color: var(--label-ink);
+  color: var(--muted-ink);
 }
 
 .compose {
   margin: 0;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--muted-ink);
 }
 
@@ -384,7 +410,7 @@
   display: block;
   height: 100%;
   min-width: 0;
-  transition: width var(--dur) var(--ease);
+  transition: width 0.22s var(--ease);
 }
 
 .segLp {
@@ -430,15 +456,15 @@
 }
 
 .legendName {
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--ink);
 }
 
 .legendPct {
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   font-variant-numeric: tabular-nums;
   color: var(--ink-bright);
 }
@@ -446,7 +472,7 @@
 .legendAmt {
   font-family: var(--font-mono);
   font-size: 12px;
-  line-height: 20px;
+  line-height: 1.6;
   font-variant-numeric: tabular-nums;
   color: var(--muted-ink);
   overflow-wrap: anywhere;
@@ -480,8 +506,8 @@
 
 .compareName {
   min-width: 0;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--ink);
   overflow-wrap: anywhere;
 }
@@ -489,8 +515,8 @@
 .compareRate,
 .compareAmt {
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -506,8 +532,8 @@
 .delta {
   margin: 0;
   padding: var(--s3) var(--s4);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--muted-ink);
   background: var(--accent-soft);
   border-top: 1px solid var(--hairline-soft);
@@ -523,8 +549,8 @@
 
 .note {
   margin: 0;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--muted-ink);
 }
 
@@ -538,13 +564,17 @@
   overflow-wrap: anywhere;
 }
 
+/* --muted-ink, not --label-ink. tokens.css states the rule: --label-ink is
+   3.4:1 on --panel and is valid ONLY for uppercase tracked micro-labels, where
+   the letterforms carry part of the separation. Sentence-case prose at 12px
+   needs --muted-ink (8.3:1). */
 .foot {
   margin: 0;
   padding-top: var(--s3);
   border-top: 1px solid var(--hairline-soft);
   font-size: 12px;
-  line-height: 20px;
-  color: var(--label-ink);
+  line-height: 1.6;
+  color: var(--muted-ink);
 }
 
 .foot strong {
@@ -571,7 +601,10 @@
    grid track and `min-width: 0` on every flex child, so nothing in this card
    can push the page into a horizontal scroll at 400px. */
 
-@media (max-width: 900px) {
+/* 1138 == 900 + the 238px rail — the same fix as .flowGrid and .audGrid in
+   landing.module.css. Between 901 and 1138px of viewport the column is only
+   663-900px, and the 30px size value collides with its label. */
+@media (max-width: 1138px) {
   .controls {
     grid-template-columns: minmax(0, 1fr);
   }

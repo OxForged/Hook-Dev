@@ -37,7 +37,9 @@ import {
   readProtocolStatus,
   type ProtocolStatus,
 } from '../../lib/chain'
+import page from './landing.module.css'
 import styles from './livestrip.module.css'
+import { cx } from './ui'
 
 /** The chain this build serves. Never a spelled-out name: see landing/data.ts. */
 const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
@@ -292,7 +294,10 @@ export function LiveStrip() {
   }, [])
 
   return (
-    <section className={styles['wrap']} aria-label={`Live protocol status on ${CHAIN.name}`}>
+    <section
+      className={cx(page['section'], page['sectionTight'], styles['wrap'])}
+      aria-label={`Live protocol status on ${CHAIN.name}`}
+    >
       <div className={styles['strip']}>
         <CellView label="CHAIN" cell={chainCell} />
         <CellView label="BLOCK" cell={headCell(head)} liveRegion pulse />

@@ -53,7 +53,9 @@ import type { Address, Hex, PublicClient } from 'viem'
 import { REDEPLOYABLE_CONTRACTS, explorerAddressUrl } from '@latchprotocol/sdk'
 
 import { ACTIVE_CHAIN_ID, DEPLOYMENTS, client } from '../../lib/chain'
+import page from './landing.module.css'
 import styles from './contractbook.module.css'
+import { cx } from './ui'
 
 /** The one chain this build serves. Never a spelled-out name: see LiveStrip. */
 const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
@@ -487,7 +489,7 @@ export function ContractBook() {
   const notDeployed = ROWS.length - DEPLOYED_ROWS.length
 
   return (
-    <section className={styles['wrap']} aria-labelledby={headingId}>
+    <section className={cx(page['section'], styles['wrap'])} aria-labelledby={headingId}>
       <header className={styles['head']}>
         <h2 id={headingId} className={styles['title']}>
           Read them before you route a swap through them

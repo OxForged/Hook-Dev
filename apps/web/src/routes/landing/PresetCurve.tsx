@@ -63,6 +63,7 @@ import {
   type PresetParams,
 } from '@latchprotocol/sdk'
 import { DEPLOYMENTS, ROBINHOOD_CHAIN_ID, explorerAddress } from '../../lib/chain'
+import page from './landing.module.css'
 import styles from './presetcurve.module.css'
 
 /* ----------------------------------------------------------------------------
@@ -367,13 +368,21 @@ export function PresetCurve() {
       `${formatPips(params.finalFeeBips)} at every block.`
 
   return (
-    <section className={styles['card']} aria-labelledby="preset-curve-title">
+    /* The card is WRAPPED rather than made into the section, because those are
+       two different boxes: the section carries the page's shared max-width,
+       gutter and top rhythm, and the card carries the border, radius and
+       shadow. Merging them is what put this component's content edge 15px left
+       of every other section's. */
+    <section className={page['section']} aria-labelledby="preset-curve-title">
+      <div className={styles['card']}>
       <header className={styles['head']}>
         <div className={styles['headText']}>
           <p className={styles['eyebrow']}>Launchpad presets</p>
-          <h3 className={styles['title']} id="preset-curve-title">
+          {/* h2, not h3 — every peer section on this page heads with an h2,
+              and an h3 here skips a level in the document outline. */}
+          <h2 className={styles['title']} id="preset-curve-title">
             What the pool charges, block by block
-          </h3>
+          </h2>
           <p className={styles['sub']}>
             Four named launch shapes. Each is a decaying LP fee that
             <code> LaunchGuardHook</code> applies from the open — priced, never prohibited.
@@ -647,6 +656,7 @@ export function PresetCurve() {
           ) : null}
         </p>
       </footer>
+      </div>
     </section>
   )
 }

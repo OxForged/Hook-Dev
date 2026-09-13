@@ -2964,6 +2964,14 @@ span.chainMark {
   word-break: break-word;
 }
 
+/* A tighter top for a section that is a STRIP rather than a section — one band
+   of figures with no heading of its own. `--s9` above it reads as a gap the
+   page forgot to fill, because there is no title to give the space a job. Used
+   by LiveStrip, which sits directly under the hero's own bottom padding. */
+.sectionTight {
+  padding-top: var(--s7);
+}
+
 /* The fee chart's own section box.
 
    `FeeChart` renders `<section id="fees">` and that wrapper carried NO layout

@@ -1,3 +1,14 @@
+/* THE SECTION BOX IS NOT THIS FILE'S JOB.
+
+   It comes from `.section` in landing.module.css, applied alongside these
+   classes in the TSX. Every top-level section on the page has to share one
+   max-width, one gutter and one top rhythm, and a component that declares its
+   own inevitably picks slightly different numbers — this file did, and so did
+   its three siblings, giving the page content edges at 238px, 263px and 278px
+   and four section boundaries with literally zero space between them.
+
+   So: layout INSIDE the section belongs here; the box AROUND it does not. */
+
 /* ============================================================================
    Live strip — four cells that prove the protocol is running.
 
@@ -33,7 +44,7 @@
   gap: 1px;
   background: var(--hairline);
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card);
+  border-radius: var(--r-card-lg);
   box-shadow: var(--shadow-1);
   /* Clips the cell corners to the card radius. Nothing here scrolls or is
      positioned outside the box, so `hidden` costs nothing. */
@@ -87,9 +98,9 @@
    contrast ratio does not. */
 .label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 16px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--label-ink);
 }
@@ -160,7 +171,7 @@
 .provenance {
   margin: 0;
   font-size: 12px;
-  line-height: 16px;
+  line-height: 1.6;
   color: var(--muted-ink);
   max-width: 68ch;
 }
@@ -169,13 +180,16 @@
    Two columns from tablet down. The tracks stay `minmax(0, 1fr)` at every
    width, so a long value wraps inside its cell instead of widening the page. */
 
-@media (max-width: 860px) {
+/* 1098 == 860 + the 238px rail. See the .flowGrid note in landing.module.css:
+   this element sits in the grid's second track, so a viewport query fires
+   238px late — at viewport 861 the column is 623px and all four values wrap. */
+@media (max-width: 1098px) {
   .strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 560px) {
   .cell {
     padding: var(--s3);
   }

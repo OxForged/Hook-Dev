@@ -1,3 +1,21 @@
+/* Transition durations are literal seconds scaled by control size, matching the
+   rest of the page: 0.15s tabs, 0.2-0.22s small controls and chips, 0.25s
+   buttons, 0.3s cards. `var(--dur)` is 320ms and is used ZERO times in
+   landing.module.css — adopting it here made every control in these panels take
+   roughly twice as long to respond as the identical control one section away,
+   which reads as lag with no visible cause. */
+
+/* THE SECTION BOX IS NOT THIS FILE'S JOB.
+
+   It comes from `.section` in landing.module.css, applied alongside these
+   classes in the TSX. Every top-level section on the page has to share one
+   max-width, one gutter and one top rhythm, and a component that declares its
+   own inevitably picks slightly different numbers — this file did, and so did
+   its three siblings, giving the page content edges at 238px, 263px and 278px
+   and four section boundaries with literally zero space between them.
+
+   So: layout INSIDE the section belongs here; the box AROUND it does not. */
+
 /* ============================================================================
    Contract book — the address table, and the four states a row can be in.
 
@@ -46,23 +64,26 @@
 }
 
 .title {
-  font-size: 28px;
-  line-height: 32px;
-  font-weight: 600;
+  /* The house section heading — see .h2 in landing.module.css. */
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(28px, 3.2vw, 42px);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
 }
 
 .lede {
   margin: 0;
   max-width: 74ch;
-  font-size: 15px;
-  line-height: 24px;
+  font-size: 14.5px;
+  line-height: 1.65;
   color: var(--muted-ink);
 }
 
 .lede code,
 .note code {
   font-family: var(--font-mono);
-  font-size: 0.9em;
+  font-size: 11px;
   color: var(--sky-ink);
   background: var(--code-ground);
   border: 1px solid var(--hairline-soft);
@@ -96,9 +117,9 @@
    the contrast ratio does not. */
 .fieldLabel {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 16px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--label-ink);
 }
@@ -114,7 +135,7 @@
   background: var(--panel-alt);
   border: 1px solid var(--hairline);
   border-radius: var(--r-btn);
-  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 
 .input::placeholder {
@@ -126,8 +147,12 @@
 }
 
 .input:focus-visible {
-  border-color: var(--latch-blue);
-  box-shadow: var(--glow-ring);
+  /* Replaces the global ring rather than stacking on it. tokens.css already
+     draws a 2px outline on :focus-visible; adding a border colour AND a glow
+     put three concentric rings around this one input. The house pattern
+     (.feeChartTab) is an outline only. */
+  outline: 2px solid var(--signal-blue);
+  outline-offset: 2px;
 }
 
 .chips {
@@ -154,8 +179,8 @@
   border: 1px solid var(--pill-border);
   border-radius: var(--r-chip);
   cursor: pointer;
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease),
-    border-color var(--dur) var(--ease);
+  transition: color 0.2s var(--ease), background 0.2s var(--ease),
+    border-color 0.2s var(--ease);
 }
 
 .chip:hover {
@@ -185,9 +210,9 @@
 .banner {
   margin: 0;
   padding: var(--s3) var(--s4);
-  font-size: 13px;
-  line-height: 20px;
-  border-radius: var(--r-card);
+  font-size: 13.5px;
+  line-height: 1.6;
+  border-radius: var(--r-card-lg);
   color: var(--error);
   background: var(--dapp-badge-danger-bg);
   border: 1px solid var(--dapp-badge-danger-border);
@@ -222,9 +247,9 @@
   z-index: 1;
   padding: var(--s3) var(--s4);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 16px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   font-weight: 500;
   color: var(--faint-ink);
@@ -247,6 +272,9 @@
 
 .row {
   border-bottom: 1px solid var(--hairline-soft);
+  /* The hover background snapped while every other control in this file
+     eased. Same 0.2s as the chips. */
+  transition: background-color 0.2s;
 }
 
 .row:last-child {
@@ -270,8 +298,8 @@
 .keyName {
   display: block;
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--ink);
   /* A key is one identifier; break it anywhere rather than widen the column. */
   overflow-wrap: anywhere;
@@ -286,7 +314,7 @@
 
 .tag {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 16px;
   letter-spacing: 0.06em;
   padding: 0 var(--s2);
@@ -319,8 +347,8 @@
 
 .addr {
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--mono-data-ink);
   overflow-wrap: anywhere;
 }
@@ -345,7 +373,7 @@
   color: var(--muted-ink);
   text-decoration: none;
   cursor: pointer;
-  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 
 .copy:hover,
@@ -385,7 +413,7 @@
   align-items: baseline;
   gap: var(--s2);
   font-size: 12px;
-  line-height: 20px;
+  line-height: 1.6;
   color: var(--tone, var(--muted-ink));
   overflow-wrap: anywhere;
 }
@@ -460,8 +488,8 @@
 .emptyCell {
   padding: var(--s6) var(--s4);
   text-align: center;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--muted-ink);
 }
 
@@ -479,7 +507,7 @@
   margin: 0;
   max-width: 82ch;
   font-size: 12px;
-  line-height: 20px;
+  line-height: 1.6;
   color: var(--muted-ink);
 }
 
@@ -499,7 +527,7 @@
   border: 1px solid var(--cta-border);
   border-radius: var(--r-btn);
   cursor: pointer;
-  transition: border-color var(--dur) var(--ease);
+  transition: border-color 0.2s var(--ease);
 }
 
 .recheck:hover {
@@ -529,7 +557,10 @@
    text wraps. Nothing here can push the PAGE sideways — the scroller above
    absorbs any overflow. */
 
-@media (max-width: 720px) {
+/* 958 == 720 + the 238px rail. Between 861 and 958px the table's column is
+   623-720px while the fixed percentage widths are still in force, squeezing
+   the address column and wrapping keys mid-identifier. */
+@media (max-width: 958px) {
   .title {
     font-size: 22px;
     line-height: 28px;
@@ -541,7 +572,7 @@
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 560px) {
   .keyCell,
   .addrCell,
   .codeCell,

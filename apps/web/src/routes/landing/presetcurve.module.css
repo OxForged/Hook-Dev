@@ -1,3 +1,10 @@
+/* Transition durations are literal seconds scaled by control size, matching the
+   rest of the page: 0.15s tabs, 0.2-0.22s small controls and chips, 0.25s
+   buttons, 0.3s cards. `var(--dur)` is 320ms and is used ZERO times in
+   landing.module.css — adopting it here made every control in these panels take
+   roughly twice as long to respond as the identical control one section away,
+   which reads as lag with no visible cause. */
+
 /* ============================================================================
    PresetCurve — the launchpad preset explorer.
 
@@ -47,27 +54,32 @@
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 16px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--eyebrow-blue);
 }
 
 .title {
-  font-size: 22px;
-  line-height: 28px;
-  font-weight: 600;
+  /* The house section heading: serif 400 at a clamp, matching .h2 in
+     landing.module.css. A 28px bold sans heading between two 42px serif ones
+     made these read as SUB-sections of their neighbours rather than as peers. */
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(28px, 3.2vw, 42px);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
 }
 
 .sub {
   margin: var(--s2) 0 0;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 14.5px;
+  line-height: 1.65;
   color: var(--muted-ink);
   max-width: 54ch;
 }
 
 .sub code {
-  font-size: 12.5px;
+  font-size: 11px;
   color: var(--sky-ink);
 }
 
@@ -97,9 +109,9 @@
   cursor: pointer;
   white-space: nowrap;
   transition:
-    background var(--dur) var(--ease),
-    color var(--dur) var(--ease),
-    border-color var(--dur) var(--ease);
+    background 0.2s var(--ease),
+    color 0.2s var(--ease),
+    border-color 0.2s var(--ease);
 }
 
 .tab {
@@ -146,7 +158,7 @@
 .axis {
   fill: var(--faint-ink);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10.5px;
   letter-spacing: 0.02em;
 }
 
@@ -252,7 +264,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s2) var(--s3);
-  min-height: 28px;
+  min-height: var(--s6);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--hairline-soft);
   border-radius: var(--r-sm);
@@ -297,9 +309,9 @@
 
 .fact dt {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 16px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--label-ink);
 }
@@ -360,8 +372,8 @@
   border: 1px solid var(--hairline);
   border-radius: var(--r-sm);
   padding: var(--s3) var(--s4);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 13.5px;
+  line-height: 1.6;
   min-width: 0;
 }
 
@@ -378,7 +390,7 @@
 
 .requireOn code,
 .requireOff code {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--sky-ink);
 }
 
@@ -395,12 +407,12 @@
 .foot p {
   margin: 0;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 1.6;
   color: var(--muted-ink);
 }
 
 .foot code {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--sky-ink);
 }
 

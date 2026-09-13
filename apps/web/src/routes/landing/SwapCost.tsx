@@ -68,6 +68,7 @@ import {
   readProtocolStatus,
   type FeeTier,
 } from '../../lib/chain'
+import page from './landing.module.css'
 import styles from './swapcost.module.css'
 import { cx } from './ui'
 
@@ -214,7 +215,11 @@ export function SwapCost() {
      the whole duration of the read, and forever if the read fails. That lesson
      is written up at the top of FeeChart.tsx; it generalises. */
   return (
-    <section id="swap-cost" className={styles['section']} aria-label="What a swap costs">
+    <section
+      id="swap-cost"
+      className={cx(page['section'], styles['section'])}
+      aria-label="What a swap costs"
+    >
       <SwapCostBody />
     </section>
   )
