@@ -293,12 +293,26 @@ const VAULT = parseAbi([
   'function owner() view returns (address)',
 ])
 
+/* LatchProtocolFeeControllerV2, live on Robinhood since 2026-09-13.
+
+   THIS ABI IS V2'S AND V1'S ARE GONE. V2 replaced the flat per-direction
+   default with a SHARE of the total swap fee, so `defaultFee()` and
+   `DEFAULT_FEE_PIPS` no longer exist on the contract at this address — asking
+   for them reverts. The address book was repointed at V2 while this ABI still
+   described V1, which is the same shape of bug as reading one distributor's
+   `getEpoch` through the other's ABI: the address resolves, the call does not.
+
+   `feeForLpFee(lpFee)` is the tier-aware replacement. It returns the pips a
+   pool at that LP fee is stamped with, derived on chain from the live split
+   ratio — so the UI never has to reproduce the arithmetic. */
 const FEE_CONTROLLER = parseAbi([
-  'function DEFAULT_FEE_PIPS() view returns (uint16)',
   'function MAX_PROTOCOL_FEE() view returns (uint16)',
-  'function defaultFee() view returns (bool isSet, uint16 zeroForOne, uint16 oneForZero)',
+  'function protocolFeeSplitRatio() view returns (uint256)',
+  'function feeForLpFee(uint24 lpFee) view returns (uint16)',
+  'function DYNAMIC_FEE_PIPS() view returns (uint16)',
   'function feesDisabled() view returns (bool)',
   'function guardian() view returns (address)',
+  'function treasury() view returns (address)',
   'function owner() view returns (address)',
 ])
 
@@ -340,13 +354,22 @@ export interface ProtocolStatus {
   clRegistered: boolean
   binRegistered: boolean
   /**
-   * `DEFAULT_FEE_PIPS`, the controller's compiled-in launch default.
+   * The controller's live `protocolFeeSplitRatio`, in hundredths of a bip.
+   * 250000 == 25% of the TOTAL swap fee.
    *
-   * NOT what any pool charges. Kept because it is what the controller WOULD
-   * apply, which is the number that matters the moment it is wired.
+   * Replaces `defaultFeePips`, which described V1's flat per-direction default.
+   * V2 takes a share of the total instead, so there is no single "default pips"
+   * to report — the number depends on the pool's LP fee, which is why
+   * `configuredFeePips` below is now tier-specific rather than global.
    */
-  defaultFeePips: number
-  /** The controller's live `defaultFee()` storage, which governance can move. */
+  splitRatio: number
+  /**
+   * What a pool at the STANDARD 0.30% tier is stamped with, read from
+   * `feeForLpFee(3000)` on chain rather than recomputed here.
+   *
+   * Tier-specific on purpose: under a share model a single protocol-fee figure
+   * is meaningless without saying which pool it applies to.
+   */
   configuredFeePips: number
   maxFeePips: number
   feesDisabled: boolean
@@ -359,8 +382,8 @@ export interface ProtocolStatus {
    * What a pool initialized right now would actually charge: zero unless the
    * controller is BOTH wired and not disabled.
    *
-   * This field exists because the dashboard used to render `DEFAULT_FEE_PIPS`
-   * as "the protocol fee" while the activity feed beside it read
+   * This field exists because the dashboard used to render the controller's
+   * compiled default as "the protocol fee" while the activity feed beside it read
    * "0 to protocol" on every swap — both true, flatly contradicting each
    * other, and only one of them answering the question a reader was asking.
    */
@@ -376,13 +399,16 @@ export async function readProtocolStatus(
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
 
-  const [clReg, binReg, vaultOwner, defFee, configured, maxFee, disabled, wiredTo, guardian, blockNumber] =
+  const [clReg, binReg, vaultOwner, splitRatio, standardTierFee, maxFee, disabled, wiredTo, guardian, blockNumber] =
     await Promise.all([
       c.readContract({ address: d.vault, abi: VAULT, functionName: 'isAppRegistered', args: [d.clPoolManager] }),
       c.readContract({ address: d.vault, abi: VAULT, functionName: 'isAppRegistered', args: [d.binPoolManager] }),
       c.readContract({ address: d.vault, abi: VAULT, functionName: 'owner' }),
-      c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'DEFAULT_FEE_PIPS' }),
-      c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'defaultFee' }),
+      c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'protocolFeeSplitRatio' }),
+      /* The 0.30% tier: the common case, and the number the UI quotes when it
+         has to quote one. Derived on chain so the split arithmetic lives in
+         exactly one place — the contract. */
+      c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'feeForLpFee', args: [3000] }),
       c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'MAX_PROTOCOL_FEE' }),
       c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'feesDisabled' }),
       c.readContract({ address: d.clPoolManager, abi: POOL_MANAGER, functionName: 'protocolFeeController' }),
@@ -390,13 +416,7 @@ export async function readProtocolStatus(
       c.getBlockNumber(),
     ])
 
-  /* `defaultFee()` returns (isSet, zeroForOne, oneForZero). An unset config
-     packs to zero regardless of the compiled default, so isSet is load-bearing
-     rather than decorative. The two directions can differ; the UI shows one
-     number, so take the larger — understating what a trader might pay is the
-     worse of the two errors. */
-  const [isSet, zeroForOne, oneForZero] = configured
-  const configuredFeePips = isSet ? Math.max(zeroForOne, oneForZero) : 0
+  const configuredFeePips = Number(standardTierFee)
 
   const controllerWired = wiredTo.toLowerCase() === d.feeController.toLowerCase()
   const effectiveFeePips = controllerWired && !disabled ? configuredFeePips : 0
@@ -408,7 +428,7 @@ export async function readProtocolStatus(
     vaultOwner,
     clRegistered: clReg,
     binRegistered: binReg,
-    defaultFeePips: defFee,
+    splitRatio: Number(splitRatio),
     configuredFeePips,
     maxFeePips: maxFee,
     feesDisabled: disabled,
