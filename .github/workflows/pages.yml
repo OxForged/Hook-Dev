@@ -101,11 +101,22 @@ jobs:
         working-directory: apps/web
         run: npx tsc -b --force
 
+      - name: Lowercase the owner for the Pages host
+        id: host
+        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
       - name: Build
         working-directory: apps/web
         env:
           VITE_BASE_PATH: ${{ github.event.repository.name }}
-          VITE_SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          # LOWERCASED. `github.repository_owner` preserves the account's display
+          # casing ("OxForged"), but Pages serves from the lowercase host. A
+          # hostname is case-insensitive so both resolve — yet <link rel=canonical>
+          # is compared as a STRING by crawlers, so a canonical that does not
+          # byte-match the URL people actually reach is a canonical pointing at a
+          # different page. The repo name keeps its casing: the PATH is
+          # case-sensitive and /hook-dev/ would 404.
+          VITE_SITE_URL: https://${{ steps.host.outputs.owner }}.github.io/${{ github.event.repository.name }}
         run: npx vite build
 
       # Fail loudly rather than publishing a broken site. The build emits both
