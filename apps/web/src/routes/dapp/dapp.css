@@ -3651,6 +3651,37 @@ span.dapp-net-chip__mark {
   font-size: 12.5px;
 }
 .swap-row--warn .swap-row__value { color: var(--warning); }
+
+/* The pool's own cost: headline always visible, breakdown one click away.
+   The summary is laid out as a Row so the collapsed state reads as one more
+   line in the block rather than as a control bolted onto it. */
+.swap-costs > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 12.5px;
+  cursor: pointer;
+  list-style: none;
+  padding: 1px 0;
+}
+.swap-costs > summary::-webkit-details-marker { display: none; }
+/* The affordance, drawn rather than relying on the native triangle, which
+   differs per browser and sits on the wrong side of the label here. */
+.swap-costs > summary .swap-row__label::after {
+  content: ' ▸';
+  color: var(--dapp-ink-sub);
+  font-size: 10px;
+}
+.swap-costs[open] > summary .swap-row__label::after { content: ' ▾'; }
+.swap-costs > summary:hover .swap-row__label { color: var(--ink); }
+.swap-costs > summary:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.swap-costs__body { display: grid; gap: 5px; padding: 6px 0 2px 10px; }
+.swap-costs__order { margin: 2px 0 0; }
 .swap-row__label { color: var(--dapp-ink-sub); white-space: nowrap; }
 .swap-row__value {
   font-family: var(--font-mono);

@@ -388,6 +388,9 @@ export function SwapPanel({ context, pool, hook, compact = false, onTraded }: Sw
   )
 
   const quote = quoteState.k === 'ready' ? quoteState.data : null
+  /* A quote that exists AND has a non-zero input. The rate row divides by
+     `amountIn`, and every quote-dependent row is meaningless at zero. */
+  const hasQuote = quote !== null && quote.amountIn > 0n
   const allowances = allowanceState.k === 'ready' ? allowanceState.data : null
 
   const amountOutMinimum = quote ? minimumOut(quote.amountOut, slippageBps) : null
@@ -617,52 +620,79 @@ export function SwapPanel({ context, pool, hook, compact = false, onTraded }: Sw
         </div>
       ) : null}
 
-      {/* ---- what this trade costs ---- */}
+      {/* ---- what this trade costs ----
+
+           SEVEN ROWS, FOUR OF WHICH ARE KNOWN BEFORE YOU TYPE ANYTHING.
+
+           LP fee, protocol fee, hook cut and their composition are properties
+           of the POOL: readable the moment it is selected, and exactly what a
+           trader wants before deciding whether to trade at all. Rate, below
+           spot and minimum received need a quote.
+
+           All seven used to render at once, so three said "—" until an amount
+           was entered. Empty rows are honest, and they are also noise — they
+           train the eye to skip the block that later carries the numbers that
+           matter.
+
+           So the composed total is always on screen, because it is the
+           headline cost and never needs a quote; its breakdown sits behind the
+           disclosure. The quote-dependent rows are ABSENT rather than dashed
+           until there is something real to put in them. */}
       <div className="swap-facts">
-        <Row label="Rate">
-          {quote && quote.amountIn > 0n
-            ? `1 ${tokenIn.symbol} ≈ ${formatAmount(
+        {hasQuote ? (
+          <>
+            <Row label="Rate">
+              {`1 ${tokenIn.symbol} ≈ ${formatAmount(
                 (quote.amountOut * 10n ** BigInt(decimalsIn)) / quote.amountIn,
                 decimalsOut,
-              )} ${tokenOut.symbol}`
-            : '—'}
-        </Row>
-        <Row label="LP fee">{pipsPct(pool.lpFeePips)}</Row>
-        <Row label={`Protocol fee · ${zeroForOne ? '0→1' : '1→0'}`}>
-          {pipsPct(zeroForOne ? pool.protocolFeeZeroForOnePips : pool.protocolFeeOneForZeroPips)}
-          {!context.controllerWired ? (
-            <span className="swap-row__note"> — no fee controller is wired to the pool manager</span>
-          ) : null}
-        </Row>
-        <Row label="Hook cut">
-          <HookCut hook={hook} />
-        </Row>
-        <Row label="Fees, composed">
-          {`${(fees.totalFraction * 100).toFixed(4)}%`}
-          <span className="swap-row__note">
-            {' '}
-            — protocol then LP on the input, hook on the output
-          </span>
-        </Row>
-        <Row label="Below spot">
-          {deviation === null ? (
-            '—'
-          ) : (
-            <>
-              {`${(deviation * 100).toFixed(4)}%`}
-              <span className="swap-row__note">
-                {' '}
-                — includes the {(fees.totalFraction * 100).toFixed(4)}% above; the remainder is
-                price impact
-              </span>
-            </>
-          )}
-        </Row>
-        <Row label="Minimum received">
-          {amountOutMinimum !== null
-            ? `${formatAmount(amountOutMinimum, decimalsOut)} ${tokenOut.symbol}`
-            : '—'}
-        </Row>
+              )} ${tokenOut.symbol}`}
+            </Row>
+            <Row label="Below spot">
+              {deviation === null ? (
+                '—'
+              ) : (
+                <>
+                  {`${(deviation * 100).toFixed(4)}%`}
+                  <span className="swap-row__note">
+                    {' '}
+                    — includes the {(fees.totalFraction * 100).toFixed(4)}% fee; the remainder is
+                    price impact
+                  </span>
+                </>
+              )}
+            </Row>
+            <Row label="Minimum received">
+              {amountOutMinimum !== null
+                ? `${formatAmount(amountOutMinimum, decimalsOut)} ${tokenOut.symbol}`
+                : '—'}
+            </Row>
+          </>
+        ) : null}
+
+        <details className="swap-costs">
+          <summary className="swap-costs__summary">
+            <span className="swap-row__label">Fees, composed</span>
+            <span className="swap-row__value">{`${(fees.totalFraction * 100).toFixed(4)}%`}</span>
+          </summary>
+          <div className="swap-costs__body">
+            <Row label="LP fee">{pipsPct(pool.lpFeePips)}</Row>
+            <Row label={`Protocol fee · ${zeroForOne ? '0→1' : '1→0'}`}>
+              {pipsPct(zeroForOne ? pool.protocolFeeZeroForOnePips : pool.protocolFeeOneForZeroPips)}
+              {!context.controllerWired ? (
+                <span className="swap-row__note">
+                  {' '}
+                  — no fee controller is wired to the pool manager
+                </span>
+              ) : null}
+            </Row>
+            <Row label="Hook cut">
+              <HookCut hook={hook} />
+            </Row>
+            <p className="swap-row__note swap-costs__order">
+              Protocol then LP on the input, hook on the output.
+            </p>
+          </div>
+        </details>
       </div>
 
       <PendingConfigWarning hook={hook} blockNumber={context.blockNumber} />
