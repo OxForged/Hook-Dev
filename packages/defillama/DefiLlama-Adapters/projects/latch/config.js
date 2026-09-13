@@ -59,11 +59,12 @@ const DEPLOYMENTS = {
     vault: "0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c",
     clPoolManager: "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
     binPoolManager: "0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979",
-    // `protocolFeeController()` on both pool managers. Read address(0) at
-    // 2026-09-12 ~10:50 UTC and this address at ~11:05 UTC - governance wired it
-    // in between, after both swaps that exist so far (which carry protocolFee 0).
-    // Recorded for completeness; the TVL adapter does not read it.
-    protocolFeeController: "0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c",
+    // `protocolFeeController()` on both pool managers. V2 since 2026-09-13,
+    // replacing V1 (0x2a03E6E6...154c), which could not call
+    // `collectProtocolFees` and whose stored defaultFee was (0, 0) anyway.
+    // Recorded for completeness; the TVL adapter does not read it, and neither
+    // does the dexs adapter - the protocol fee travels in each Swap log.
+    protocolFeeController: "0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB",
     fromBlock: 60124455,
     start: "2026-09-11",
     blacklistedTokens: LATCH_TEST_TOKENS.robinhood,

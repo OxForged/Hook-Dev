@@ -290,14 +290,21 @@ each `Swap` carried, so it is a zero read from the log, not a default.
 
 The governance state behind that moved **while this package was being written**.
 At 10:50 UTC on 2026-09-12 `protocolFeeController()` read `address(0)` on both
-pool managers; at 11:05 UTC it read the `LatchProtocolFeeController`
-(`defaultFee = (true, 1000, 1000)`, 0.1% each way) on both. The two swaps predate
-the wiring. What it means going forward, from the pool manager's code rather than
-from a plan: a pool takes the controller's fee **at `initialize`**, so the existing
-LTT1/LTT2 pool keeps `protocolFee = 0` until the controller updates it
-specifically, and a new pool will carry 0.1% from its first swap. The adapter
-models none of this - it does not read the controller and does not need to,
-because whatever rate applied at the moment of a swap is in that swap's log.
+pool managers; at 11:05 UTC it read `LatchProtocolFeeController` V1
+(`0x2a03E6E6…154c`), whose constructor sets a 0.1% default. It did not stay
+there: by the time anyone read it again its stored `defaultFee` was
+`(true, 0, 0)`, so V1 charged nothing for its whole life. V1 was replaced on
+2026-09-13 by **V2** (`0x9c2c09EF…54aB`), which takes 25% of the total swap fee
+— 999 pips on a 0.30% pool, and a flat 999 on dynamic-fee pools, which is every
+launchpad pool.
+
+The two Robinhood swaps predate all of it. What that means going forward, from
+the pool manager's code rather than from a plan: a pool takes the controller's
+fee **at `initialize`**, so the existing LTT1/LTT2 pool keeps `protocolFee = 0`
+until governance reprices it specifically, and a pool created from 2026-09-13
+carries V2's rate from its first swap. The adapter models none of this — it does
+not read the controller and does not need to, because whatever rate applied at
+the moment of a swap is in that swap's log.
 
 `test/robinhood.live.test.ts` therefore checks the wiring for coherence (both
 managers agree; a set controller has code and a fee within `MAX_PROTOCOL_FEE`) and
@@ -445,8 +452,11 @@ tests in `test/robinhood.live.test.ts`, all over a fixed historical window):
 
 - all four addresses have bytecode; both pool managers are registered apps;
 - the fee-controller wiring is coherent: both pool managers name the same
-  controller, it has code, and `defaultFee() = (true, 1000, 1000)` is within
-  `MAX_PROTOCOL_FEE` (it was `address(0)` fifteen minutes earlier - see above);
+  controller and it has code. As of 2026-09-13 that is V2 (`0x9c2c09EF…54aB`),
+  whose `protocolFeeSplitRatio` is 250000 and whose `feeForLpFee(3000)` is 999,
+  both within `MAX_PROTOCOL_FEE`. The assertion is deliberately on COHERENCE
+  rather than on a specific rate, so a governance change does not fail a test
+  that was only ever checking that the wiring made sense;
 - the pool managers first have code at exactly `fromBlock` (CL 60124455) and
   60124601 (Bin), and not one block earlier;
 - decimals are WETH 18, USDG **6**, LTT1 18, LTT2 18;
@@ -558,9 +568,10 @@ and `isHeavyProtocol` is not set.
 3. **Server-side wiring** (`dimensions: { dexs: "latch", fees: "latch" }` in
    defillama-server, plus the protocol entry) is DefiLlama's step after the PRs.
 4. **Protocol revenue reads zero for every swap so far, and will for the existing
-   pool until the controller updates it.** The controller was wired on 2026-09-12;
-   new pools take 0.1% at initialize. Not a blocker to listing, but a reviewer
-   will ask why Revenue is empty, and the answer is in
+   pool until governance reprices it.** V2 has been in force since 2026-09-13 and
+   pools created from then carry 25% of the total swap fee (999 pips on a 0.30%
+   pool), but no pool has been created since. Not a blocker to listing, but a
+   reviewer will ask why Revenue is empty, and the answer is in
    [Protocol revenue is read per swap](#protocol-revenue-is-read-per-swap-and-has-been-zero-so-far).
 
 ## Before submitting

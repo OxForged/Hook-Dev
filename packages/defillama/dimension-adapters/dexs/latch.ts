@@ -95,14 +95,30 @@ import { addOneToken } from "../helpers/prices";
 // packages/defillama supplies it separately.
 //
 // PROTOCOL REVENUE IS READ PER SWAP, NEVER ASSUMED FROM CONFIGURATION.
-// `dailyRevenue` is the `protocolFee` field each `Swap` actually carried. On
-// Robinhood both swaps to date carry protocolFee 0. Governance wired a
-// LatchProtocolFeeController (defaultFee 0.1% each way) to both pool managers
-// on 2026-09-12, AFTER those swaps; an existing pool keeps the protocol fee it
-// was initialized with until the controller updates it, and a new pool takes
-// the controller's default at initialize. None of that is modelled here - the
-// adapter does not read the controller and does not need to, because whatever
-// rate a pool had at the moment of a swap is in that swap's log.
+// `dailyRevenue` is the `protocolFee` field each `Swap` actually carried, and
+// nothing here reads the fee controller. That is what keeps this adapter honest
+// through a governance change, and there has already been one:
+//
+//   2026-09-12  LatchProtocolFeeController V1 (0x2a03E6E6...154c) wired to both
+//               managers. An EARLIER VERSION OF THIS COMMENT SAID IT CARRIED A
+//               0.1% DEFAULT. IT DID NOT - its stored defaultFee read (0, 0) on
+//               chain for its whole life, so it charged nothing. V1 also had no
+//               function that could call `collectProtocolFees`, so anything it
+//               had charged would have been unreachable.
+//   2026-09-13  V2 (0x9c2c09EF...54aB) replaces it. Takes 25% of the TOTAL swap
+//               fee - 999 pips on a 0.30% pool - and a flat 999 pips on
+//               dynamic-fee pools, which is every launchpad pool.
+//
+// Neither date changes a number this adapter reports, because a pool's protocol
+// fee is stamped into it at `initialize` and then travels in every one of its
+// Swap logs. Both swaps on Robinhood to date predate all of it and carry
+// protocolFee 0; the LTT1/LTT2 pool keeps that zero for life unless governance
+// reprices it individually. Pools created from 2026-09-13 carry V2's rate, and
+// this adapter will report it without being told.
+//
+// The lesson worth keeping: the only reason a wrong belief about the controller
+// did not become a wrong revenue number is that the code never consulted the
+// controller. Do not "improve" this by deriving the rate from config.
 // ---------------------------------------------------------------------------
 export interface LatchChainConfig {
   /** Singleton custodian of every token. Used by the TVL adapter, not here. */
