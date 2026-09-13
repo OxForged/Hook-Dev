@@ -79,82 +79,268 @@ jobs:
           npm run build
 
   # ---------------------------------------------------------------------------
-  # Solidity is NOT yet runnable in CI, and this job records exactly why rather
-  # than leaving a silently missing check.
+  # Solidity: every contract package, built and tested under BOTH profiles.
   #
-  # packages/fees and packages/hooks are tracked here, but both resolve the core
-  # contracts through an `infinity-core/=../core/` remapping. packages/core is a
-  # FORK carrying its own git history and an `upstream` remote (used to rebase
-  # PancakeSwap security patches), so it is .gitignored from this repo — a fresh
-  # clone has no ../core and neither package can compile.
+  # Every package ships two profiles that compile the settlement layer against
+  # different backends, selected by the `hp-transient/` remapping:
+  #   default  cancun   / EIP-1153 tstore           (transient/eip1153)
+  #   legacy   shanghai / SSTORE, zeroed on exit    (transient/storage)
+  # Green under one says nothing about the other, so the matrix is
+  # package x profile, and each cell proves which backend it compiled BEFORE it
+  # is allowed to report a test result.
   #
-  # To turn this on:
-  #   1. push packages/core, packages/periphery and packages/router to their own
-  #      remotes, preserving their `upstream` remotes
-  #   2. add them back here as real submodules
-  #   3. add `submodules: recursive` to the checkout step below
-  #   4. delete the `if: false` guard
+  # WHERE THE FORKS COME FROM. packages/core, packages/periphery and
+  # packages/router are forks with their own history and are .gitignored here,
+  # so a plain checkout cannot compile anything. Their histories are pushed to
+  # THIS repository as the branches fork/core, fork/periphery and fork/router,
+  # and are checked out below at a PINNED commit rather than the branch tip: a
+  # push to fork/core must not silently change what a green run on this commit
+  # means. Bump the SHAs deliberately, in the same commit that needs them.
   #
-  # Note the two known core failures are Windows-only: TickMath differential
-  # tests shell out through `npx ts-node`, which forge's vm.ffi cannot spawn on
-  # Windows. They pass on this runner, which is a reason to want this job.
+  # NESTED UPSTREAM SUBMODULES. periphery carries upstream infinity-core, and
+  # router carries upstream infinity-periphery (which carries infinity-core
+  # again), as submodules. Initialised, they put a second, unhardened core in
+  # the tree. Three layers keep them out:
+  #   1. `submodules: false` on every checkout, and first-level libs by name.
+  #   2. `submodule.<name>.update none` on the nested copies. This is not
+  #      belt-and-braces: `forge build`/`forge test` run inside a submodule root
+  #      silently executes `git submodule update --init --recursive` on anything
+  #      uninitialised under lib/ ("Missing dependencies found. Installing
+  #      now..."). Verified: a bare `forge build` in periphery clones upstream
+  #      infinity-core. With update=none git answers "Skipping submodule".
+  #   3. A tripwire before and after forge runs.
+  #
+  # No secrets. Nothing here is given an RPC URL. The only tests that fork a
+  # chain are router's, and they are excluded by name (see no_match_contract).
   # ---------------------------------------------------------------------------
   solidity:
-    name: Solidity (blocked — see comment)
+    name: Solidity · ${{ matrix.package }} · ${{ matrix.profile }}
     runs-on: ubuntu-latest
-    if: false
-    timeout-minutes: 45
+    # core compiles ~850 tests with via_ir on a small runner.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    strategy:
+      # One red cell must not cancel the rest: "red under legacy only" is the
+      # diagnosis, and fail-fast hides half of it.
+      fail-fast: false
+      matrix:
+        package:
+          - core
+          - periphery
+          - router
+          - fees
+          - governance
+          - hooks
+          - hooks-revshare
+          - hooks-rwa
+          - launchpad
+          - registry
+        profile: [default, legacy]
+        include:
+          - profile: default
+            backend: eip1153
+            evm_version: cancun
+            is_eip1153: true
+          - profile: legacy
+            backend: storage
+            evm_version: shanghai
+            is_eip1153: false
+
+          # TickMath differential tests shell out to `npx ts-node` through ffi.
+          - package: core
+            node: true
+
+          # periphery's deploy scripts import `pancake-create3-factory/src/...`,
+          # which it never remaps explicitly. Locally that resolves only through
+          # remappings auto-detected from the NESTED upstream infinity-core; in a
+          # clean checkout forge maps it to lib/pancake-create3-factory/src/ and
+          # the scripts fail with src/src. Fix belongs in periphery's
+          # foundry.toml (`pancake-create3-factory/=lib/pancake-create3-factory/`);
+          # until it lands, build and test periphery without its scripts.
+          #
+          # periphery · legacy is EXPECTED RED when this job lands: 53 failures
+          # in MixedQuoter, CLQuoter and BinQuoter, all under the storage backend
+          # only. Two causes, neither triaged into a fix yet:
+          #   - gas-estimate ceilings (assertLt(gasEstimate, N)); SSTORE-backed
+          #     quoting costs more than TSTORE-backed quoting.
+          #   - SharedContext amounts / INVALID_SWAP_DIRECTION: the upstream
+          #     tests quote twice in one transaction and expect shared context.
+          #     MixedQuoterRecorder.clearContext() deliberately sweeps per CALL
+          #     on legacy (documented there), so that expectation cannot hold.
+          # The tests need to become profile-aware. Until then this cell tells
+          # the truth; it is not excluded, so nothing ELSE can break here unseen
+          # without the failure count changing.
+          - package: periphery
+            skip_scripts: true
+
+          # These read FORK_URL / ARB_FORK_URL with vm.envString in setUp and
+          # fork BSC / Arbitrum mainnet. With the variable unset they REVERT
+          # (fail), they do not skip. Excluded by exact contract name, so a new
+          # fork test added later fails CI loudly instead of hiding here.
+          - package: router
+            no_match_contract: "^(StableSwapBusdUsdcTest|StableSwapArbTest|StableSwapNativeExactOutputRefundTest|StableSwapMultiHop|V2BnbCake|V2MockBnb|V3BnbCake)$"
+
+    env:
+      FOUNDRY_PROFILE: ${{ matrix.profile }}
+      CORE_REF: 3c73f851cec58d0eb79068d5be0e7a58b28e133d
+      PERIPHERY_REF: ead8c0aafd755dea92635a0e9fcf19e336eb0959
+      ROUTER_REF: 8f76780708bf18deeecf0f21667d12fea213a910
 
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+          persist-credentials: false
+
+      - name: core fork · checkout (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ env.CORE_REF }}
+          path: packages/core
+          submodules: false
+          persist-credentials: false
+
+      - name: periphery fork · checkout (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ env.PERIPHERY_REF }}
+          path: packages/periphery
+          submodules: false
+          persist-credentials: false
+
+      - name: router fork · checkout (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ env.ROUTER_REF }}
+          path: packages/router
+          submodules: false
+          persist-credentials: false
+
+      - name: forks · nested upstream submodules can never be updated
+        run: |
+          git -C packages/periphery config submodule.lib/infinity-core.update none
+          git -C packages/router config submodule.lib/infinity-periphery.update none
+
+      # Exactly the first-level libs the remappings name. Not recursive.
+      - name: forks · first-level libraries only
+        run: |
+          git -C packages/core submodule update --init --depth 1 \
+            lib/forge-std lib/openzeppelin-contracts lib/solmate lib/pancake-create3-factory
+          git -C packages/periphery submodule update --init --depth 1 \
+            lib/permit2 lib/pancake-create3-factory
+          git -C packages/router submodule update --init --depth 1 \
+            lib/forge-std lib/pancake-create3-factory
+
+      - name: forks · tripwire — exactly one core in the tree
+        run: |
+          stray=$(find packages \( -path '*/lib/infinity-core/*' -o -path '*/lib/infinity-periphery/*' \) -print -quit)
+          if [ -n "$stray" ]; then
+            echo "::error::nested upstream submodule is initialised ($stray); a second, unhardened core is in the tree"
+            exit 1
+          fi
 
       - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # The version every suite below was validated with.
+          version: v1.8.1
 
       - uses: actions/setup-node@v4
+        if: matrix.node
         with:
           node-version: "24"
 
-      - name: core · js-scripts for the ffi differential tests
+      - name: core · js deps for the ffi differential tests
+        if: matrix.node
         working-directory: packages/core
-        run: npm install
+        run: yarn install --frozen-lockfile
 
-      # Every package ships two profiles: default (Cancun / EIP-1153 transient
-      # storage) and legacy (Shanghai / persistent storage). The settlement layer
-      # differs between them, so both must build and both must be tested.
-      - name: core · build both backends
-        working-directory: packages/core
+      # Compiles nothing: fail on mis-wiring before spending a build on it.
+      - name: ${{ matrix.package }} · backend wiring (${{ matrix.profile }})
+        working-directory: packages/${{ matrix.package }}
+        env:
+          PACKAGE: ${{ matrix.package }}
+          BACKEND: ${{ matrix.backend }}
+          EVM_VERSION: ${{ matrix.evm_version }}
         run: |
-          forge build --skip test --skip script
-          FOUNDRY_PROFILE=legacy forge build --skip test --skip script
+          if [ -f remappings.txt ] && grep -q 'hp-transient' remappings.txt; then
+            echo "::error::hp-transient/ is in remappings.txt, which silently overrides the profile; pin it per profile in foundry.toml"
+            exit 1
+          fi
+          core=../core/
+          if [ "$PACKAGE" = core ]; then core=; fi
+          expected="hp-transient/=${core}src/libraries/transient/${BACKEND}/"
+          actual=$(forge remappings | grep '^hp-transient/' || true)
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::effective remapping is '${actual}', expected '${expected}'"
+            exit 1
+          fi
+          if ! forge config | grep -Fxq "evm_version = \"${EVM_VERSION}\""; then
+            echo "::error::evm_version is not ${EVM_VERSION} under profile ${FOUNDRY_PROFILE}"
+            exit 1
+          fi
 
-      - name: core · test both backends
-        working-directory: packages/core
+      # The compiled proof. core's test_backendIdentity_matchesProfile asserts
+      # IS_EIP1153 in one branch and !IS_EIP1153 in the other, so it passes
+      # whichever backend was built. This compares against what the MATRIX
+      # expects. Verified to fail when a remappings.txt line forces the storage
+      # backend under the default profile, a mis-wiring that otherwise leaves
+      # the package's own suite fully green. Generated, never committed.
+      - name: ${{ matrix.package }} · backend identity (${{ matrix.profile }})
+        working-directory: packages/${{ matrix.package }}
+        env:
+          IS_EIP1153: ${{ matrix.is_eip1153 }}
+          SKIP_SCRIPTS: ${{ matrix.skip_scripts }}
         run: |
-          forge test
-          FOUNDRY_PROFILE=legacy forge test --match-path "test/transient/*"
+          mkdir -p test/_ci
+          cat > test/_ci/CiBackendIdentity.t.sol <<SOL
+          // SPDX-License-Identifier: GPL-2.0-or-later
+          pragma solidity 0.8.26;
 
-      - name: periphery · build and test
-        working-directory: packages/periphery
+          import {Test} from "forge-std/Test.sol";
+          import {TransientSlot} from "hp-transient/TransientSlot.sol";
+
+          contract CiBackendIdentityTest is Test {
+              function test_ci_backendIdentity() public pure {
+                  assertEq(TransientSlot.IS_EIP1153, ${IS_EIP1153}, "hp-transient resolved to the wrong backend for ${FOUNDRY_PROFILE}");
+              }
+          }
+          SOL
+          args=()
+          if [ "$SKIP_SCRIPTS" = true ]; then args+=(--skip script); fi
+          forge test "${args[@]}" --match-path 'test/_ci/*' -vv
+
+      - name: ${{ matrix.package }} · build (${{ matrix.profile }})
+        working-directory: packages/${{ matrix.package }}
+        env:
+          SKIP_SCRIPTS: ${{ matrix.skip_scripts }}
         run: |
-          forge build --skip test --skip script
-          FOUNDRY_PROFILE=legacy forge build --skip test --skip script
-          forge test
+          args=()
+          if [ "$SKIP_SCRIPTS" = true ]; then args+=(--skip script); fi
+          forge build "${args[@]}"
 
-      - name: router · build
-        working-directory: packages/router
+      - name: ${{ matrix.package }} · test (${{ matrix.profile }})
+        working-directory: packages/${{ matrix.package }}
+        env:
+          SKIP_SCRIPTS: ${{ matrix.skip_scripts }}
+          NO_MATCH_CONTRACT: ${{ matrix.no_match_contract }}
         run: |
-          forge build --skip test --skip script
-          FOUNDRY_PROFILE=legacy forge build --skip test --skip script
+          args=()
+          if [ "$SKIP_SCRIPTS" = true ]; then args+=(--skip script); fi
+          # Guarded: an EMPTY --no-match-contract regex matches every contract
+          # and would exclude the whole suite while reporting success.
+          if [ -n "$NO_MATCH_CONTRACT" ]; then args+=(--no-match-contract "$NO_MATCH_CONTRACT"); fi
+          forge test "${args[@]}"
 
-      - name: fees · test
-        working-directory: packages/fees
-        run: forge test
-
-      - name: hooks · build both backends and test
-        working-directory: packages/hooks
+      # Again, after forge has had its chance to auto-install dependencies.
+      - name: forks · tripwire — still exactly one core
         run: |
-          forge build
-          FOUNDRY_PROFILE=legacy forge build
-          forge test
+          stray=$(find packages \( -path '*/lib/infinity-core/*' -o -path '*/lib/infinity-periphery/*' \) -print -quit)
+          if [ -n "$stray" ]; then
+            echo "::error::nested upstream submodule appeared during the build ($stray)"
+            exit 1
+          fi

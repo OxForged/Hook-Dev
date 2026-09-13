@@ -280,6 +280,27 @@ on purpose and replaced by sibling-path remappings, so there is exactly one core
 If you ever `git submodule update --init` them, periphery and router will silently compile
 against the UNHARDENED upstream Vault — the same class of footgun as remappings.txt.
 
+**Reality check, 2026-09-13: `packages/periphery/lib/infinity-core` IS initialized in the local
+tree** (upstream `891259f`). It is currently harmless — `infinity-core/` still maps to `../core/`,
+no periphery source imports `lib/infinity-core`, and the compiler cache holds zero sources from
+it — but forge auto-detects remappings from it (`forge-gas-snapshot/`, `erc4626-tests/`, and a
+`pancake-create3-factory/` that periphery's deploy scripts only resolve THROUGH it). Two more
+traps: a bare `forge build` inside a fork runs `git submodule update --init --recursive` on its
+own, and periphery's scripts do not compile from a clean checkout. The fix for the scripts is
+`pancake-create3-factory/=lib/pancake-create3-factory/` in periphery's foundry.toml. Verify with
+`forge remappings` and the `lib/infinity-core` count in `cache/solidity-files-cache.json`, never
+by reading this paragraph.
+
+**CI.** Until 2026-09-13 the Solidity job was `if: false` — nothing ran under either profile. It
+is now a 10-package × {default, legacy} matrix that proves the backend three ways per cell
+(no `hp-transient` in remappings.txt; effective remappings and `evm_version` match; a generated
+test asserting `TransientSlot.IS_EIP1153`) and sets `submodule.<nested>.update none` so forge
+cannot pull upstream core. **`periphery · legacy` fails 53 tests and is left red on purpose**:
+MixedQuoter/CLQuoter/BinQuoter gas ceilings that SSTORE exceeds, and tests expecting two
+quotes in one transaction to share context that `MixedQuoterRecorder.clearContext()`
+deliberately clears per call on legacy. The tests need to become profile-aware; do not
+`exclude` the cell to get green.
+
 Every package carries the same two profiles (`default` = cancun/EIP-1153, `legacy` =
 shanghai/storage) and the same rule: `hp-transient/` is pinned per-profile in foundry.toml
 and NEVER in remappings.txt.
