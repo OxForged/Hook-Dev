@@ -25,7 +25,7 @@
  */
 
 import { toJson } from "../json.js";
-import { enabledHookNames } from "@latchprotocol/sdk";
+import { effectivePermissions } from "@latchprotocol/sdk";
 import { explainPermissions } from "../explain/permissions.js";
 import type { LatchContext } from "../context.js";
 import { lookupLatch } from "../reads.js";
@@ -105,12 +105,9 @@ export function lookupTool(ctx: LatchContext): LatchTool {
             address: record.hook,
             chainId: ctx.chainId,
             registered: true,
-            record: shapeRecord(
-              record,
-              ctx.deployment,
-              enabledHookNames("CL", record.permissions),
-            ),
-            permissions: explainPermissions(record.permissions),
+            record: shapeRecord(record, ctx.deployment),
+            // Effective bitmap, matching `record.riskClass`; see tools/record.ts.
+            permissions: explainPermissions(effectivePermissions(record).permissions),
           }),
           [...BASE_CAVEATS, UNTRUSTED_TEXT_CAVEAT],
           source,

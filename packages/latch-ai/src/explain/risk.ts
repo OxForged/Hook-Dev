@@ -27,6 +27,7 @@
  */
 
 import {
+  effectivePermissions,
   summarizeLatch,
   type HookWarning,
   type LatchRecord,
@@ -89,6 +90,10 @@ const SEVERITY: Readonly<Record<HookWarning, WarningSeverity>> = {
   ValueExtracting: "high",
   CanTrapLiquidity: "high",
   CanBlockSwaps: "medium",
+  // A live pool proved bits the hook left out of its own report. That is the
+  // spoof the attested registry exists to catch, so it ranks with the other
+  // "the bitmap you were shown is not the whole truth" finding.
+  PermissionsDivergent: "high",
   PermissionsStale: "high",
   PermissionsInvalid: "medium",
   Deprecated: "medium",
@@ -104,6 +109,8 @@ const WARNING_TEXT: Readonly<Record<HookWarning, string>> = {
     "It can refuse liquidity withdrawals, so funds deposited into a pool it governs may not be removable.",
   CanBlockSwaps:
     "It can refuse a swap before the trade is priced, so it can reject a specific caller or halt trading entirely.",
+  PermissionsDivergent:
+    "A live pool proved this contract enforces permissions it did NOT report to the registry. Its self-reported bitmap understates what the code can do; treat the difference as deliberate until the steward explains it. The risk class, warnings and permission breakdown in this report use the union of both.",
   PermissionsStale:
     "The registry could not re-read this contract's bitmap on its last refresh. The bitmap shown is the last value successfully read and may no longer be true. Read `getHooksRegistrationBitmap()` from the contract directly before relying on it.",
   PermissionsInvalid:
@@ -184,7 +191,11 @@ export function assessRisk(input: RiskAssessmentInput): RiskAssessment {
   }
 
   const summary = summarizeLatch(input.record);
-  const permissions = explainPermissions(input.record.permissions);
+  // The EFFECTIVE bitmap, the same one `summary.riskClass` and the warnings are
+  // derived from. Explaining the self-report here would put a milder bitmap
+  // breakdown beside a harsher risk class whenever a pool attested bits the hook
+  // left out - the exact spoof the attested registry exists to expose.
+  const permissions = explainPermissions(effectivePermissions(input.record).permissions);
 
   const warnings: AssessedWarning[] = summary.warnings.map((code) => ({
     code,

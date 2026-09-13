@@ -16,7 +16,6 @@
  * submission order, and the caller decides what matters.
  */
 
-import { enabledHookNames } from "@latchprotocol/sdk";
 // The rank/caution/severity helpers are exported from the registry entry point
 // rather than the SDK root. Imported from there rather than reimplemented: the
 // ordering of these enums is the contract's, and one copy of it is the point.
@@ -116,7 +115,7 @@ export function listTool(ctx: LatchContext): LatchTool {
         const page = await listLatchRecords(ctx, offset, limit);
 
         const shaped = page.records
-          .map((r) => shapeRecord(r, ctx.deployment, enabledHookNames("CL", r.permissions)))
+          .map((r) => shapeRecord(r, ctx.deployment))
           .filter((r) => {
             if (riskClass !== undefined && r.riskClass !== riskClass) return false;
             if (listing !== undefined && r.listing !== listing) return false;

@@ -105,6 +105,25 @@ describe("assessRisk - registered", () => {
     expect(a.auditBadge).toBe(false);
   });
 
+  it("surfaces a pool-attested divergence and explains the EFFECTIVE bitmap, not the self-report", () => {
+    // The hook tells the registry it only observes swaps; a live pool proved it
+    // takes a cut. Explaining the self-report would print "Passive" beside a
+    // ValueExtracting risk class.
+    const a = assessRisk({
+      registered: true,
+      record: record({
+        permissions: encodeCLHookPermissions({ afterSwap: true }),
+        attestedPermissions: encodeCLHookPermissions({ beforeSwap: true, beforeSwapReturnsDelta: true }),
+        attestationCount: 1,
+      }),
+    });
+    const divergent = a.warnings.find((w) => w.code === "PermissionsDivergent");
+    expect(divergent?.severity).toBe("high");
+    expect(a.axes.riskClass).toBe("ValueExtracting");
+    expect(a.permissions?.riskClass).toBe("ValueExtracting");
+    expectNoSafetyClaim(a);
+  });
+
   it("calls Unverified informational, because it is the default state", () => {
     const a = assessRisk({ registered: true, record: record() });
     const unverified = a.warnings.find((w) => w.code === "Unverified");

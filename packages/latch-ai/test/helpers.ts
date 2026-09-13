@@ -89,7 +89,14 @@ export function emptyRawRecord(overrides: Partial<RawLatchRecord> = {}): RawLatc
     updatedAt: 0n,
     permissionsValid: true,
     permissionsReadable: true,
+    // v2 registry attestation fields. attestationCount 0 is "nothing has
+    // attested", which makes attestedPermissions meaningless by definition.
+    attestedPermissions: 0,
     codehash: ZERO_HASH,
+    attestedPoolManager: ZERO,
+    attestedAt: 0n,
+    attestationCount: 0,
+    attestedPoolId: ZERO_HASH,
     metadata: { name: "", description: "", sourceURI: "", auditURI: "", chainIds: [] },
     ...overrides,
   };

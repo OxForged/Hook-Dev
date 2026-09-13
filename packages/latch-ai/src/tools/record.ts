@@ -14,7 +14,14 @@
  * `explain/risk.ts`.
  */
 
-import { hookPermissionState, riskClassOf, summarizeLatch, type LatchRecord } from "@latchprotocol/sdk";
+import {
+  effectivePermissions,
+  enabledHookNames,
+  hookPermissionState,
+  riskClassOf,
+  summarizeLatch,
+  type LatchRecord,
+} from "@latchprotocol/sdk";
 
 import type { LatchDeployment } from "../deployments.js";
 import { sanitizeUntrusted } from "../types.js";
@@ -28,12 +35,23 @@ export interface ShapedRecord {
   readonly submittedAt: string | null;
   readonly updatedAt: string | null;
   readonly permissions: {
+    /**
+     * The EFFECTIVE bitmap: the hook's self-report OR'd with every bit a pool
+     * attested. `riskClass` is derived from this, so the callbacks listed beside
+     * it must be too — a milder self-report next to a harsher class is exactly
+     * the spoof the attested registry exists to expose.
+     */
     readonly bitmap: number;
     readonly bitmapHex: string;
+    /** `SelfReported` | `PoolAttested` | `PoolAttestedDivergent`. Divergent means a pool proved bits the hook left out. */
+    readonly source: string;
+    /** What the hook's own `getHooksRegistrationBitmap()` answered, kept for comparison. */
+    readonly selfReportedBitmapHex: string;
     /** `Fresh` | `Stale` | `Invalid`. Anything but Fresh means re-read from chain. */
     readonly state: string;
     readonly readable: boolean;
     readonly acceptedByPoolManagers: boolean;
+    /** Callbacks enabled in the EFFECTIVE bitmap. */
     readonly declaredCallbacks: readonly string[];
   };
   readonly verification: string;
@@ -51,12 +69,16 @@ export interface ShapedRecord {
   };
 }
 
-export function shapeRecord(
-  record: LatchRecord,
-  deployment: LatchDeployment,
-  declaredCallbacks: readonly string[],
-): ShapedRecord {
+const hex16 = (bitmap: number): string => `0x${bitmap.toString(16).padStart(4, "0")}`;
+
+/**
+ * Callbacks are derived here from the effective bitmap rather than passed in, so
+ * no caller can pair the harsher `riskClass` with the milder self-reported list.
+ * CL pool type, as every registry record today is a CL hook.
+ */
+export function shapeRecord(record: LatchRecord, deployment: LatchDeployment): ShapedRecord {
   const summary = summarizeLatch(record);
+  const effective = effectivePermissions(record);
   return {
     address: record.hook,
     explorerUrl: `${deployment.explorer}/address/${record.hook}`,
@@ -65,12 +87,14 @@ export function shapeRecord(
     submittedAt: unixToIso(record.submittedAt),
     updatedAt: unixToIso(record.updatedAt),
     permissions: {
-      bitmap: record.permissions,
-      bitmapHex: `0x${record.permissions.toString(16).padStart(4, "0")}`,
+      bitmap: effective.permissions,
+      bitmapHex: hex16(effective.permissions),
+      source: effective.source,
+      selfReportedBitmapHex: hex16(record.permissions),
       state: hookPermissionState(record),
       readable: record.permissionsReadable,
       acceptedByPoolManagers: record.permissionsValid,
-      declaredCallbacks,
+      declaredCallbacks: enabledHookNames("CL", effective.permissions),
     },
     verification: record.verification,
     listing: record.listing,

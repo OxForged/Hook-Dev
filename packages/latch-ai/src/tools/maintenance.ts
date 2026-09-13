@@ -50,50 +50,20 @@
  * normal state most of the time.
  */
 
-import type { Address, Hex } from "viem";
+import { encodeFunctionData, type Address, type Hex } from "viem";
 
 import {
+  decodePendingConfig,
   DISTRIBUTOR_ABI,
   EPOCH_FIELD,
+  GET_PENDING_CONFIG_ABI,
+  kindFromBytes32,
   MERKLE_EPOCH_ABI,
   REV_SHARE_HOOK_ABI,
   SNAPSHOT_EPOCH_ABI,
   type DistributorKind,
   type EpochTuple,
 } from "../abi.js";
-
-/**
- * Which distributor is this? There is no `kind()` on chain and the two share no
- * interface, so each is asked a question only it can answer: `token()` exists
- * only on the snapshot distributor, `challengeDelay()` only on the merkle one.
- *
- * Exactly one must answer. Both or neither returns `unknown`, and the caller
- * must stop rather than guess — the wrong `getEpoch` ABI decodes cleanly into
- * nonsense, so guessing produces a confident wrong answer, which for a tool an
- * agent relies on is worse than no answer at all.
- */
-async function probeDistributorKind(
-  ctx: { publicClient: { readContract: (a: never) => Promise<unknown> } },
-  distributor: Address,
-): Promise<DistributorKind> {
-  const [snap, merk] = await Promise.allSettled([
-    ctx.publicClient.readContract({
-      address: distributor,
-      abi: DISTRIBUTOR_ABI,
-      functionName: "token",
-    } as never),
-    ctx.publicClient.readContract({
-      address: distributor,
-      abi: DISTRIBUTOR_ABI,
-      functionName: "challengeDelay",
-    } as never),
-  ]);
-  const isSnap = snap.status === "fulfilled";
-  const isMerk = merk.status === "fulfilled";
-  if (isSnap && !isMerk) return "snapshot";
-  if (isMerk && !isSnap) return "merkle";
-  return "unknown";
-}
 import type { LatchContext } from "../context.js";
 import { toJson } from "../json.js";
 import { err, ok, type LatchTool, type ToolResult } from "../types.js";
@@ -107,6 +77,43 @@ import {
   shortMessage,
   toToolError,
 } from "./common.js";
+
+/**
+ * Which distributor is this? Ask it. Both distributors implement
+ * `IEpochDistributor.kind()`, which returns one of two domain-separated
+ * constants, and nothing else is accepted: zero, a revert, an unrecognised hash
+ * and empty return data are all `unknown`, and the caller must stop rather than
+ * guess - the wrong `getEpoch` ABI decodes cleanly into nonsense, so guessing
+ * produces a confident wrong answer, which for a tool an agent relies on is
+ * worse than no answer at all.
+ *
+ * There is deliberately no fallback to probing `token()` / `challengeDelay()`:
+ * any contract with a `token()` getter passes that probe. A distributor deployed
+ * before `kind()` existed answers `unknown` here, which is the honest outcome.
+ * This mirrors `readKind` in `@latchprotocol/keeper`.
+ */
+async function readDistributorKind(
+  ctx: LatchContext,
+  distributor: Address,
+): Promise<{ kind: DistributorKind; detail: string }> {
+  try {
+    const raw = await ctx.publicClient.readContract({
+      address: distributor,
+      abi: DISTRIBUTOR_ABI,
+      functionName: "kind",
+    });
+    const kind = kindFromBytes32(raw);
+    return {
+      kind,
+      detail:
+        kind === "unknown"
+          ? `kind() returned ${String(raw)}, which is neither distributor constant this package knows`
+          : `kind() = ${kind}`,
+    };
+  } catch (e) {
+    return { kind: "unknown", detail: `kind() did not answer - ${shortMessage(e)}` };
+  }
+}
 
 const ACTIONS = ["closeEpoch", "rollover", "settleBeneficiaries", "applyPendingConfig"] as const;
 type Action = (typeof ACTIONS)[number];
@@ -418,6 +425,23 @@ async function rollover(
   distributor: Address,
   epochId: bigint,
 ): Promise<Outcome> {
+  // Identity FIRST, before any other read. The epoch must be read through the
+  // ABI that matches THIS distributor - one shared shape decodes without error
+  // and silently reinterprets fields 4-6 (see the table above
+  // SNAPSHOT_EPOCH_ABI in ../abi.ts) - and which deadline governs depends on it
+  // too. An address that is not a recognised distributor gets nothing further.
+  const { kind, detail } = await readDistributorKind(ctx, distributor);
+  if (kind === "unknown") {
+    return {
+      action: "rollover",
+      target: distributor,
+      due: false,
+      wouldSucceed: false,
+      sent: false,
+      reason: `could not tell whether ${distributor} is a snapshot or merkle distributor - ${detail}. Refusing to read the epoch, because the wrong ABI decodes into plausible nonsense rather than failing.`,
+    };
+  }
+
   const [count, block] = await Promise.all([
     ctx.publicClient.readContract({
       address: distributor,
@@ -435,22 +459,6 @@ async function rollover(
       wouldSucceed: false,
       sent: false,
       reason: `epoch ${epochId} does not exist; the distributor has closed ${count} epoch(s).`,
-    };
-  }
-
-  // Read the epoch through the ABI that matches THIS distributor. Using one
-  // shared shape would decode without error and silently reinterpret fields
-  // 4-6; see the table above SNAPSHOT_EPOCH_ABI in ../abi.ts.
-  const kind = await probeDistributorKind(ctx, distributor);
-  if (kind === "unknown") {
-    return {
-      action: "rollover",
-      target: distributor,
-      due: false,
-      wouldSucceed: false,
-      sent: false,
-      reason:
-        "could not determine whether this is a snapshot or merkle distributor - it answered both or neither of token() and challengeDelay(). Refusing to read the epoch, because the wrong ABI decodes into plausible nonsense rather than failing.",
     };
   }
 
@@ -472,15 +480,41 @@ async function rollover(
     };
   }
 
+  // WHICH CLOCK. On the snapshot distributor `expiresAt` is the only deadline
+  // there is. On the merkle distributor an epoch with no root has
+  // `expiresAt == 0` and is governed by an abandonment fallback (ROOT_GRACE_PERIOD)
+  // that `cancelRoot` can push out - and nothing in `getEpoch` records that it
+  // did. `rolloverEligibleAt` is the one view that knows, so it is the only
+  // deadline worth gating on. Gating a merkle epoch on `expiresAt` alone would
+  // call a rootless epoch "due" from the moment it closed.
   const expiresAt = epoch[EPOCH_FIELD.expiresAt];
-  if (block.timestamp < expiresAt) {
+  let eligibleAt: bigint;
+  let rootless = false;
+  if (kind === "merkle") {
+    eligibleAt = BigInt(
+      (await ctx.publicClient.readContract({
+        address: distributor,
+        abi: DISTRIBUTOR_ABI,
+        functionName: "rolloverEligibleAt",
+        args: [epochId],
+      })) as bigint | number,
+    );
+    rootless = expiresAt === 0n;
+  } else {
+    eligibleAt = expiresAt;
+  }
+
+  if (block.timestamp < eligibleAt) {
+    const wait = eligibleAt - block.timestamp;
     return {
       action: "rollover",
       target: distributor,
       due: false,
       wouldSucceed: false,
       sent: false,
-      reason: `epoch ${epochId} is still claimable for another ${expiresAt - block.timestamp} seconds. Rolling it over early would take funds from people who can still claim them.`,
+      reason: rootless
+        ? `epoch ${epochId} has no root standing (never posted, or cancelled); it becomes eligible for rollover under the abandonment fallback in another ${wait} seconds (rolloverEligibleAt = ${eligibleAt}). Rolling it over early would pre-empt a root that may still be posted.`
+        : `epoch ${epochId} is still claimable for another ${wait} seconds (eligible at ${eligibleAt}). Rolling it over early would take funds from people who can still claim them.`,
     };
   }
 
@@ -545,18 +579,32 @@ async function applyPendingConfig(
   poolId: Hex,
   poolKey: PoolKeyInput,
 ): Promise<Outcome> {
-  const pending = (await ctx.publicClient.readContract({
-    address: hook,
-    abi: REV_SHARE_HOOK_ABI,
-    functionName: "getPendingConfig",
-    args: [poolId],
-  })) as unknown;
+  // Called RAW and decoded by length. Two struct shapes exist on chain - 7 words
+  // on the hooks deployed before proposal expiry, 8 on the current source - and
+  // a typed ABI is right on exactly one of them. See `decodePendingConfig`.
+  const { data } = await ctx.publicClient.call({
+    to: hook,
+    data: encodeFunctionData({
+      abi: GET_PENDING_CONFIG_ABI,
+      functionName: "getPendingConfig",
+      args: [poolId],
+    }),
+  });
 
-  // (uint48 effectiveBlock, uint48 expiryBlock, ConfigParams params); viem returns a
-  // nested tuple.
-  const flat = Array.isArray(pending) && Array.isArray(pending[0]) ? pending[0] : pending;
-  const effectiveBlock = BigInt(String((flat as readonly unknown[])[0] ?? 0));
-  const expiryBlock = BigInt(String((flat as readonly unknown[])[1] ?? 0));
+  if (data === undefined || data === "0x") {
+    return {
+      action: "applyPendingConfig",
+      target: hook,
+      due: false,
+      wouldSucceed: false,
+      sent: false,
+      reason: `getPendingConfig returned no data - ${hook} does not answer as a RevShareHook on this chain.`,
+    };
+  }
+
+  // Throws on an unrecognised length; the handler reports that as a tool error
+  // rather than guessing at a layout.
+  const { shape, effectiveBlock, expiryBlock } = decodePendingConfig(data);
 
   if (effectiveBlock === 0n) {
     return {
@@ -577,14 +625,21 @@ async function applyPendingConfig(
       due: false,
       wouldSucceed: false,
       sent: false,
-      reason: `the pending config takes effect at block ${effectiveBlock}; ${effectiveBlock - blockNumber} block(s) to go.`,
+      reason:
+        `the pending config takes effect at block ${effectiveBlock}; ${effectiveBlock - blockNumber} block(s) to go.` +
+        (shape === "legacy"
+          ? " This hook returns the legacy 7-word PendingConfig, which has no expiry: once matured the proposal stays armed, applicable by anyone, until the owner cancels or freezes."
+          : ` It expires after block ${expiryBlock}.`),
     };
   }
 
-  // A proposal has a WINDOW now, not a deadline: past `expiryBlock` it is dead and the
-  // owner has to propose again and wait the full delay again. Reported as not-due rather
-  // than left to a simulation, so a reader is told WHY nothing will happen.
-  if (expiryBlock !== 0n && blockNumber > expiryBlock) {
+  // On the current hook a proposal has a WINDOW, not a deadline: past `expiryBlock` it is
+  // dead and the owner has to propose again and wait the full delay again. Reported as
+  // not-due rather than left to a simulation, so a reader is told WHY nothing will happen.
+  //
+  // The legacy shape has no expiry at all (`expiryBlock === null`). A matured proposal there
+  // stays armed indefinitely, so it is never treated as expired - it goes to simulation.
+  if (expiryBlock !== null && blockNumber > expiryBlock) {
     return {
       action: "applyPendingConfig",
       target: hook,
