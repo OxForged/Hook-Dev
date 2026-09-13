@@ -1,4 +1,5 @@
 import { Activity } from './Activity'
+import { Audiences } from './Audiences'
 import { FeeChart } from './FeeChart'
 import { Hero } from './Hero'
 import { LiquidityFlow } from './LiquidityFlow'
@@ -74,6 +75,11 @@ export default function LandingPage() {
             they read the mechanics at all. */}
         <FeeChart />
         <LiquidityFlow />
+        {/* After the mechanics, before the evidence. A reader who now knows
+            what a swap costs and how the split works is the one asking "so
+            what would I build with it" — and Activity, which is the proof, is
+            more persuasive once they have a reason to want the answer. */}
+        <Audiences />
         <Activity />
         <CtaPanel />
       </main>

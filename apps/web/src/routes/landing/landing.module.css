@@ -2921,3 +2921,162 @@ span.chainMark {
   color: var(--muted-ink);
   word-break: break-word;
 }
+
+/* `.sectionLead` centres itself, which is right under a centred heading and
+   wrong under a left-aligned one — the eye reads the two as belonging to
+   different sections. This modifier left-aligns it and drops the auto margins;
+   the max-width stays, because a 62ch measure is what makes the line readable
+   and has nothing to do with where it sits. */
+.sectionLeadStart {
+  margin-left: 0;
+  margin-right: 0;
+  text-align: left;
+}
+
+/* ------------------------------------------------------- audiences (build)
+
+   Two cards, and the pair is the point: they are deliberately identical in
+   weight so neither audience reads as the primary one and the other as an
+   afterthought. Hence `1fr 1fr` rather than `auto-fit` — auto-fit would let a
+   long column win on a mid-width viewport, which is exactly the asymmetry the
+   section exists to avoid.
+
+   At 900px they stack rather than squeeze. A four-item claim list with a bold
+   lead per item stops being scannable well before the column gets narrow
+   enough to wrap mid-word, so the breakpoint is set by the list, not the text. */
+
+.audGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s5);
+  margin-top: var(--s7);
+}
+
+@media (max-width: 900px) {
+  .audGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.audCard {
+  display: flex;
+  flex-direction: column;
+  /* Without this a long word in a claim can push the column past its track and
+     put a horizontal scrollbar on the whole page — grid items default to
+     min-content, not zero. */
+  min-width: 0;
+  padding: var(--s6) var(--s5) var(--s5);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card-lg);
+  background: var(--grad-card);
+  box-shadow: var(--shadow-1);
+  transition:
+    border-color 0.3s,
+    box-shadow 0.3s,
+    transform 0.3s var(--ease);
+}
+
+.audCard:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-4px);
+  box-shadow: var(--sh-card-hover);
+}
+
+.audWho {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--signal-blue);
+}
+
+.audTitle {
+  margin: var(--s3) 0 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(21px, 2vw, 26px);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink-bright);
+}
+
+.audBody {
+  margin: var(--s3) 0 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--muted-ink);
+  text-wrap: pretty;
+}
+
+.audList {
+  /* `flex: 1` is what keeps the two CTAs on one baseline when the columns have
+     unequal copy — the list absorbs the difference instead of the button
+     floating up mid-card. */
+  flex: 1;
+  margin: var(--s5) 0 0;
+  padding: var(--s5) 0 0;
+  border-top: 1px solid var(--hairline);
+  list-style: none;
+  display: grid;
+  gap: var(--s4);
+}
+
+.audItem {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: start;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--muted-ink);
+  text-wrap: pretty;
+}
+
+/* A drawn tick, not the character. A ✓ glyph renders at a different weight in
+   every fallback font and sits on the text baseline rather than the cap line,
+   which reads as misaligned beside a bold lead. */
+.audTick {
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--signal-blue) 14%, transparent);
+  position: relative;
+}
+
+.audTick::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  width: 4px;
+  height: 7px;
+  border: solid var(--signal-blue);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+
+.audLead {
+  font-weight: 600;
+  color: var(--ink-bright);
+}
+
+.audCta {
+  margin-top: var(--s5);
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--latch-blue);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
+}
+
+.audCta:hover {
+  color: var(--ink-bright);
+  border-bottom-color: var(--border-hover);
+}

@@ -87,11 +87,31 @@ export interface NavItem {
  * The order is the order a stranger needs them: what you can build with it,
  * how it works, the reference, who is building it.
  */
+/*
+ * REPOINTED 2026-09-13, because three of the four went nowhere.
+ *
+ * `#ecosystem`, `#developers` and `#about` are ids on UseCases, HowItWorks and
+ * Team — all three unmounted from the landing page in the ten-to-five cut (see
+ * ./index.tsx). The links still rendered, still looked live, and set a hash
+ * matching no element in the document, so clicking one did nothing at all.
+ *
+ * This is the same failure as the old `#audit` recorded under LINKS below, and
+ * it is worth stating the rule that catches it: a section anchor is a
+ * dependency on a component being MOUNTED, which no compiler checks. If a
+ * section is removed from index.tsx, the nav has to be read in the same pass.
+ *
+ * Every href below resolves to an element that renders unconditionally:
+ * `#build` on Audiences, `#fees` on FeeChart, `#activity` on Activity.
+ *
+ * About is dropped rather than repointed. It named the Team section, which is
+ * unmounted because its cards read "Name Placeholder", and there is no other
+ * honest destination for it. A nav item is a promise that something is there.
+ */
 export const NAV: readonly NavItem[] = [
-  { label: 'Ecosystem', href: '#ecosystem', icon: 'ecosystem' },
-  { label: 'Developers', href: '#developers', icon: 'developers' },
+  { label: 'Build', href: '#build', icon: 'developers' },
+  { label: 'Fees', href: '#fees', icon: 'revenue' },
+  { label: 'Activity', href: '#activity', icon: 'analytics' },
   { label: 'Docs', href: '/docs', icon: 'docs' },
-  { label: 'About', href: '#about', icon: 'about' },
 ]
 
 /**
@@ -117,6 +137,13 @@ export const LINKS = {
   brand: '/brand',
   app: '/app',
   github: GITHUB_URL,
+  /* The two integration prompts, in the PUBLIC SDK mirror rather than this
+     monorepo — a reader following one of these is not a contributor and has no
+     reason to be handed the whole tree. Both were confirmed 200 at
+     raw.githubusercontent.com before being linked; the ecosystem issue template
+     404'd from the dapp for a while precisely because nobody checked. */
+  promptDex: `${GITHUB_URL}/latch-sdk/blob/main/prompts/dex-integration.md`,
+  promptLaunchpad: `${GITHUB_URL}/latch-sdk/blob/main/prompts/launchpad-integration.md`,
   audits: '#activity',
   privacy: '/privacy',
   terms: '/terms',
@@ -457,10 +484,14 @@ export interface FooterGroup {
 export const FOOTER_GROUPS: readonly FooterGroup[] = [
   {
     title: 'Protocol',
+    /* Four dead anchors lived here — see the note on NAV above. `#ecosystem`,
+       `#revenue` and `#developers` name UseCases, RevenueShare and HowItWorks,
+       none of which the landing page mounts. What replaces them is what the
+       page actually renders, in the order it renders it. */
     links: [
-      { label: 'Use cases', href: '#ecosystem' },
-      { label: 'Revenue share', href: '#revenue' },
-      { label: 'How it works', href: '#developers' },
+      { label: 'What it costs', href: '#fees' },
+      { label: 'How the split works', href: '#flow' },
+      { label: 'Integrate', href: '#build' },
       { label: 'Activity & audits', href: LINKS.audits },
     ],
   },
@@ -474,10 +505,9 @@ export const FOOTER_GROUPS: readonly FooterGroup[] = [
   },
   {
     title: 'Project',
-    links: [
-      { label: 'About', href: '#about' },
-      { label: 'Brand Kit', href: LINKS.brand },
-    ],
+    /* About pointed at the Team section, which is unmounted because its cards
+       read "Name Placeholder". It comes back the day ./data.ts has names. */
+    links: [{ label: 'Brand Kit', href: LINKS.brand }],
   },
   {
     title: 'Legal',

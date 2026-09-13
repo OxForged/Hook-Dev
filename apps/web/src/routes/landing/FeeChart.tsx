@@ -124,7 +124,7 @@ export function FeeChart() {
   const standard = s.tiers.find((t) => t.lpFee === 3000)
 
   return (
-    <div className={styles['feeChartCard']}>
+    <div id="fees" className={styles['feeChartCard']}>
       <div className={styles['feeChartHead']}>
         <div>
           <h3 className={styles['feeChartTitle']}>What a swap costs, by pool tier</h3>
