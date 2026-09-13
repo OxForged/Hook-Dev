@@ -1,4 +1,5 @@
 import { Activity } from './Activity'
+import { FeeChart } from './FeeChart'
 import { Hero } from './Hero'
 import { LiquidityFlow } from './LiquidityFlow'
 import { CtaPanel } from './Sections'
@@ -67,6 +68,11 @@ export default function LandingPage() {
       <main>
         <Hero />
         <StatsStrip />
+        {/* Directly under the stats: a reader who has just seen "what is live"
+            is exactly the one asking "what does it cost". Before the mechanics
+            in LiquidityFlow, because price is the question that decides whether
+            they read the mechanics at all. */}
+        <FeeChart />
         <LiquidityFlow />
         <Activity />
         <CtaPanel />

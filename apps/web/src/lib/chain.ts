@@ -393,6 +393,59 @@ export interface ProtocolStatus {
 }
 
 /** Live protocol state. Every field is read from chain. */
+/** One pool tier and what the controller stamps a pool at that tier with. */
+export interface FeeTier {
+  /** The pool's LP fee, in pips. 3000 == 0.30%. */
+  lpFee: number
+  /** Protocol fee per direction, from `feeForLpFee(lpFee)` on the controller. */
+  protocolFeePips: number
+}
+
+/**
+ * The tiers the marketplace actually uses, and nothing invented around them.
+ *
+ * These five are core's conventional CL tiers; a pool may be created at any
+ * spacing, so this is a representative set rather than an exhaustive one — the
+ * chart says "by pool tier", not "every pool".
+ */
+const FEE_TIERS: readonly number[] = [100, 500, 2500, 3000, 10_000]
+
+/**
+ * Every tier's protocol fee, READ FROM THE CONTROLLER rather than derived here.
+ *
+ * `feeForLpFee` applies the live split ratio, the per-tier overrides and the
+ * MAX_PROTOCOL_FEE clamp, in that order. Reimplementing that in TypeScript
+ * would mean two implementations of the protocol's pricing and one of them
+ * would eventually be wrong — and it would be the one on the marketing page.
+ *
+ * Five `eth_call`s plus one. Cheap: these endpoints meter by compute unit and
+ * a view call is a rounding error next to the log scans that actually strain
+ * them.
+ */
+export async function readFeeTiers(
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
+): Promise<{ tiers: FeeTier[]; splitRatio: number }> {
+  const d = DEPLOYMENTS[chainId]
+  const c = client(chainId)
+
+  const [splitRatio, ...fees] = await Promise.all([
+    c.readContract({ address: d.feeController, abi: FEE_CONTROLLER, functionName: 'protocolFeeSplitRatio' }),
+    ...FEE_TIERS.map((lpFee) =>
+      c.readContract({
+        address: d.feeController,
+        abi: FEE_CONTROLLER,
+        functionName: 'feeForLpFee',
+        args: [lpFee],
+      }),
+    ),
+  ])
+
+  return {
+    splitRatio: Number(splitRatio),
+    tiers: FEE_TIERS.map((lpFee, i) => ({ lpFee, protocolFeePips: Number(fees[i] ?? 0) })),
+  }
+}
+
 export async function readProtocolStatus(
   chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<ProtocolStatus> {
