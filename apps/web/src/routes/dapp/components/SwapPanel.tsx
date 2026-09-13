@@ -702,15 +702,30 @@ export function SwapPanel({ context, pool, hook, compact = false, onTraded }: Sw
             }}
           />
         </div>
+        {/* THE CLAIM STAYS, THE MECHANISM COLLAPSES.
+            "This is your only protection" is the part a trader has to see
+            before choosing a tolerance — it is the reason the control above it
+            matters, so it is not something to hide behind a summary. How the
+            bound is enforced is reference material for someone who already
+            believes the claim and wants to check it. Six lines of it sat
+            between the slippage buttons and the send button, which is the
+            worst place on the card to put a paragraph. */}
         <p className="dapp-note">
-          <strong>This is your only protection.</strong> The router and the quoter both hardcode the
-          price bound to <code>MIN_SQRT_RATIO + 1</code> / <code>MAX_SQRT_RATIO − 1</code>, so there
-          is no price limit on the swap itself — <code>amountOutMinimum</code> is the whole of it,
-          and it is enforced twice: once by the swap action and once by <code>TAKE_ALL</code> on the
-          credit standing at the vault. If the pool moves, or the hook&rsquo;s cut changes between
-          this quote and your transaction landing, this bound is what refuses the trade instead of
-          filling it worse.
+          <strong>This is your only protection.</strong> There is no price limit on the swap
+          itself — this bound is the whole of it.
         </p>
+        <details className="swap-panel__how-bound">
+          <summary>How the bound is enforced</summary>
+          <p className="dapp-note">
+            The router and the quoter both hardcode the price bound to{' '}
+            <code>MIN_SQRT_RATIO + 1</code> / <code>MAX_SQRT_RATIO − 1</code>, so there is no
+            price limit on the swap itself — <code>amountOutMinimum</code> is the whole of it, and
+            it is enforced twice: once by the swap action and once by <code>TAKE_ALL</code> on the
+            credit standing at the vault. If the pool moves, or the hook&rsquo;s cut changes
+            between this quote and your transaction landing, this bound is what refuses the trade
+            instead of filling it worse.
+          </p>
+        </details>
       </div>
 
       {/* ---- approvals and the send ---- */}

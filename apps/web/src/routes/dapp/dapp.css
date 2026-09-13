@@ -3458,7 +3458,75 @@ span.dapp-net-chip__mark {
    different treatment so none of them can be mistaken for a figure.
    =========================================================================== */
 
-.swap-screen { display: grid; gap: var(--s4); }
+/* THE TRADE IS THE PAGE. Two columns when there is room, one when there is not
+   — decided by the SPACE THIS GRID ACTUALLY HAS, not by a viewport breakpoint.
+
+   The first attempt used `@media (min-width: 1100px)` and never fired: this
+   screen lives inside the dapp shell behind a fixed ~300px sidebar, so a
+   viewport query is measuring about 300px more than the grid will ever be
+   given. Raising the number to 1240px was the same mistake with a bigger
+   constant — it hardcodes today's sidebar width into an unrelated file.
+
+   `auto-fit` + `minmax` asks the container instead. Two tracks appear only when
+   two will genuinely fit, at any sidebar width and inside any future layout.
+   `min(100%, 380px)` keeps the track from exceeding the container on narrow
+   screens, which is what stops a horizontal scrollbar appearing on a phone.
+
+   Because the swap panel is FIRST in the DOM, the single-column case puts the
+   trade on top rather than under a list and a paragraph — no `order` tricks, so
+   reading order and tab order stay identical at every width. */
+.swap-screen {
+  display: grid;
+  gap: var(--s4);
+  /* 500px, and the number is not arbitrary: it is the narrowest the swap card
+     renders correctly at. The pay row carries an amount, a balance, a MAX and a
+     token chip on one line, and at 380px the chip was pushed under the pool
+     panel — two columns that fit the GRID but not the CONTENT, which is worse
+     than one column because it looks deliberate. Two tracks now appear only
+     when the trade can have the room it needs. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 500px), 1fr));
+  align-items: start;
+}
+
+/* Grid and flex children default to min-width:auto, which lets content push a
+   track wider than its share instead of wrapping. Without this the card
+   overflows its column rather than the column growing — the clipping above. */
+.swap-screen > * { min-width: 0; }
+
+/* The pool list is reference material, so it does not compete for attention,
+   and it stays put while a long quote scrolls beside it. Sticky only matters
+   once it is actually a side column; at one column it has nothing to stick
+   beside, and `position: sticky` on a full-width block is harmless. */
+.swap-screen__pools { align-self: start; position: sticky; top: var(--s4); }
+
+/* Two disclosures, one pattern: the pool card's "what L is" and the swap
+   card's "how the bound is enforced". Both keep the load-bearing claim on
+   screen and collapse the mechanism behind it — see the call sites for why
+   each split falls where it does. Styled together so they read as the same
+   affordance rather than two different ones. */
+.swap-panel__how-bound { margin-top: 6px; }
+.swap-screen__what-is-l { margin-top: 8px; }
+
+.swap-panel__how-bound > summary,
+.swap-screen__what-is-l > summary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dapp-ink-sub);
+  cursor: pointer;
+  padding: 4px 0;
+}
+.swap-panel__how-bound > summary:hover,
+.swap-screen__what-is-l > summary:hover { color: var(--ink); }
+.swap-panel__how-bound > summary:focus-visible,
+.swap-screen__what-is-l > summary:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.swap-panel__how-bound[open] > summary,
+.swap-screen__what-is-l[open] > summary { margin-bottom: 4px; }
 
 .swap-panel { display: grid; gap: 12px; max-width: 560px; }
 

@@ -121,8 +121,29 @@ export default function Swap() {
   }
 
   return (
+    /* THE SWAP CARD COMES FIRST, in DOM order and in the layout.
+       It used to sit under a full-width pool panel whose explanatory note ran
+       to five lines, which put the only action on this screen below the fold.
+       On a wide viewport the two sit side by side; narrow stacks them, and the
+       trade is still first. */
     <div className="swap-screen">
-      <section className="dapp-card">
+      {selected ? (
+        <SwapPanel
+          context={context}
+          pool={selected}
+          hook={hooks[selected.poolId] ?? null}
+          /* A confirmed trade invalidates liquidity, slot0 and the hook's
+             pending config. Re-read them rather than leaving pre-trade state
+             on screen under a confirmed transaction. */
+          onTraded={reload}
+        />
+      ) : (
+        <Empty title="No pool selected">
+          <p>Pick a pool to quote a trade against it.</p>
+        </Empty>
+      )}
+
+      <section className="dapp-card swap-screen__pools">
         <div className="dapp-card__bar">
           <h2 className="dapp-microlabel">POOLS ON {context.chainName.toUpperCase()}</h2>
           <span className="live-fee">
@@ -161,31 +182,28 @@ export default function Swap() {
             )
           })}
         </ul>
+
+        {/* PROVENANCE STAYS VISIBLE. CLAUDE.md is explicit that "summed from
+            logs since block N" is not a caveat to be tidied away — it is the
+            difference between a total and an estimate. So the source line is
+            always on screen; only the explanation of what `L` is and is not
+            moves behind the disclosure, because that part is a definition
+            rather than a provenance claim. */}
         <p className="dapp-note">
           Read from <code>CLPoolManager.Initialize</code> logs since block{' '}
           {CHAIN.deployedAtBlock.toString()}, then <code>getSlot0</code> and{' '}
-          <code>getLiquidity</code> per pool. <code>L</code> is the in-range liquidity the manager
-          reports, printed as the raw <code>uint128</code> it is: a curve parameter, not a token
-          balance, with no decimals of its own. It is not a TVL and it is not money. Nothing on
-          this chain prices these tokens, so no figure here is in dollars.
+          <code>getLiquidity</code> per pool.
         </p>
+        <details className="swap-screen__what-is-l">
+          <summary>What L is, and what it is not</summary>
+          <p className="dapp-note">
+            <code>L</code> is the in-range liquidity the manager reports, printed as the raw{' '}
+            <code>uint128</code> it is: a curve parameter, not a token balance, with no decimals
+            of its own. It is not a TVL and it is not money. Nothing on this chain prices these
+            tokens, so no figure here is in dollars.
+          </p>
+        </details>
       </section>
-
-      {selected ? (
-        <SwapPanel
-          context={context}
-          pool={selected}
-          hook={hooks[selected.poolId] ?? null}
-          /* A confirmed trade invalidates liquidity, slot0 and the hook's
-             pending config. Re-read them rather than leaving pre-trade state
-             on screen under a confirmed transaction. */
-          onTraded={reload}
-        />
-      ) : (
-        <Empty title="No pool selected">
-          <p>Pick a pool above to quote a trade against it.</p>
-        </Empty>
-      )}
     </div>
   )
 }
