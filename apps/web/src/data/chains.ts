@@ -108,6 +108,8 @@ const BRAND_OF: Record<ChainKey, BrandKey> = {
   arcTestnet: 'arc',
 }
 
+import { LATCH_DEPLOYMENTS, type ContractKey, type LatchChainId } from '@latchprotocol/sdk'
+
 import { ACTIVE_CHAIN_ID } from '../lib/chain'
 
 /* ---------------------------------------------------------------- deployment */
@@ -118,46 +120,100 @@ export interface DeployedContract {
 }
 
 /**
- * Contracts per chain. Add a chain here only once its contracts are live AND
- * verified — this list is what the landing page and Settings present as "these
- * exist", so an address here that nobody can read the source of is a claim the
- * reader cannot check.
+ * Display names for the address-book keys this surface shows.
+ *
+ * THE ADDRESSES ARE NOT HERE. They come from `LATCH_DEPLOYMENTS` in the SDK,
+ * which is the single source of truth, so a redeploy is one edit there and this
+ * file follows. It did not used to be: both lists below were hardcoded hex, and
+ * on 2026-09-13 the fee controller was replaced and this file kept rendering the
+ * retired one — a screen telling readers to go and inspect a contract that
+ * governance had already abandoned. That is the exact failure the address book
+ * exists to prevent, and restating an address anywhere defeats it.
+ *
+ * What stays curated is WHICH keys each chain shows, below — a judgement about
+ * what a reader should be told, not a fact about where a contract lives.
  */
-export const SEPOLIA_CONTRACTS: readonly DeployedContract[] = [
-  { name: 'Vault', address: '0xCe3d133eb486b448A53437A5073619FbE424d01B' },
-  { name: 'CLPoolManager', address: '0xb7C8a11E0B359616eD06256783aF57114841F738' },
-  { name: 'BinPoolManager', address: '0xdBA93F91BA5B8535AE2b38be6a3A6CdcfDE6f6f3' },
-  { name: 'LatchProtocolFeeController', address: '0xc1b7A4e61A4B6ceBA3e308425dc2390c2CE57ea9' },
-  { name: 'Create3Factory', address: '0x76473D174Aa17C23FBE49CAb50aAc4ED4d8c678F' },
+const CONTRACT_LABELS: Partial<Record<ContractKey, string>> = {
+  vault: 'Vault',
+  clPoolManager: 'CLPoolManager',
+  binPoolManager: 'BinPoolManager',
+  clPoolManagerOwner: 'CLPoolManagerOwner',
+  binPoolManagerOwner: 'BinPoolManagerOwner',
+  feeController: 'LatchProtocolFeeControllerV2',
+  registry: 'LatchRegistry',
+  revShareHook: 'RevShareHook',
+  timelockCustody: 'LatchTimelock · custody 48h',
+  launchRegistry: 'LatchLaunchRegistry',
+  launchGuardHook: 'LaunchGuardHook',
+  launchpadKit: 'LaunchpadKit',
+  universalRouter: 'UniversalRouter',
+  clPositionManager: 'CLPositionManager',
+  binPositionManager: 'BinPositionManager',
+  create3Factory: 'Create3Factory',
+}
+
+/**
+ * Sepolia shows the core only, and that is deliberate rather than an oversight.
+ *
+ * The timelocks own nothing there, so listing them would imply a governance
+ * model that is not in force. The same reasoning keeps the launchpad and the
+ * revenue-share hook off this list: what a reader learns from a Sepolia address
+ * is "the code deploys", not "this is how Latch is governed".
+ */
+const SEPOLIA_KEYS: readonly ContractKey[] = [
+  'vault',
+  'clPoolManager',
+  'binPoolManager',
+  'feeController',
+  'create3Factory',
 ]
 
 /**
- * Robinhood Chain — the FIRST MAINNET, live 2026-09-11. All nineteen contracts
- * are verified on Sourcify; see ops/safe/robinhood-deployment.md.
+ * Robinhood Chain — the FIRST MAINNET, live 2026-09-11, every contract verified
+ * on Sourcify (see `ops/safe/robinhood-deployment.md`).
  *
  * Longer than the Sepolia list on purpose: this is the full protocol, and the
- * governance contracts are listed because on this chain they are load-bearing.
- * On Sepolia the timelocks own nothing, so listing them there would imply a
- * governance model that is not actually in force.
+ * governance contracts are listed because here they are load-bearing.
  */
-export const ROBINHOOD_CONTRACTS: readonly DeployedContract[] = [
-  { name: 'Vault', address: '0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c' },
-  { name: 'CLPoolManager', address: '0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66' },
-  { name: 'BinPoolManager', address: '0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979' },
-  { name: 'CLPoolManagerOwner', address: '0x5D7111d6c624e9a08aE63d342E4baE5878989a67' },
-  { name: 'BinPoolManagerOwner', address: '0x98920e33313257Ffd942f94379A7ced216462665' },
-  { name: 'LatchProtocolFeeControllerV2', address: '0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB' },
-  { name: 'LatchRegistry', address: '0xb2c8BB7473A09b0906f192D69e30D7362fA988CC' },
-  { name: 'RevShareHook', address: '0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2' },
-  { name: 'LatchTimelock · custody 48h', address: '0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119' },
-  { name: 'LatchLaunchRegistry', address: '0x6D10B4CeDb53aD50c5A1D83f27fcE9c5C3b15c94' },
-  { name: 'LaunchGuardHook', address: '0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c' },
-  { name: 'LaunchpadKit', address: '0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7' },
-  { name: 'UniversalRouter', address: '0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c' },
-  { name: 'CLPositionManager', address: '0x957cc13b24a563cc92253213d9d5e6954c8db6a7' },
-  { name: 'BinPositionManager', address: '0x990f395003c35a0ab390e10b003972407f882399' },
-  { name: 'Create3Factory', address: '0x6ffdf9a3df7e9dd55bad2e60c7405cd181005633' },
+const ROBINHOOD_KEYS: readonly ContractKey[] = [
+  'vault',
+  'clPoolManager',
+  'binPoolManager',
+  'clPoolManagerOwner',
+  'binPoolManagerOwner',
+  'feeController',
+  'registry',
+  'revShareHook',
+  'timelockCustody',
+  'launchRegistry',
+  'launchGuardHook',
+  'launchpadKit',
+  'universalRouter',
+  'clPositionManager',
+  'binPositionManager',
+  'create3Factory',
 ]
+
+/**
+ * Resolve keys to addresses against the SDK book, in the order given.
+ *
+ * A key whose address is `null` is DROPPED rather than rendered. `null` in the
+ * address book means "not deployed on this chain" and never the zero address —
+ * so a contract that does not exist yet simply does not appear, instead of
+ * appearing as a link to nothing.
+ */
+function contractsFor(chainId: LatchChainId, keys: readonly ContractKey[]): readonly DeployedContract[] {
+  const deployment = LATCH_DEPLOYMENTS[chainId]
+  return keys.flatMap((key) => {
+    const address = deployment[key]
+    if (!address) return []
+    return [{ name: CONTRACT_LABELS[key] ?? key, address }]
+  })
+}
+
+export const SEPOLIA_CONTRACTS: readonly DeployedContract[] = contractsFor(11155111, SEPOLIA_KEYS)
+
+export const ROBINHOOD_CONTRACTS: readonly DeployedContract[] = contractsFor(4663, ROBINHOOD_KEYS)
 
 export const SEPOLIA_CHAIN_ID = 11155111
 export const ROBINHOOD_CHAIN_ID = 4663
