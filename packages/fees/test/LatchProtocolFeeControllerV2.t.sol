@@ -17,6 +17,8 @@ import {LPFeeLibrary} from "infinity-core/src/libraries/LPFeeLibrary.sol";
 
 /// @dev Stands in for a pool manager. Records the collect call and answers `protocolFeesAccrued`.
 contract MockProtocolFees {
+    using PoolIdLibrary for PoolKey;
+
     mapping(Currency => uint256) public protocolFeesAccrued;
 
     address public lastRecipient;
@@ -27,6 +29,15 @@ contract MockProtocolFees {
 
     function setAccrued(Currency currency, uint256 amount) external {
         protocolFeesAccrued[currency] = amount;
+    }
+
+    mapping(PoolId => uint24) public poolProtocolFee;
+    uint256 public setProtocolFeeCalls;
+
+    function setProtocolFee(PoolKey memory key, uint24 newProtocolFee) external {
+        lastCaller = msg.sender;
+        poolProtocolFee[PoolIdLibrary.toId(key)] = newProtocolFee;
+        setProtocolFeeCalls++;
     }
 
     function collectProtocolFees(address recipient, Currency currency, uint256 amount)
@@ -313,6 +324,70 @@ contract LatchProtocolFeeControllerV2Test is Test {
     function test_Accrued_IsAPublicRead() public {
         manager.setAccrued(usdg, 77);
         assertEq(controller.accrued(address(manager), usdg), 77);
+    }
+
+    /* ---------------------------------------------------------------------
+       REPRICING AN EXISTING POOL — core stamps the fee at initialize and never
+       re-reads the controller, so this is the ONLY route to a live pool.
+       --------------------------------------------------------------------- */
+
+    function test_SetPoolProtocolFee_ReachesAnExistingPool() public {
+        PoolKey memory key = _key(3000);
+        uint24 packed = controller.packFee(999, 999);
+
+        vm.prank(governance);
+        controller.setPoolProtocolFee(address(manager), key, packed);
+
+        assertEq(manager.poolProtocolFee(key.toId()), packed);
+        assertEq(manager.lastCaller(), address(controller), "core admits only the controller");
+    }
+
+    /// The bulk-fix path: a pool created while the fee was zero, brought up to policy.
+    function test_SyncPoolToPolicy_FixesAPoolLeftBehind() public {
+        PoolKey memory key = _key(3000);
+        assertEq(manager.poolProtocolFee(key.toId()), 0, "starts unpriced");
+
+        vm.prank(governance);
+        uint24 applied = controller.syncPoolToPolicy(address(manager), key);
+
+        assertEq(applied, uint24(999) | (uint24(999) << 12));
+        assertEq(manager.poolProtocolFee(key.toId()), applied);
+    }
+
+    function test_SyncPoolToPolicy_AppliesTheDynamicRuleToLaunchPools() public {
+        PoolKey memory key = _key(LPFeeLibrary.DYNAMIC_FEE_FLAG);
+        vm.prank(governance);
+        uint24 applied = controller.syncPoolToPolicy(address(manager), key);
+        assertEq(applied & 0xFFF, controller.DYNAMIC_FEE_PIPS());
+    }
+
+    function test_Repricing_IsOwnerOnly() public {
+        PoolKey memory key = _key(3000);
+        vm.startPrank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(0xBAD)));
+        controller.setPoolProtocolFee(address(manager), key, 0);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(0xBAD)));
+        controller.syncPoolToPolicy(address(manager), key);
+        vm.stopPrank();
+    }
+
+    /// Guardian may reduce, never reprice — repricing can raise.
+    function test_Repricing_GuardianCannot() public {
+        PoolKey memory key = _key(3000);
+        vm.prank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, guardian));
+        controller.syncPoolToPolicy(address(manager), key);
+    }
+
+    function test_PackFee_RefusesAboveTheCap() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(LatchProtocolFeeControllerV2.FeeExceedsMaximum.selector, 4001, 4000)
+        );
+        controller.packFee(4001, 100);
+    }
+
+    function test_PackFee_MatchesTheHotPathLayout() public view {
+        assertEq(controller.packFee(999, 999), controller.protocolFeeForPool(_key(3000)));
     }
 
     /* ---------------------------------------------------------------------

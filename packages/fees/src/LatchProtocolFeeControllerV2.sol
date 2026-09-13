@@ -306,6 +306,67 @@ contract LatchProtocolFeeControllerV2 is IProtocolFeeController, Ownable2Step {
         emit ProtocolFeesCollected(poolManager, currency, recipient, amountCollected);
     }
 
+    /**
+     * @notice Reprice a pool that ALREADY EXISTS.
+     *
+     * @dev The third function of this shape, and the third gap of the same kind. Core stamps a
+     * pool's protocol fee at `initialize` and never re-reads the controller, so everything in the
+     * "GOVERNANCE" section below changes only what FUTURE pools are born with.
+     * `ProtocolFees.setProtocolFee` is the sole route to an existing one — and, like
+     * `collectProtocolFees`, it admits only the installed controller:
+     *
+     *     if (msg.sender != address(protocolFeeController)) revert InvalidCaller();
+     *
+     * V1 could not call it. Without this function V2 could not either, which would mean:
+     *   - every pool created before V2 is installed stays at zero for the rest of its life;
+     *   - a policy change could never reach a pool that already exists;
+     *   - a pool mispriced by an error at creation could never be corrected.
+     *
+     * The pattern worth naming, since it has now bitten three times in one contract: core gates a
+     * privileged call on `msg.sender == protocolFeeController`, and a controller without a
+     * matching passthrough silently forfeits that power forever. Before adding a capability to
+     * core's fee surface, grep `ProtocolFees.sol` for `InvalidCaller` and check this contract has
+     * a route to every one of them.
+     *
+     * @param newProtocolFee PACKED, as core expects: low 12 bits zeroForOne, next 12 oneForZero.
+     * Use `packFee`. Core validates it and reverts `ProtocolFeeTooLarge` on anything above the
+     * cap, so a bad value costs gas rather than money.
+     */
+    function setPoolProtocolFee(address poolManager, PoolKey calldata key, uint24 newProtocolFee)
+        external
+        onlyOwner
+    {
+        IProtocolFees(poolManager).setProtocolFee(key, newProtocolFee);
+    }
+
+    /**
+     * @notice Bring an existing pool up to whatever this controller's current policy says.
+     *
+     * @dev The bulk-fix path. After a split-ratio change, or after installing this controller
+     * over one that charged nothing, the pools that already exist are the ones left behind — and
+     * working out each one's correct fee by hand is how a pool ends up mispriced. This resolves
+     * the same policy `protocolFeeForPool` would apply to a new pool with this key, and pushes it.
+     *
+     * Owner-only, and per-pool on purpose. A sweep over every pool at once would be a single
+     * transaction that reprices the whole protocol, which is not a thing to make easy.
+     */
+    function syncPoolToPolicy(address poolManager, PoolKey calldata key)
+        external
+        onlyOwner
+        returns (uint24 applied)
+    {
+        applied = this.protocolFeeForPool(key);
+        IProtocolFees(poolManager).setProtocolFee(key, applied);
+    }
+
+    /// @notice Pack two directional fees the way core expects. Reverts above the cap, unlike the
+    /// hot path, because this one is called by a human writing a Safe batch.
+    function packFee(uint16 zeroForOne, uint16 oneForZero) external pure returns (uint24) {
+        if (zeroForOne > MAX_PROTOCOL_FEE) revert FeeExceedsMaximum(zeroForOne, MAX_PROTOCOL_FEE);
+        if (oneForZero > MAX_PROTOCOL_FEE) revert FeeExceedsMaximum(oneForZero, MAX_PROTOCOL_FEE);
+        return uint24(zeroForOne) | (uint24(oneForZero) << 12);
+    }
+
     /// @notice How much is waiting to be collected. A read, so anyone may call it.
     function accrued(address poolManager, Currency currency) external view returns (uint256) {
         return IProtocolFees(poolManager).protocolFeesAccrued(currency);
