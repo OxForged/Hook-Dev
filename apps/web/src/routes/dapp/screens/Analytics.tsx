@@ -33,19 +33,68 @@ type State =
   | { k: 'error'; message: string }
   | { k: 'ready'; d: AnalyticsData }
 
+/**
+ * How long this screen waits before it stops calling itself "loading".
+ *
+ * Set ABOVE the 25s backstop inside `lib/chain.ts`'s scan helpers on purpose:
+ * when a windowed log scan is the thing that failed, its own message names
+ * which reading is missing ("activity feed (CLPoolManager …)"), and that is far
+ * more useful than this generic one. This only catches the reads that are not
+ * log scans and so carry no deadline of their own — the registry hydration and
+ * the vault balances — so that no failure can leave the panel spinning.
+ */
+const LOAD_DEADLINE_MS = 35_000
+
+/**
+ * The screen's one read.
+ *
+ * A REFUSED READ MUST SETTLE. Every panel here used to sit on "Reading protocol
+ * events…" indefinitely, because a rate-limited endpoint leaves viem retrying
+ * with backoff rather than throwing — the promise never rejected, so the error
+ * branch below was unreachable and the loading copy became permanent. A spinner
+ * that never resolves tells the reader "almost there" when the answer is
+ * "never", which is the same failure as rendering a zero for a figure nobody
+ * could read.
+ *
+ * ONE `loadAnalytics()` CALL, never one per panel. The scans behind it walk the
+ * protocol's whole history against endpoints that meter by request count, and
+ * `lib/chain.ts` coalesces concurrent identical reads precisely so a screen
+ * cannot pay for the same walk twice.
+ */
 function useAnalytics(): State {
   const [state, setState] = useState<State>({ k: 'loading' })
   useEffect(() => {
     let off = false
-    loadAnalytics()
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const bounded = Promise.race([
+      loadAnalytics(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `no answer within ${LOAD_DEADLINE_MS / 1000}s. The chain reads were issued and ` +
+                  'not refused; the endpoint simply has not replied.',
+              ),
+            ),
+          LOAD_DEADLINE_MS,
+        )
+      }),
+    ])
+
+    bounded
       .then((d) => !off && setState({ k: 'ready', d }))
       .catch(
         (e) =>
           !off &&
           setState({ k: 'error', message: e instanceof Error ? e.message : 'chain unreachable' }),
       )
+      .finally(() => clearTimeout(timer))
+
     return () => {
       off = true
+      clearTimeout(timer)
     }
   }, [])
   return state

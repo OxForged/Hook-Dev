@@ -25,7 +25,7 @@
    ============================================================================ */
 
 import { parseAbi, zeroAddress, type Address, type Hex } from 'viem'
-import { client, DEPLOYMENTS, type DeployedChainId } from '../../../lib/chain'
+import { client, DEPLOYMENTS, scanWindowsMulti, type DeployedChainId } from '../../../lib/chain'
 
 /** Deployed identically on Robinhood Chain (4663) and Ethereum Sepolia — see
  *  CLAUDE.md "The governance Safe". On Robinhood it owns every contract in the
@@ -332,54 +332,123 @@ function decodeCall(data: Hex): string | null {
   return selector === ACCEPT_OWNERSHIP_SELECTOR ? 'acceptOwnership()' : selector
 }
 
-export async function readQueuedOperations(
+/** One `CallScheduled` log, before its live status has been read back. */
+interface ScheduledSeed {
+  timelockAddress: Address
+  tier: TimelockTier
+  id: Hex
+  index: bigint
+  target: Address
+  value: bigint
+  data: Hex
+  predecessor: Hex
+  delaySec: bigint
+  scheduledAtBlock: bigint
+  scheduledTxHash: Hex
+}
+
+/**
+ * Queued operations across SEVERAL timelocks, sharing one windowed scan.
+ *
+ * WINDOWED. This used to be one `getLogs` per timelock over
+ * `deployedAtBlock -> 'latest'`, which the Robinhood endpoints refuse
+ * (`block range too large`) — so the Governance screen's operations panel never
+ * left its loading state. Both timelocks now go through `scanWindowsMulti`,
+ * which slices the range AND keeps the two queries inside one concurrency
+ * budget instead of putting six requests in flight against an endpoint sized
+ * for three.
+ *
+ * Exhaustive rather than "latest N": a queued operation this scan misses is one
+ * the screen would not warn about, and an unnoticed `updateDelay(0)` sitting in
+ * the queue is precisely the hazard the panel exists for.
+ */
+async function readQueuedOperationsAcross(
   chainId: DeployedChainId,
-  timelockAddress: Address,
-  tier: TimelockTier,
+  timelocks: readonly { address: Address; tier: TimelockTier }[],
   fromBlock: bigint,
+  toBlock: bigint,
 ): Promise<QueuedOperation[]> {
   const c = client(chainId)
-  const logs = await c.getLogs({
-    address: timelockAddress,
-    event: CALL_SCHEDULED_EVENT[0],
+
+  /* Mapped to `ScheduledSeed` inside each callback, where viem still knows the
+     event's ABI — passing the query out through a widened type is what would
+     make `l.args` untyped and `l.blockNumber` nullable. */
+  const seeds = await scanWindowsMulti<ScheduledSeed>(
     fromBlock,
-    toBlock: 'latest',
-  })
+    toBlock,
+    timelocks.map(
+      ({ address, tier }) =>
+        async (from: bigint, to: bigint) =>
+          (
+            await c.getLogs({
+              address,
+              event: CALL_SCHEDULED_EVENT[0],
+              fromBlock: from,
+              toBlock: to,
+            })
+          ).map(
+            (l): ScheduledSeed => ({
+              timelockAddress: address,
+              tier,
+              id: l.args.id as Hex,
+              index: l.args.index as bigint,
+              target: l.args.target as Address,
+              value: l.args.value as bigint,
+              data: l.args.data as Hex,
+              predecessor: l.args.predecessor as Hex,
+              delaySec: l.args.delay as bigint,
+              scheduledAtBlock: l.blockNumber,
+              scheduledTxHash: l.transactionHash,
+            }),
+          ),
+    ),
+    'queued timelock operations (CallScheduled)',
+  )
 
   const ops = await Promise.all(
-    logs.map(async (l) => {
-      const id = l.args.id as Hex
+    seeds.map(async (s) => {
       const [pending, ready, done, timestamp] = await Promise.all([
-        c.readContract({ address: timelockAddress, abi: TIMELOCK_ABI, functionName: 'isOperationPending', args: [id] }),
-        c.readContract({ address: timelockAddress, abi: TIMELOCK_ABI, functionName: 'isOperationReady', args: [id] }),
-        c.readContract({ address: timelockAddress, abi: TIMELOCK_ABI, functionName: 'isOperationDone', args: [id] }),
-        c.readContract({ address: timelockAddress, abi: TIMELOCK_ABI, functionName: 'getTimestamp', args: [id] }),
+        c.readContract({ address: s.timelockAddress, abi: TIMELOCK_ABI, functionName: 'isOperationPending', args: [s.id] }),
+        c.readContract({ address: s.timelockAddress, abi: TIMELOCK_ABI, functionName: 'isOperationReady', args: [s.id] }),
+        c.readContract({ address: s.timelockAddress, abi: TIMELOCK_ABI, functionName: 'isOperationDone', args: [s.id] }),
+        c.readContract({ address: s.timelockAddress, abi: TIMELOCK_ABI, functionName: 'getTimestamp', args: [s.id] }),
       ])
       const status: OperationStatus = done ? 'done' : ready ? 'ready' : pending ? 'pending' : 'unknown'
-      const data = l.args.data as Hex
 
       const op: QueuedOperation = {
         chainId,
-        timelockAddress,
-        tier,
-        id,
-        index: l.args.index as bigint,
-        target: l.args.target as Address,
-        value: l.args.value as bigint,
-        data,
-        predecessor: l.args.predecessor as Hex,
-        delaySec: l.args.delay as bigint,
-        scheduledAtBlock: l.blockNumber,
-        scheduledTxHash: l.transactionHash,
+        timelockAddress: s.timelockAddress,
+        tier: s.tier,
+        id: s.id,
+        index: s.index,
+        target: s.target,
+        value: s.value,
+        data: s.data,
+        predecessor: s.predecessor,
+        delaySec: s.delaySec,
+        scheduledAtBlock: s.scheduledAtBlock,
+        scheduledTxHash: s.scheduledTxHash,
         readyAtSec: timestamp,
         status,
-        decodedCall: decodeCall(data),
+        decodedCall: decodeCall(s.data),
       }
       return op
     }),
   )
 
   return ops.sort((a, b) => Number(b.scheduledAtBlock - a.scheduledAtBlock))
+}
+
+/** One timelock's queued operations. `toBlock` defaults to the current head. */
+export async function readQueuedOperations(
+  chainId: DeployedChainId,
+  timelockAddress: Address,
+  tier: TimelockTier,
+  fromBlock: bigint,
+  toBlock?: bigint,
+): Promise<QueuedOperation[]> {
+  const head = toBlock ?? (await client(chainId).getBlockNumber())
+  return readQueuedOperationsAcross(chainId, [{ address: timelockAddress, tier }], fromBlock, head)
 }
 
 /* --------------------------------------------------------------------------
@@ -414,14 +483,26 @@ export async function readGovernanceData(chainId: DeployedChainId): Promise<Gove
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
 
-  const [safe, custody, policy, ownership, custodyOps, policyOps, latestBlock] = await Promise.all([
+  /* The head is read FIRST and then handed to the scan, so both timelocks are
+     scanned over exactly the same range and one shared window walk can serve
+     them. Two independent scans would also double the requests in flight
+     against an endpoint that rate-limits by request count. */
+  const latestBlock = await c.getBlockNumber()
+
+  const [safe, custody, policy, ownership, operations] = await Promise.all([
     readSafeStatus(chainId),
     readTimelockStatus(chainId, d.timelockCustody, 'Custody'),
     readTimelockStatus(chainId, d.timelockPolicy, 'Policy'),
     readOwnershipTable(chainId),
-    readQueuedOperations(chainId, d.timelockCustody, 'Custody', d.deployedAtBlock),
-    readQueuedOperations(chainId, d.timelockPolicy, 'Policy', d.deployedAtBlock),
-    c.getBlockNumber(),
+    readQueuedOperationsAcross(
+      chainId,
+      [
+        { address: d.timelockCustody, tier: 'Custody' },
+        { address: d.timelockPolicy, tier: 'Policy' },
+      ],
+      d.deployedAtBlock,
+      latestBlock,
+    ),
   ])
 
   return {
@@ -429,7 +510,7 @@ export async function readGovernanceData(chainId: DeployedChainId): Promise<Gove
     safe,
     timelocks: [custody, policy],
     ownership,
-    operations: [...custodyOps, ...policyOps].sort((a, b) => Number(b.scheduledAtBlock - a.scheduledAtBlock)),
+    operations,
     latestBlock,
   }
 }

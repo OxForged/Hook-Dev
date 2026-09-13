@@ -489,7 +489,11 @@ export function ContractBook() {
   const notDeployed = ROWS.length - DEPLOYED_ROWS.length
 
   return (
-    <section className={cx(page['section'], styles['wrap'])} aria-labelledby={headingId}>
+    <section
+      id="contracts"
+      className={cx(page['section'], styles['wrap'])}
+      aria-labelledby={headingId}
+    >
       <header className={styles['head']}>
         <h2 id={headingId} className={styles['title']}>
           Read them before you route a swap through them

@@ -1,8 +1,18 @@
 /* ============================================================================
    Header — README § Dapp shell.
-   Screen title (Chakra Petch 600 20px) + subtitle (12.5px), a mono block chip
-   carrying the real Sepolia head behind a pulsing green dot,
-   and the primary "Deploy Latch" button with its sheen sweep.
+
+   Screen title + subtitle, a mono block chip carrying the real Sepolia head
+   behind a pulsing green dot, and the primary "Deploy Latch" button with its
+   sheen sweep.
+
+   TYPE IS SET IN dapp.css, NOT HERE, and the values moved on 2026-09-13. This
+   comment used to specify "Chakra Petch 600 20px" for the title — a face this
+   repo has never shipped (tokens.css names Inter, Instrument Serif and
+   JetBrains Mono) at a weight and size that are also no longer right. The
+   title is now Instrument Serif 400 at `clamp(24px, 2.4vw, 30px)`, which is
+   the house heading voice from landing.module.css scaled to fit a bar it
+   shares with five chips and a button. `.dapp-header__title` in dapp.css is
+   the single place that decides it.
 
    Plus two pieces of truth-telling. The sample-data chip: every figure in this
    dapp is a placeholder, so the shell says so where a visitor reading the block
@@ -21,8 +31,15 @@
    The rails are external reference quotes, NOT Latch pool prices, and they say
    so — the pool price is read from `sqrtPriceX96` and lives in PoolPriceCard.
 
-   The whole group is sticky as one unit (`.dapp-headwrap`), so the bar and the
-   rails travel together instead of the prices sliding out from under the bar.
+   The bar and the rails are one group (`.dapp-headwrap`) so they travel
+   together rather than the prices sliding out from under the bar.
+
+   THEY DO NOT TRAVEL, though — this comment claimed the group is sticky and it
+   is not. `.dapp-headwrap` in dapp.css carries no `position: sticky`, and the
+   rule above it explains at length why the header was UNPINNED: it is ~270px of
+   status you read once, and pinning it spent a third of a 1080p viewport on
+   chrome. The claim here was left behind by that change. Corrected rather than
+   acted on: nothing should be made sticky on the strength of a stale comment.
    ============================================================================ */
 
 import { Link } from 'react-router-dom'

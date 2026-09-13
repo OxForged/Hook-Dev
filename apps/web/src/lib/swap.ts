@@ -126,6 +126,7 @@ import {
   ACTIVE_CHAIN_ID,
   DEPLOYMENTS,
   client,
+  scanWindows,
   type DeployedChainId,
 } from './chain'
 import { priceFromSqrtX96 } from './prices'
@@ -391,12 +392,19 @@ function tickSpacingFromParameters(parameters: Hex): number {
 export async function readSwapPools(): Promise<SwapPool[]> {
   const c = client(SWAP_CHAIN_ID)
 
-  const logs = await c.getLogs({
-    address: CL_POOL_MANAGER,
-    event: CL_INITIALIZE_EVENT,
-    fromBlock: D.deployedAtBlock,
-    toBlock: 'latest',
-  })
+  /* WINDOWED. This asked for `deployedAtBlock -> 'latest'` in one call, which
+     the Robinhood endpoints refuse outright (`block range too large`), so the
+     whole swap surface — pool list, quote form, fee readout — never resolved.
+     `scanWindows` slices the same range into spans the endpoint accepts.
+
+     Exhaustive rather than "latest N": this IS the pool list, so a truncated
+     scan would silently hide a pool rather than merely be slow. */
+  const logs = await scanWindows(
+    D.deployedAtBlock,
+    await c.getBlockNumber(),
+    (from, to) => c.getLogs({ address: CL_POOL_MANAGER, event: CL_INITIALIZE_EVENT, fromBlock: from, toBlock: to }),
+    'tradeable pools (CLPoolManager Initialize)',
+  )
 
   return Promise.all(
     logs.map(async (log) => {
@@ -1105,13 +1113,23 @@ export interface PricePoint {
 export async function readPoolPriceSeries(pool: SwapPool): Promise<PricePoint[]> {
   const c = client(SWAP_CHAIN_ID)
 
-  const logs = await c.getLogs({
-    address: CL_POOL_MANAGER,
-    event: CL_SWAP_EVENT,
-    args: { id: pool.poolId },
-    fromBlock: pool.createdAtBlock,
-    toBlock: 'latest',
-  })
+  /* WINDOWED, and from the POOL's own creation block rather than the
+     protocol's. `createdAtBlock` comes off this pool's `Initialize` log, and no
+     swap can precede it, so every block before it is a window spent proving a
+     negative. */
+  const logs = await scanWindows(
+    pool.createdAtBlock,
+    await c.getBlockNumber(),
+    (from, to) =>
+      c.getLogs({
+        address: CL_POOL_MANAGER,
+        event: CL_SWAP_EVENT,
+        args: { id: pool.poolId },
+        fromBlock: from,
+        toBlock: to,
+      }),
+    'pool price history (CLPoolManager Swap)',
+  )
 
   return logs.map((log) => {
     const sqrtPriceX96 = log.args.sqrtPriceX96 as bigint

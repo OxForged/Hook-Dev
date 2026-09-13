@@ -513,17 +513,15 @@
    reproduce the reference measure exactly. README § Spacing: "Page gutters:
    40px ... Max content width: 1280 (landing)". */
 .hero {
-  box-sizing: content-box;
+  /* Centred, per the Option C prototype. Was a two-column grid holding the copy
+     and a node graph; the graph is gone (see Hero.tsx) and a one-column centred
+     hero is the shape the prototype uses. */
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-  gap: var(--s7);
-  align-items: center;
+  box-sizing: content-box;
   max-width: var(--max-landing);
   margin: 0 auto;
-  /* Bottom was --s9 (96px). Sized when nine sections followed; with four it
-     stacked onto StatsStrip's own 32 for a 128px trough. */
-  padding: var(--s8) var(--gutter-landing) var(--s7);
+  padding: var(--s9) var(--gutter-landing) var(--s8);
+  text-align: center;
 }
 
 .heroGlow {
@@ -535,6 +533,8 @@
 
 .heroCopy {
   position: relative;
+  /* Above the glow, which is absolutely positioned behind it. */
+  z-index: 1;
 }
 
 .eyebrowPill {
@@ -562,13 +562,16 @@
    display serif is what synthetic bolding looks like. Size carries the
    hierarchy instead. */
 .h1 {
-  margin: var(--s5) 0 0;
+  /* Prototype: serif 500, clamp(38px, 5.6vw, 62px), lh 1.05, ls -0.024em,
+     max-width 16ch. The measure is what makes it break into the two lines the
+     design is composed around. */
+  max-width: 16ch;
+  margin: var(--s5) auto var(--s5);
   font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: clamp(40px, 6.4vw, 72px);
+  font-weight: 500;
+  font-size: clamp(38px, 5.6vw, 62px);
   line-height: 1.05;
-  letter-spacing: -0.015em;
-  text-wrap: balance;
+  letter-spacing: -0.024em;
 }
 
 /* The emphasised clause: italic, and the deeper blue rather than the action
@@ -589,9 +592,9 @@
 
 .heroActions {
   display: flex;
-  flex-wrap: wrap;
   gap: var(--s3);
-  margin-top: var(--s6);
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 /* hero node graph */
@@ -3144,4 +3147,68 @@ span.chainMark {
 .audCta:hover {
   color: var(--ink-bright);
   border-bottom-color: var(--border-hover);
+}
+
+
+/* ---- hero, Option C ------------------------------------------------------ */
+
+/* The status pill above the headline. Success-tinted rather than brand-blue:
+   it is a state ("this is live"), not an action, and the blue is reserved for
+   things you can click. */
+.heroPill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: 6px 13px;
+  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--good);
+}
+
+.heroPillDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--success);
+  /* Rests fully opaque, so a paused or disabled animation leaves a visible dot
+     rather than an invisible one. */
+  opacity: 1;
+  animation: heroPulse 2.4s ease-out infinite;
+}
+
+@keyframes heroPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.heroLede {
+  max-width: 60ch;
+  margin: 0 auto var(--s6);
+  font-size: 17.5px;
+  line-height: 1.6;
+  color: var(--muted-ink);
+  text-wrap: pretty;
+}
+
+.heroTrust {
+  margin: var(--s6) 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--faint-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroPillDot {
+    animation: none !important;
+    opacity: 1 !important;
+  }
 }

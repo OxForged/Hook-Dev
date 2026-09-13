@@ -37,9 +37,7 @@ import {
   readProtocolStatus,
   type ProtocolStatus,
 } from '../../lib/chain'
-import page from './landing.module.css'
 import styles from './livestrip.module.css'
-import { cx } from './ui'
 
 /** The chain this build serves. Never a spelled-out name: see landing/data.ts. */
 const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
@@ -295,7 +293,9 @@ export function LiveStrip() {
 
   return (
     <section
-      className={cx(page['section'], page['sectionTight'], styles['wrap'])}
+      /* No `.section` box: this is full-bleed chrome above the hero, not a
+         section of content. Its own `.wrap` supplies the inner gutter. */
+      className={styles['wrap']}
       aria-label={`Live protocol status on ${CHAIN.name}`}
     >
       <div className={styles['strip']}>
@@ -308,9 +308,8 @@ export function LiveStrip() {
           address book" are different claims and the reader is entitled to know
           which one each cell is making. */}
       <p className={styles['provenance']}>
-        Block height and protocol fee are read from the deployed contracts on {CHAIN.name}. The
-        chain id and the contract count are counted from the address book this app ships, not from
-        a code sweep.
+        Block height and fee read from the deployed contracts on {CHAIN.name}; chain id and
+        contract count from the address book this app ships, not a code sweep.
       </p>
     </section>
   )

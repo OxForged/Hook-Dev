@@ -29,23 +29,27 @@
   display: flex;
   flex-direction: column;
   gap: var(--s3);
-  /* Never wider than the page gutter allows, and never a source of horizontal
-     scroll: the grid below is built from `minmax(0, 1fr)` tracks for the same
-     reason. */
   width: 100%;
   min-width: 0;
+  /* Full-bleed rail: the cells run edge to edge, and only the provenance line
+     below is inset to the page gutter. */
+  padding: 0 0 var(--s3);
 }
 
 /* The 1px gap over a hairline ground is the divider — one rule instead of
    per-cell borders that double up at the seams and need a :last-child reset. */
 .strip {
+  /* A TICKER RAIL, not a card. The prototype opens the page with a full-bleed
+     row of facts under the header — one hairline top and bottom, no radius, no
+     shadow, cells divided by a rule rather than floating apart. A rounded
+     shadowed card here would read as the first section of content; this has to
+     read as chrome. */
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   background: var(--hairline);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  box-shadow: var(--shadow-1);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
   /* Clips the cell corners to the card radius. Nothing here scrolls or is
      positioned outside the box, so `hidden` costs nothing. */
   overflow: hidden;
@@ -58,7 +62,7 @@
   /* Grid items default to min-content width, which lets one long value push the
      whole strip wider than the viewport. This is the fix, and it must stay. */
   min-width: 0;
-  padding: var(--s4) var(--s4) var(--s3);
+  padding: var(--s3) var(--s4);
   background: var(--panel);
   /* Default tone: a healthy, readable cell. Every state below only reassigns
      this one variable. */
@@ -169,11 +173,17 @@
 /* ---- provenance line ------------------------------------------------------ */
 
 .provenance {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-  max-width: 68ch;
+  /* One quiet line under the rail, aligned to the page gutter — not a centred
+     paragraph. This is chrome: the rule that every figure names its source
+     still applies, but at the weight of a caption rather than of body copy,
+     because three centred lines above the headline push the hero off the fold. */
+  box-sizing: content-box;
+  max-width: var(--max-landing);
+  margin: 0 auto;
+  padding: var(--s2) var(--gutter-landing) 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--faint-ink);
 }
 
 /* ---- responsive -----------------------------------------------------------

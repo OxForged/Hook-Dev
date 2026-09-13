@@ -41,6 +41,7 @@ import {
   ACTIVE_CHAIN_ID,
   client,
   readRegisteredLatches,
+  scanWindows,
   type DeployedChainId,
   type RegisteredLatch,
 } from '../../../lib/chain'
@@ -196,13 +197,23 @@ async function readOwnedTokenIds(
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
 
-  const logs = await c.getLogs({
-    address: d.clPositionManager,
-    event: POSITION_MANAGER[2],
-    args: { to: owner },
-    fromBlock: d.deployedAtBlock,
-    toBlock: 'latest',
-  })
+  /* WINDOWED. One `deployedAtBlock -> 'latest'` call is refused outright by the
+     Robinhood endpoints, and the Portfolio screen sat on its loading state
+     because of it. Exhaustive rather than backward-limited: a position this
+     scan misses is a position the screen tells the holder they do not have. */
+  const logs = await scanWindows(
+    d.deployedAtBlock,
+    await c.getBlockNumber(),
+    (from, to) =>
+      c.getLogs({
+        address: d.clPositionManager,
+        event: POSITION_MANAGER[2],
+        args: { to: owner },
+        fromBlock: from,
+        toBlock: to,
+      }),
+    'your LP positions (CLPositionManager Transfer)',
+  )
 
   const candidates = [...new Set(logs.map((l) => l.args.id as bigint))]
 

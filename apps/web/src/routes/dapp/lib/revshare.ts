@@ -60,6 +60,9 @@ import {
   ACTIVE_CHAIN_ID,
   client,
   formatUnits,
+  scanWindows,
+  scanWindowsBackward,
+  scanWindowsMulti,
   type DeployedChainId,
 } from '../../../lib/chain'
 import {
@@ -276,13 +279,30 @@ export async function resolvePoolKey(
   }
 
   const fromBlock = DEPLOYMENTS[REVSHARE_CHAIN_ID].deployedAtBlock
-  const logs = await c.getLogs({
-    address: poolManager,
-    event: CL_INITIALIZE_EVENT,
-    args: { id: poolId },
+
+  /* WINDOWED, AND BACKWARD WITH limit 1. This was a single
+     `deployedAtBlock -> 'latest'` call that the Robinhood endpoints refuse, so
+     the pool screen could never resolve a key and every owner action stayed
+     disabled with the wrong reason printed beside it.
+
+     Backward is safe here and much cheaper than an exhaustive sweep: a pool id
+     is `keccak(abi.encode(key))`, and `Initialize` can fire at most once for
+     one id, so the newest match IS the only match. A forward scan would have to
+     walk the protocol's whole history to prove the same thing. */
+  const logs = await scanWindowsBackward(
     fromBlock,
-    toBlock: 'latest',
-  })
+    await c.getBlockNumber(),
+    1,
+    (from, to) =>
+      c.getLogs({
+        address: poolManager,
+        event: CL_INITIALIZE_EVENT,
+        args: { id: poolId },
+        fromBlock: from,
+        toBlock: to,
+      }),
+    'pool key (CLPoolManager Initialize)',
+  )
 
   const log = logs[0]
   if (!log?.args) return null
@@ -383,16 +403,29 @@ export async function readLifetime(hook: Address, poolId: Hex): Promise<Lifetime
   const c = client(REVSHARE_CHAIN_ID)
   const fromBlock = DEPLOYMENTS[REVSHARE_CHAIN_ID].deployedAtBlock
 
-  const [logs, toBlock] = await Promise.all([
-    c.getLogs({
-      address: hook,
-      event: REV_SHARE_TAKEN_EVENT,
-      args: { poolId },
-      fromBlock,
-      toBlock: 'latest',
-    }),
-    c.getBlockNumber(),
-  ])
+  /* WINDOWED, and the head is read FIRST so the range the scan covers is
+     exactly the range reported back as `toBlock`. Asking for `'latest'` while
+     separately reading the head lets the two disagree by however long the scan
+     takes, and this figure is printed as provenance — "summed from logs since
+     block N (head M)" has to be true of the sum it labels.
+
+     Exhaustive: this is a total. A window dropped from a sum is a wrong number,
+     not a slow one, and the hook keeps no cumulative counter to check it
+     against. */
+  const toBlock = await c.getBlockNumber()
+  const logs = await scanWindows(
+    fromBlock,
+    toBlock,
+    (from, to) =>
+      c.getLogs({
+        address: hook,
+        event: REV_SHARE_TAKEN_EVENT,
+        args: { poolId },
+        fromBlock: from,
+        toBlock: to,
+      }),
+    'pool lifetime totals (RevShareTaken)',
+  )
 
   const acc = new Map<string, { address: Address; lp: bigint; ben: bigint; dist: bigint }>()
   for (const log of logs) {
@@ -621,18 +654,37 @@ export async function readOwnedPools(hook: Address, owner: Address): Promise<Own
   const c = client(REVSHARE_CHAIN_ID)
   const fromBlock = DEPLOYMENTS[REVSHARE_CHAIN_ID].deployedAtBlock
 
-  const [claimed, gained, lost, toBlock] = await Promise.all([
-    c.getLogs({ address: hook, event: POOL_CLAIMED_EVENT, args: { owner }, fromBlock, toBlock: 'latest' }),
-    c.getLogs({ address: hook, event: POOL_OWNER_CHANGED_EVENT, args: { to: owner }, fromBlock, toBlock: 'latest' }),
-    c.getLogs({ address: hook, event: POOL_OWNER_CHANGED_EVENT, args: { from: owner }, fromBlock, toBlock: 'latest' }),
-    c.getBlockNumber(),
-  ])
+  /* WINDOWED, AND ALL THREE QUERIES SHARE ONE WALK. These were three
+     `deployedAtBlock -> 'latest'` calls the endpoint refuses, which is why this
+     screen never left "Reading contract logs…". Run through three separate
+     `scanWindows` calls they would also put nine requests in flight against an
+     endpoint sized for three; `scanWindowsMulti` keeps the budget the budget.
 
-  const candidates = new Set<Hex>()
-  for (const l of [...claimed, ...gained, ...lost]) {
-    const id = l.args.poolId
-    if (id) candidates.add(id)
-  }
+     Each callback reduces to the poolId inside the callback — the only field
+     any of the three contributes — so viem's per-event inference survives and
+     the three differently-shaped logs come back as one list of ids. */
+  const toBlock = await c.getBlockNumber()
+  const candidateIds = await scanWindowsMulti<Hex>(
+    fromBlock,
+    toBlock,
+    [
+      async (f, t) =>
+        (await c.getLogs({ address: hook, event: POOL_CLAIMED_EVENT, args: { owner }, fromBlock: f, toBlock: t }))
+          .map((l) => l.args.poolId)
+          .filter((id): id is Hex => id !== undefined),
+      async (f, t) =>
+        (await c.getLogs({ address: hook, event: POOL_OWNER_CHANGED_EVENT, args: { to: owner }, fromBlock: f, toBlock: t }))
+          .map((l) => l.args.poolId)
+          .filter((id): id is Hex => id !== undefined),
+      async (f, t) =>
+        (await c.getLogs({ address: hook, event: POOL_OWNER_CHANGED_EVENT, args: { from: owner }, fromBlock: f, toBlock: t }))
+          .map((l) => l.args.poolId)
+          .filter((id): id is Hex => id !== undefined),
+    ],
+    'pools you own (PoolClaimed + PoolOwnerChanged)',
+  )
+
+  const candidates = new Set<Hex>(candidateIds)
 
   const read = <T,>(functionName: string, args: readonly unknown[]) =>
     c.readContract({
@@ -950,10 +1002,28 @@ export interface ClaimableRow {
  * the scanned window. It exists so the claim screen has somewhere to start;
  * a currency it misses can still be checked by pasting its address.
  */
-export async function readCurrenciesSeen(hook: Address): Promise<{ tokens: TokenMeta[]; fromBlock: bigint }> {
+export async function readCurrenciesSeen(
+  hook: Address,
+): Promise<{ tokens: TokenMeta[]; fromBlock: bigint; toBlock: bigint }> {
   const c = client(REVSHARE_CHAIN_ID)
   const fromBlock = DEPLOYMENTS[REVSHARE_CHAIN_ID].deployedAtBlock
-  const logs = await c.getLogs({ address: hook, event: REV_SHARE_TAKEN_EVENT, fromBlock, toBlock: 'latest' })
+
+  /* WINDOWED. The unwindowed version was refused, and the claim screen has no
+     other way to discover which currencies a hook has ever paid in, so it never
+     rendered a balance at all.
+
+     Exhaustive rather than backward-limited: a currency that accrued once, long
+     ago, and never again is exactly the balance a holder would otherwise never
+     be shown. If the scan cannot complete this THROWS — an empty token list
+     would read as "you are owed nothing", which is a claim about the holder's
+     money that nobody made. */
+  const toBlock = await c.getBlockNumber()
+  const logs = await scanWindows(
+    fromBlock,
+    toBlock,
+    (from, to) => c.getLogs({ address: hook, event: REV_SHARE_TAKEN_EVENT, fromBlock: from, toBlock: to }),
+    'currencies this hook has paid in (RevShareTaken)',
+  )
 
   const seen = new Map<string, Address>()
   for (const l of logs) {
@@ -961,7 +1031,7 @@ export async function readCurrenciesSeen(hook: Address): Promise<{ tokens: Token
     if (currency) seen.set(currency.toLowerCase(), currency)
   }
   const tokens = await Promise.all([...seen.values()].map(readToken))
-  return { tokens, fromBlock }
+  return { tokens, fromBlock, toBlock }
 }
 
 /**

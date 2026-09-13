@@ -3,6 +3,7 @@ import { Audiences } from './Audiences'
 import { ContractBook } from './ContractBook'
 import { Ecosystem } from './Ecosystem'
 import { FeeChart } from './FeeChart'
+import { FourThings } from './FourThings'
 import { Hero } from './Hero'
 import { LiveStrip } from './LiveStrip'
 import { PresetCurve } from './PresetCurve'
@@ -72,15 +73,18 @@ export default function LandingPage() {
           particular carries real deployment facts; if the page needs them
           again, that is where they are. */}
       <main>
-        <Hero />
-        {/* Four O(1) reads that always answer, immediately under the hero: the
-            chain, the head, the fee and the contract count. It sits ABOVE
-            StatsStrip because StatsStrip's two headline counters need a
-            full-history eth_getLogs that the public endpoints refuse, so they
-            render em dashes — and a page whose first figures are dashes reads
-            as broken rather than as honest. This strip answers first. */}
+        {/* ABOVE the hero, per the Option C prototype, which opens with a
+            full-bleed ticker rail rather than a headline. It is the first thing
+            on the page for a reason: four O(1) reads that always answer, so the
+            page's opening claim is a live number rather than a sentence. */}
         <LiveStrip />
+        <Hero />
         <StatsStrip />
+        {/* Straight after the counters, per the prototype: a reader who has
+            just seen what is live is asking what it consists of. It answers
+            with the four contracts they do NOT have to build, each linking to
+            the deployment so the claim is one click from checkable. */}
+        <FourThings />
         {/* Directly under the stats: a reader who has just seen "what is live"
             is exactly the one asking "what does it cost". Before the mechanics
             in LiquidityFlow, because price is the question that decides whether

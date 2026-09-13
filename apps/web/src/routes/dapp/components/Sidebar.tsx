@@ -6,6 +6,14 @@
    pinned to its left edge, not a gradient: a gradient built to fade into a dark
    ground reads as a faint smudge on white. 0.22s transitions.
 
+   LOCKUP RESIZED TO MATCH THE LANDING RAIL, 2026-09-13. The mark, the wordmark
+   and the tag were 26 / 16 / 8px against the landing header's 30 / 19 / 9.5,
+   so the one element that appears on both surfaces changed size the moment a
+   visitor clicked through from the marketing site into the app. They are the
+   same object now; see the note on `.dapp-lockup` in dapp.css. Nothing in this
+   file sets a size — the rail's whole visual contract lives in that stylesheet,
+   which is why the restyle did not have to touch this component's markup.
+
    GROUPED, 2026-09-12. Twelve flat rows plus a collapsed "More" disclosure
    became five labelled blocks and a sixth for the exits. Where the groups come
    from and why each row sits where it does is written down in data/shell.ts,

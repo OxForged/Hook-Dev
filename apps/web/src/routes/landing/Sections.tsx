@@ -298,17 +298,23 @@ export function CtaPanel() {
     <section id="launch" className={cx(styles['ctaSection'], styles['reveal'])}>
       <div className={styles['ctaPanel']}>
         <div className={styles['ctaGlow']} aria-hidden="true" />
-        <h2 className={styles['ctaTitle']}>Ship your first Latch this week.</h2>
+        {/* Copy from the approved Option C prototype. "Ship your first Latch
+            this week" asked for a week and named a thing the reader has not
+            heard of yet; this names the actual first action and the actual
+            cost. The second button points at the contract book on this page
+            rather than at GitHub — the reader's next question is "what am I
+            pointing at", and the answer is a section away, not a repo away. */}
+        <h2 className={styles['ctaTitle']}>Integrate in an afternoon.</h2>
         <p className={styles['ctaBody']}>
-          Read the integration guide, clone the starter latch, and deploy to testnet in a single
-          afternoon.
+          Install the SDK, paste the integration prompt into your coding agent, and point it at the
+          addresses that are already live.
         </p>
         <div className={styles['ctaActions']}>
           <Link to={LINKS.docs} className={cx(styles['btnPrimary'], styles['btnWide'])}>
-            Read the Docs
+            Start integrating
           </Link>
-          <a href={LINKS.github} className={cx(styles['btnSecondary'], styles['btnWide'])}>
-            View on GitHub
+          <a href="#contracts" className={cx(styles['btnSecondary'], styles['btnWide'])}>
+            View the contracts
           </a>
         </div>
       </div>

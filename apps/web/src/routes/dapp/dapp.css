@@ -6,17 +6,54 @@
    "latch design/README.md" § 3. Dapp / § Interactions and from
    design-references/Latch Dapp.dc.html. The README wins on conflicts.
 
-   Dapp specifics (README § Spacing): 26px content gutter, full width,
-   14px rhythm between cards, 16px card radius.
+   Dapp specifics (README § Spacing): var(--gutter-dapp) content gutter, full
+   width, 14px rhythm between cards.
+
+   RESTYLED TO THE HOUSE, 2026-09-13. The dapp had drifted from the "Option C"
+   language the landing page was rebuilt in, and the drift was entirely in the
+   shared primitives — so it is closed here rather than screen by screen. What
+   moved, and the landing rule each value now matches:
+
+     card       --r-card (16) -> --r-card-lg (24), flat --panel -> --grad-card,
+                no shadow -> --shadow-1, 22px -> var(--s5)
+     headings   the two PAGE-level titles are Instrument Serif 400 / 1.15 /
+                -0.015em, as `.h1` and `.h2` are; card titles stay Inter 600,
+                as `.useCaseName` and `.stepName` are
+     labels     mono 10.5px / 0.16em / UPPERCASE everywhere (was 9.5-10px at
+                0.1-0.14em, and not uppercased, which tokens.css requires at
+                --label-ink)
+     body       13.5/1.6 small, 12/1.6 footnote; the 13px and 1.55 near misses
+                are gone
+     motion     --dapp-ease is now var(--ease) rather than a curve one digit
+                away from it, and durations sit on the house ladder:
+                0.15s icons, 0.2-0.22s controls, 0.25s buttons, 0.3s cards
+     colour     zero raw hex/rgb/hsl; the two that existed are noted at their
+                old sites
+
+   NO CLASS WAS RENAMED OR REMOVED. Fifteen screens and thirteen components
+   read these names and most were not open while this was written.
    ============================================================================ */
 
 .dapp {
   /* Local compounds the README describes but its token table does not name.
-     Kept scoped to this surface rather than global. */
-  --dapp-sheen: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+     Kept scoped to this surface rather than global.
+
+     `--dapp-sheen` WAS a hand-rolled `rgba(255,255,255,0.3)` gradient — the only
+     raw colour in this file apart from the split-bar divider below. tokens.css
+     already ships the landing page's sweep as `--grad-sheen`, and the two were
+     drifting by 0.2 of alpha for no reason anyone recorded. One sheen. */
+  --dapp-sheen: var(--grad-sheen);
   --dapp-grad-toggle: var(--grad-primary);
   --dapp-scrim: var(--docs-scrim);
-  --dapp-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* THE HOUSE CURVE, not a near miss. This was
+     `cubic-bezier(0.22, 0.61, 0.36, 1)` — one digit away from tokens.css's
+     `--ease` (`0.22, 1, 0.36, 1`) and a visibly different motion: y1 = 0.61
+     eases out gently, y1 = 1 leaves hard and settles. Every card lift, bar
+     fill and drawer slide in the dapp moved on a curve the landing page does
+     not use. landing.module.css already assigns `--dapp-ease: var(--ease)`
+     wherever it hosts one of these primitives, which is the same statement
+     from the other side. */
+  --dapp-ease: var(--ease);
 
   display: grid;
   grid-template-columns: 238px minmax(0, 1fr);
@@ -75,7 +112,8 @@
   background: var(--panel-alt);
   border: 1px solid var(--border-hover);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 1.6;
   text-decoration: none;
   transition: top 0.2s;
 }
@@ -96,15 +134,22 @@
    underlined wordmark reads as broken — but it does need to look interactive,
    so the mark and type lift together on hover and it keeps a visible focus
    ring for keyboard users. */
+/* SIZED TO THE LANDING LOCKUP, deliberately. `.lockup*` in
+   landing.module.css is 30px mark / 19px name / 9.5px sub with an 11px gap and
+   2px between the two words; this was 26 / 16 / 8 with a 12px and 4px gap. The
+   dapp rail and the landing rail are the same 238px column and a visitor
+   clicking "Launch App" sees one replace the other — a wordmark that changes
+   size at the seam is the single most legible way to say "different product".
+   If one of the two moves, move the other. */
 .dapp-lockup {
   display: flex;
   align-items: center;
-  gap: var(--s3);
+  gap: 11px;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-sm);
   text-decoration: none;
   color: inherit;
-  transition: background 0.22s ease, opacity 0.22s ease;
+  transition: background 0.2s, opacity 0.2s;
 }
 .dapp-lockup:hover { background: var(--panel-alt); }
 .dapp-lockup:active { opacity: 0.75; }
@@ -112,19 +157,19 @@
   outline: 2px solid var(--latch-blue);
   outline-offset: 2px;
 }
-.dapp-lockup__mark { height: 26px; width: auto; }
-.dapp-lockup__type { display: flex; flex-direction: column; gap: var(--s1); line-height: 1; }
+.dapp-lockup__mark { height: 30px; width: auto; }
+.dapp-lockup__type { display: flex; flex-direction: column; gap: 2px; line-height: 1; }
 .dapp-lockup__name {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 16px;
+  font-size: 19px;
   letter-spacing: 0.14em;
   color: var(--ink-bright);
 }
 .dapp-lockup__tag {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 8px;
+  font-size: 9.5px;
   letter-spacing: 0.3em;
   color: var(--latch-blue);
 }
@@ -212,11 +257,16 @@
   gap: 6px;
   min-width: 0;
 }
+/* --muted-ink, NOT --faint-ink. This line is the destination domain and it is
+   the sole carrier of that fact — "Terminal" does not tell you it goes to
+   peddlex.xyz. tokens.css allows --faint-ink only where the letterforms are
+   doing the separating (uppercase, tracked) or where the value is repeated at
+   body contrast elsewhere; a lowercase hostname at 3.2:1 is neither. */
 .dapp-nav__note {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   letter-spacing: 0.02em;
-  color: var(--faint-ink);
+  color: var(--muted-ink);
 }
 /* The ↗ is a hint, not a second icon: quieter than the row's own glyph at rest
    and only reaching full strength when the row does. */
@@ -231,8 +281,8 @@
   margin: 0;
   font-family: var(--font-mono);
   font-size: 9.5px;
-  line-height: 1.55;
-  letter-spacing: 0.1em;
+  line-height: 1.6;
+  letter-spacing: 0.14em;
   color: var(--faint-ink);
 }
 
@@ -278,10 +328,28 @@
    from 76px to 119px. Below the breakpoint further down, the group drops to its
    own row instead - wrapping once, deliberately, beats crushing everything. */
 .dapp-header__meta { min-width: 0; flex: 1 1 auto; }
+/* THE HOUSE HEADLINE VOICE, which this bar did not have.
+   It was Inter 600 at 20px — a bold sans heading on a site whose every other
+   heading is Instrument Serif at weight 400 (landing.module.css `.h1`, `.h2`,
+   `.audTitle`). That single declaration is most of why the dapp read as a
+   different product: the screen title is the first and largest word on every
+   one of the fifteen screens.
+
+   THE SIZE IS NOT THE HOUSE CLAMP, and the departure is deliberate. The house
+   section heading is `clamp(28px, 3.2vw, 42px)`, sized for a heading that owns
+   its own line. This one shares a flex row with five chips and a button, and a
+   42px line box would push the bar past 110px tall. `clamp(24px, 2.4vw, 30px)`
+   is the same voice at bar scale — and because Instrument Serif at 400 sets
+   optically larger than Inter at 600, 24-30px reads as more emphasis than the
+   20px it replaces, not less. Weight, line-height and tracking are the house
+   values verbatim; only the clamp is scaled. */
 .dapp-header__title {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 20px;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(24px, 2.4vw, 30px);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--ink-bright);
   margin: 0;
   /* One line, clipped with an ellipsis if a screen name is ever long enough.
      A wrapped h1 pushes every control in the bar down with it. */
@@ -292,7 +360,8 @@
 .dapp-header__subtitle {
   margin: var(--s1) 0 0;
   font-size: 12.5px;
-  color: var(--dapp-ink-sub);
+  line-height: 1.6;
+  color: var(--muted-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -326,13 +395,17 @@
   width: 40px;
   height: 40px;
   flex: 0 0 auto;
-  border: 1px solid var(--hairline);
+  /* Same control as `.menuBtn` on the landing header: same 40px box, same
+     pill, same border token, same hover pair (rim to --border-hover, glyph to
+     --sky-ink) over the same 0.2s. It was --hairline with no colour shift. */
+  border: 1px solid var(--hairline-blue);
   border-radius: var(--r-chip);
   background: var(--panel-alt);
+  color: var(--ink);
   cursor: pointer;
-  transition: border-color 0.22s;
+  transition: border-color 0.2s, color 0.2s;
 }
-.dapp-burger:hover { border-color: var(--border-hover); }
+.dapp-burger:hover { border-color: var(--border-hover); color: var(--sky-ink); }
 .dapp-burger__bars,
 .dapp-burger__bars::before,
 .dapp-burger__bars::after {
@@ -340,7 +413,9 @@
   width: 16px;
   height: 1.5px;
   border-radius: var(--r-pill);
-  background: var(--ink);
+  /* currentColor, so the hover above recolours the glyph rather than only the
+     rim — the landing burger recolours both and this one recoloured neither. */
+  background: currentColor;
   content: '';
 }
 .dapp-burger__bars { position: relative; }
@@ -354,8 +429,10 @@
   border-radius: var(--r-chip);
   background: var(--dapp-badge-warn-bg);
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  /* House micro-label: 10.5px / 0.16em, uppercase. Was 10px / 0.14em. */
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--warning);
   white-space: nowrap;
   cursor: help;
@@ -377,8 +454,14 @@
 }
 .dapp-block .dapp-dot--pulse { animation-duration: 2s; }
 
+/* 24 / 24 / 48, all on the 4px scale. Was 22 / 24 / 40 — two of the three off
+   it, which tokens.css names as the failure mode that is invisible in a
+   screenshot and compounds. `min-width: 0` because this is the flex child that
+   holds every screen, and without it one unbreakable string (an address, a
+   calldata blob) widens the whole column instead of wrapping inside it. */
 .dapp-content {
-  padding: 22px var(--gutter-dapp) 40px;
+  min-width: 0;
+  padding: var(--s5) var(--gutter-dapp) var(--s7);
   animation: dapp-fade 0.45s var(--dapp-ease) both;
 }
 
@@ -450,35 +533,71 @@
     max-width: 86vw;
     overflow-y: auto;
     transform: translateX(-100%);
-    transition: transform 0.28s var(--dapp-ease);
+    /* 0.3s: the house duration for a panel-sized move (cards are 0.3s; only
+       small controls are 0.2-0.22s). Was 0.28s, off the ladder by 20ms. */
+    transition: transform 0.3s var(--dapp-ease);
   }
   .dapp-sidebar.is-open { transform: none; }
 }
 
 /* ---- shared primitives --------------------------------------------------- */
 
+/* THE HOUSE CARD. Four values changed and every card in the dapp changed with
+   them, which is the whole reason this pass touches the shared stylesheet
+   rather than fifteen screens:
+
+     radius   --r-card (16px) -> --r-card-lg (24px)
+     ground   flat --panel    -> --grad-card
+     padding  22px            -> var(--s5) (24px, on the 4px scale)
+     shadow   none            -> --shadow-1
+
+   The elevation is the part that carries the most. On paper the house builds
+   depth from a shadow rather than a lighter surface (tokens.css, "ELEVATION
+   INVERTS"), so a flat bordered rectangle on the warm ground read as a wire-
+   frame of a card next to the landing page's actual one. --shadow-1 inverts
+   itself in the dark theme via the override block, so this costs nothing
+   there. */
 .dapp-card {
-  padding: 22px;
+  padding: var(--s5);
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card);
-  background: var(--panel);
+  border-radius: var(--r-card-lg);
+  background: var(--grad-card);
+  box-shadow: var(--shadow-1);
   animation: dapp-fade 0.6s var(--dapp-ease) both;
 }
-.dapp-card--kpi { padding: 20px; animation-duration: 0.55s; }
+.dapp-card--kpi { padding: var(--s5); animation-duration: 0.55s; }
 .dapp-card--chart { background: var(--dapp-grad-panel); }
-.dapp-card--config { padding: 24px; animation-duration: 0.5s; }
+.dapp-card--config { padding: var(--s5); animation-duration: 0.5s; }
 
 .dapp-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .dapp-card__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.dapp-card__title { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin: 0; }
+/* Display 600 stays. The house sets card titles in the sans at 600 and reserves
+   the serif for page-level headings (landing `.useCaseName`, `.stepName`,
+   `.featureName` are all display/600/16-20px); a serif on every card title
+   would flatten the one distinction the serif exists to make. --ink-bright is
+   added because this class lands on <p> as well as on headings. */
+.dapp-card__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--ink-bright);
+  margin: 0;
+}
 .dapp-card__title--lg { font-size: 17px; }
 
+/* House micro-label, verbatim: mono 10.5px / 0.16em / --label-ink / UPPERCASE.
+   Was 10px and not uppercased. The case is not decoration — tokens.css makes it
+   the CONDITION for using --label-ink at this size, because the grey clears 3:1
+   and not 4.5:1 and the letterforms are what carry the separation instead. */
 .dapp-microlabel {
   margin: 0;
   font-family: var(--font-mono);
   font-weight: 400;
-  font-size: 10px;
+  font-size: 10.5px;
   letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--label-ink);
 }
 .dapp-microlabel--tight { letter-spacing: 0.14em; }
@@ -511,6 +630,17 @@
 
 .dapp-grid { display: grid; gap: 14px; }
 
+/* Grid and flex children default to `min-width: auto`, which is min-content,
+   not zero — so one 42-character address or one long token symbol widens its
+   track past its share and puts a horizontal scrollbar on the whole page. Every
+   `--*` row above already uses `minmax(0, …)` tracks; these are the containers
+   whose tracks are `auto-fit`/`1fr` and therefore have no such floor. Stated
+   once here rather than per component, and required at 400px. */
+.dapp-row > *,
+.dapp-grid > *,
+.dapp-stack > *,
+.dapp-kpis > * { min-width: 0; }
+
 /* Stretch stays here on purpose. `--latches` is a wall of one repeated card,
    all carrying the same fields off the same registry read, so equal heights
    are what makes it read as a wall rather than a ragged pile. */
@@ -542,13 +672,17 @@
 .dapp-dot--pulse { animation: dapp-blip 2s ease-in-out infinite; }
 .dapp-card__bar .dapp-dot--pulse { animation-duration: 1.6s; }
 
+/* The house badge is `.chainBadge` / `.chainBadgeLive` in landing.module.css:
+   `var(--s1) var(--s2)` of padding, `--r-badge`, mono 9.5px, 0.14em. This was
+   5/9px, `--r-micro` and 0.1em — three near misses that made a dapp badge and
+   a landing badge visibly different objects. */
 .dapp-badge {
-  padding: 5px 9px;
-  border-radius: var(--r-micro);
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-badge);
   border: 1px solid transparent;
   font-family: var(--font-mono);
   font-size: 9.5px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
   flex: 0 0 auto;
   white-space: nowrap;
 }
@@ -579,26 +713,31 @@
   color: var(--sky-ink);
 }
 
+/* The segmented control, matched to landing.module.css's `.rangeSwitcher` /
+   `.rangeBtn`: a PILL track holding `--r-micro` buttons, `var(--s1)` of inset,
+   `var(--s2)` between. It was a 9px rounded rectangle holding 8px buttons with
+   3px/5px spacing — the one control that appears on both surfaces, drawn two
+   different ways. */
 .dapp-switcher {
   display: flex;
-  gap: 5px;
+  gap: var(--s2);
   margin-left: auto;
-  padding: 3px;
+  padding: var(--s1);
   border: 1px solid var(--dapp-switcher-border);
-  border-radius: 9px;
+  border-radius: var(--r-chip);
   background: var(--dapp-switcher-bg);
 }
 .dapp-pill {
-  padding: 7px 13px;
+  padding: var(--s2) var(--s4);
   border: none;
-  border-radius: var(--r-badge);
+  border-radius: var(--r-micro);
   background: transparent;
   color: var(--dapp-ink-sub);
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  transition: background 0.22s, color 0.22s;
 }
 .dapp-pill:hover { color: var(--sky-ink); }
 .dapp-pill.is-active { background: var(--active-nav); color: var(--sky-ink); }
@@ -616,17 +755,31 @@
   font-weight: 600;
   color: var(--ink-bright);
   text-decoration: none;
-  transition: transform 0.22s, box-shadow 0.22s, background 0.35s, opacity 0.2s;
+  /* 0.25s: the house duration for a button (0.2-0.22s is for chips and small
+     controls, 0.3s for cards). The 0.35s background was slower than either. */
+  transition: transform 0.25s var(--ease), box-shadow 0.25s, background 0.25s, opacity 0.2s;
 }
-.dapp-btn--primary { background: var(--grad-primary); box-shadow: var(--dapp-sh-deploy); }
-.dapp-btn--success { background: var(--grad-success); box-shadow: var(--dapp-sh-deploy); }
+/* --on-accent, and this is the exact failure tokens.css documents at length.
+   `.dapp-btn` painted its label `--ink-bright`, which on the default paper
+   theme resolves to #12151a — measured at 3.53:1 against the top of
+   `--grad-primary` and 2.46:1 against the bottom, under the 4.5:1 this size
+   needs. That is every "Deploy Latch" in the shell and every primary action on
+   every screen. The gradient underneath is the SAME colour in both themes, so
+   the ink on it must not be theme-switched: --on-accent is a fixed white for
+   that reason. `.dapp-btn--ghost` and `.po-btn--danger` set their own ink and
+   are unaffected. */
+.dapp-btn--primary { background: var(--grad-primary); color: var(--on-accent); box-shadow: var(--dapp-sh-deploy); }
+.dapp-btn--success { background: var(--grad-success); color: var(--on-accent); box-shadow: var(--dapp-sh-deploy); }
+/* Sized to `.launchPill` on the landing header — the same 9/20 pill, the same
+   13px, the same nav-pill shadow. It is literally the adjacent control once a
+   visitor crosses from the site into the app. */
 .dapp-btn--sm {
-  padding: 10px 18px;
-  border-radius: var(--r-chip);
+  padding: 9px 20px;
+  border-radius: var(--r-pill);
   font-size: 13px;
-  box-shadow: var(--dapp-sh-btn);
+  box-shadow: var(--sh-nav-pill);
 }
-.dapp-btn--block { width: 100%; margin-top: 24px; padding: 14px 20px; font-size: 14.5px; }
+.dapp-btn--block { width: 100%; margin-top: var(--s5); padding: var(--s4) var(--s5); font-size: 14.5px; }
 .dapp-btn--primary:hover,
 .dapp-btn--success:hover { transform: translateY(-2px); box-shadow: var(--dapp-sh-btn-hover); }
 .dapp-btn[data-busy='true'] { opacity: 0.75; }
@@ -663,9 +816,16 @@
   font-size: 10.5px;
   color: var(--faint-ink);
 }
-.dapp-axis--tight { margin-top: 8px; font-size: 10px; }
+.dapp-axis--tight { margin-top: 8px; font-size: 10.5px; }
 
 /* ---- charts -------------------------------------------------------------- */
+
+/* CHART MARKS KEEP THEIR LITERALS. The 2px and 3px radii on bars, swatches,
+   bit cells and column tops below are not off-scale mistakes: the radii scale
+   starts at `--r-micro` (4px), which on a 5px-tall bar or a 9px swatch is a
+   circle. landing.module.css does the same thing for the same reason
+   (`.swatch` 3px, `.gasColumn` `3px 3px 1px 1px`, `.deployColumn`
+   `2px 2px 0 0`). Anything a finger can hit uses a token. */
 
 .dapp-spark { display: flex; align-items: flex-end; gap: 3px; height: 32px; margin-top: 14px; }
 .dapp-spark__bar {
@@ -716,16 +876,16 @@
   border: 0;
   background: none;
   cursor: pointer;
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--r-micro) var(--r-micro) 0 0;
 }
 .dapp-cols__bar {
   display: block;
   width: 100%;
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--r-micro) var(--r-micro) 0 0;
   background: var(--grad-bar);
   transform-origin: bottom;
   animation: dapp-rise 0.75s var(--dapp-ease) both;
-  transition: opacity 0.18s var(--dapp-ease), filter 0.18s var(--dapp-ease);
+  transition: opacity 0.2s var(--dapp-ease), filter 0.2s var(--dapp-ease);
 }
 .dapp-cols__bar.is-last { background: var(--dapp-grad-bar-green); }
 /* Reading one column means the rest step back, not disappear. */
@@ -763,8 +923,8 @@
   font-size: 12px;
   color: var(--dapp-ink-sub);
   cursor: pointer;
-  transition: color 0.18s var(--dapp-ease), border-color 0.18s var(--dapp-ease),
-    background-color 0.18s var(--dapp-ease);
+  transition: color 0.2s var(--dapp-ease), border-color 0.2s var(--dapp-ease),
+    background-color 0.2s var(--dapp-ease);
 }
 .dapp-serieskey__btn:hover { color: var(--dapp-ink-data); }
 .dapp-serieskey__btn[aria-pressed='true'] {
@@ -786,7 +946,7 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.18s var(--dapp-ease), opacity 0.18s var(--dapp-ease);
+  transition: background-color 0.2s var(--dapp-ease), opacity 0.2s var(--dapp-ease);
 }
 .dapp-bars__row:hover,
 .dapp-bars__row[data-on='true'] { background: color-mix(in srgb, var(--latch-blue) 9%, transparent); }
@@ -817,7 +977,7 @@
    and can only say that focus is somewhere in the donut. */
 .dapp-donut__arc {
   cursor: pointer;
-  transition: opacity 0.18s var(--dapp-ease), stroke-width 0.18s var(--dapp-ease);
+  transition: opacity 0.2s var(--dapp-ease), stroke-width 0.2s var(--dapp-ease);
 }
 .dapp-donut__arc[data-on='true'] { stroke-width: 17; }
 .dapp-donut__arc[data-dim='true'] { opacity: 0.3; }
@@ -836,8 +996,8 @@
   color: var(--dapp-ink-data);
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.18s var(--dapp-ease), border-color 0.18s var(--dapp-ease),
-    opacity 0.18s var(--dapp-ease);
+  transition: background-color 0.2s var(--dapp-ease), border-color 0.2s var(--dapp-ease),
+    opacity 0.2s var(--dapp-ease);
 }
 .dapp-legend__row--btn:hover { background: color-mix(in srgb, var(--latch-blue) 9%, transparent); }
 .dapp-legend__row--btn[aria-pressed='true'] {
@@ -873,7 +1033,7 @@
   align-items: center;
   gap: 10px;
   padding: 9px 11px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: var(--panel-alt);
   animation: dapp-fade 0.5s ease both;
 }
@@ -891,7 +1051,7 @@
   flex: 1 1 260px;
   padding: 11px 14px;
   border: 1px solid var(--hairline);
-  border-radius: 11px;
+  border-radius: var(--r-sm);
   background: var(--panel-alt);
   transition: border-color 0.2s;
 }
@@ -911,7 +1071,7 @@
   background: transparent;
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 13.5px;
 }
 .dapp-search__input::placeholder { color: var(--label-ink); }
 .dapp-search__input:focus-visible { outline: none; }
@@ -923,7 +1083,9 @@
   text-decoration: none;
   cursor: pointer;
   animation: dapp-fade 0.5s var(--dapp-ease) both;
-  transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+  /* 0.3s var(--ease) — the house card duration. Was 0.25s, which is the house
+     BUTTON duration; a card moving at button speed is the tell. */
+  transition: transform 0.3s var(--ease), border-color 0.3s, box-shadow 0.3s;
 }
 .dapp-card--latch:hover,
 .dapp-card--latch:focus-visible {
@@ -936,7 +1098,7 @@
   width: 40px;
   height: 40px;
   border: 1px solid var(--dapp-tile-border);
-  border-radius: 11px;
+  border-radius: var(--r-btn);
   background: var(--dapp-tile-bg);
   display: grid;
   place-items: center;
@@ -953,15 +1115,17 @@
 .dapp-latch__name { font-family: var(--font-display); font-weight: 600; font-size: 16px; color: var(--ink); }
 .dapp-latch__author { font-family: var(--font-mono); font-size: 11px; color: var(--label-ink); }
 .dapp-latch__head .dapp-badge { margin-left: auto; }
-.dapp-latch__desc { margin: 14px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--muted-ink); }
+.dapp-latch__desc { margin: 14px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--muted-ink); }
 .dapp-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; }
 .dapp-tag {
-  padding: 5px 9px;
-  border: 1px solid var(--hairline-blue);
-  border-radius: var(--r-micro);
+  padding: 2px var(--s2);
+  border: 1px solid var(--pill-border);
+  border-radius: var(--r-badge);
+  background: var(--pill-bg);
   font-family: var(--font-mono);
   font-size: 10.5px;
-  color: var(--dapp-ink-sub);
+  letter-spacing: 0.06em;
+  color: var(--pill-ink);
 }
 .dapp-latch__foot {
   display: flex;
@@ -971,9 +1135,15 @@
   border-top: 1px solid var(--hairline-soft);
 }
 .dapp-stat { display: flex; flex-direction: column; gap: 4px; }
-.dapp-stat__label { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.14em; color: var(--faint-ink); }
+.dapp-stat__label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint-ink);
+}
 .dapp-stat__value { font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
-.dapp-empty { margin: 0; font-size: 13.5px; color: var(--muted-ink); }
+.dapp-empty { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--muted-ink); }
 
 /* ---- 3. Deploy a Latch ---------------------------------------------------- */
 
@@ -996,7 +1166,8 @@
   padding: var(--s4);
   border-right: 1px solid var(--hairline);
   background: transparent;
-  transition: background 0.3s;
+  /* 0.22s: a step cell is a small control, not a card. */
+  transition: background 0.22s;
 }
 .dapp-step:last-child { border-right: none; }
 .dapp-step.is-active { background: var(--dapp-step-active-bg); }
@@ -1012,7 +1183,7 @@
   border: 1px solid var(--hairline-blue-2);
   color: var(--label-ink);
   background: transparent;
-  transition: border-color 0.3s, color 0.3s, background 0.3s;
+  transition: border-color 0.22s, color 0.22s, background 0.22s;
 }
 .dapp-step.is-active .dapp-step__num {
   border-color: var(--latch-blue);
@@ -1020,8 +1191,8 @@
   background: var(--dapp-step-num-bg);
 }
 .dapp-step__body { min-width: 0; display: flex; flex-direction: column; gap: var(--s1); }
-.dapp-step__name { font-size: 13px; font-weight: 500; }
-.dapp-step__hint { font-family: var(--font-mono); font-size: 10px; color: var(--label-ink); }
+.dapp-step__name { font-size: 13.5px; line-height: 1.6; font-weight: 500; }
+.dapp-step__hint { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-ink); }
 
 .dapp-fields { display: flex; flex-direction: column; gap: var(--s4); margin-top: 20px; }
 .dapp-readout {
@@ -1038,8 +1209,9 @@
 .dapp-field__head { display: flex; justify-content: space-between; gap: var(--s3); }
 .dapp-field__value {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--sky-ink);
 }
 
@@ -1069,7 +1241,7 @@
 
 .dapp-console {
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card);
+  border-radius: var(--r-card-lg);
   background: var(--code-ground);
   overflow: hidden;
 }
@@ -1094,7 +1266,7 @@
   padding: var(--s4) 18px;
   font-family: var(--font-mono);
   font-size: 11.5px;
-  line-height: 2;
+  line-height: 1.85;
 }
 .dapp-console__line { margin: 0; opacity: 0.35; overflow-wrap: anywhere; }
 .dapp-console__line.is-ok { color: var(--success); }
@@ -1105,7 +1277,7 @@
 
 .dapp-checks { list-style: none; margin: var(--s4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--s3); }
 .dapp-checks__row { display: flex; align-items: center; gap: var(--s3); }
-.dapp-checks__name { font-size: 13px; color: var(--dapp-ink-data); }
+.dapp-checks__name { font-size: 13.5px; line-height: 1.6; color: var(--dapp-ink-data); }
 .dapp-checks__value {
   margin-left: auto;
   font-family: var(--font-mono);
@@ -1121,9 +1293,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 16px;
-  padding: 22px;
+  padding: var(--s5);
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card);
+  border-radius: var(--r-card-lg);
   background: var(--dapp-grad-pool);
   animation: dapp-fade 0.5s ease both;
 }
@@ -1192,7 +1364,7 @@
 .dapp-table-wrap {
   margin-top: 14px;
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card);
+  border-radius: var(--r-card-lg);
   background: var(--panel);
   overflow: hidden;
 }
@@ -1203,8 +1375,9 @@
   border-bottom: 1px solid var(--hairline);
   font-family: var(--font-mono);
   font-weight: 400;
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--faint-ink);
 }
 /* Reproduces the reference's `minmax(0,2fr) repeat(4,minmax(0,1fr))` grid with
@@ -1239,11 +1412,11 @@
   background: var(--dapp-grad-token);
   flex: 0 0 auto;
 }
-.dapp-pos__pair { font-size: 13.5px; color: var(--ink); }
+.dapp-pos__pair { font-size: 13.5px; line-height: 1.6; color: var(--ink); }
 .dapp-table__latch { font-family: var(--font-mono); font-size: 12px; color: var(--sky-ink); }
 .dapp-table__num { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .dapp-table__num.is-fees { color: var(--success); }
-.dapp-table .dapp-badge { display: inline-block; font-size: 10px; padding: 5px 10px; }
+.dapp-table .dapp-badge { display: inline-block; font-size: 9.5px; padding: var(--s1) var(--s2); }
 
 /* ---- 6. Analytics -------------------------------------------------------- */
 /* The screen reads live contract state, so it needs a LIVE badge, a stat strip
@@ -1262,8 +1435,8 @@
 .an-stats > div { min-width: 0; }
 .an-stats dt {
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--label-ink);
   margin-bottom: var(--s1);
@@ -1284,12 +1457,12 @@
   margin-top: 14px;
   padding: 16px 18px;
   border: 1px dashed var(--hairline);
-  border-radius: var(--r-card);
+  border-radius: var(--r-card-lg);
   background: var(--panel-alt);
 }
 .an-empty__title {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted-ink-2);
 }
@@ -1308,8 +1481,8 @@
   border-bottom: 1px solid var(--hairline-soft);
 }
 .dapp-pref__copy { min-width: 0; display: flex; flex-direction: column; gap: var(--s1); }
-.dapp-pref__name { font-size: 13.5px; color: var(--ink); }
-.dapp-pref__hint { font-size: 12px; color: var(--dapp-ink-sub); }
+.dapp-pref__name { font-size: 13.5px; line-height: 1.6; color: var(--ink); }
+.dapp-pref__hint { font-size: 12px; line-height: 1.6; color: var(--muted-ink); }
 .dapp-toggle {
   position: relative;
   margin-left: auto;
@@ -1318,11 +1491,19 @@
   flex: 0 0 auto;
   border: none;
   border-radius: var(--r-pill);
-  background: var(--hairline-blue);
+  /* A BORDER TOKEN WAS THE FILL. `--hairline-blue` is #d8d6cf on paper and
+     measured 1.45:1 against the white card behind it — the same defect that
+     made a landing chart bar invisible in light mode. The OFF state of a switch
+     is a non-text UI element and has to be seen, so the ground is now the track
+     token (which is what a switch track is) with the switch rim drawn as an
+     inset shadow rather than a border, so the 44x24 box and the knob's absolute
+     offsets are untouched. */
+  background: var(--switch-ground);
+  box-shadow: inset 0 0 0 1px var(--border-hover);
   cursor: pointer;
-  transition: background 0.25s;
+  transition: background 0.25s, box-shadow 0.25s;
 }
-.dapp-toggle.is-on { background: var(--dapp-grad-toggle); }
+.dapp-toggle.is-on { background: var(--dapp-grad-toggle); box-shadow: none; }
 .dapp-toggle__knob {
   position: absolute;
   top: 3px;
@@ -1422,7 +1603,7 @@ span.dapp-netchip__mark {
 .dapp-netfact dt {
   font-family: var(--font-mono);
   font-size: 10.5px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--label-ink);
 }
@@ -1486,6 +1667,27 @@ span.dapp-net-chip__mark {
 
 /* ---- responsive ---------------------------------------------------------- */
 
+/* THE RAIL TRAP, recorded rather than silently "fixed".
+
+   Everything these four rules govern lives in `.dapp-content`, which sits in
+   the SECOND track of `.dapp`'s `238px minmax(0, 1fr)` grid and carries
+   `var(--gutter-dapp)` (24px) of padding each side. So above the 1024px drawer
+   breakpoint the element is `100vw - 238 - 48` wide, and a query written
+   against the VIEWPORT fires 286px late for it. Read as an element measure,
+   1100px here means a viewport of 1386px; read as a viewport number, the rows
+   are two-column down to an 815px measure.
+
+   Left at 1100 ON PURPOSE, unlike the landing page's three corrected queries
+   (1278 / 1138 / 1098 in landing.module.css and livestrip.module.css). Those
+   were corrected because the late fire produced a real defect — 10px labels
+   rendering at 5px, four values wrapping. Here the narrow track bottoms out at
+   ~320px of the ~815px measure, which is a usable column for a feed, a donut
+   or a fact list. Correcting it to 1386 would STACK these rows on an ordinary
+   1280px laptop, which is worse than the thing it fixes.
+
+   The number to use if the content ever outgrows that: 1386px.
+   Below 1024 the sidebar is a fixed drawer and the content column IS the
+   viewport, so every query below this point needs no correction. */
 @media (max-width: 1100px) {
   .dapp-row--dashboard,
   .dapp-row--pool,
@@ -1541,18 +1743,19 @@ span.dapp-net-chip__mark {
     content: attr(data-label);
     flex: 0 0 auto;
     font-family: var(--font-mono);
-    font-size: 9.5px;
-    letter-spacing: 0.14em;
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
     color: var(--faint-ink);
   }
 }
 
 @media (max-width: 640px) {
   .dapp-header { padding-inline: var(--s4); }
-  .dapp-content { padding-inline: 16px; }
+  .dapp-content { padding-inline: var(--s4); }
   .dapp-card,
-  .dapp-card--config { padding: 18px; }
-  .dapp-pool-head { padding: 18px; }
+  .dapp-card--config { padding: var(--s4); }
+  .dapp-pool-head { padding: var(--s4); }
   .dapp-header__title { font-size: 18px; }
   .dapp-pool-head__pair { font-size: 20px; }
   .dapp-grid--latches { grid-template-columns: minmax(0, 1fr); }
@@ -1578,12 +1781,66 @@ span.dapp-net-chip__mark {
 }
 
 /* ---- reduced motion ------------------------------------------------------
-   tokens.css collapses every duration globally; these two would otherwise
-   settle on their final keyframe (a dimmed dot, a sheen parked off-canvas).
+   tokens.css collapses every duration globally and forces
+   `animation-iteration-count: 1`. That is not enough on its own, and this block
+   used to name only two of the dozen animations in this file.
+
+   Three ways the global collapse leaves something wrong, all present here:
+
+     · A DELAY IS NOT A DURATION. `.dapp-series__dot` starts at `opacity: 0` and
+       is revealed by a `dapp-fade` that is delayed 1.1s; `.dapp-series__area`
+       by one delayed 0.35s. Collapsing the duration to 0.01ms does nothing to
+       the delay, so with reduced motion on, the chart's data points were
+       invisible for over a second — the exact content the reader came for.
+     · A COLLAPSED INFINITE LOOP LANDS ON ITS LAST KEYFRAME, NOT ITS BEST ONE.
+       `live-pulse` ends at `opacity: .35`, so `.live-dot` — the "this is read
+       from chain" indicator — settled at a third of its strength and stayed
+       there. `.dapp-dot--pulse` was already pinned for this reason; `.live-dot`
+       is the same keyframe shape and had been missed.
+     · A `forwards` DASH ANIMATION LEAVES ITS DASHARRAY BEHIND. Pinned outright
+       here rather than relying on 2400 being longer than any path this viewBox
+       produces, which is true today and is not a guarantee.
+
+   Everything below is pinned to its FINISHED state, which is the house rule in
+   landing.module.css. Nothing in the dapp depends on an animation having run.
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
-  .dapp-dot--pulse { animation: none !important; opacity: 1 !important; }
+  .dapp-dot--pulse,
+  .live-dot { animation: none !important; opacity: 1 !important; transform: none !important; }
   .dapp-sheen { display: none !important; }
+
+  /* Entrances: visible, in place, immediately. */
+  .dapp-content,
+  .dapp-card,
+  .dapp-card--latch,
+  .dapp-pool-head,
+  .dapp-feed__row,
+  .dapp-calls__row,
+  .dapp-table tbody tr,
+  .dapp-console__line.is-staggered,
+  .dapp-method__body,
+  .dapp-bitgrid__cell,
+  .dapp-series__area,
+  .dapp-series__dot {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* Bars stand at full height rather than being scaled into it. */
+  .dapp-spark__bar,
+  .dapp-cols__bar {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  /* Lines are drawn, not drawing. */
+  .dapp-line--draw,
+  .dapp-series__line {
+    animation: none !important;
+    stroke-dasharray: none !important;
+    stroke-dashoffset: 0 !important;
+  }
 }
 
 /* ---- LiveChainPanel: the only surface reading real chain state ---- */
@@ -1604,16 +1861,16 @@ span.dapp-net-chip__mark {
   gap: 10px; margin: 4px 0 2px;
 }
 .live-grid dt {
-  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .14em;
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.16em;
   text-transform: uppercase; color: var(--label-ink); margin-bottom: 3px;
 }
 .live-grid dd { margin: 0; font-size: 14px; color: var(--ink); }
-.live-sub { color: var(--muted-ink); font-size: 12px; }
+.live-sub { color: var(--muted-ink); font-size: 12px; line-height: 1.6; }
 .live-sub-h {
   font-size: 12px; font-weight: 600; color: var(--muted-ink-2);
   margin: 8px 0 2px; letter-spacing: -.005em;
 }
-.live-note { font-size: 12.5px; color: var(--muted-ink); margin: 0 0 4px; }
+.live-note { font-size: 12.5px; line-height: 1.6; color: var(--muted-ink); margin: 0 0 4px; }
 .live-note--err { color: var(--warning); }
 .live-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .live-list li {
@@ -1666,8 +1923,11 @@ span.dapp-net-chip__mark {
    that dapp-card--latch carries would both be promising an action that is not
    there. */
 .hx-card { cursor: default; display: grid; gap: 10px; }
+/* `--shadow-1`, not `none`: `.dapp-card` now carries a resting elevation, so
+   cancelling the shadow outright made a read-only card visibly SINK under the
+   cursor. Cancelling the lift is the intent; cancelling the card is not. */
 .hx-card:hover,
-.hx-card:focus-within { transform: none; box-shadow: none; border-color: var(--hairline); }
+.hx-card:focus-within { transform: none; box-shadow: var(--shadow-1); border-color: var(--hairline); }
 .hx-card--flagged {
   border-color: var(--error);
   background: color-mix(in srgb, var(--error) 8%, var(--panel));
@@ -1747,18 +2007,18 @@ span.dapp-net-chip__mark {
   margin-top: 16px;
   padding: 14px;
   border: 1px solid var(--error);
-  border-radius: var(--r-card);
+  border-radius: var(--r-card-lg);
   background: color-mix(in srgb, var(--error) 5%, transparent);
 }
 .hx-flagged__title {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--error);
 }
-.hx-flagged__note { margin: 6px 0 0; font-size: 12.5px; color: var(--muted-ink); }
+.hx-flagged__note { margin: 6px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--muted-ink); }
 .hx-flagged__grid { margin-top: 12px; }
 
 .hx-state { margin-top: 18px; }
@@ -1780,7 +2040,7 @@ span.dapp-net-chip__mark {
    Nothing paints a success colour that the chain has not confirmed.
    -------------------------------------------------------------------------- */
 
-.dp-lede { margin: var(--s3) 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-ink); }
+.dp-lede { margin: var(--s3) 0 0; font-size: 13.5px; line-height: 1.6; color: var(--muted-ink); }
 .dp-lede a { color: var(--signal-blue); }
 .dp-lede code,
 .dp-gap code,
@@ -1800,7 +2060,7 @@ span.dapp-net-chip__mark {
   border-color: var(--dapp-badge-warn-border);
   background: var(--dapp-badge-warn-bg);
 }
-.dp-gate__title { margin: 0; font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.dp-gate__title { margin: 0; font-size: 13.5px; line-height: 1.6; font-weight: 500; color: var(--ink); }
 .dp-gate--warn .dp-gate__title { color: var(--warning); }
 .dp-gate__body { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--muted-ink); }
 
@@ -1813,8 +2073,8 @@ span.dapp-net-chip__mark {
   background: var(--code-ground);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 .dp-input--mono { font-family: var(--font-mono); font-size: 12.5px; }
 .dp-input--area { resize: vertical; min-height: 66px; }
@@ -1960,13 +2220,18 @@ span.dapp-net-chip__mark {
 }
 
 .dp-tx { display: grid; gap: 8px; }
-.dp-tx__row { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 13px; color: var(--dapp-ink-data); }
+.dp-tx__row { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--dapp-ink-data); }
 .dp-tx__hash { margin: 0; font-family: var(--font-mono); font-size: 11.5px; overflow-wrap: anywhere; }
 .dp-tx__hash a { color: var(--signal-blue); }
 .dp-tx__meta { margin: 0; font-family: var(--font-mono); font-size: 10.5px; color: var(--faint-ink); }
 
-/* "Not yet known" must not borrow the colour of "passed". */
-.dp-dot--idle { background: var(--dapp-track); }
+/* "Not yet known" must not borrow the colour of "passed" — but it also has to
+   be VISIBLE. `--dapp-track` is #efeee9, which against the warm-paper ground is
+   under 1.1:1: the pre-flight dot simply was not there in light mode, and a
+   missing dot reads as "no check" rather than "not run yet". `--label-ink` is
+   the neutral grey the palette already carries for exactly this — clearly not
+   green, clearly not red, and clearly present. */
+.dp-dot--idle { background: var(--label-ink); }
 
 .dapp-console__line.is-err { color: var(--error); }
 
@@ -2041,7 +2306,7 @@ span.dapp-net-chip__mark {
   margin: 18px 0 10px;
   font-family: var(--font-mono);
   font-size: 10.5px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--label-ink);
 }
@@ -2068,6 +2333,9 @@ span.dapp-net-chip__mark {
 
 /* ---- card ------------------------------------------------------------------ */
 
+/* House card motion: -4px over 0.3s var(--ease). Was -2px over 0.22s, which is
+   the chip duration and half the house lift — the listing grid and the landing
+   page's card grid answered a hover differently on the same site. */
 .lx-card {
   --lx-pad: 18px;
   position: relative;
@@ -2076,15 +2344,15 @@ span.dapp-net-chip__mark {
   padding: var(--lx-pad);
   overflow: hidden;
   transition:
-    border-color 0.22s var(--dapp-ease),
-    background 0.22s var(--dapp-ease),
-    box-shadow 0.22s var(--dapp-ease),
-    transform 0.22s var(--dapp-ease);
+    border-color 0.3s,
+    background 0.3s,
+    box-shadow 0.3s,
+    transform 0.3s var(--ease);
 }
 .lx-card:hover,
 .lx-card:focus-within {
   border-color: var(--border-hover);
-  transform: translateY(-2px);
+  transform: translateY(-4px);
   box-shadow: var(--sh-card-hover);
 }
 
@@ -2096,7 +2364,7 @@ span.dapp-net-chip__mark {
 /* tones */
 .lx-card[data-tone="caution"] {
   border-color: var(--dapp-badge-warn-border);
-  box-shadow: inset 3px 0 0 0 var(--warning-alt);
+  box-shadow: inset 3px 0 0 0 var(--warning-alt), var(--shadow-1);
 }
 .lx-card[data-tone="caution"]:hover,
 .lx-card[data-tone="caution"]:focus-within {
@@ -2106,7 +2374,7 @@ span.dapp-net-chip__mark {
 .lx-card[data-tone="danger"] {
   border-color: color-mix(in srgb, var(--error) 55%, var(--hairline));
   background: linear-gradient(180deg, var(--dapp-badge-danger-bg), transparent 46%), var(--panel);
-  box-shadow: inset 3px 0 0 0 var(--error);
+  box-shadow: inset 3px 0 0 0 var(--error), var(--shadow-1);
 }
 .lx-card[data-tone="danger"]:hover,
 .lx-card[data-tone="danger"]:focus-within {
@@ -2130,7 +2398,7 @@ span.dapp-net-chip__mark {
   padding: 8px var(--lx-pad);
   font-family: var(--font-mono);
   font-size: 10.5px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   line-height: 1.4;
 }
@@ -2186,8 +2454,8 @@ span.dapp-net-chip__mark {
 .lx-card__go { color: var(--ink); text-decoration: none; }
 .lx-card__go:hover { color: var(--sky-ink); }
 /* The stretched hit target. Every other anchor in the card is lifted above it. */
-.lx-card__go::after { position: absolute; inset: 0; z-index: 0; content: ""; border-radius: var(--r-card); }
-.lx-card__go:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 3px; border-radius: 4px; }
+.lx-card__go::after { position: absolute; inset: 0; z-index: 0; content: ""; border-radius: var(--r-card-lg); }
+.lx-card__go:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 3px; border-radius: var(--r-micro); }
 .lx-card a:not(.lx-card__go),
 .lx-card button,
 .lx-card .lx-bits { position: relative; z-index: 1; }
@@ -2312,8 +2580,8 @@ span.dapp-net-chip__mark {
   gap: 12px;
   padding: 8px 0;
   border-top: 1px solid var(--hairline-soft);
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--muted-ink);
 }
 .lx-ledger__row[data-can="yes"] { color: var(--ink); }
@@ -2328,7 +2596,7 @@ span.dapp-net-chip__mark {
   border-radius: var(--r-micro);
   font-family: var(--font-mono);
   font-size: 9.5px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   color: var(--faint-ink);
   white-space: nowrap;
 }
@@ -2395,7 +2663,7 @@ span.dapp-net-chip__mark {
 .lx-card__desc {
   margin: 0;
   font-size: 13.5px;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--muted-ink);
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -2463,15 +2731,23 @@ span.dapp-net-chip__mark {
   align-items: center;
   gap: 18px;
 }
-.lx-hero__icon { width: 64px; height: 64px; border-radius: 16px; }
+.lx-hero__icon { width: 64px; height: 64px; border-radius: var(--r-card); }
 .lx-hero__icon .dapp-tile__diamond { width: 18px; height: 18px; }
 .lx-hero__id { min-width: 0; display: grid; gap: 5px; }
+/* The Latch product page's title is the only other PAGE-level heading in the
+   dapp, so it takes the same serif voice as `.dapp-header__title` and the
+   landing page's `.h2`. Card titles stay in the sans — see `.dapp-card__title`.
+   Clamped rather than fixed at 26px because it sits above a wrapping meta row
+   and beside an action cluster; the tracking and line-height are the house
+   values verbatim. */
 .lx-hero__name {
   margin: 0;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 26px;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(26px, 2.8vw, 34px);
   line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--ink-bright);
   overflow-wrap: anywhere;
 }
 .lx-hero__sub { font-size: 12px; }
@@ -2494,11 +2770,11 @@ span.dapp-net-chip__mark {
 .lx-detail[data-tone="danger"] .lx-hero {
   border-color: color-mix(in srgb, var(--error) 55%, var(--hairline));
   background: linear-gradient(180deg, var(--dapp-badge-danger-bg), transparent 40%), var(--panel);
-  box-shadow: inset 3px 0 0 0 var(--error);
+  box-shadow: inset 3px 0 0 0 var(--error), var(--shadow-1);
 }
 .lx-detail[data-tone="caution"] .lx-hero {
   border-color: var(--dapp-badge-warn-border);
-  box-shadow: inset 3px 0 0 0 var(--warning-alt);
+  box-shadow: inset 3px 0 0 0 var(--warning-alt), var(--shadow-1);
 }
 .lx-detail[data-tone="deprecated"] .lx-hero { opacity: 0.9; }
 
@@ -2590,18 +2866,19 @@ span.dapp-net-chip__mark {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 8px;
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--muted-ink);
 }
 .lx-info__src {
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.12em;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--success);
 }
 .lx-info__src--claim { color: var(--warning); }
-.lx-info dd { margin: 0; font-size: 13px; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+.lx-info dd { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
 .lx-info dd a { color: var(--signal-blue); text-decoration: none; }
 .lx-info dd a:hover { text-decoration: underline; }
 .lx-info__mono { font-family: var(--font-mono); font-size: 12px; }
@@ -2624,6 +2901,13 @@ span.dapp-net-chip__mark {
 .lx-back { margin: 4px 0 0; font-size: 12.5px; }
 .lx-back a { color: var(--signal-blue); }
 
+/* Rail trap, same shape as the 1100px block above and the same verdict.
+   `.lx-layout` is in the content column, so at viewport 1181 the element is
+   ~895px and the main track is 895 - 306 - 16 = 573px with the rail beside it —
+   which is comfortably above the 360px minimum `.lx-grid` asks for. The
+   element-measure equivalent of this number is 1466px; using it would drop the
+   rail under the grid on a 1280px laptop for no gain. Left deliberately, and it
+   matches the header's own 1180 so the two reflows happen together. */
 @media (max-width: 1180px) {
   .lx-layout { grid-template-columns: minmax(0, 1fr); }
   .lx-rail { position: static; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
@@ -2641,7 +2925,7 @@ span.dapp-net-chip__mark {
   .lx-card__cta { display: none; }
   .lx-hero { --lx-pad: 18px; padding: 18px; }
   .lx-hero__name { font-size: 21px; }
-  .lx-hero__icon { width: 50px; height: 50px; border-radius: 13px; }
+  .lx-hero__icon { width: 50px; height: 50px; border-radius: var(--r-btn); }
   .lx-strip--lg .lx-strip__cell { flex-basis: 150px; }
   .lx-info__row { grid-template-columns: minmax(0, 1fr); gap: 3px; }
 }
@@ -2703,15 +2987,16 @@ span.dapp-net-chip__mark {
   gap: 12px;
   padding: var(--eco-pad);
   overflow: hidden;
+  /* Same house card motion as `.lx-card` — see the note there. */
   transition:
-    border-color 0.22s var(--dapp-ease),
-    box-shadow 0.22s var(--dapp-ease),
-    transform 0.22s var(--dapp-ease);
+    border-color 0.3s,
+    box-shadow 0.3s,
+    transform 0.3s var(--ease);
 }
 .eco-card:hover,
 .eco-card:focus-within {
   border-color: var(--border-hover);
-  transform: translateY(-2px);
+  transform: translateY(-4px);
   box-shadow: var(--sh-card-hover);
 }
 
@@ -2735,8 +3020,8 @@ span.dapp-net-chip__mark {
 .eco-card__go { color: var(--ink); text-decoration: none; }
 .eco-card__go:hover { color: var(--sky-ink); }
 /* The stretched hit target; the footer's source link is lifted above it. */
-.eco-card__go::after { position: absolute; inset: 0; z-index: 0; content: ""; border-radius: var(--r-card); }
-.eco-card__go:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 3px; border-radius: 4px; }
+.eco-card__go::after { position: absolute; inset: 0; z-index: 0; content: ""; border-radius: var(--r-card-lg); }
+.eco-card__go:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 3px; border-radius: var(--r-micro); }
 .eco-card a:not(.eco-card__go) { position: relative; z-index: 1; }
 
 .eco-card__sub {
@@ -2801,7 +3086,7 @@ span.dapp-net-chip__mark {
 .eco-card__tag {
   margin: 0;
   font-size: 13.5px;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--muted-ink);
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -2947,7 +3232,7 @@ span.dapp-net-chip__mark {
    rather than merely looking similar:
      grid gap        14px   — same as .dapp-row / .dapp-kpis / .dapp-stack
      top margin      14px   — same as .dapp-row--dashboard
-     card padding    22px   — inherited from .dapp-card, never overridden
+     card padding    var(--s5) — inherited from .dapp-card, never overridden
      label           10px mono / .16em — .dapp-microlabel, reused not copied
    Introducing a 16px gap or a 20px padding here would be invisible in a
    screenshot and obvious in a diff. It stays on the scale.
@@ -2984,8 +3269,9 @@ span.dapp-net-chip__mark {
   gap: 7px;
   align-items: center;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--success);
   white-space: nowrap;
 }
@@ -3165,7 +3451,7 @@ span.dapp-net-chip__mark {
 .gov-table thead th:nth-child(2) { width: 48%; }
 .gov-table thead th:nth-child(3) { width: 22%; }
 
-.gov-contract-name { display: block; margin-bottom: 3px; font-size: 13px; color: var(--ink); }
+.gov-contract-name { display: block; margin-bottom: 3px; font-size: 13.5px; line-height: 1.6; color: var(--ink); }
 
 .gov-chain {
   display: inline-flex;
@@ -3197,7 +3483,7 @@ span.dapp-net-chip__mark {
 }
 .gov-op__head { display: flex; align-items: center; gap: 10px; }
 .gov-op__tier { color: var(--faint-ink); }
-.gov-op__line { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink); }
+.gov-op__line { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ink); }
 .gov-op__call {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -3265,7 +3551,7 @@ span.dapp-net-chip__mark {
 .dapp-series__dot {
   cursor: pointer;
   opacity: 0;
-  transition: r 0.16s ease, opacity 0.16s ease;
+  transition: r 0.2s ease, opacity 0.2s ease;
   animation: dapp-fade 0.4s 1.1s var(--dapp-ease, ease-out) forwards;
 }
 .dapp-series:hover .dapp-series__dot,
@@ -3281,7 +3567,7 @@ span.dapp-net-chip__mark {
 .dapp-splitbar__track {
   display: flex;
   height: 22px;
-  border-radius: 7px;
+  border-radius: var(--r-pill);
   overflow: hidden;
   background: var(--dapp-track);
 }
@@ -3290,9 +3576,17 @@ span.dapp-net-chip__mark {
   padding: 0;
   cursor: pointer;
   background: var(--series);
-  transition: width 1s var(--dapp-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 0.18s ease, filter 0.18s ease;
+  transition: width 1s var(--dapp-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 0.2s ease, filter 0.2s ease;
 }
-.dapp-splitbar__seg + .dapp-splitbar__seg { box-shadow: inset 1px 0 0 var(--dapp-scrim, rgba(0, 0, 0, 0.25)); }
+/* THE LAST RAW COLOUR IN THIS FILE, and it was also a light-mode bug.
+   It read `var(--dapp-scrim, rgba(0, 0, 0, 0.25))`. Two things wrong with that:
+   a scrim is a full-screen overlay token, not a 1px separator; and
+   `--dapp-scrim` is declared on `.dapp`, so inside the shell the fallback never
+   fired — but `StackedBar` is also mounted on the landing page (`.hostedStack`
+   in landing.module.css), which is outside `.dapp`, and there the fallback DID
+   fire and painted a hard 25% black rule between segments on a warm-paper card.
+   `--hairline` is the token for exactly this, and it knows both themes. */
+.dapp-splitbar__seg + .dapp-splitbar__seg { box-shadow: inset 1px 0 0 var(--hairline); }
 .dapp-splitbar__seg:hover,
 .dapp-splitbar__seg[data-on='true'] { filter: brightness(1.22); }
 .dapp-splitbar__seg[data-dim='true'] { opacity: 0.34; }
@@ -3343,7 +3637,7 @@ span.dapp-net-chip__mark {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--r-badge);
   border: 1px solid var(--hairline);
   background: transparent;
   cursor: pointer;
@@ -3352,7 +3646,7 @@ span.dapp-net-chip__mark {
   color: var(--dapp-ink-sub);
   opacity: 0;
   animation: dapp-fade 0.45s var(--dapp-ease, ease-out) forwards;
-  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 .dapp-bitgrid__cell[data-set='true'] {
   color: var(--dapp-ink-data);
@@ -3411,8 +3705,8 @@ span.dapp-net-chip__mark {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--dapp-ink-sub);
-  border-radius: 5px;
-  transition: color 0.16s ease;
+  border-radius: var(--r-micro);
+  transition: color 0.2s ease;
 }
 .dapp-method > summary::-webkit-details-marker { display: none; }
 .dapp-method > summary:hover { color: var(--dapp-ink-data); }
@@ -3428,7 +3722,7 @@ span.dapp-net-chip__mark {
   border-left: 4px solid currentColor;
   border-top: 3.5px solid transparent;
   border-bottom: 3.5px solid transparent;
-  transition: transform 0.18s var(--dapp-ease, ease-out);
+  transition: transform 0.2s var(--dapp-ease, ease-out);
 }
 .dapp-method[open] > summary::before { transform: rotate(90deg); }
 
@@ -3523,7 +3817,7 @@ span.dapp-net-chip__mark {
 .swap-screen__what-is-l > summary:focus-visible {
   outline: 2px solid var(--latch-blue);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--r-micro);
 }
 .swap-panel__how-bound[open] > summary,
 .swap-screen__what-is-l[open] > summary { margin-bottom: 4px; }
@@ -3535,7 +3829,7 @@ span.dapp-net-chip__mark {
   font-size: 11px;
   color: var(--dapp-ink-sub);
   border: 1px solid var(--hairline);
-  border-radius: var(--r-chip, 999px);
+  border-radius: var(--r-chip);
   padding: 3px 9px;
 }
 
@@ -3543,7 +3837,7 @@ span.dapp-net-chip__mark {
 
 .swap-field {
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card, 12px);
+  border-radius: var(--r-sm);
   padding: 12px 14px;
   background: var(--dapp-tile-bg, transparent);
 }
@@ -3591,7 +3885,7 @@ span.dapp-net-chip__mark {
   padding: 0;
 }
 .swap-input::placeholder { color: var(--faint-ink); }
-.swap-input:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 4px; border-radius: 4px; }
+.swap-input:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 4px; border-radius: var(--r-micro); }
 .swap-output { overflow-x: auto; white-space: nowrap; }
 .swap-output__muted { color: var(--faint-ink); font-size: 20px; }
 
@@ -3601,14 +3895,14 @@ span.dapp-net-chip__mark {
   font-weight: 600;
   color: var(--dapp-ink-data);
   border: 1px solid var(--hairline);
-  border-radius: var(--r-chip, 999px);
+  border-radius: var(--r-chip);
   padding: 5px 11px;
   white-space: nowrap;
 }
 
 .swap-max {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--signal-blue);
@@ -3630,7 +3924,7 @@ span.dapp-net-chip__mark {
   color: var(--dapp-ink-sub);
   font-size: 13px;
   cursor: pointer;
-  transition: color 0.16s ease, border-color 0.16s ease;
+  transition: color 0.2s ease, border-color 0.2s ease;
 }
 .swap-flip:hover { color: var(--latch-blue); border-color: var(--border-hover); }
 .swap-flip:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 3px; }
@@ -3678,7 +3972,7 @@ span.dapp-net-chip__mark {
 .swap-costs > summary:focus-visible {
   outline: 2px solid var(--latch-blue);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--r-micro);
 }
 .swap-costs__body { display: grid; gap: 5px; padding: 6px 0 2px 10px; }
 .swap-costs__order { margin: 2px 0 0; }
@@ -3702,7 +3996,7 @@ span.dapp-net-chip__mark {
 .swap-pending {
   border: 1px solid var(--dapp-badge-warn-border, var(--hairline));
   background: var(--dapp-badge-warn-bg, transparent);
-  border-radius: var(--r-card, 12px);
+  border-radius: var(--r-sm);
   padding: 11px 13px;
 }
 .swap-pending--armed {
@@ -3739,10 +4033,10 @@ span.dapp-net-chip__mark {
   color: var(--dapp-ink-sub);
   background: transparent;
   border: 1px solid var(--hairline);
-  border-radius: var(--r-chip, 999px);
+  border-radius: var(--r-chip);
   padding: 5px 11px;
   cursor: pointer;
-  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 .swap-chip:hover { border-color: var(--border-hover); }
 .swap-chip.is-active {
@@ -3760,7 +4054,7 @@ span.dapp-net-chip__mark {
   color: var(--ink);
   background: transparent;
   border: 1px solid var(--hairline);
-  border-radius: var(--r-chip, 999px);
+  border-radius: var(--r-chip);
 }
 .swap-slippage__custom:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 2px; }
 
@@ -3779,7 +4073,7 @@ span.dapp-net-chip__mark {
 .swap-failure {
   border: 1px solid var(--hairline);
   border-left: 3px solid var(--muted-ink);
-  border-radius: var(--r-sm, 8px);
+  border-radius: var(--r-sm);
   padding: 9px 11px;
 }
 .swap-failure--contract { border-left-color: var(--warning); }
@@ -3808,10 +4102,10 @@ span.dapp-net-chip__mark {
   text-align: left;
   padding: 10px 12px;
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card, 12px);
+  border-radius: var(--r-sm);
   background: transparent;
   cursor: pointer;
-  transition: border-color 0.16s ease, background 0.16s ease;
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 .swap-pool:hover { border-color: var(--border-hover); }
 .swap-pool.is-active { border-color: var(--latch-blue); background: var(--active-nav); }
