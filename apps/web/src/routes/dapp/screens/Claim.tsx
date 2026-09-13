@@ -435,12 +435,36 @@ export default function Claim() {
               <details className="dapp-method">
                 <summary>Why this app cannot build one</summary>
                 <div className="dapp-method__body">
+                  {/* CORRECTED 2026-09-13. This paragraph used to state, in bold,
+                      that "nothing on chain publishes the tree — the contract
+                      stores only the root, and no event, URI or registry carries
+                      the leaves." That is false, and it was the most damaging
+                      sentence on the screen: it told a holder their claim path
+                      did not exist.
+
+                      `MerkleEpochDistributor.postRoot` calls `_validateRootURI`,
+                      which reverts `RootURIRequired()` on an empty string. So a
+                      posted root and a published pointer are the SAME condition —
+                      there is no state in which the root exists and the location
+                      does not. `getRootSource(epochId)` returns it, `setRootURI`
+                      corrects it, and `RootURIUpdated` logs every revision.
+
+                      What remains true is the narrow half: this app ships no
+                      merkle `claim` in its ABI. That is a scope decision, not an
+                      absence of data. */}
                   <p>
                     <code>claim(epochId, index, account, amount0, amount1, proof)</code> needs a
-                    merkle proof, and <strong>nothing on chain publishes the tree</strong> — the
-                    contract stores only the root, and no event, URI or registry carries the leaves.
-                    A self-service claim UI would have to invent a proof source, so this app ships
-                    no merkle <code>claim</code> in its ABI at all.
+                    merkle proof, and this app does not build one — it ships no merkle{' '}
+                    <code>claim</code> in its ABI.
+                  </p>
+                  <p>
+                    The tree&rsquo;s location <strong>is</strong> published on chain.{' '}
+                    <code>postRoot</code> reverts <code>RootURIRequired()</code> on an empty
+                    pointer, so a root and a pointer always arrive together;{' '}
+                    <code>getRootSource(epochId)</code> returns the URI and how many times it has
+                    been revised. Treat that URI as supplied by whoever posted the root, not as
+                    something Latch verified — then check the proof you are given against the root
+                    on the epoch screen, which is the part the chain does guarantee.
                   </p>
                 </div>
               </details>

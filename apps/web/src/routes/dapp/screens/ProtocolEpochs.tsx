@@ -557,19 +557,34 @@ function MerkleView({ d }: { d: Extract<DistributorState, { kind: 'merkle' }> })
       <CommonKpis common={common} epochCount={common.epochCount} />
       <EpochTotalsCard epochs={epochs} common={common} />
 
+      {/* CORRECTED 2026-09-13, with the same correction on the Claim screen.
+          This card asserted "Nothing on chain publishes the tree" and "the chain
+          stores only the root — no event, no URI field, no registry carries the
+          tree". Both are false. `postRoot` runs `_validateRootURI`, which reverts
+          `RootURIRequired()` on an empty string, so a root cannot exist without a
+          pointer; `getRootSource(epochId)` returns it and `RootURIUpdated` logs
+          every revision. The true claim is narrower and is the one kept: this app
+          does not ship a merkle `claim`. */}
       <section className="dapp-card hx-alert">
-        <h3 className="dapp-card__title">Self-service merkle claims are not buildable</h3>
+        <h3 className="dapp-card__title">This app does not build merkle claims</h3>
         <p className="live-note">
-          <strong>Nothing on chain publishes the tree</strong>, so a claim has to come from wherever
-          the operator published it. This screen shows root and challenge state only.
+          The tree&rsquo;s location <strong>is</strong> on chain — <code>postRoot</code> requires a
+          pointer, so a root and its URI always arrive together. This screen shows root and
+          challenge state; assembling the proof is the operator&rsquo;s side.
         </p>
-        <Methodology label="Why a proof cannot be assembled here">
+        <Methodology label="Where the tree is, and why no proof is built here">
           <p className="live-note">
-            <code>MerkleEpochDistributor.claim</code> takes{' '}
-            <code>(epochId, index, account, amount0, amount1, proof)</code> and the chain stores only
-            the root — no event, no URI field, no registry carries the tree. A claim UI would have to
-            invent a proof source. <code>claim</code> is also absent from the merkle ABI this app
-            ships, so it cannot be called from here even by accident.
+            <code>getRootSource(epochId)</code> returns the URI the owner posted alongside the root,
+            plus a <code>revisions</code> count that increments on every <code>setRootURI</code>.
+            <code>postRoot</code> reverts <code>RootURIRequired()</code> on an empty string, so
+            there is no state in which a root is posted and its location is not.
+          </p>
+          <p className="live-note">
+            That URI is supplied by whoever posted the root and is <strong>not</strong> verified by
+            Latch or by the contract — only the root is. Check any proof you are handed against the
+            root shown above, which is the part the chain guarantees.{' '}
+            <code>MerkleEpochDistributor.claim</code> is absent from the ABI this app ships, so it
+            cannot be called from here even by accident.
           </p>
         </Methodology>
       </section>
