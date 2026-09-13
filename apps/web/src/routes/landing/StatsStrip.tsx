@@ -34,9 +34,19 @@ function StatCell({ value, label }: { value: string; label: string }) {
 function cells(m: ProtocolMetrics): { value: string; label: string }[] {
   const tvl0 = m.tvl[0]
   const tvlText = tvl0 ? fmtToken(tvl0.balance, tvl0.decimals, 0) : '0'
+  /* `String(null)` is the literal "null" and React renders a bare null as
+     nothing, so neither mistake is a type error — TypeScript cannot help here
+     and the check has to be explicit.
+
+     The em dash is doing real work. These two counts need a full-history
+     `eth_getLogs` and the public Robinhood endpoints refuse one, so they arrive
+     null. Printing 0 announced "0 POOLS INITIALIZED" over a chain with a live
+     pool: not a rendering slip but a false claim about the protocol, made on
+     the first screen anyone sees. */
+  const unread = '—'
   return [
-    { value: String(m.poolCount), label: 'POOLS INITIALIZED' },
-    { value: String(m.swapCount), label: 'SWAPS EXECUTED' },
+    { value: m.poolCount === null ? unread : String(m.poolCount), label: 'POOLS INITIALIZED' },
+    { value: m.swapCount === null ? unread : String(m.swapCount), label: 'SWAPS EXECUTED' },
     { value: tvlText, label: `${tvl0?.symbol ?? 'TOKEN'} HELD BY THE VAULT` },
     { value: '1', label: `NETWORK LIVE · ${CHAIN.name.toUpperCase()}` },
   ]

@@ -34,17 +34,19 @@ function liveKpis(m: import('../../../lib/chain').ProtocolMetrics): { label: str
     },
     {
       label: 'SWAPS EXECUTED',
-      value: String(m.swapCount),
+      value: m.swapCount === null ? '—' : String(m.swapCount),
       trend: 'all time',
     },
     {
       label: `PROTOCOL FEES · ${t0?.symbol ?? 'TOKEN'}`,
-      value: t0 ? fmtToken(m.protocolFees0, t0.decimals, 6) : '0',
+      /* Em dash, not '0'. null means the log scan was refused; a zero would
+         claim the protocol earned nothing, which is a different statement. */
+      value: t0 && m.protocolFees0 !== null ? fmtToken(m.protocolFees0, t0.decimals, 6) : '—',
       trend: 'summed per swap',
     },
     {
       label: `LP FEES · ${t1?.symbol ?? 'TOKEN'}`,
-      value: t1 ? fmtToken(m.lpFees1, t1.decimals, 6) : '0',
+      value: t1 && m.lpFees1 !== null ? fmtToken(m.lpFees1, t1.decimals, 6) : '—',
       trend: 'summed per swap',
     },
   ]

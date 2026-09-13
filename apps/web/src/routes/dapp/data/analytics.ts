@@ -91,9 +91,12 @@ export interface TokenFeeSeries {
 
 export interface AnalyticsData {
   latestBlock: bigint
-  poolCount: number
-  hookedPoolCount: number
-  swapCount: number
+  /* Nullable for the same reason as `ProtocolMetrics`: these need a full-history
+     log scan and the public Robinhood endpoints refuse one. `null` is "not read",
+     never zero. */
+  poolCount: number | null
+  hookedPoolCount: number | null
+  swapCount: number | null
 
   /** Every protocol event on the CL manager, newest first. */
   eventCount: number
@@ -243,6 +246,10 @@ function feeBars(m: ProtocolMetrics): LabelledBar[] {
   for (const s of sides) {
     const t = s.token
     if (!t) continue
+    /* null means the log scan was refused, not that the token earned nothing.
+       Skipping is the honest render: a bar drawn from an unread figure is
+       indistinguishable from one drawn from a real zero. */
+    if (s.protocol === null || s.lp === null) continue
     const total = s.protocol + s.lp
     // A token that has never been the input side of a swap earned nothing.
     // Rendering a zero-length bar for it would imply it competed and lost.

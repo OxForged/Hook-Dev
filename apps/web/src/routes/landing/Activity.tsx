@@ -172,11 +172,11 @@ function LiveState() {
           <div className={styles['healthList']}>
             <div className={styles['healthRow']}>
               <span className={styles['healthName']}>Pools initialized</span>
-              <span className={styles['healthValue']}>{s.m.poolCount}</span>
+              <span className={styles['healthValue']}>{s.m.poolCount ?? '—'}</span>
             </div>
             <div className={styles['healthRow']}>
               <span className={styles['healthName']}>Swaps executed</span>
-              <span className={styles['healthValue']}>{s.m.swapCount}</span>
+              <span className={styles['healthValue']}>{s.m.swapCount ?? '—'}</span>
             </div>
             {s.m.tvl.map((t) => (
               <div key={t.token} className={styles['healthRow']}>

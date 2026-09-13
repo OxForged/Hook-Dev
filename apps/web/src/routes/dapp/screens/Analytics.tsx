@@ -62,6 +62,12 @@ function LiveBadge() {
 
 const n = (v: number | bigint) => v.toLocaleString('en-US')
 
+/* A REFUSED READ IS NOT A ZERO. Worded once so every screen says it the same
+   way: the public Robinhood endpoints will not serve a full-history
+   `eth_getLogs`, so counts derived from one come back null. */
+const UNREAD = '—'
+const UNREAD_WHY = 'the public endpoints for this chain refuse a full-history eth_getLogs scan.'
+
 /** The two sides of the fee split, kept as data so the legend can toggle them. */
 const FEE_SERIES = [
   { key: 'primary', label: 'Protocol' },
@@ -176,11 +182,11 @@ export default function Analytics() {
           </div>
           <div>
             <dt>Swaps</dt>
-            <dd>{n(d.swapCount)}</dd>
+            <dd>{d.swapCount === null ? UNREAD : n(d.swapCount)}</dd>
           </div>
           <div>
             <dt>Pools</dt>
-            <dd>{n(d.poolCount)}</dd>
+            <dd>{d.poolCount === null ? UNREAD : n(d.poolCount)}</dd>
           </div>
           <div>
             <dt>Head block</dt>
@@ -347,12 +353,20 @@ export default function Analytics() {
             <p className="an-empty__title">Nothing to rank</p>
             <p className="live-note">
               The registry lists {n(d.hooks.length)} Latch{d.hooks.length === 1 ? '' : 'es'};{' '}
-              {n(d.hookedPoolCount)} of {n(d.poolCount)} live pool
-              {d.poolCount === 1 ? '' : 's'} {d.poolCount === 1 ? 'has' : 'have'} one attached.
+              {d.hookedPoolCount === null || d.poolCount === null ? (
+                <>attachment counts could not be read — {UNREAD_WHY}</>
+              ) : (
+                <>
+                  {n(d.hookedPoolCount)} of {n(d.poolCount)} live pool
+                  {d.poolCount === 1 ? '' : 's'} {d.poolCount === 1 ? 'has' : 'have'} one attached.
+                </>
+              )}
             </p>
             <Methodology label="Why there is no ranking">
               <p className="live-note">
-                {d.hookedPoolCount === 0
+                {d.hookedPoolCount === null
+                  ? 'Pool attachment could not be read from this endpoint, so nothing is claimed either way.'
+                  : d.hookedPoolCount === 0
                   ? 'No pool has a Latch attached, so no callback can have fired and no Latch has earned a fee.'
                   : 'The pool manager records no per-Latch earnings on chain, so nothing can be ranked from logs alone.'}
               </p>

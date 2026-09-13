@@ -174,6 +174,110 @@ export function client(chainId: DeployedChainId = ACTIVE_CHAIN_ID): PublicClient
 }
 
 /* ---------------------------------------------------------------------------
+   LOG SCANS MUST BE CHUNKED. THE RPC REFUSES ANYTHING ELSE.
+
+   Every log reader here used to ask for `fromBlock: deployedAtBlock, toBlock:
+   'latest'` in one call. On Robinhood that is now ~1.58 MILLION blocks, and the
+   endpoint answers:
+
+     -32602  block range too large: span 1580086 blocks exceeds maximum 10000
+
+   So the call threw, the landing page rendered `0 POOLS INITIALIZED` and
+   `0 SWAPS EXECUTED` against a chain holding one pool and two swaps, and it did
+   it quietly. Under-reporting is the same class of failure as an invented
+   number — a reader cannot tell which zeros are real.
+
+   It got worse with time rather than failing on day one: at launch the span was
+   small enough to pass, and it crossed the limit as the chain advanced. A
+   0.102s block time burns 10,000 blocks every seventeen minutes.
+   --------------------------------------------------------------------------- */
+
+/** How long a whole-history log scan may take before it is treated as unread. */
+const LOG_SCAN_DEADLINE_MS = 8_000
+
+/** Reject if `p` has not settled in `ms`. The work is not cancelled — nothing
+    here can cancel an in-flight fetch — it is merely no longer waited on. */
+function withDeadline<T>(p: Promise<T>, ms: number, why: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(why)), ms)),
+  ])
+}
+
+/** Hard cap the endpoint enforces. The window below leaves headroom under it. */
+const MAX_LOG_SPAN = 9_000n
+
+/** Requests in flight during an exhaustive scan. These endpoints rate-limit by
+    request count as well as by span, so this stays low deliberately. */
+const SCAN_CONCURRENCY = 3
+
+/**
+ * Run `fetchWindow` over a block range in slices the endpoint will accept.
+ *
+ * TAKES A CALLBACK RATHER THAN A QUERY OBJECT, and that is the whole design.
+ * The first version accepted a `LogQuery` and called `c.getLogs` itself, which
+ * meant the `event` argument passed through a widened type — viem then lost the
+ * ABI it needed to infer `args`, and every `l.args.currency0` in this file
+ * stopped compiling while `blockNumber` silently became nullable. Windowing is
+ * about the RANGE; it has no business touching the query's type. The call site
+ * keeps full inference and this helper never sees an ABI.
+ */
+async function scanWindows<T>(
+  fromBlock: bigint,
+  toBlock: bigint,
+  fetchWindow: (from: bigint, to: bigint) => Promise<readonly T[]>,
+): Promise<T[]> {
+  const windows: Array<[bigint, bigint]> = []
+  for (let start = fromBlock; start <= toBlock; start += MAX_LOG_SPAN + 1n) {
+    const stop = start + MAX_LOG_SPAN > toBlock ? toBlock : start + MAX_LOG_SPAN
+    windows.push([start, stop])
+  }
+
+  const results: (readonly T[])[] = new Array(windows.length)
+  let next = 0
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = next++
+      const w = windows[i]
+      if (!w) return
+      results[i] = await fetchWindow(w[0], w[1])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(SCAN_CONCURRENCY, windows.length) }, worker))
+  return results.flat()
+}
+
+/**
+ * The most recent `limit` results, walking BACKWARD from the head and stopping
+ * as soon as there are enough.
+ *
+ * A "latest N" reader has no business scanning from genesis: forward-scanning
+ * for the last 25 swaps costs ~176 requests on this chain and discards all but
+ * the tail. Backward, the answer is usually in the first window.
+ */
+async function scanWindowsBackward<T>(
+  fromBlock: bigint,
+  toBlock: bigint,
+  limit: number,
+  fetchWindow: (from: bigint, to: bigint) => Promise<readonly T[]>,
+): Promise<T[]> {
+  const out: (readonly T[])[] = []
+  let count = 0
+  let stop = toBlock
+  while (stop >= fromBlock && count < limit) {
+    const start = stop - MAX_LOG_SPAN < fromBlock ? fromBlock : stop - MAX_LOG_SPAN
+    const batch = await fetchWindow(start, stop)
+    if (batch.length > 0) {
+      out.unshift(batch)
+      count += batch.length
+    }
+    if (start === fromBlock) break
+    stop = start - 1n
+  }
+  return out.flat()
+}
+
+/* ---------------------------------------------------------------------------
    ABIs — only what is read. Human-readable so they stay auditable inline.
    --------------------------------------------------------------------------- */
 
@@ -398,12 +502,9 @@ export async function readRecentSwaps(
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
 
-  const logs = await c.getLogs({
-    address: d.clPoolManager,
-    event: CL_SWAP_EVENT[0],
-    fromBlock: d.deployedAtBlock,
-    toBlock: 'latest',
-  })
+  const logs = await scanWindowsBackward(d.deployedAtBlock, await c.getBlockNumber(), limit, (from, to) =>
+    c.getLogs({ address: d.clPoolManager, event: CL_SWAP_EVENT[0], fromBlock: from, toBlock: to }),
+  )
 
   return logs
     .slice(-limit)
@@ -523,12 +624,12 @@ export async function readPools(
   chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<PoolRecord[]> {
   const d = DEPLOYMENTS[chainId]
-  const logs = await client(chainId).getLogs({
-    address: d.clPoolManager,
-    event: CL_INITIALIZE_EVENT[0],
-    fromBlock: d.deployedAtBlock,
-    toBlock: 'latest',
-  })
+  const c = client(chainId)
+  /* Exhaustive: this feeds the pool COUNT, so a truncated scan is a wrong
+     number rather than a slow one. */
+  const logs = await scanWindows(d.deployedAtBlock, await c.getBlockNumber(), (from, to) =>
+    c.getLogs({ address: d.clPoolManager, event: CL_INITIALIZE_EVENT[0], fromBlock: from, toBlock: to }),
+  )
   return logs.map((l) => {
     const hooks = l.args.hooks as Address
     return {
@@ -553,17 +654,43 @@ export interface ProtocolMetrics {
    * the UI could label a row by chain.
    */
   chainId: DeployedChainId
-  poolCount: number
-  hookedPoolCount: number
-  swapCount: number
+
+  /* ---- LOG-DERIVED, AND THEREFORE NULLABLE ----------------------------------
+     `null` means "the chain would not tell us", NOT zero.
+
+     Every figure below needs `eth_getLogs` over the protocol's whole history.
+     On Robinhood that is ~1.58M blocks, and as of 2026-09-13 none of the three
+     configured public endpoints will serve it:
+
+       rpc-robinhood.blockmachine.io   rate limit exceeded, at any concurrency
+       robinhood.rpc.blxrbdn.com       non-JSON response
+       rpc.nodeflare.app/robinhood     non-JSON response
+
+     The reads are correct and chunked (see `getLogsChunked`); the endpoints
+     refuse them. Until an archive or indexer endpoint exists these stay null.
+
+     THE BUG THIS TYPE CHANGE FIXES. They were plain `number`, so a refused scan
+     surfaced as `0` and the landing page announced "0 POOLS INITIALIZED" and
+     "0 SWAPS EXECUTED" over a chain holding one pool and two swaps. A zero that
+     means "we could not look" is indistinguishable from a zero that means
+     "none", which is precisely what CLAUDE.md's no-invented-data rule exists to
+     prevent — it just happens to under-report rather than over-report.
+     -------------------------------------------------------------------------- */
+  poolCount: number | null
+  hookedPoolCount: number | null
+  swapCount: number | null
   /** Sum of |amount0| across swaps, in token0 units. Testnet tokens have no price. */
-  volume0: bigint
-  volume1: bigint
+  volume0: bigint | null
+  volume1: bigint | null
   /** Fee taken by the protocol, in token units, derived from each swap's own pips. */
-  protocolFees0: bigint
-  protocolFees1: bigint
-  lpFees0: bigint
-  lpFees1: bigint
+  protocolFees0: bigint | null
+  protocolFees1: bigint | null
+  lpFees0: bigint | null
+  lpFees1: bigint | null
+  /** Why the figures above are null, for the UI to show verbatim. */
+  logScanError: string | null
+
+  /* ---- CHEAP READS. One `eth_call` each, and they always work. ------------- */
   tvl: VaultHolding[]
   latestBlock: bigint
 }
@@ -583,12 +710,44 @@ const abs = (v: bigint) => (v < 0n ? -v : v)
 export async function readProtocolMetrics(
   chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<ProtocolMetrics> {
-  const [pools, swaps, tvl, latestBlock] = await Promise.all([
-    readPools(chainId),
-    readRecentSwaps(chainId, 1000),
+  /* THE CHEAP READS MUST NOT BE HOSTAGE TO THE EXPENSIVE ONES.
+
+     This was one `Promise.all` over all four. `readPools` needs a full-history
+     log scan, the public endpoints refuse it, and the rejection took the vault
+     holdings and the block height down with it — so a screen that could have
+     shown three real figures showed none, or worse, zeros.
+
+     The two O(1) reads are awaited on their own and always resolve. The
+     log-derived pair is allowed to fail, and its failure is DATA (`logScanError`)
+     rather than an exception. */
+  const [tvl, latestBlock] = await Promise.all([
     readVaultHoldings(chainId),
     client(chainId).getBlockNumber(),
   ])
+
+  let pools: PoolRecord[] | null = null
+  let swaps: SwapRecord[] | null = null
+  let logScanError: string | null = null
+  try {
+    /* BOUNDED, because a refusal does not always arrive as a rejection.
+
+       viem retries across the fallback transport with backoff, so a
+       rate-limited endpoint leaves the promise pending rather than throwing.
+       Unbounded, the strip sat on "READING CHAIN…" forever — which is a
+       different lie from "0" and no better: an indefinite spinner reads as
+       "almost there" when the answer is "never".
+
+       Whatever has not arrived by the deadline is treated as unread and the UI
+       says so. The scan is not cancelled; if it ever lands it simply lands too
+       late to be believed. */
+    ;[pools, swaps] = await withDeadline(
+      Promise.all([readPools(chainId), readRecentSwaps(chainId, 1000)]),
+      LOG_SCAN_DEADLINE_MS,
+      `no answer within ${LOG_SCAN_DEADLINE_MS / 1000}s`,
+    )
+  } catch (e) {
+    logScanError = e instanceof Error ? e.message : 'the endpoint refused the log scan'
+  }
 
   let volume0 = 0n
   let volume1 = 0n
@@ -597,7 +756,7 @@ export async function readProtocolMetrics(
   let lpFees0 = 0n
   let lpFees1 = 0n
 
-  for (const s of swaps) {
+  for (const s of swaps ?? []) {
     // The INPUT side is the positive delta: tokens flowing into the pool.
     const inIs0 = s.amount0 > 0n
     const gross = inIs0 ? abs(s.amount0) : abs(s.amount1)
@@ -617,17 +776,20 @@ export async function readProtocolMetrics(
     }
   }
 
+  /* null, not 0, when the scan did not happen. See the type. */
+  const scanned = pools !== null && swaps !== null
   return {
     chainId,
-    poolCount: pools.length,
-    hookedPoolCount: pools.filter((p) => p.hasHook).length,
-    swapCount: swaps.length,
-    volume0,
-    volume1,
-    protocolFees0,
-    protocolFees1,
-    lpFees0,
-    lpFees1,
+    poolCount: pools?.length ?? null,
+    hookedPoolCount: pools?.filter((p) => p.hasHook).length ?? null,
+    swapCount: swaps?.length ?? null,
+    volume0: scanned ? volume0 : null,
+    volume1: scanned ? volume1 : null,
+    protocolFees0: scanned ? protocolFees0 : null,
+    protocolFees1: scanned ? protocolFees1 : null,
+    lpFees0: scanned ? lpFees0 : null,
+    lpFees1: scanned ? lpFees1 : null,
+    logScanError,
     tvl,
     latestBlock,
   }
@@ -893,13 +1055,19 @@ export async function readActivity(
 ): Promise<ActivityEvent[]> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
-  const range = { fromBlock: d.deployedAtBlock, toBlock: 'latest' } as const
-
+  const head = await c.getBlockNumber()
+  /* Four "latest N" reads, so all four walk backward. The feed shows `limit`
+     rows; scanning from the deployment forward would cost four full-chain
+     sweeps to render a dozen lines. */
   const [inits, swaps, mods, donates] = await Promise.all([
-    c.getLogs({ address: d.clPoolManager, event: CL_INITIALIZE_EVENT[0], ...range }),
-    c.getLogs({ address: d.clPoolManager, event: CL_SWAP_EVENT[0], ...range }),
-    c.getLogs({ address: d.clPoolManager, event: CL_MODIFY_EVENT[0], ...range }),
-    c.getLogs({ address: d.clPoolManager, event: CL_DONATE_EVENT[0], ...range }),
+    scanWindowsBackward(d.deployedAtBlock, head, limit, (f, t) =>
+      c.getLogs({ address: d.clPoolManager, event: CL_INITIALIZE_EVENT[0], fromBlock: f, toBlock: t })),
+    scanWindowsBackward(d.deployedAtBlock, head, limit, (f, t) =>
+      c.getLogs({ address: d.clPoolManager, event: CL_SWAP_EVENT[0], fromBlock: f, toBlock: t })),
+    scanWindowsBackward(d.deployedAtBlock, head, limit, (f, t) =>
+      c.getLogs({ address: d.clPoolManager, event: CL_MODIFY_EVENT[0], fromBlock: f, toBlock: t })),
+    scanWindowsBackward(d.deployedAtBlock, head, limit, (f, t) =>
+      c.getLogs({ address: d.clPoolManager, event: CL_DONATE_EVENT[0], fromBlock: f, toBlock: t })),
   ])
 
   const out: ActivityEvent[] = []
