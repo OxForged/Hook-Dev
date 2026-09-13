@@ -61,17 +61,34 @@ jobs:
         with:
           node-version: '20'
 
-      # The web app depends on two workspace packages by `file:` path
-      # (@latchprotocol/sdk and @latchprotocol/connect), so their installs come
-      # first — npm links them from disk and a missing build there surfaces here
-      # as a module-resolution error rather than as anything obvious.
-      - name: Install SDK
+      # The web app depends on two workspace packages by `file:` path, and both
+      # resolve through `dist/` — which is gitignored. On a dev machine that
+      # directory already exists, so this is invisible locally and fails here as
+      # 24 errors, most of them noise: one `Cannot find module
+      # '@latchprotocol/sdk'` plus every implicit-any it cascades into.
+      #
+      # `npm run build` on the SDK is NOT what to run. It runs `generate` first,
+      # which reads Foundry build artifacts, and Foundry is not installed on this
+      # runner. It does not need to be: the generated sources are COMMITTED
+      # (src/generated/abi.ts, src/events/, and the launchpad/registry/trading
+      # ABIs), so compiling them is the whole job. Skipping the generator is the
+      # difference between a 90-second job and installing a Solidity toolchain to
+      # publish a static site.
+      #
+      # The tradeoff, stated: this trusts the committed generated sources to
+      # match the contracts. `npm run generate:check` is what verifies that, it
+      # needs the artifacts, and it belongs in the contract CI — not here.
+      - name: Install and build SDK
         working-directory: packages/sdk
-        run: npm ci || npm install
+        run: |
+          npm ci || npm install
+          npx tsc -p tsconfig.build.json
 
-      - name: Install connect
+      - name: Install and build connect
         working-directory: packages/connect
-        run: npm ci || npm install
+        run: |
+          npm ci || npm install
+          npm run build
 
       - name: Install web
         working-directory: apps/web
