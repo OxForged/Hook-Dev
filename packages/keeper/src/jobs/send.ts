@@ -98,7 +98,40 @@ export async function sendGuarded(ctx: JobContext, call: GuardedCall, label: str
   }
 
   try {
-    const hash = await ctx.walletClient.writeContract(request as never)
+    /* THE ACCOUNT MUST BE THE LOCAL ONE, NOT THE ADDRESS.
+       `ctx.account` is an Address string, and `simulateContract` copies it into
+       `request.account`. viem reads a STRING account as a JSON-RPC account and
+       dispatches `eth_sendTransaction` — asking the node to sign with a key it
+       does not have. Every public RPC answers that with "the method does not
+       exist", which reads like an endpoint problem and is not one.
+       Overriding with the wallet client's own local Account makes viem sign
+       here and send `eth_sendRawTransaction`.
+       This is why the keeper had never successfully sent a transaction. */
+    const hash = await ctx.walletClient.writeContract({
+      ...(request as Record<string, unknown>),
+      account: ctx.walletClient.account,
+    } as never)
+
+    /* WAIT FOR INCLUSION BEFORE RETURNING, so the next send in this tick builds
+       on an advanced nonce.
+
+       A tick can send several transactions — six sweep targets, two currencies
+       to settle — and each `writeContract` fetches the nonce itself. Returning
+       at broadcast means every send in the tick reads the SAME pending nonce
+       and all but one is rejected. Observed on the first live run: two settles,
+       one landed, the other came back "Missing or invalid parameters", which
+       looks like a malformed call and is really a duplicate nonce.
+
+       Waiting also upgrades the report. A transaction can be mined and REVERT,
+       and a keeper that logs "sent" at broadcast would call that a success. */
+    const receipt = await ctx.publicClient.waitForTransactionReceipt({
+      hash,
+      timeout: 120_000,
+      confirmations: 1,
+    })
+    if (receipt.status !== 'success') {
+      return failed(`${label}: sent but REVERTED on chain — tx ${hash}`)
+    }
     return { due: true, reason: `${label}: sent`, txHash: hash }
   } catch (e) {
     // Reaching here means the call was due and simulated, and the SEND failed
