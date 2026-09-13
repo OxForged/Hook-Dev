@@ -727,9 +727,10 @@ large trade appears.
 procedural and thin: monitor `ConfigProposed(bytes32,uint48)` (the 2-arg event) on `0x23CE`
 and treat one as an incident. The redeploy fix — a constructor argument validated against a
 WALL-CLOCK floor — shipped in `0xfC00`. The same failure existed in `LaunchGuardHook`
-(`MAX_DECAY_BLOCKS` / `MAX_START_DELAY` as 1,000,000-block constants, **28 hours** here); in
-source they are now immutables (`BinLaunchGuardHook.sol:229,232`), but the DEPLOYED
-`LaunchGuardHook` has not been re-checked — verify before relying on it. `LaunchpadKit`'s
+(`MAX_DECAY_BLOCKS` / `MAX_START_DELAY` as 1,000,000-block constants, **28 hours** here). It is
+FIXED in the deployed hook `0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c`, read on chain
+2026-09-13: `blockTimeCentis` = 10, `MAX_DECAY_BLOCKS` = `MAX_START_DELAY` = 26,000,000
+(~30 days at the declared 0.1 s), `MIN_LAUNCH_WINDOW_SECONDS` = 259,200 (3 days). `LaunchpadKit`'s
 constructor rejected Robinhood's block time outright until it was fixed.
 
 **The general rule, which is the actually useful output: this codebase was written assuming
