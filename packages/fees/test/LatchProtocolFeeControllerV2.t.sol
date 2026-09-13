@@ -229,13 +229,41 @@ contract LatchProtocolFeeControllerV2Test is Test {
         assertGe((uint256(odd) * 10_000) / total, 2400);
     }
 
-    function test_DynamicPoolsPayNothingUnlessConfigured() public {
+    /**
+     * EVERY LAUNCHPAD POOL IS DYNAMIC-FEE. `LaunchpadKit.sol:373` sets
+     * `fee: LPFeeLibrary.DYNAMIC_FEE_FLAG` and `LaunchGuardHook` reverts
+     * `PoolMustUseDynamicFee` on anything else. A zero default here would exempt the entire
+     * launchpad from the protocol fee — permanently for each pool, since core stamps the fee at
+     * `initialize`. This test exists because an earlier draft of this contract did exactly that.
+     */
+    function test_DynamicPoolsPayByDefault_BecauseEveryLaunchIsOne() public view {
         PoolKey memory key = _key(LPFeeLibrary.DYNAMIC_FEE_FLAG);
-        assertEq(controller.protocolFeeForPool(key), 0, "unset dynamic must be zero, not a guess");
+        uint24 packed = controller.protocolFeeForPool(key);
 
+        assertTrue(packed != 0, "a dynamic pool must not be free by omission");
+        assertEq(packed & 0xFFF, controller.DYNAMIC_FEE_PIPS());
+        assertEq(packed >> 12, controller.DYNAMIC_FEE_PIPS());
+    }
+
+    /// The default is the 0.30% tier's fee, because 0.30% is what every launch preset decays to.
+    function test_DynamicDefaultEqualsTheThirtyBipTier() public view {
+        assertEq(controller.DYNAMIC_FEE_PIPS(), controller.feeForLpFee(3000));
+        assertEq(controller.DYNAMIC_FEE_PIPS(), 999);
+    }
+
+    function test_DynamicFeeStillOverridable() public {
+        PoolKey memory key = _key(LPFeeLibrary.DYNAMIC_FEE_FLAG);
         vm.prank(governance);
         controller.setDynamicFee(true, 500, 500);
         assertEq(controller.protocolFeeForPool(key), uint24(500) | (uint24(500) << 12));
+    }
+
+    /// Governance may still choose zero — but only deliberately, never by omission.
+    function test_DynamicFeeCanBeTurnedOffOnPurpose() public {
+        PoolKey memory key = _key(LPFeeLibrary.DYNAMIC_FEE_FLAG);
+        vm.prank(governance);
+        controller.setDynamicFee(false, 0, 0);
+        assertEq(controller.protocolFeeForPool(key), 0);
     }
 
     /* ---------------------------------------------------------------------

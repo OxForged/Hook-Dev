@@ -100,6 +100,11 @@ contract LatchProtocolFeeControllerV2 is IProtocolFeeController, Ownable2Step {
     /// @notice Launch split: 25% of the total swap fee. See the header for the tier table.
     uint256 public constant DEFAULT_SPLIT_RATIO = 250_000;
 
+    /// @notice Default protocol fee for DYNAMIC-fee pools, per direction, in pips.
+    /// @dev 999 == what a 0.30% pool pays under a 25% split, and 0.30% is what every launch
+    /// preset decays to. See `_dynamicFee` for why this must not be zero.
+    uint16 public constant DYNAMIC_FEE_PIPS = 999;
+
     /// @notice Share of the TOTAL swap fee taken by the protocol, in hundredths of a bip.
     /// @dev The base case for every static-fee pool. Overrides below take precedence.
     uint256 public protocolFeeSplitRatio;
@@ -117,10 +122,39 @@ contract LatchProtocolFeeControllerV2 is IProtocolFeeController, Ownable2Step {
     /// @notice Per-LP-fee-tier override, keyed by the static LP fee. Beats the split ratio.
     mapping(uint24 lpFeeTier => FeeConfig) private _tierFee;
 
-    /// @notice Applied to dynamic-fee pools, which have no static tier to derive a share from.
-    /// @dev A dynamic pool's LP fee is decided per swap by its hook, so there is no total to take
-    /// a percentage OF at initialization. Left unset, dynamic pools pay ZERO rather than a
-    /// guessed flat rate — charging a number we cannot justify is worse than charging nothing.
+    /**
+     * @notice Applied to dynamic-fee pools, which have no static tier to derive a share from.
+     *
+     * @dev SET BY DEFAULT, AND THAT DEFAULT IS LOAD-BEARING. A dynamic pool's LP fee is chosen
+     * per swap by its hook, so at `initialize` there is no total to take a percentage OF — the
+     * share model simply has nothing to work with.
+     *
+     * An earlier draft left this unset and returned zero, on the reasoning that charging a number
+     * we cannot derive is worse than charging nothing. That reasoning is sound and the conclusion
+     * was still wrong, because of WHICH pools are dynamic here:
+     *
+     *     LaunchpadKit.sol:373        fee: LPFeeLibrary.DYNAMIC_FEE_FLAG
+     *     LaunchGuardHook.sol:328     if (!key.fee.isDynamicLPFee()) revert PoolMustUseDynamicFee
+     *
+     * EVERY launchpad pool is dynamic-fee, by construction and by requirement. A zero default
+     * therefore exempts the entire launchpad — the protocol's flagship integration path — from
+     * the protocol fee, permanently for every pool created that way, since core stamps the fee at
+     * `initialize` and never re-reads it.
+     *
+     * The default is `DYNAMIC_FEE_PIPS`: what a 0.30% pool pays under the split. That is the
+     * honest analogue, because 0.30% is exactly what the launch presets DECAY TO —
+     * `LaunchPresets.sol` sets `finalFeeBips: 3_000` for FairLaunch, Stealth and NoTax. A launch
+     * pool is a 0.30% pool wearing a temporary anti-sniper surcharge, so it pays what a 0.30%
+     * pool pays.
+     *
+     * Deliberately NOT a share of the elevated launch-window fee. That surcharge exists to
+     * compensate LPs for being sniped; taking a quarter of it would mean the protocol profits
+     * most from the launches that go worst for the people providing liquidity.
+     *
+     * For reference, infinity-core's controller defaults dynamic pools to a flat 300 pips
+     * (`ProtocolFeeController.sol:39`). Ours is higher because theirs is a general-purpose
+     * default and this one is sized to a specific, known population of pools.
+     */
     FeeConfig private _dynamicFee;
 
     /// @notice Emergency switch: when true every pool reports a zero protocol fee.
@@ -160,6 +194,10 @@ contract LatchProtocolFeeControllerV2 is IProtocolFeeController, Ownable2Step {
         emit GuardianUpdated(address(0), guardian_);
         protocolFeeSplitRatio = DEFAULT_SPLIT_RATIO;
         emit SplitRatioUpdated(0, DEFAULT_SPLIT_RATIO);
+        /* Set here rather than left to a later governance call: every launchpad pool is
+           dynamic-fee, and a pool created before that call would be exempt for life. */
+        _dynamicFee = FeeConfig({isSet: true, zeroForOne: DYNAMIC_FEE_PIPS, oneForZero: DYNAMIC_FEE_PIPS});
+        emit DynamicFeeUpdated(true, DYNAMIC_FEE_PIPS, DYNAMIC_FEE_PIPS);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -176,7 +214,9 @@ contract LatchProtocolFeeControllerV2 is IProtocolFeeController, Ownable2Step {
 
         if (poolKey.fee.isDynamicLPFee()) {
             config = _dynamicFee;
-            // Unset means zero: there is no static total to take a share of. See `_dynamicFee`.
+            /* Set in the constructor, so this is the DYNAMIC_FEE_PIPS path in practice. It can
+               be unset deliberately by governance, which then means zero — but it is never zero
+               by omission. Every launchpad pool arrives here. See `_dynamicFee`. */
             return config.isSet ? _pack(config) : 0;
         }
 
