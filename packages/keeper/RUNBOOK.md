@@ -228,3 +228,80 @@ rollover job will refuse it.
    `.env`. Both are needed to send.
 3. `-p latch`, from `~/latch/keeper`, every time. No published ports.
 4. The key holds gas and nothing else.
+
+---
+
+## Protocol fee sweeps, twice a day
+
+Accrued protocol fees sit in the Vault until somebody calls for them. This job calls for them
+on a schedule.
+
+### Why it is safe to automate
+
+`LatchProtocolFeeControllerV2.sweep(poolManager, currency)` is **permissionless** and takes no
+recipient — the destination is the controller's stored `treasury`, which only the owner can
+change. So the keeper needs no role, no allowlist and no privileged key, and the package rule
+holds unchanged: *a stolen keeper key buys an attacker nothing they could not already do from
+any address.* The worst outcome here is somebody paying gas to move Latch's revenue into
+Latch's own Safe.
+
+**Never point this job at `collect`.** That one is `onlyOwner` and names its own recipient.
+Automating it would mean a scheduled process holding Safe signer keys, collapsing a 2-of-3 to
+a 1-of-1 for a key that can also queue `registerApp`.
+
+### Configure
+
+Add to `keeper.config.robinhood.json`:
+
+```json
+"feeSweep": {
+  "controller": "0x<V2 address>",
+  "intervalSeconds": 43200,
+  "targets": [
+    { "label": "CL / USDG",  "poolManager": "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66", "currency": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" },
+    { "label": "CL / WETH",  "poolManager": "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66", "currency": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" },
+    { "label": "BIN / USDG", "poolManager": "0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979", "currency": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" }
+  ]
+}
+```
+
+`43200` seconds is twelve hours — two sweeps a day. **One entry per (manager, currency).**
+Fees accrue per currency, so a pair trading WETH/USDG accrues in both and needs both listed;
+a currency you do not list simply accumulates until you do, which is safe but invisible.
+
+The keeper's own `--interval` stays short (300s) because every other job needs that cadence.
+This job throttles itself per target.
+
+Optional `minAmount`, in **RAW units** of that currency — remember USDG is 6 decimals and WETH
+is 18, so the same "about ten dollars" is `10000000` for one and `3000000000000000` for the
+other. Below the floor the job waits rather than spending gas to collect dust.
+
+### Two guards
+
+- **`sweep` reverts `NothingToCollect` on an empty balance.** `collectProtocolFees` underneath
+  returns zero instead of reverting, which is the `settleBeneficiaries` trap — a job that pays
+  gas to do nothing forever. The revert makes the check free for anything that simulates first.
+- **The interval is enforced in the job, in memory.** A restart permits one early sweep.
+  Harmless, and better than a state file that can disagree with the chain. Config refuses any
+  interval under an hour.
+
+### Verify it is working
+
+```bash
+docker compose -p latch logs latch-keeper | grep sweep-protocol-fees
+```
+
+A healthy quiet log looks like `not due — nothing accrued` or `not due — swept 3600s ago,
+39600s to go`. A sweep logs the amount and the transaction hash. Then confirm the money landed:
+
+```bash
+cast call <V2> 'accrued(address,address)(uint256)' <manager> <currency> --rpc-url $ROBINHOOD_RPC
+cast call <currency> 'balanceOf(address)(uint256)' 0x715a6176946aDbD22c1B2021d321Fb3767ca3432 --rpc-url $ROBINHOOD_RPC
+```
+
+Accrued should be zero and the Safe's balance should have risen by what the log said.
+
+### Dry run first
+
+The keeper sends nothing without **both** `--execute` and `KEEPER_PRIVATE_KEY`. Leave the key
+out and watch a few cycles: the job will report exactly what it would have swept.

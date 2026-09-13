@@ -160,6 +160,16 @@ contract LatchProtocolFeeControllerV2 is IProtocolFeeController, Ownable2Step {
     /// @notice Emergency switch: when true every pool reports a zero protocol fee.
     bool public feesDisabled;
 
+    /**
+     * @notice Where `sweep` sends collected fees. Owner-settable, never zero.
+     *
+     * @dev The whole reason `sweep` can be permissionless. The destination is STORED rather than
+     * passed by the caller, so the function has no argument an attacker can point anywhere. Per
+     * CLAUDE.md this is the governance Safe itself: "No separate treasury address exists or
+     * should be introduced — a second address to secure, for no gain."
+     */
+    address public treasury;
+
     /// @notice Address that may switch fees OFF immediately, and do nothing else.
     /// @dev Delay belongs on privilege escalation, never on privilege reduction. It can only ever
     /// make the protocol take LESS. It CANNOT collect — see `collect`.
@@ -172,6 +182,7 @@ contract LatchProtocolFeeControllerV2 is IProtocolFeeController, Ownable2Step {
     event FeesDisabledSet(bool disabled);
     event GuardianUpdated(address indexed previousGuardian, address indexed newGuardian);
     event EmergencyFeesDisabled(address indexed caller);
+    event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
     event ProtocolFeesCollected(
         address indexed poolManager, Currency indexed currency, address indexed recipient, uint256 amount
     );
@@ -186,12 +197,18 @@ contract LatchProtocolFeeControllerV2 is IProtocolFeeController, Ownable2Step {
     error ZeroRecipient();
     /// @notice `renounceOwnership` is disabled. See the header.
     error RenounceDisabled();
+    /// @notice Nothing has accrued in this currency. A revert, so a simulation catches it free.
+    error NothingToCollect(address poolManager, Currency currency);
 
     /// @param owner_ The governance Safe. Never an EOA on a live chain.
     /// @param guardian_ May disable fees instantly during an incident. May be `address(0)`.
     constructor(address owner_, address guardian_) Ownable(owner_) {
         guardian = guardian_;
         emit GuardianUpdated(address(0), guardian_);
+        /* Defaults to the owner. A treasury left unset would make `sweep` revert on every call,
+           which is a scheduled job that silently never works. */
+        treasury = owner_;
+        emit TreasuryUpdated(address(0), owner_);
         protocolFeeSplitRatio = DEFAULT_SPLIT_RATIO;
         emit SplitRatioUpdated(0, DEFAULT_SPLIT_RATIO);
         /* Set here rather than left to a later governance call: every launchpad pool is
@@ -365,6 +382,48 @@ contract LatchProtocolFeeControllerV2 is IProtocolFeeController, Ownable2Step {
         if (zeroForOne > MAX_PROTOCOL_FEE) revert FeeExceedsMaximum(zeroForOne, MAX_PROTOCOL_FEE);
         if (oneForZero > MAX_PROTOCOL_FEE) revert FeeExceedsMaximum(oneForZero, MAX_PROTOCOL_FEE);
         return uint24(zeroForOne) | (uint24(oneForZero) << 12);
+    }
+
+    /**
+     * @notice Sweep accrued fees to the treasury. PERMISSIONLESS, on purpose.
+     *
+     * @dev This is the function a scheduled job calls. It follows the same security model as
+     * `packages/keeper`, which CLAUDE.md states as: "All four are permissionless, and that is the
+     * security model. A stolen keeper key buys an attacker nothing they could not already do from
+     * any address."
+     *
+     * The same is true here, and it is a property of the SIGNATURE, not of a check. There is no
+     * recipient argument: the destination is `treasury`, which only the owner can change. So the
+     * worst a hostile caller achieves is paying gas to move Latch's revenue into Latch's Safe —
+     * the thing that was going to happen anyway. That is why this needs no role, no allowlist and
+     * no bot key with privileges.
+     *
+     * The alternative — automating the owner-only `collect` — would mean a scheduled process
+     * holding Safe signer keys, collapsing 2-of-3 to 1-of-1 for a key that can also queue
+     * `registerApp`. Not a trade worth making for a fee sweep.
+     *
+     * REVERTS WHEN THERE IS NOTHING TO COLLECT, and that is deliberate. `collectProtocolFees`
+     * returns zero rather than reverting on an empty balance, which is the exact trap CLAUDE.md
+     * records against `settleBeneficiaries`: a job that "does NOT revert when pointless... will
+     * pay gas to do nothing forever". Making it a revert turns the check into a free read for any
+     * caller that simulates first, which the keeper always does.
+     */
+    function sweep(address poolManager, Currency currency) external returns (uint256 amountCollected) {
+        address to = treasury;
+        uint256 pending = IProtocolFees(poolManager).protocolFeesAccrued(currency);
+        if (pending == 0) revert NothingToCollect(poolManager, currency);
+
+        amountCollected = IProtocolFees(poolManager).collectProtocolFees(to, currency, 0);
+        emit ProtocolFeesCollected(poolManager, currency, to, amountCollected);
+    }
+
+    /// @notice Change where `sweep` sends fees. Owner-only; zero is refused.
+    /// @dev Zero would not merely misroute — `collectFee` would transfer to `address(0)`, which
+    /// for most ERC-20s burns the balance rather than reverting.
+    function setTreasury(address newTreasury) external onlyOwner {
+        if (newTreasury == address(0)) revert ZeroRecipient();
+        emit TreasuryUpdated(treasury, newTreasury);
+        treasury = newTreasury;
     }
 
     /// @notice How much is waiting to be collected. A read, so anyone may call it.

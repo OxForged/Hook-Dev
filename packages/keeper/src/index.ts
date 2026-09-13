@@ -20,6 +20,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 
 import { loadConfig, readPrivateKey } from './config.js'
 import { applyPendingConfigJob, settleBeneficiariesJob } from './jobs/hook.js'
+import { sweepProtocolFeesJob } from './jobs/fees.js'
 import { closeEpochJob, rolloverJob } from './jobs/epochs.js'
 import type { Job, JobContext } from './jobs/types.js'
 
@@ -127,6 +128,10 @@ async function main(): Promise<void> {
     rolloverJob(cfg.targets),
     settleBeneficiariesJob(cfg.targets),
     applyPendingConfigJob(cfg.targets),
+    /* Only when configured. Absent `feeSweep`, the job does not exist rather
+       than existing and finding nothing — a job that always reports "no targets"
+       trains an operator to skim the log. */
+    ...(cfg.feeSweep ? [sweepProtocolFeesJob(cfg.feeSweep)] : []),
   ]
   const disabled = new Set(cfg.disabledJobs ?? [])
   const jobs = allJobs.filter((j) => !disabled.has(j.id))

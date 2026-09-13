@@ -10,6 +10,9 @@ import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { isAddress, zeroAddress, type Address, type Hex } from 'viem'
 import { derivePoolId } from './decode.js'
+/* Type-only, so this is erased at runtime and cannot create an import cycle with
+   jobs/fees.ts, which imports nothing from here. */
+import type { FeeSweepConfig, SweepTarget } from './jobs/fees.js'
 
 /** A PoolKey as core defines it. Needed in full because the writes take one. */
 export interface PoolKeyConfig {
@@ -49,6 +52,13 @@ export interface KeeperConfig {
   readonly targets: readonly WatchTarget[]
   /** Job ids to skip. Lets an operator disable one job without a deploy. */
   readonly disabledJobs?: readonly string[]
+  /**
+   * Protocol fee sweeps. Absent means the job is not registered at all.
+   *
+   * `sweep` on the controller is permissionless and pays a stored treasury, so
+   * this adds no privilege to the keeper. See jobs/fees.ts.
+   */
+  readonly feeSweep?: FeeSweepConfig
   /**
    * Refuse to send a transaction whose estimated gas exceeds this. A runaway
    * loop in a contract the keeper does not control should cost it one failed
@@ -192,10 +202,63 @@ export function loadConfig(path: string): KeeperConfig {
     }
   })
 
+  /* ---- fee sweeps -------------------------------------------------------
+     Optional. Validated as strictly as everything else: a mistyped controller
+     or currency here would not fail loudly at runtime — `accrued` on a wrong
+     address reverts and the job reports "could not read", which reads like an
+     RPC blip rather than a config error. Catch it at startup instead. */
+  let feeSweep: FeeSweepConfig | undefined
+  const rawSweep = raw['feeSweep'] as Record<string, unknown> | undefined
+  if (rawSweep !== undefined) {
+    const controller = assertContract(rawSweep['controller'], 'feeSweep.controller')
+
+    const rawTargets = rawSweep['targets']
+    if (!Array.isArray(rawTargets) || rawTargets.length === 0) {
+      throw new Error('feeSweep.targets must be a non-empty array')
+    }
+
+    const sweepTargets: SweepTarget[] = rawTargets.map((t: Record<string, unknown>, i) => {
+      const where = `feeSweep.targets[${i}]`
+      const label = typeof t['label'] === 'string' && t['label'].length > 0 ? t['label'] : where
+      const minRaw = t['minAmount']
+      if (minRaw !== undefined && typeof minRaw !== 'string' && typeof minRaw !== 'number') {
+        throw new Error(`${where}: minAmount must be a string or number of RAW units`)
+      }
+      return {
+        label,
+        poolManager: assertContract(t['poolManager'], `${where}.poolManager`),
+        currency: assertAddress(t['currency'], `${where}.currency`),
+        ...(minRaw === undefined ? {} : { minAmount: BigInt(String(minRaw)) }),
+      }
+    })
+
+    /* A floor, not a default. Sweeping is correct at any cadence, but a short
+       interval spends a day's revenue on gas — and the point of the job is to
+       accumulate before paying. Anything under an hour is a configuration
+       mistake worth refusing rather than honouring. */
+    const rawInterval = rawSweep['intervalSeconds']
+    let intervalSeconds: number | undefined
+    if (rawInterval !== undefined) {
+      intervalSeconds = Number(rawInterval)
+      if (!Number.isFinite(intervalSeconds) || intervalSeconds < 3600) {
+        throw new Error(
+          `feeSweep.intervalSeconds must be at least 3600 (one hour); got ${String(rawInterval)}`,
+        )
+      }
+    }
+
+    feeSweep = {
+      controller,
+      targets: sweepTargets,
+      ...(intervalSeconds === undefined ? {} : { intervalSeconds }),
+    }
+  }
+
   return {
     chainId,
     rpcUrls: rpcUrls as string[],
     targets,
+    ...(feeSweep ? { feeSweep } : {}),
     ...(Array.isArray(raw['disabledJobs']) ? { disabledJobs: raw['disabledJobs'] as string[] } : {}),
     ...(raw['maxGas'] === undefined ? {} : { maxGas: BigInt(String(raw['maxGas'])) }),
     ...(typeof raw['notes'] === 'string' ? { notes: raw['notes'] } : {}),

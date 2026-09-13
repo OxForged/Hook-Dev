@@ -145,3 +145,16 @@ export const EPOCH = {
 export type EpochTuple = readonly [
   bigint, bigint, bigint, bigint, unknown, unknown, unknown, bigint, boolean,
 ]
+
+/**
+ * `LatchProtocolFeeControllerV2`, the two members this keeper needs.
+ *
+ * `sweep` is PERMISSIONLESS and takes no recipient — the destination is the
+ * controller's stored `treasury`. That is what makes it safe to automate; see
+ * jobs/fees.ts. The owner-only `collect`, which does name a recipient, is
+ * deliberately absent from this file so it cannot be called from here.
+ */
+export const FEE_CONTROLLER_ABI = parseAbi([
+  'function sweep(address poolManager, address currency) returns (uint256)',
+  'function accrued(address poolManager, address currency) view returns (uint256)',
+])

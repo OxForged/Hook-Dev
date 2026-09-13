@@ -327,6 +327,74 @@ contract LatchProtocolFeeControllerV2Test is Test {
     }
 
     /* ---------------------------------------------------------------------
+       SWEEP — permissionless, because the destination is not an argument.
+       --------------------------------------------------------------------- */
+
+    function test_Sweep_IsPermissionless() public {
+        manager.setAccrued(usdg, 4242);
+
+        // A complete stranger, with no role of any kind.
+        vm.prank(address(0xA11CE));
+        uint256 got = controller.sweep(address(manager), usdg);
+
+        assertEq(got, 4242);
+        assertEq(manager.lastRecipient(), governance, "must pay the treasury, not the caller");
+        assertEq(manager.protocolFeesAccrued(usdg), 0);
+    }
+
+    /// The security property, stated as a test: a hostile caller cannot redirect anything,
+    /// because there is no recipient argument to redirect.
+    function test_Sweep_CannotBeRedirected() public {
+        manager.setAccrued(usdg, 1000);
+        address thief = address(0xBAD);
+
+        vm.prank(thief);
+        controller.sweep(address(manager), usdg);
+
+        assertEq(manager.lastRecipient(), controller.treasury());
+        assertTrue(manager.lastRecipient() != thief);
+    }
+
+    /// Reverts rather than burning gas on nothing — the settleBeneficiaries trap, avoided.
+    function test_Sweep_RevertsWhenThereIsNothingToCollect() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LatchProtocolFeeControllerV2.NothingToCollect.selector, address(manager), usdg
+            )
+        );
+        controller.sweep(address(manager), usdg);
+        assertEq(manager.collectCalls(), 0, "must not touch the manager at all");
+    }
+
+    function test_Treasury_DefaultsToTheOwner() public view {
+        assertEq(controller.treasury(), governance);
+    }
+
+    function test_Treasury_OwnerOnlyAndNeverZero() public {
+        vm.prank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(0xBAD)));
+        controller.setTreasury(address(0xBAD));
+
+        vm.prank(governance);
+        vm.expectRevert(LatchProtocolFeeControllerV2.ZeroRecipient.selector);
+        controller.setTreasury(address(0));
+
+        vm.prank(governance);
+        controller.setTreasury(address(0xC0FFEE));
+        assertEq(controller.treasury(), address(0xC0FFEE));
+    }
+
+    function test_Sweep_FollowsTheTreasuryWhenItMoves() public {
+        vm.prank(governance);
+        controller.setTreasury(address(0xC0FFEE));
+
+        manager.setAccrued(usdg, 500);
+        vm.prank(address(0xA11CE));
+        controller.sweep(address(manager), usdg);
+        assertEq(manager.lastRecipient(), address(0xC0FFEE));
+    }
+
+    /* ---------------------------------------------------------------------
        REPRICING AN EXISTING POOL — core stamps the fee at initialize and never
        re-reads the controller, so this is the ONLY route to a live pool.
        --------------------------------------------------------------------- */

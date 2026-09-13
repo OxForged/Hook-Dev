@@ -1,7 +1,9 @@
 {
   "chainId": 11155111,
   "notes": "EXAMPLE. The hook is the zero address on purpose so a copy-paste run fails at startup. For a real config see keeper.config.robinhood.json. `distributor` is REQUIRED: an address, or null when the pool has none - say which.",
-  "rpcUrls": ["https://ethereum-sepolia-rpc.publicnode.com"],
+  "rpcUrls": [
+    "https://ethereum-sepolia-rpc.publicnode.com"
+  ],
   "maxGas": "2000000",
   "rpcBatch": true,
   "disabledJobs": [],
@@ -24,5 +26,18 @@
         "parameters": "0x00000000000000000000000000000000000000000000000000000000003c0000"
       }
     }
-  ]
+  ],
+  "feeSweep": {
+    "_comment": "OPTIONAL. Sweeps accrued protocol fees to the controller's stored treasury every intervalSeconds. `sweep` is PERMISSIONLESS and takes no recipient, so this adds no privilege to the keeper: the worst a stolen keeper key achieves here is paying gas to move the protocol's revenue into the protocol's own Safe. Never point this at the owner-only `collect`. Zeros below are placeholders and fail at startup on purpose.",
+    "controller": "0x0000000000000000000000000000000000000000",
+    "intervalSeconds": 43200,
+    "targets": [
+      {
+        "label": "CL manager / quote token",
+        "poolManager": "0x0000000000000000000000000000000000000000",
+        "currency": "0x0000000000000000000000000000000000000000",
+        "_minAmount": "Optional floor in RAW units \u2014 a 6-decimal token and an 18-decimal one need very different numbers. Set it from what gas costs, not a round number."
+      }
+    ]
+  }
 }
