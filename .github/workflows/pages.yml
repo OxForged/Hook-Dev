@@ -1,0 +1,119 @@
+# Publish apps/web to GitHub Pages.
+#
+# WHY THIS EXISTS. latch.guru is NXDOMAIN and there is no hosting anywhere, so
+# the built site had nowhere to go. This is the interim home; when the domain
+# resolves, set the two `env` values below (or a CNAME) and nothing else changes.
+#
+# THE PROJECT-SITE SUBPATH IS THE WHOLE DIFFICULTY. A Pages project site serves
+# at https://<owner>.github.io/<repo>/, not at a root. Three separate things
+# have to agree about that prefix and none of them infers it from the others:
+#
+#   1. VITE_BASE_PATH  -> vite's `base`, which prefixes the bundle and every
+#                         public/ file referenced from index.html.
+#   2. the router      -> reads `import.meta.env.BASE_URL`, which vite derives
+#                         from the same value, so 1 and 2 cannot drift.
+#   3. VITE_SITE_URL   -> the ORIGIN plus that path, for <link rel=canonical>
+#                         and og:image. A different question from 1 and 2: those
+#                         are a path, this is an absolute URL, and social
+#                         scrapers reject a relative one.
+#
+# `${{ github.event.repository.name }}` rather than a literal, so a rename or a
+# fork does not silently publish a site whose every asset 404s.
+
+name: Pages
+
+on:
+  push:
+    branches:
+      - main
+      - feat/latch-protocol-foundation
+    # Docs, Solidity and the keeper cannot change the built site. Skipping them
+    # keeps this off the critical path of contract work.
+    paths:
+      - 'apps/web/**'
+      - 'packages/sdk/**'
+      - 'packages/connect/**'
+      - '.github/workflows/pages.yml'
+  # Deploy on demand — the usual case is "the last run was before a fix".
+  workflow_dispatch:
+
+# Least privilege. `pages: write` and `id-token: write` are what the official
+# deploy action needs for OIDC; `contents: read` is everything else.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One live deployment at a time, and DO NOT cancel a run in progress: cancelling
+# mid-deploy can leave Pages serving a half-uploaded artifact. A superseded run
+# queues instead.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The web app depends on two workspace packages by `file:` path
+      # (@latchprotocol/sdk and @latchprotocol/connect), so their installs come
+      # first — npm links them from disk and a missing build there surfaces here
+      # as a module-resolution error rather than as anything obvious.
+      - name: Install SDK
+        working-directory: packages/sdk
+        run: npm ci || npm install
+
+      - name: Install connect
+        working-directory: packages/connect
+        run: npm ci || npm install
+
+      - name: Install web
+        working-directory: apps/web
+        run: npm ci || npm install
+
+      # Typecheck before building. NOTE: `tsc -p tsconfig.json` is a NO-OP in
+      # this repo — apps/web/tsconfig.json is solution-style with "files": [] —
+      # so `-b` is the only form that checks anything. Do not "simplify" this.
+      - name: Typecheck
+        working-directory: apps/web
+        run: npx tsc -b --force
+
+      - name: Build
+        working-directory: apps/web
+        env:
+          VITE_BASE_PATH: ${{ github.event.repository.name }}
+          VITE_SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+        run: npx vite build
+
+      # Fail loudly rather than publishing a broken site. The build emits both
+      # of these from a vite plugin; if that plugin is ever removed, every deep
+      # link 404s and the only symptom is a support message weeks later.
+      - name: Verify the static-host fallbacks were emitted
+        working-directory: apps/web
+        run: |
+          test -f dist/404.html || { echo "::error::dist/404.html missing — deep links will 404"; exit 1; }
+          test -f dist/.nojekyll || { echo "::error::dist/.nojekyll missing — Jekyll may drop _-prefixed files"; exit 1; }
+          grep -q "/${{ github.event.repository.name }}/assets/" dist/index.html \
+            || { echo "::error::index.html has no base-prefixed asset path — VITE_BASE_PATH did not apply"; exit 1; }
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

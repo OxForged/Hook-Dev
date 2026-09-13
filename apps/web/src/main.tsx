@@ -18,7 +18,17 @@ import { DEFAULT_CHAIN, wagmiConfig } from './lib/wallet.ts'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <LatchWalletProvider config={wagmiConfig} initialChain={DEFAULT_CHAIN}>
-      <BrowserRouter>
+      {/* The router has to be told the mount path too. Vite rewrites asset
+          URLs for `base`, but it knows nothing about client-side routes: on a
+          GitHub Pages project site the app is served from /<repo>/, and without
+          a basename every <Link to="/docs"> points at the ORG root, which is
+          not this app at all. `import.meta.env.BASE_URL` is exactly the value
+          vite.config.ts computed, so the two cannot drift.
+
+          BASE_URL always carries a trailing slash and react-router wants none,
+          so it is trimmed — except at the root, where '' is the correct
+          basename and '/' would be wrong. */}
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/+$/, '')}>
         <App />
       </BrowserRouter>
     </LatchWalletProvider>

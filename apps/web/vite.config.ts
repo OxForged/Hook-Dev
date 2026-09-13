@@ -1,3 +1,5 @@
+import { copyFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
@@ -10,8 +12,22 @@ import { defineConfig } from 'vite'
 // its cards point at that deploy rather than at production.
 const SITE_URL = (process.env.VITE_SITE_URL ?? 'https://latch.guru').replace(/\/+$/, '')
 
+// The path the site is MOUNTED at, which is not the same question as the origin above.
+//
+// At a custom domain this is `/` and nothing here matters. On a GitHub Pages PROJECT
+// site the app lives under `/<repo>/`, and every root-absolute reference — the bundle,
+// the brand favicons, the webmanifest, and every client-side route — has to carry that
+// prefix or 404. Vite rewrites what it can find in index.html and in the bundle; the
+// router needs the same value separately, which it reads from `import.meta.env.BASE_URL`.
+//
+// Normalised to always start and end with `/`, because Vite silently misbehaves
+// otherwise: a base without a trailing slash concatenates straight onto asset names.
+const RAW_BASE = process.env.VITE_BASE_PATH ?? '/'
+const BASE_PATH = `/${RAW_BASE.replace(/^\/+|\/+$/g, '')}/`.replace(/^\/{2,}/, '/')
+
 // https://vite.dev/config/
 export default defineConfig({
+  base: BASE_PATH,
   plugins: [
     react(),
     {
@@ -20,6 +36,30 @@ export default defineConfig({
       transformIndexHtml: {
         order: 'pre',
         handler: (html: string) => html.replaceAll('%SITE_URL%', SITE_URL),
+      },
+    },
+    {
+      // Two files a DUMB static host needs and a dev server never does.
+      //
+      // 404.html — this is a single-page app with real client-side routes
+      // (/docs, /app/*, /brand, /verify/:addr). A static host has no rewrite
+      // rule, so a visitor who types one of those, or follows a shared link,
+      // or simply reloads, gets the host's own 404 instead of the app. GitHub
+      // Pages serves 404.html for any unmatched path, so an identical copy of
+      // index.html turns that into the app booting and the router resolving
+      // the URL. The address bar keeps the real path, so this is not a
+      // redirect and nothing is lost.
+      //
+      // .nojekyll — Pages runs Jekyll by default, which silently DROPS files
+      // and directories whose names begin with an underscore. Vite does not
+      // emit any today, but a future dependency's chunk name can, and the
+      // failure is a 404 on one asset with nothing in the build log.
+      name: 'latch-static-host-fallbacks',
+      apply: 'build',
+      closeBundle() {
+        const out = resolve(__dirname, 'dist')
+        copyFileSync(resolve(out, 'index.html'), resolve(out, '404.html'))
+        writeFileSync(resolve(out, '.nojekyll'), '')
       },
     },
   ],
