@@ -2,7 +2,7 @@
 // Copyright (C) 2026 LatchProtocol
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, stdError} from "forge-std/Test.sol";
 import {ReentrancyLock} from "../../src/base/ReentrancyLock.sol";
 import {MixedQuoterRecorder} from "../../src/libraries/MixedQuoterRecorder.sol";
 import {TransientSlot} from "hp-transient/TransientSlot.sol";
@@ -57,6 +57,26 @@ contract RecorderHarness {
 
     function readDirection(bytes32 poolHash) external view returns (uint256) {
         return MixedQuoterRecorder.getSwapDirection(poolHash);
+    }
+
+    /// @dev A quote's own clearContext inside an open scope must defer; the scope close sweeps.
+    function probeScope(bytes32 poolHash)
+        external
+        returns (uint256 afterInnerClear, uint256 afterNestedExit, uint256 afterOuterExit)
+    {
+        MixedQuoterRecorder.enterScope();
+        MixedQuoterRecorder.enterScope();
+        MixedQuoterRecorder.setAndCheckSwapDirection(poolHash, true);
+        MixedQuoterRecorder.clearContext();
+        afterInnerClear = MixedQuoterRecorder.getSwapDirection(poolHash);
+        MixedQuoterRecorder.exitScope();
+        afterNestedExit = MixedQuoterRecorder.getSwapDirection(poolHash);
+        MixedQuoterRecorder.exitScope();
+        afterOuterExit = MixedQuoterRecorder.getSwapDirection(poolHash);
+    }
+
+    function exitWithoutEnter() external {
+        MixedQuoterRecorder.exitScope();
     }
 }
 
@@ -179,6 +199,33 @@ contract PeripheryBackendSafetyTest is Test {
         recorder.quoteAndClear(POOL_A, true);
         recorder.quoteAndClear(POOL_A, false); // must not revert
         assertEq(recorder.readDirection(POOL_A), 0, "no direction may survive a quote");
+    }
+
+    /// @notice Shared context spans a multicall scope on both backends, and the storage backend
+    /// sweeps exactly once, at the outermost scope exit. The MixedQuoter-level twins of this are
+    /// the `test_latch_*` tests at the end of test/MixedQuoter.t.sol.
+    function test_recorder_scopeDefersSweepToOutermostExit() public {
+        (uint256 afterInnerClear, uint256 afterNestedExit, uint256 afterOuterExit) = recorder.probeScope(POOL_A);
+        assertEq(afterInnerClear, 1, "clearContext inside a scope must not sweep");
+        assertEq(afterNestedExit, 1, "a nested scope exit must not sweep");
+        if (TransientSlot.IS_EIP1153) {
+            assertEq(afterOuterExit, 1, "cancun: sweep is intentionally a no-op");
+        } else {
+            assertEq(afterOuterExit, 0, "storage backend: outermost scope exit must sweep");
+        }
+        assertEq(recorder.readDirection(POOL_A), 0, "no direction may survive the transaction");
+        recorder.quoteAndClear(POOL_A, false); // opposite direction in a later tx must not revert
+    }
+
+    /// @notice An unbalanced exit is a bug in the caller and must fail loudly, not wrap the depth
+    /// to type(uint256).max and silently disable every later sweep.
+    function test_recorder_unbalancedScopeExitReverts() public {
+        if (TransientSlot.IS_EIP1153) {
+            recorder.exitWithoutEnter(); // elided entirely under EIP-1153
+        } else {
+            vm.expectRevert(stdError.arithmeticError);
+            recorder.exitWithoutEnter();
+        }
     }
 
     function test_backendIdentity() public pure {

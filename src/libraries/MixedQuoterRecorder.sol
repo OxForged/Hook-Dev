@@ -44,6 +44,11 @@ library MixedQuoterRecorder {
     /// @dev uint256(keccak256("HP_MIXED_QUOTER_TOUCHED_BASE")) - 1
     uint256 internal constant TOUCHED_BASE = 0xa86b85b74d41af8df7ca5b3a93365e5a56d81eba1cafd0cd67394c9c04330b5;
 
+    /// @dev LatchProtocol: nesting depth of open `multicall` scopes. Non-zero only inside a
+    /// multicall frame, and self-clearing: incremented on entry, decremented on the success path,
+    /// rolled back by the EVM on revert. uint256(keccak256("HP_MIXED_QUOTER_SCOPE_DEPTH")) - 1
+    uint256 internal constant SCOPE_DEPTH = 0x73a2ef557c58a515cfc611f6795ccb109c1a3c629303da23ebc6e7a1b5bc3a9c;
+
     enum SwapDirection {
         NONE,
         ZeroForOne,
@@ -52,7 +57,8 @@ library MixedQuoterRecorder {
 
     error INVALID_SWAP_DIRECTION();
 
-    /// @notice LatchProtocol: clear every slot written during this quote.
+    /// @notice LatchProtocol: clear every slot written during this quote, unless an enclosing
+    /// `multicall` scope owns the sweep.
     ///
     /// @dev Under EIP-1153 the EVM discards these at end of transaction and this compiles away
     /// entirely — `IS_EIP1153` is a compile-time constant, so the whole body is dead-code
@@ -65,13 +71,43 @@ library MixedQuoterRecorder {
     /// other way, for everyone. Accumulations and swap lists would also grow without bound,
     /// silently corrupting every later quote.
     ///
-    /// DELIBERATE SEMANTIC DIVERGENCE: this sweeps per quote CALL, whereas EIP-1153 clears per
-    /// TRANSACTION. Two quoter calls in one transaction therefore share context on Cancun but
-    /// not on legacy. Legacy is the stricter/safer direction (more isolation) and the documented
-    /// contract — shared context across a single path — is preserved on both.
+    /// WHERE THE SWEEP HAPPENS. The invariant only requires every slot to be zero by the time
+    /// control leaves the OUTERMOST call into the quoter. It does not require a sweep per quote.
+    /// `quoteMixedExactInputSharedContext` exists to be batched through `multicall` — each call
+    /// in the batch must see the pool impact of the ones before it, which is how a split route is
+    /// priced. Sweeping per quote call silently turned that into independent quotes on legacy,
+    /// OVER-quoting every split route that reuses a pool. So:
+    ///   - inside a multicall scope (`SCOPE_DEPTH > 0`) this is a no-op, and
+    ///   - `exitScope` sweeps once when the outermost multicall returns.
+    /// A quote called directly, outside any multicall, still sweeps before it returns.
+    ///
+    /// RESIDUAL DIVERGENCE, and it cannot be closed without an end-of-transaction hook: two
+    /// SEPARATE top-level calls into the quoter from one transaction (not via multicall) share
+    /// context on Cancun and do not on legacy.
     function clearContext() internal {
         if (TransientSlot.IS_EIP1153) return;
+        if (TransientSlot.getUint(SCOPE_DEPTH) != 0) return;
+        _sweep();
+    }
 
+    /// @notice LatchProtocol: open a multicall scope. Quotes inside it share context, and their
+    /// per-quote `clearContext` defers to the matching `exitScope`. Elided under EIP-1153.
+    function enterScope() internal {
+        if (TransientSlot.IS_EIP1153) return;
+        TransientSlot.setUint(SCOPE_DEPTH, TransientSlot.getUint(SCOPE_DEPTH) + 1);
+    }
+
+    /// @notice LatchProtocol: close a multicall scope; the outermost close sweeps everything
+    /// recorded inside it. Must be paired with `enterScope` on the success path — the revert
+    /// path needs nothing, because the EVM rolls back both the depth and every recorded slot.
+    function exitScope() internal {
+        if (TransientSlot.IS_EIP1153) return;
+        uint256 depth = TransientSlot.getUint(SCOPE_DEPTH) - 1; // checked: underflow reverts
+        TransientSlot.setUint(SCOPE_DEPTH, depth);
+        if (depth == 0) _sweep();
+    }
+
+    function _sweep() private {
         uint256 count = TransientSlot.getUint(TOUCHED_COUNT);
         for (uint256 i = 0; i < count; ++i) {
             uint256 slot = TransientSlot.getUint(TOUCHED_BASE + i);

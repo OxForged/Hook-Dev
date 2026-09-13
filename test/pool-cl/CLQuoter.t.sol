@@ -23,6 +23,9 @@ import {Currency, CurrencyLibrary} from "infinity-core/src/types/Currency.sol";
 import {TickMath} from "infinity-core/src/pool-cl/libraries/TickMath.sol";
 import {PathKey} from "../../src/libraries/PathKey.sol";
 import {QuoterRevert} from "../../src/libraries/QuoterRevert.sol";
+// LatchProtocol: per-backend gas ceilings. The storage backend (FOUNDRY_PROFILE=legacy) prices the
+// Vault lock with SSTORE; default-profile ceilings remain the upstream literals. See BackendGas.
+import {BackendGas} from "../helpers/BackendGas.sol";
 
 contract CLQuoterTest is Test, Deployers {
     using SafeCast for *;
@@ -95,7 +98,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, expectedAmountOut);
         assertGt(_gasEstimate, 140000);
-        assertLt(_gasEstimate, 150000);
+        assertLt(_gasEstimate, BackendGas.ceiling(150000, 250000));
     }
 
     function test_bytecodeSize() public {
@@ -120,7 +123,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, expectedAmountOut);
         assertGt(_gasEstimate, 140000);
-        assertLt(_gasEstimate, 150000);
+        assertLt(_gasEstimate, BackendGas.ceiling(150000, 250000));
     }
 
     // nested self-call into lockAcquired reverts
@@ -139,7 +142,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 9871);
         assertGt(_gasEstimate, 140000);
-        assertLt(_gasEstimate, 150000);
+        assertLt(_gasEstimate, BackendGas.ceiling(150000, 260000));
     }
 
     function testCLQuoter_quoteExactInput_0to2_2TicksLoaded_initialiedAfter() public {
@@ -154,7 +157,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 6143);
         assertGt(_gasEstimate, 110000);
-        assertLt(_gasEstimate, 120000);
+        assertLt(_gasEstimate, BackendGas.ceiling(120000, 220000));
     }
 
     function testCLQuoter_quoteExactInput_0to2_1TickLoaded() public {
@@ -169,7 +172,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 3971);
         assertGt(_gasEstimate, 110000);
-        assertLt(_gasEstimate, 120000);
+        assertLt(_gasEstimate, BackendGas.ceiling(120000, 220000));
     }
 
     function testCLQuoter_quoteExactInput_0to2_0TickLoaded_startingNotInitialized() public {
@@ -181,7 +184,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 8);
         assertGt(_gasEstimate, 80000);
-        assertLt(_gasEstimate, 90000);
+        assertLt(_gasEstimate, BackendGas.ceiling(90000, 190000));
     }
 
     function testCLQuoter_quoteExactInput_0to2_0TickLoaded_startingInitialized() public {
@@ -194,7 +197,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 8);
         assertGt(_gasEstimate, 90000);
-        assertLt(_gasEstimate, 100000);
+        assertLt(_gasEstimate, BackendGas.ceiling(100000, 200000));
     }
 
     function testCLQuoter_quoteExactInput_2to0_2TicksLoaded() public {
@@ -206,7 +209,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 9871);
         assertGt(_gasEstimate, 140000);
-        assertLt(_gasEstimate, 150000);
+        assertLt(_gasEstimate, BackendGas.ceiling(150000, 250000));
     }
 
     function testCLQuoter_quoteExactInput_2to0_2TicksLoaded_initialiedAfter() public {
@@ -221,7 +224,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 6190);
         assertGt(_gasEstimate, 140000);
-        assertLt(_gasEstimate, 150000);
+        assertLt(_gasEstimate, BackendGas.ceiling(150000, 250000));
     }
 
     function testCLQuoter_quoteExactInput_2to0_0TickLoaded_startingInitialized() public {
@@ -234,7 +237,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 198);
         assertGt(_gasEstimate, 70000);
-        assertLt(_gasEstimate, 80000);
+        assertLt(_gasEstimate, BackendGas.ceiling(80000, 180000));
     }
 
     // 2->0 starting not initialized
@@ -247,7 +250,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 101);
         assertGt(_gasEstimate, 70000);
-        assertLt(_gasEstimate, 80000);
+        assertLt(_gasEstimate, BackendGas.ceiling(80000, 180000));
     }
 
     function testCLQuoter_quoteExactInput_2to1() public {
@@ -259,7 +262,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 9871);
         assertGt(_gasEstimate, 70000);
-        assertLt(_gasEstimate, 80000);
+        assertLt(_gasEstimate, BackendGas.ceiling(80000, 180000));
     }
 
     function testCLQuoter_quoteExactInput_0to2to1() public {
@@ -272,7 +275,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountOut, 9745);
         assertGt(_gasEstimate, 200000);
-        assertLt(_gasEstimate, 210000);
+        assertLt(_gasEstimate, BackendGas.ceiling(210000, 340000));
     }
 
     function testCLQuoter_revert_UnexpectedRevertBytes() public {
@@ -298,7 +301,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountIn, 15273);
         assertGt(_gasEstimate, 140000);
-        assertLt(_gasEstimate, 150000);
+        assertLt(_gasEstimate, BackendGas.ceiling(150000, 250000));
     }
 
     function testCLQuoter_quoteExactOutput_0to2_1TickLoaded_initialiedAfter() public {
@@ -311,7 +314,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountIn, 6200);
         assertGt(_gasEstimate, 110000);
-        assertLt(_gasEstimate, 120000);
+        assertLt(_gasEstimate, BackendGas.ceiling(120000, 220000));
     }
 
     function testCLQuoter_quoteExactOutput_0to2_1TickLoaded() public {
@@ -324,7 +327,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountIn, 4029);
         assertGt(_gasEstimate, 110000);
-        assertLt(_gasEstimate, 120000);
+        assertLt(_gasEstimate, BackendGas.ceiling(120000, 220000));
     }
 
     function testCLQuoter_quoteExactOutput_0to2_0TickLoaded_startingInitialized() public {
@@ -338,7 +341,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountIn, 102);
         assertGt(_gasEstimate, 90000);
-        assertLt(_gasEstimate, 100000);
+        assertLt(_gasEstimate, BackendGas.ceiling(100000, 200000));
     }
 
     function testCLQuoter_quoteExactOutput_0to2_0TickLoaded_startingNotInitialized() public {
@@ -351,7 +354,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountIn, 12);
         assertGt(_gasEstimate, 80000);
-        assertLt(_gasEstimate, 90000);
+        assertLt(_gasEstimate, BackendGas.ceiling(90000, 190000));
     }
 
     function testCLQuoter_quoteExactOutput_2to0_2TicksLoaded() public {
@@ -363,7 +366,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountIn, 15273);
         assertGt(_gasEstimate, 140000);
-        assertLt(_gasEstimate, 150000);
+        assertLt(_gasEstimate, BackendGas.ceiling(150000, 250000));
     }
 
     function testCLQuoter_quoteExactOutput_2to0_2TicksLoaded_initialiedAfter() public {
@@ -376,7 +379,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountIn, 6283);
         assertGt(_gasEstimate, 140000);
-        assertLt(_gasEstimate, 150000);
+        assertLt(_gasEstimate, BackendGas.ceiling(150000, 250000));
     }
 
     function testCLQuoter_quoteExactOutput_2to0_1TickLoaded() public {
@@ -388,7 +391,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountIn, 6055);
         assertGt(_gasEstimate, 110000);
-        assertLt(_gasEstimate, 120000);
+        assertLt(_gasEstimate, BackendGas.ceiling(120000, 220000));
     }
 
     function testCLQuoter_quoteExactOutput_2to1() public {
@@ -400,7 +403,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountIn, 10000);
         assertGt(_gasEstimate, 70000);
-        assertLt(_gasEstimate, 80000);
+        assertLt(_gasEstimate, BackendGas.ceiling(80000, 180000));
     }
 
     function testCLQuoter_quoteExactOutput_0to2to1() public {
@@ -413,7 +416,7 @@ contract CLQuoterTest is Test, Deployers {
 
         assertEq(_amountIn, 10000);
         assertGt(_gasEstimate, 205000);
-        assertLt(_gasEstimate, 215000);
+        assertLt(_gasEstimate, BackendGas.ceiling(215000, 340000));
     }
 
     function createPoolKey(MockERC20 tokenA, MockERC20 tokenB, address hookAddr)

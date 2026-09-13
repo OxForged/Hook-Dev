@@ -31,6 +31,9 @@ import {IQuoter} from "../../src/interfaces/IQuoter.sol";
 import {IBinQuoter, BinQuoter} from "../../src/pool-bin/lens/BinQuoter.sol";
 import {QuoterRevert} from "../../src/libraries/QuoterRevert.sol";
 import {IWETH9} from "../../src/interfaces/external/IWETH9.sol";
+// LatchProtocol: per-backend gas ceilings. The storage backend (FOUNDRY_PROFILE=legacy) prices the
+// Vault lock with SSTORE; default-profile ceilings remain the upstream literals. See BackendGas.
+import {BackendGas} from "../helpers/BackendGas.sol";
 
 contract BinQuoterTest is Test, BinLiquidityHelper, DeployPermit2 {
     using SafeCast for uint256;
@@ -196,7 +199,7 @@ contract BinQuoterTest is Test, BinLiquidityHelper, DeployPermit2 {
         assertEq(token0.balanceOf(alice), amountOut);
 
         assertGt(_gasEstimate, 40000);
-        assertLt(_gasEstimate, 50000);
+        assertLt(_gasEstimate, BackendGas.ceiling(50000, 150000));
     }
 
     function testQuoter_quoteExactInputSingle_oneForZero() public {
@@ -238,7 +241,7 @@ contract BinQuoterTest is Test, BinLiquidityHelper, DeployPermit2 {
         assertEq(token0.balanceOf(alice), 0 ether);
 
         assertGt(_gasEstimate, 40000);
-        assertLt(_gasEstimate, 50000);
+        assertLt(_gasEstimate, BackendGas.ceiling(50000, 150000));
     }
 
     function testQuoter_quoteExactInput_SingleHop() public {
@@ -296,7 +299,7 @@ contract BinQuoterTest is Test, BinLiquidityHelper, DeployPermit2 {
         assertEq(token1.balanceOf(alice), amountOut);
 
         assertGt(_gasEstimate, 45000);
-        assertLt(_gasEstimate, 55000);
+        assertLt(_gasEstimate, BackendGas.ceiling(55000, 150000));
     }
 
     function testQuoter_quoteExactInput_MultiHop() public {
@@ -370,7 +373,7 @@ contract BinQuoterTest is Test, BinLiquidityHelper, DeployPermit2 {
         assertEq(token2.balanceOf(bob), amountOut);
 
         assertGt(_gasEstimate, 80000);
-        assertLt(_gasEstimate, 90000);
+        assertLt(_gasEstimate, BackendGas.ceiling(90000, 210000));
     }
 
     function testQuoter_quoteExactOutputSingle_zeroForOne() public {
@@ -411,7 +414,7 @@ contract BinQuoterTest is Test, BinLiquidityHelper, DeployPermit2 {
         assertEq(token1.balanceOf(bob), 0.5 ether);
 
         assertGt(_gasEstimate, 45000);
-        assertLt(_gasEstimate, 55000);
+        assertLt(_gasEstimate, BackendGas.ceiling(55000, 150000));
     }
 
     function testQuoter_quoteExactOutputSingle_oneForZero() public {
@@ -452,7 +455,7 @@ contract BinQuoterTest is Test, BinLiquidityHelper, DeployPermit2 {
         assertEq(token0.balanceOf(bob), 0.5 ether);
 
         assertGt(_gasEstimate, 45000);
-        assertLt(_gasEstimate, 55000);
+        assertLt(_gasEstimate, BackendGas.ceiling(55000, 150000));
     }
 
     function testQuoter_quoteExactOutput_SingleHop() public {
@@ -519,7 +522,7 @@ contract BinQuoterTest is Test, BinLiquidityHelper, DeployPermit2 {
         assertEq(token1.balanceOf(alice), 0.5 ether);
 
         assertGt(_gasEstimate, 40000);
-        assertLt(_gasEstimate, 50000);
+        assertLt(_gasEstimate, BackendGas.ceiling(50000, 150000));
     }
 
     function testQuoter_quoteExactOutput_MultiHop() public {
@@ -601,7 +604,7 @@ contract BinQuoterTest is Test, BinLiquidityHelper, DeployPermit2 {
         assertEq(token2.balanceOf(bob), 0.5 ether);
 
         assertGt(_gasEstimate, 75000);
-        assertLt(_gasEstimate, 85000);
+        assertLt(_gasEstimate, BackendGas.ceiling(85000, 210000));
     }
 
     function testQuoter_lockAcquired_revert_InvalidLockAcquiredSender() public {

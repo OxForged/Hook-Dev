@@ -60,6 +60,32 @@ contract MixedQuoter is IMixedQuoter, IPancakeV3SwapCallback, Multicall {
         binQuoter = _binQuoter;
     }
 
+    /// @inheritdoc Multicall
+    /// @dev LatchProtocol: identical to `Multicall.multicall`, wrapped in a recorder scope so that
+    /// on the storage backend every `quoteMixedExactInputSharedContext` in the batch shares
+    /// context (as it does under EIP-1153) and the recorder is swept once, when the outermost
+    /// batch returns. Under EIP-1153 both scope calls compile away. See
+    /// `MixedQuoterRecorder.clearContext` for why the sweep boundary is here and not per quote.
+    function multicall(bytes[] calldata data) external payable override returns (bytes[] memory results) {
+        MixedQuoterRecorder.enterScope();
+
+        results = new bytes[](data.length);
+        for (uint256 i = 0; i < data.length; i++) {
+            (bool success, bytes memory result) = address(this).delegatecall(data[i]);
+
+            if (!success) {
+                // bubble up the revert reason
+                assembly ("memory-safe") {
+                    revert(add(result, 0x20), mload(result))
+                }
+            }
+
+            results[i] = result;
+        }
+
+        MixedQuoterRecorder.exitScope();
+    }
+
     /**
      * V3 *************************************************
      */
@@ -407,9 +433,10 @@ contract MixedQuoter is IMixedQuoter, IPancakeV3SwapCallback, Multicall {
             gasEstimate += gasEstimateForCurAction;
         }
 
-        /// @dev LatchProtocol: sweep the recorder before returning. Compiles away entirely under
-        /// EIP-1153; under the storage backend it is what stops a recorded swap direction from
-        /// persisting and permanently bricking quotes for this pool in the opposite direction.
+        /// @dev LatchProtocol: sweep the recorder before returning — or, inside a `multicall`,
+        /// leave it to the batch so later quotes in the batch see this one. Compiles away entirely
+        /// under EIP-1153; under the storage backend it is what stops a recorded swap direction
+        /// from persisting and permanently bricking quotes for this pool in the opposite direction.
         /// On a revert path the EVM rolls the writes back, so the success path is the only one
         /// that needs an explicit sweep.
         MixedQuoterRecorder.clearContext();

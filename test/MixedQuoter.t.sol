@@ -53,6 +53,9 @@ import {ActionConstants} from "../src/libraries/ActionConstants.sol";
 import {V3SmartRouterHelper} from "../src/libraries/external/V3SmartRouterHelper.sol";
 import {MixedQuoterRecorder} from "../src/libraries/MixedQuoterRecorder.sol";
 import {PancakeV3Router} from "./helpers/PancakeV3Router.sol";
+// LatchProtocol: per-backend gas ceilings. The storage backend (FOUNDRY_PROFILE=legacy) prices the
+// Vault lock with SSTORE; default-profile ceilings remain the upstream literals. See BackendGas.
+import {BackendGas} from "./helpers/BackendGas.sol";
 
 contract MixedQuoterTest is
     Test,
@@ -852,7 +855,7 @@ contract MixedQuoterTest is
         assertEq(_amountOut, amountOut);
         assertEq(_gasEstimate, gasEstimate);
         assertGt(_gasEstimate, 80000);
-        assertLt(_gasEstimate, 90000);
+        assertLt(_gasEstimate, BackendGas.ceiling(90000, 190000));
     }
 
     function test_quoteMixedExactInputSharedContext_InfiCL() public {
@@ -1039,7 +1042,7 @@ contract MixedQuoterTest is
         assertEq(_amountOut, amountOut);
         assertEq(_gasEstimate, gasEstimate);
         assertGt(_gasEstimate, 80000);
-        assertLt(_gasEstimate, 90000);
+        assertLt(_gasEstimate, BackendGas.ceiling(90000, 190000));
     }
 
     function testInfiCLquoteExactInputSingle_ZeroForOne_WETHPair() public {
@@ -1072,7 +1075,7 @@ contract MixedQuoterTest is
         assertEq(_amountOut, amountOut);
         assertEq(_gasEstimate, gasEstimate);
         assertGt(_gasEstimate, 80000);
-        assertLt(_gasEstimate, 90000);
+        assertLt(_gasEstimate, BackendGas.ceiling(90000, 190000));
     }
 
     function testBinQuoteExactInputSingle_ZeroForOne() public {
@@ -1099,7 +1102,7 @@ contract MixedQuoterTest is
         assertEq(_amountOut, amountOut);
         assertEq(_gasEstimate, gasEstimate);
         assertGt(_gasEstimate, 40000);
-        assertLt(_gasEstimate, 50000);
+        assertLt(_gasEstimate, BackendGas.ceiling(50000, 150000));
     }
 
     function test_quoteMixedExactInputSharedContext_InfiBin() public {
@@ -1279,7 +1282,7 @@ contract MixedQuoterTest is
         assertEq(_amountOut, amountOut);
         assertEq(_gasEstimate, gasEstimate);
         assertGt(_gasEstimate, 40000);
-        assertLt(_gasEstimate, 50000);
+        assertLt(_gasEstimate, BackendGas.ceiling(50000, 150000));
     }
 
     // route 1: path 1: token0 -> token1 -> token2 -> weth, cl pool -> ss pool -> v3 pool
@@ -1440,7 +1443,7 @@ contract MixedQuoterTest is
 
         assertEq(amountOut, 996169927245114903);
         assertGt(gasEstimate, 130000);
-        assertLt(gasEstimate, 140000);
+        assertLt(gasEstimate, BackendGas.ceiling(140000, 240000));
     }
 
     // token0 -> token1 -> token2 -> WETH
@@ -1468,7 +1471,7 @@ contract MixedQuoterTest is
 
         assertEq(amountOut, 995177668263126217);
         assertGt(gasEstimate, 260000);
-        assertLt(gasEstimate, 270000);
+        assertLt(gasEstimate, BackendGas.ceiling(270000, 380000));
     }
 
     // token0 -> token1 -> token2 -> token3 -> token4
@@ -1499,7 +1502,7 @@ contract MixedQuoterTest is
 
         assertEq(amountOut, 901152761185198407);
         assertGt(gasEstimate, 180000);
-        assertLt(gasEstimate, 200000);
+        assertLt(gasEstimate, BackendGas.ceiling(200000, 400000));
     }
 
     // token2 -> WETH -> token1
@@ -1525,7 +1528,7 @@ contract MixedQuoterTest is
 
         assertEq(amountOut, 995013974661415835);
         assertGt(gasEstimate, 210000);
-        assertLt(gasEstimate, 220000);
+        assertLt(gasEstimate, BackendGas.ceiling(220000, 330000));
     }
 
     // token1 -> address(0) -> token2
@@ -1551,7 +1554,7 @@ contract MixedQuoterTest is
 
         assertEq(amountOut, 995014965144446181);
         assertGt(gasEstimate, 200000);
-        assertLt(gasEstimate, 210000);
+        assertLt(gasEstimate, BackendGas.ceiling(210000, 320000));
     }
 
     function _mintV3Liquidity(address _token0, address _token1) internal {
@@ -1655,6 +1658,96 @@ contract MixedQuoterTest is
     function _getNfpmBytecodePath() internal pure returns (string memory) {
         // https://etherscan.io/address/0x46A15B0b27311cedF172AB29E4f4766fbE7F4364#code
         return "./test/bin/pcsV3Nfpm.bytecode";
+    }
+
+    /*//////////////////////////////////////////////////////////////
+        LatchProtocol: shared context is scoped to the multicall
+    //////////////////////////////////////////////////////////////*/
+    // Appended as one block so upstream merges stay a clean conflict-free tail. Every test here
+    // must pass unchanged under BOTH profiles. `isolate = true`, so each top-level call below is
+    // its own transaction: on the storage backend that is exactly where a leaked recorder slot
+    // would show up.
+
+    function _latchV2Quote(address tokenIn, address tokenOut, uint256 amountIn, bool shared)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        address[] memory paths = new address[](2);
+        paths[0] = tokenIn;
+        paths[1] = tokenOut;
+        bytes memory actions = new bytes(1);
+        actions[0] = bytes1(uint8(MixedQuoterActions.V2_EXACT_INPUT_SINGLE));
+        bytes[] memory params = new bytes[](1);
+        return abi.encodeWithSelector(
+            shared ? IMixedQuoter.quoteMixedExactInputSharedContext.selector : IMixedQuoter.quoteMixedExactInput.selector,
+            paths,
+            actions,
+            params,
+            amountIn
+        );
+    }
+
+    function _latchCall(bytes memory data) internal returns (uint256 amountOut) {
+        (bool ok, bytes memory ret) = address(mixedQuoter).call(data);
+        require(ok, "quote reverted");
+        (amountOut,) = abi.decode(ret, (uint256, uint256));
+    }
+
+    /// @notice After a batch returns, nothing it recorded may survive: an opposite-direction quote
+    /// in a later transaction must work, and must price against an untouched pool. Guards the
+    /// sweep in `MixedQuoterRecorder.exitScope`.
+    function test_latch_multicallContextDoesNotSurviveTheBatch() public {
+        // Priced FIRST, against the untouched pool. Any quote that returns outside a scope sweeps
+        // the recorder, so taking this after the batch would itself erase a leak.
+        uint256 isolated = _latchCall(_latchV2Quote(address(token2), address(weth), 0.5 ether, false));
+
+        bytes[] memory batch = new bytes[](2);
+        batch[0] = _latchV2Quote(address(weth), address(token2), 0.3 ether, true);
+        batch[1] = _latchV2Quote(address(weth), address(token2), 0.4 ether, true);
+        mixedQuoter.multicall(batch);
+
+        bytes[] memory reverse = new bytes[](1);
+        reverse[0] = _latchV2Quote(address(token2), address(weth), 0.5 ether, true);
+        bytes[] memory results = mixedQuoter.multicall(reverse); // INVALID_SWAP_DIRECTION if leaked
+        (uint256 viaBatch,) = abi.decode(results[0], (uint256, uint256));
+        assertEq(viaBatch, isolated, "batch context leaked into a later transaction");
+
+        uint256 direct = _latchCall(_latchV2Quote(address(token2), address(weth), 0.5 ether, true));
+        assertEq(direct, isolated, "batch context leaked into a later direct call");
+    }
+
+    /// @notice A direct shared-context call outside any batch still sweeps before it returns.
+    /// Guards the `SCOPE_DEPTH` decrement: a depth left non-zero would silence this sweep.
+    function test_latch_directSharedContextCallStillSweeps() public {
+        uint256 isolated = _latchCall(_latchV2Quote(address(token2), address(weth), 0.5 ether, false));
+        mixedQuoter.multicall(new bytes[](0)); // opens and closes a scope with nothing in it
+        _latchCall(_latchV2Quote(address(weth), address(token2), 0.3 ether, true));
+        uint256 direct = _latchCall(_latchV2Quote(address(token2), address(weth), 0.5 ether, true));
+        assertEq(direct, isolated, "direct shared-context call leaked its context");
+    }
+
+    /// @notice A nested multicall must not sweep when the INNER batch returns: the outer quote
+    /// still has to see the inner one, exactly as a flat batch does.
+    function test_latch_nestedMulticallSharesContextWithOuterBatch() public {
+        bytes[] memory flat = new bytes[](2);
+        flat[0] = _latchV2Quote(address(weth), address(token2), 0.3 ether, true);
+        flat[1] = _latchV2Quote(address(weth), address(token2), 0.4 ether, true);
+        bytes[] memory flatResults = mixedQuoter.multicall(flat);
+        (uint256 flatSecond,) = abi.decode(flatResults[1], (uint256, uint256));
+
+        bytes[] memory inner = new bytes[](1);
+        inner[0] = flat[0];
+        bytes[] memory nested = new bytes[](2);
+        nested[0] = abi.encodeWithSelector(mixedQuoter.multicall.selector, inner);
+        nested[1] = flat[1];
+        bytes[] memory nestedResults = mixedQuoter.multicall(nested);
+        (uint256 nestedSecond,) = abi.decode(nestedResults[1], (uint256, uint256));
+
+        assertEq(nestedSecond, flatSecond, "inner batch swept context the outer batch needed");
+
+        uint256 isolatedSecond = _latchCall(_latchV2Quote(address(weth), address(token2), 0.4 ether, false));
+        assertLt(flatSecond, isolatedSecond, "second quote in a batch must see the first one's impact");
     }
 
     receive() external payable {}

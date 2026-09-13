@@ -14,6 +14,10 @@ remappings = [
     "@openzeppelin/=../core/lib/openzeppelin-contracts/",
     "solmate/=../core/lib/solmate/",
     "permit2/=lib/permit2",
+    # Deploy scripts import `pancake-create3-factory/src/...`. Pinned explicitly: without it the
+    # prefix resolved only through remappings auto-detected from the NESTED upstream
+    # lib/infinity-core, and a clean checkout auto-detects `.../src/` and fails with src/src.
+    "pancake-create3-factory/=lib/pancake-create3-factory/",
     "hp-transient/=../core/src/libraries/transient/eip1153/",
 ]
 src = 'src'
@@ -98,5 +102,11 @@ remappings = [
     "@openzeppelin/=../core/lib/openzeppelin-contracts/",
     "solmate/=../core/lib/solmate/",
     "permit2/=lib/permit2",
+    # Same as default. This profile has auto_detect_remappings = false, so without this line the
+    # deploy scripts do not compile under legacy at all.
+    "pancake-create3-factory/=lib/pancake-create3-factory/",
     "hp-transient/=../core/src/libraries/transient/storage/",
 ]
+# Gas snapshots are backend-specific. Without this, every legacy `forge test` overwrites the
+# tracked default-profile snapshots/*.json with SSTORE-priced numbers.
+snapshots = "snapshots-legacy"
