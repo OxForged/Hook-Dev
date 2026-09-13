@@ -152,28 +152,14 @@ jobs:
           - package: core
             node: true
 
-          # periphery's deploy scripts import `pancake-create3-factory/src/...`,
-          # which it never remaps explicitly. Locally that resolves only through
-          # remappings auto-detected from the NESTED upstream infinity-core; in a
-          # clean checkout forge maps it to lib/pancake-create3-factory/src/ and
-          # the scripts fail with src/src. Fix belongs in periphery's
-          # foundry.toml (`pancake-create3-factory/=lib/pancake-create3-factory/`);
-          # until it lands, build and test periphery without its scripts.
-          #
-          # periphery · legacy is EXPECTED RED when this job lands: 53 failures
-          # in MixedQuoter, CLQuoter and BinQuoter, all under the storage backend
-          # only. Two causes, neither triaged into a fix yet:
-          #   - gas-estimate ceilings (assertLt(gasEstimate, N)); SSTORE-backed
-          #     quoting costs more than TSTORE-backed quoting.
-          #   - SharedContext amounts / INVALID_SWAP_DIRECTION: the upstream
-          #     tests quote twice in one transaction and expect shared context.
-          #     MixedQuoterRecorder.clearContext() deliberately sweeps per CALL
-          #     on legacy (documented there), so that expectation cannot hold.
-          # The tests need to become profile-aware. Until then this cell tells
-          # the truth; it is not excluded, so nothing ELSE can break here unseen
-          # without the failure count changing.
-          - package: periphery
-            skip_scripts: true
+          # periphery builds WITH its scripts and is green under both profiles as
+          # of periphery 32dcaaa. That commit pinned pancake-create3-factory/ in
+          # foundry.toml (scripts used to resolve it only through the nested
+          # upstream infinity-core) and fixed the 53 legacy failures: 41 were
+          # gas ceilings, now per-backend; 12 were a REAL quoter divergence -
+          # MixedQuoter swept its recorder per call on the storage backend and
+          # over-quoted split routes in a multicall batch. `skip_scripts` stays
+          # available below for any future package that needs it.
 
           # These read FORK_URL / ARB_FORK_URL with vm.envString in setUp and
           # fork BSC / Arbitrum mainnet. With the variable unset they REVERT
@@ -185,7 +171,9 @@ jobs:
     env:
       FOUNDRY_PROFILE: ${{ matrix.profile }}
       CORE_REF: 3c73f851cec58d0eb79068d5be0e7a58b28e133d
-      PERIPHERY_REF: ead8c0aafd755dea92635a0e9fcf19e336eb0959
+      # Must exist on origin/fork/periphery before this runs: push the nested
+      # repo first (`git -C packages/periphery push backup main:fork/periphery`).
+      PERIPHERY_REF: 32dcaaa83772b562985afb5b8e35aa2907ac3976
       ROUTER_REF: 8f76780708bf18deeecf0f21667d12fea213a910
 
     steps:

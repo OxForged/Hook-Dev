@@ -295,11 +295,24 @@ by reading this paragraph.
 is now a 10-package × {default, legacy} matrix that proves the backend three ways per cell
 (no `hp-transient` in remappings.txt; effective remappings and `evm_version` match; a generated
 test asserting `TransientSlot.IS_EIP1153`) and sets `submodule.<nested>.update none` so forge
-cannot pull upstream core. **`periphery · legacy` fails 53 tests and is left red on purpose**:
-MixedQuoter/CLQuoter/BinQuoter gas ceilings that SSTORE exceeds, and tests expecting two
-quotes in one transaction to share context that `MixedQuoterRecorder.clearContext()`
-deliberately clears per call on legacy. The tests need to become profile-aware; do not
-`exclude` the cell to get green.
+cannot pull upstream core. Every cell is green as of periphery `32dcaaa`.
+
+**What turning CI on found — keep the lesson.** `periphery · legacy` failed 53 tests. 41 were gas
+ceilings SSTORE exceeds (now per-backend via `test/helpers/BackendGas.sol`; the EIP-1153 ceiling
+stays the upstream literal). The other 12 were a REAL divergence the code comments had called
+"the stricter/safer direction": `MixedQuoterRecorder` swept per quote call on the storage
+backend, so every quote in a `multicall` batch priced against a fresh pool and split routes
+reusing a pool were OVER-quoted. `MixedQuoter.multicall` now opens a recorder scope and sweeps
+once when the outermost batch returns; default-profile bytecode is byte-identical. Residual,
+documented, unfixable without an end-of-transaction hook: two SEPARATE top-level quoter calls in
+one transaction share context on Cancun and not on legacy. **A failing legacy test is a claim
+about the storage backend until proven otherwise — read it before rewriting it.**
+
+`packages/periphery` (and core, router) are NESTED git repos; CI checks them out from
+`origin/fork/<name>` pinned by SHA. A periphery commit reaches CI only after
+`git -C packages/periphery push backup main:fork/periphery` AND a `PERIPHERY_REF` bump in
+ci.yml. Its tracked `foundry-out-legacy/` (609 build artifacts) churns on every legacy build and
+should be untracked — an owner decision, not yet made.
 
 Every package carries the same two profiles (`default` = cancun/EIP-1153, `legacy` =
 shanghai/storage) and the same rule: `hp-transient/` is pinned per-profile in foundry.toml
