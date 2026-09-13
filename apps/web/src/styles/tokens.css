@@ -1,4 +1,89 @@
 /* ============================================================================
+   OPTION B — "INSTITUTIONAL CLARITY" — IS THE DESIGN OF RECORD (2026-09-13)
+
+   Source: Desktop/latch-design-options/b.html (outside the repo). NOT the older
+   public/design/option-b.html ("Canvas", warm paper) the notes below describe,
+   and NOT Option C, which the owner rejected. The palette values in this file
+   were remapped onto b.html: cool #fbfcfd ground, white surfaces, #2f5fe0 blue,
+   #12805c green, flat primary fills, small shadows, 8/12/14/16 radii, serif
+   headings. The dark values are DERIVED (b.html is light-only) on the same
+   structure, cooled to match; every ink/ground pair was contrast-checked.
+
+   Option B type roles, as tokens. Spacing stays on the --s scale; TYPE follows
+   the prototype, which is not on the 4px grid (15px body, 13.5px captions).
+   ============================================================================ */
+:root {
+  --b-wrap: 1180px;
+  --b-gutter: 28px;
+  --b-section-pad: 64px;
+  --b-body: 15px;
+  --b-body-lh: 1.6;
+  --b-lede: 18px;
+  --b-h1: clamp(38px, 5.4vw, 60px);
+  --b-h1-lh: 1.06;
+  --b-h1-track: -0.022em;
+  --b-sec-h: 30px;
+  --b-sec-h-track: -0.018em;
+  --b-sec-s: 15.5px;
+  --b-card-h: 16px;
+  --b-card-p: 14px;
+  --b-panel-h: 17px;
+  --b-caption: 13.5px;
+  --b-label: 12.5px;
+  --b-kpi: 31px;
+  --b-mini: 24px;
+  --b-axis: 10.5px;
+  --b-btn: 600 14px/1 var(--font-body);
+  --b-dur: 160ms;
+  --b-card-lift: translateY(-3px);
+  --b-btn-lift: translateY(-1px);
+  --b-reveal: 650ms;
+
+  /* BREAKPOINTS — one set for every surface (custom properties cannot be read
+     inside @media, so this is the record, not a variable):
+       1180  wide: the dapp header controls and the marketplace rail reflow
+       1024  the docs rail and the dapp sidebar become drawers. Written
+             `max-width: 1023.98px` in CSS and in JS alike, so every surface
+             flips at the same pixel
+        860  the landing nav collapses into its menu; two-up grids go single
+        720  tables stack; compact layouts
+        560  phone: --b-gutter 28 -> 20px and --b-section-pad 64 -> 48px
+     Container queries answer to their own component's width and are not part
+     of this set. */
+
+  /* LAYERS — every z-index that competes across the page. A value that only
+     orders siblings inside one component's own stacking context (a hit area
+     over its chart, a sticky table header, the menu panel under its bar) stays
+     a small literal there; anything that must sit above or below another
+     surface's chrome reads one of these. */
+  --z-dropdown: 40; /* a menu opened in content: under the sticky header */
+  --z-sticky: 50; /* sticky site headers */
+  --z-drawer-scrim: 70; /* the scrim behind a nav drawer */
+  --z-drawer: 80; /* the docs rail and dapp sidebar as drawers */
+  --z-tooltip: 90; /* portalled chart tooltips: above drawers, under a dialog */
+  --z-modal: 200; /* dialogs */
+  --z-skip: 300; /* the focused skip link is always reachable */
+
+  /* Gaps reported by the first four B agents, 2026-09-13. */
+  --b-micro: 11px; /* uppercase tracked group labels and eyebrows */
+  --b-code: 13px;
+  --r-toggle: 9px; /* segmented control track */
+  --r-toggle-seg: 6px; /* its selected segment — sits on --light-surface, never --panel (sinks in dark) */
+  /* Tooltip inverts the theme: dark chip on paper, light chip on dark. */
+  --tip-bg: light-dark(#0f1621, #e6ebf2);
+  --tip-ink: light-dark(#ffffff, #0f1621);
+  --tip-mut: light-dark(#a9b4c4, #4a5566); /* 8.65:1 / 6.30:1 on its ground */
+  /* Primary hover FILL. --deep-blue lightens in dark mode and would fail white text.
+     White on #1e46b8 = 8.00:1; on #2f55c8 = 6.45:1. */
+  --btn-primary-hover: light-dark(#1e46b8, #2f55c8);
+  /* Secondary data series (the LP share of a stacked column). b.html's #9db0d8, as a mix.
+     Resolves to #b0c2f3 light / #344477 dark: 3.09:1 and 3.07:1 against --latch-blue,
+     so the two segments separate by lightness in both themes (b.html's own pair was 2.51:1). */
+  --chart-lp: color-mix(in srgb, var(--latch-blue) 38%, var(--panel));
+  --code-fn: light-dark(#1e46b8, #8fa8ff);
+}
+
+/* ============================================================================
    Latch Protocol — design tokens · CANVAS
 
    Ported from design Option B (`public/design/option-b.html`), which the team
@@ -61,59 +146,58 @@
      were three visibly different blues because a dark ground needs the
      separation. On paper they collapse toward two, and forcing a third would
      read as an inconsistency rather than a hierarchy. */
-  --latch-blue: light-dark(#2d5bff, #5b82ff); /* primary: CTAs, active states, chart lines */
-  --deep-blue: light-dark(#1e43d6, #8aa5ff); /* gradient end, pressed, hovered link */
-  --signal-blue: light-dark(#2d5bff, #7f9dff); /* links */
-  --sky-ink: light-dark(#1e43d6, #9db4ff); /* active nav text, inline code */
-  --eyebrow-blue: light-dark(#858b9b, #818997); /* section eyebrows — grey in Canvas, not blue */
+  --latch-blue: light-dark(#2f5fe0, #6b8dff); /* primary: CTAs, active states, chart lines */
+  --deep-blue: light-dark(#1e46b8, #8aa5ff); /* gradient end, pressed, hovered link */
+  --signal-blue: light-dark(#2f5fe0, #7f9dff); /* links */
+  --sky-ink: light-dark(#1e46b8, #9db4ff); /* active nav text, inline code */
 
   /* ---- grounds ----
      `--void` and `--deep-panel` keep their names and lose their meaning. Both
      are light now. Renaming them would touch every surface; see the header. */
-  --void: light-dark(#f4f3ef, #0e1013); /* page background — warm paper */
-  --panel: light-dark(#ffffff, #16191e); /* cards, surfaces */
-  --panel-alt: light-dark(#f9f8f5, #1b1f25); /* inputs, sidebar cards, feed rows */
-  --code-ground: light-dark(#f9f8f5, #111418); /* code block interiors */
-  --deep-panel: light-dark(#efeee9, #22262e); /* the deepest tint, for wells and tracks */
-  --light-surface: light-dark(#ffffff, #22262e);
+  --void: light-dark(#fbfcfd, #0b0f16); /* page background — warm paper */
+  --panel: light-dark(#ffffff, #121823); /* cards, surfaces */
+  --panel-alt: light-dark(#f5f7fa, #171e2a); /* inputs, sidebar cards, feed rows */
+  --code-ground: light-dark(#f5f7fa, #0d121a); /* code block interiors */
+  --deep-panel: light-dark(#eef2f7, #1c2433); /* the deepest tint, for wells and tracks */
+  --light-surface: light-dark(#ffffff, #1c2433);
 
   /* ---- lines ----
      Two weights carry almost everything: `--line` for card borders and
      dividers, `--line-2` where a border must be seen against white. The four
      legacy names map onto that pair rather than inventing four light greys
      nobody could tell apart. */
-  --hairline: light-dark(#e7e5df, #262b33);
-  --hairline-soft: light-dark(#efeee9, #1f242b);
-  --hairline-blue: light-dark(#d8d6cf, #333945);
-  --hairline-blue-2: light-dark(#d8d6cf, #3c4351);
-  --cta-border: light-dark(#d8d6cf, #333945);
-  --border-hover: light-dark(#858b9b, #5b6472);
-  --active-nav: light-dark(#e9eeff, #1b2440); /* selected pill/tab ground — accent-soft */
+  --hairline: light-dark(#e4e9f0, #222b38);
+  --hairline-soft: light-dark(#eef2f7, #1a2130);
+  --hairline-blue: light-dark(#d3dae4, #2e3848);
+  --hairline-blue-2: light-dark(#d3dae4, #374255);
+  --cta-border: light-dark(#d3dae4, #2e3848);
+  --border-hover: light-dark(#8b95a4, #5a6577);
+  --active-nav: light-dark(#eef3ff, #1b2440); /* selected pill/tab ground — accent-soft */
 
   /* ---- ink ----
      Three stops, which is all a light palette needs. The dark file carried six
      because it was compensating for low contrast on a near-black ground. */
-  --ink: light-dark(#12151a, #e8e9ec); /* primary text */
-  --ink-bright: light-dark(#12151a, #ffffff); /* headlines — same ink; weight carries emphasis */
-  --muted-ink: light-dark(#4a5163, #a8aebb); /* body */
-  --muted-ink-2: light-dark(#4a5163, #b2b8c4); /* long-form paragraphs */
-  --label-ink: light-dark(#858b9b, #8b93a1); /* mono micro-labels */
+  --ink: light-dark(#0f1621, #e6ebf2); /* primary text */
+  --ink-bright: light-dark(#0f1621, #ffffff); /* headlines — same ink; weight carries emphasis */
+  --muted-ink: light-dark(#5b6675, #a3adbc); /* body */
+  --muted-ink-2: light-dark(#5b6675, #adb6c4); /* long-form paragraphs */
+  --label-ink: light-dark(#8b95a4, #8591a2); /* mono micro-labels */
   /* Ink for anything sitting on --grad-primary or another saturated brand fill.
      NOT theme-switched, and that is the point: the gradient beneath it is the
      same colour in both themes, so ink that flips with the theme is ink that is
      wrong in one of them. --ink-bright was being used here, which resolves to
-     #12151a on paper and measured 3.53:1 at the gradient's top stop and 2.46:1
+     #0f1621 on paper and measured 3.53:1 at the gradient's top stop and 2.46:1
      at the bottom — under the 4.5:1 these sizes need, on "Get Started",
      "Launch App" and "Read the Docs". Every primary action on the site, for
      every visitor on the default theme. */
   --on-accent: #ffffff;
-  --faint-ink: light-dark(#858b9b, #8b93a1); /* table headers, axis labels */
+  --faint-ink: light-dark(#8b95a4, #8591a2); /* table headers, axis labels */
 
   /* CONTRAST. Checked against the two grounds these actually sit on:
-                        on --panel (#FFF)   on --void (#F4F3EF)
-       --ink    #12151A       17.4:1              16.3:1
-       --muted  #4A5163        8.3:1               7.8:1
-       --label  #858B9B        3.4:1               3.2:1
+                        on --panel (#FFF)   on --void (#fbfcfd)
+       --ink    #0f1621       17.4:1              16.3:1
+       --muted  #5b6675        8.3:1               7.8:1
+       --label  #8b95a4        3.4:1               3.2:1
      `--label-ink` / `--faint-ink` clear 3:1 but NOT 4.5:1, so they are valid
      for large text and non-text UI only. Every current use is a mono
      micro-label at 10-11px, which is small text — the same failure the dark
@@ -135,13 +219,13 @@
      --warn but never a danger colour, because nothing in it fails. The app has
      flagged Latches, reverted transactions and unreachable chains. Placed at
      the same lightness and chroma as the other two so the three read as one
-     family (#1E8E3E green, #B26A00 amber, #C4342A red). */
-  --success: light-dark(#1baf7a, #3ed4a0);
-  --warning: light-dark(#b26a00, #e0a94a);
-  --warning-alt: light-dark(#b26a00, #e0a94a);
+     family (#1E8E3E green, #9a6700 amber, #C4342A red). */
+  --success: light-dark(#12805c, #3ed4a0);
+  --warning: light-dark(#9a6700, #e0a94a);
+  --warning-alt: light-dark(#9a6700, #e0a94a);
   --error: light-dark(#c4342a, #f2705f);
   --violet: light-dark(#4a3aa7, #9a8af0); /* third data series — the beneficiary roster hue */
-  --amber: light-dark(#b26a00, #e0a94a);
+  --amber: light-dark(#9a6700, #e0a94a);
 
   /* ---- the three RevShareHook shares ----
      Named for what they mean, not where they are used. Chosen in Option B for
@@ -150,28 +234,28 @@
   --share-lp-soft: light-dark(#e3eefb, #16283c);
   --share-ben: light-dark(#4a3aa7, #9a8af0);
   --share-ben-soft: light-dark(#e8e5f6, #241f3d);
-  --share-hold: light-dark(#1baf7a, #3ed4a0);
-  --share-hold-soft: light-dark(#ddf4ea, #102f26);
-  --accent-soft: light-dark(#e9eeff, #1b2440);
+  --share-hold: light-dark(#12805c, #3ed4a0);
+  --share-hold-soft: light-dark(#e7f6f0, #102f26);
+  --accent-soft: light-dark(#eef3ff, #1b2440);
 
   /* ---- syntax (Option B's code palette, verbatim) ---- */
   --code-keyword: light-dark(#8a3fc8, #c58af0);
-  --code-comment: light-dark(#858b9b, #7c8391);
-  --code-type: light-dark(#1e43d6, #8aa5ff);
+  --code-comment: light-dark(#66707f, #7c8391);
+  --code-type: light-dark(#1e46b8, #8aa5ff);
   --code-string: light-dark(#0f7b5f, #5cc9a3);
-  --code-number: light-dark(#b25a00, #e0a94a);
+  --code-number: light-dark(#9a6700, #e0a94a);
 
   /* ---- gradients ----
      Restrained on paper. A light theme that gradients as hard as a dark one
      looks cheap; these mostly resolve to a flat surface or a barely-there
      tint, and only the primary action keeps a real gradient. */
-  --grad-primary: linear-gradient(180deg, #2d5bff, #1e43d6);
-  --grad-success: linear-gradient(180deg, #1baf7a, #158a60);
-  --grad-hero: linear-gradient(115deg, #f4f3ef 0%, #ffffff 48%, #f4f3ef 100%);
-  --grad-bar: linear-gradient(180deg, #2d5bff, rgba(45, 91, 255, 0.16));
-  --grad-progress: linear-gradient(90deg, #2d5bff, #1baf7a);
-  --grad-sidebar-active: linear-gradient(90deg, #e9eeff, rgba(233, 238, 255, 0.35));
-  --glow-hero: radial-gradient(680px 420px at 78% 42%, rgba(45, 91, 255, 0.08), transparent 70%);
+  --grad-primary: linear-gradient(180deg, #2f5fe0, #2f5fe0); /* flat in Option B; kept as a gradient token so consumers need no change */
+  --grad-success: linear-gradient(180deg, #12805c, #0e6b4c);
+  --grad-hero: linear-gradient(115deg, #fbfcfd, #fbfcfd);
+  --grad-bar: linear-gradient(180deg, #2f5fe0, rgba(47, 95, 224, 0.16));
+  --grad-progress: linear-gradient(90deg, #2f5fe0, #12805c);
+  --grad-sidebar-active: linear-gradient(90deg, #eef3ff, #eef3ff);
+  --glow-hero: none;
 
   /* ---- type ----
      Inter for everything structural, Instrument Serif italic as the display
@@ -181,16 +265,16 @@
      phrase, never to a whole heading. */
   --font-display: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; /* Option B: whole headings in serif at weight 500 */
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* ---- radii ---- */
   --r-pill: 999px;
-  --r-hero: 24px;
-  --r-card-lg: 24px;
-  --r-card: 16px;
+  --r-hero: 16px;
+  --r-card-lg: 16px;
+  --r-card: 14px;
   --r-sm: 12px;
-  --r-btn: 12px;
+  --r-btn: 8px;
   --r-chip: 999px; /* Canvas chips are pills, not rounded rectangles */
   --r-badge: 8px;
   --r-micro: 4px;
@@ -198,63 +282,62 @@
   /* ---- shadows ----
      Elevation replaces the dark theme's glow. Two stops: `--shadow-1` for
      resting cards, `--shadow-2` for anything genuinely floating. */
-  --shadow-1: 0 1px 2px rgba(18, 21, 26, 0.04), 0 4px 16px rgba(18, 21, 26, 0.05);
-  --shadow-2: 0 2px 4px rgba(18, 21, 26, 0.05), 0 24px 64px rgba(18, 21, 26, 0.09);
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-2: 0 4px 6px -2px rgba(16, 24, 40, 0.04), 0 12px 20px -4px rgba(16, 24, 40, 0.08);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  --sh-btn: 0 1px 2px rgba(30, 67, 214, 0.24), 0 8px 24px rgba(45, 91, 255, 0.18);
-  --sh-btn-hover: 0 2px 4px rgba(30, 67, 214, 0.28), 0 14px 34px rgba(45, 91, 255, 0.26);
-  --sh-card-hover: 0 2px 4px rgba(18, 21, 26, 0.05), 0 24px 64px rgba(18, 21, 26, 0.09);
-  --glow-ring: 0 0 0 4px rgba(45, 91, 255, 0.12);
+  --sh-btn: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --sh-card-hover: 0 4px 6px -2px rgba(16, 24, 40, 0.04), 0 12px 20px -4px rgba(16, 24, 40, 0.08);
+  --glow-ring: 0 0 0 4px rgba(47, 95, 224, 0.12);
 
   /* ---- easing ---- */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --dur: 320ms;
 
   /* ---- landing-surface values ---- */
-  --header-bg: rgba(244, 243, 239, 0.82);
-  --header-border: light-dark(#e7e5df, #262b33);
-  --stats-ground: light-dark(#ffffff, #16191e);
-  --hairline-dark: light-dark(#e7e5df, #262b33);
-  --roadmap-rule: light-dark(#e7e5df, #262b33);
-  --selection: light-dark(#c9d6ff, #2b3a63);
+  --header-bg: rgba(255, 255, 255, 0.88);
+  --header-border: light-dark(#e4e9f0, #222b38);
+  --stats-ground: light-dark(#ffffff, #121823);
+  --hairline-dark: light-dark(#e4e9f0, #222b38);
+  --roadmap-rule: light-dark(#e4e9f0, #222b38);
+  --selection: light-dark(#cdd9fb, #2b3a63);
 
-  --pill-border: light-dark(#d8d6cf, #333945);
-  --pill-bg: light-dark(#ffffff, #1b1f25);
-  --pill-ink: light-dark(#4a5163, #a8aebb);
+  --pill-border: light-dark(#d3dae4, #2e3848);
+  --pill-bg: light-dark(#ffffff, #171e2a);
+  --pill-ink: light-dark(#5b6675, #a3adbc);
 
-  --btn2-ink: light-dark(#12151a, #e8e9ec);
-  --btn2-border-hover: light-dark(#858b9b, #5b6472);
+  --btn2-ink: light-dark(#0f1621, #e6ebf2);
+  --btn2-border-hover: light-dark(#8b95a4, #5a6577);
 
-  --tile-border: light-dark(#e7e5df, #262b33);
-  --tile-bg: light-dark(#f9f8f5, #1b1f25);
-  --tile-bg-strong: light-dark(#efeee9, #22262e);
-  --node-rim: light-dark(#2d5bff, #5b82ff);
-  --node-label-ink: light-dark(#4a5163, #a8aebb);
+  --tile-border: light-dark(#e4e9f0, #222b38);
+  --tile-bg: light-dark(#f5f7fa, #171e2a);
+  --tile-bg-strong: light-dark(#eef2f7, #1c2433);
+  --node-rim: light-dark(#2f5fe0, #6b8dff);
+  --node-label-ink: light-dark(#5b6675, #a3adbc);
 
-  --mono-data-ink: light-dark(#12151a, #e8e9ec);
-  --mono-data-dim: light-dark(#4a5163, #a8aebb);
-  --stat-label-ink: light-dark(#858b9b, #8b93a1);
+  --mono-data-ink: light-dark(#0f1621, #e6ebf2);
+  --mono-data-dim: light-dark(#5b6675, #a3adbc);
+  --stat-label-ink: light-dark(#8b95a4, #8591a2);
 
-  --track: light-dark(#efeee9, #22262e);
-  --switch-border: light-dark(#d8d6cf, #333945);
-  --switch-ground: light-dark(#f9f8f5, #1b1f25);
+  --track: light-dark(#eef2f7, #1c2433);
+  --switch-border: light-dark(#d3dae4, #2e3848);
+  --switch-ground: light-dark(#f5f7fa, #171e2a);
 
-  --bar-fade: rgba(45, 91, 255, 0.16);
-  --gas-col-dim: rgba(45, 91, 255, 0.28);
+  --bar-fade: rgba(47, 95, 224, 0.16);
+  --gas-col-dim: rgba(47, 95, 224, 0.28);
 
-  --grad-node-core: linear-gradient(160deg, #ffffff, #f4f3ef);
-  --grad-node-tile: linear-gradient(160deg, #ffffff, #f9f8f5);
-  --grad-card: linear-gradient(180deg, #ffffff, #fbfaf8);
-  --grad-panel-deep: linear-gradient(180deg, #ffffff, #f9f8f5);
-  --grad-cta: linear-gradient(120deg, #ffffff, #f4f3ef 70%);
-  --glow-cta: radial-gradient(closest-side, rgba(45, 91, 255, 0.08), transparent 70%);
-  --stripes: repeating-linear-gradient(135deg, #f4f3ef 0 9px, #efeee9 9px 18px);
+  --grad-node-core: linear-gradient(160deg, #ffffff, #fbfcfd);
+  --grad-node-tile: linear-gradient(160deg, #ffffff, #f5f7fa);
+  --grad-card: linear-gradient(180deg, #ffffff, #ffffff);
+  --grad-panel-deep: linear-gradient(180deg, #ffffff, #f5f7fa);
+  --grad-cta: linear-gradient(120deg, #ffffff, #fbfcfd 70%);
+  --glow-cta: radial-gradient(closest-side, rgba(47, 95, 224, 0.08), transparent 70%);
+  --stripes: repeating-linear-gradient(135deg, #fbfcfd 0 9px, #eef2f7 9px 18px);
 
   --grad-sheen: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
 
-  --sh-nav-pill: 0 1px 2px rgba(30, 67, 214, 0.24), 0 6px 22px rgba(45, 91, 255, 0.2);
-  --sh-node: 0 1px 2px rgba(18, 21, 26, 0.04), 0 4px 16px rgba(18, 21, 26, 0.05);
-  --glow-dot: 0 0 0 4px rgba(45, 91, 255, 0.14);
+  --sh-nav-pill: 0 1px 2px rgba(30, 70, 184, 0.24), 0 6px 22px rgba(47, 95, 224, 0.2);
+  --sh-node: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 16px rgba(16, 24, 40, 0.05);
+  --glow-dot: 0 0 0 4px rgba(47, 95, 224, 0.14);
 
   /* ---- layout ---- */
   --gutter-landing: 48px;
@@ -384,56 +467,39 @@ img {
    the content area keeps the paper.
    -------------------------------------------------------------------------- */
 :root {
-  --dapp-sidebar-bg: light-dark(#ffffff, #16191e);
-  --dapp-sidebar-line: light-dark(#e7e5df, #262b33);
-  --dapp-header-bg: rgba(244, 243, 239, 0.82);
+  --dapp-sidebar-bg: light-dark(#ffffff, #121823);
+  --dapp-sidebar-line: light-dark(#e4e9f0, #222b38);
 
-  --dapp-ink-soft: light-dark(#12151a, #e8e9ec);
-  --dapp-ink-data: light-dark(#12151a, #e8e9ec);
-  --dapp-ink-sub: light-dark(#4a5163, #a8aebb);
-
-  --dapp-track: light-dark(#efeee9, #22262e);
-  --dapp-switcher-border: light-dark(#d8d6cf, #333945);
-  --dapp-switcher-bg: light-dark(#f9f8f5, #1b1f25);
-  --dapp-tile-border: light-dark(#e7e5df, #262b33);
-  --dapp-tile-bg: light-dark(#f9f8f5, #1b1f25);
-  --dapp-chip-active-bg: light-dark(#e9eeff, #1b2440);
-  --dapp-step-active-bg: light-dark(#f9f8f5, #1b1f25);
-  --dapp-step-num-bg: light-dark(#e9eeff, #1b2440);
-  --dapp-search-ring: light-dark(#2d5bff, #5b82ff);
+  --dapp-track: light-dark(#eef2f7, #1c2433);
+  --dapp-step-active-bg: light-dark(#f5f7fa, #171e2a);
+  --dapp-step-num-bg: light-dark(#eef3ff, #1b2440);
+  --dapp-search-ring: light-dark(#2f5fe0, #6b8dff);
 
   /* Status badges. Soft tint + a border one step stronger, rather than the
      dark theme's translucent overlay — translucency over paper muddies. */
-  --dapp-badge-ok-border: light-dark(#b7e3cf, #1d5744);
-  --dapp-badge-ok-bg: light-dark(#ddf4ea, #102f26);
-  --dapp-badge-info-border: light-dark(#c3d2ff, #2b3a63);
-  --dapp-badge-info-bg: light-dark(#e9eeff, #1b2440);
+  --dapp-badge-ok-border: light-dark(#bfe3d3, #1d5744);
+  /* Light values lifted 2026-09-13 so the tone text clears AA on them:
+     --success #12805c on #eef9f5 = 4.57:1 (was 4.41:1 on #e7f6f0)
+     --warning #9a6700 on #fef7ea = 4.57:1 (was 4.42:1 on #fdf3e0)
+     Dark pairs already clear: 7.64:1 and 7.22:1. dapp.css no longer patches
+     these grounds with a color-mix. */
+  --dapp-badge-ok-bg: light-dark(#eef9f5, #102f26);
+  --dapp-badge-info-border: light-dark(#cdd9fb, #2b3a63);
+  --dapp-badge-info-bg: light-dark(#eef3ff, #1b2440);
   --dapp-badge-warn-border: light-dark(#ecd9b0, #5a4520);
-  --dapp-badge-warn-bg: light-dark(#fdf3e0, #2e2413);
-  --dapp-badge-mute-border: light-dark(#e7e5df, #2b3138);
-  --dapp-badge-mute-bg: light-dark(#f4f3ef, #1b1f25);
+  --dapp-badge-warn-bg: light-dark(#fef7ea, #2e2413);
+  --dapp-badge-mute-border: light-dark(#e4e9f0, #262f3d);
+  --dapp-badge-mute-bg: light-dark(#fbfcfd, #171e2a);
   --dapp-badge-danger-border: color-mix(in srgb, var(--error) 32%, white);
   --dapp-badge-danger-bg: color-mix(in srgb, var(--error) 9%, white);
 
-  --dapp-grad-panel: linear-gradient(180deg, #ffffff, #fbfaf8);
-  --dapp-grad-pool: linear-gradient(120deg, #ffffff, #f4f3ef);
-  --dapp-grad-avatar: linear-gradient(140deg, #2d5bff, #1baf7a);
-  --dapp-grad-token: linear-gradient(140deg, #2d5bff, #1e43d6);
-  --dapp-grad-token-alt: linear-gradient(140deg, #1baf7a, #2d5bff);
-  --dapp-grad-bar-green: linear-gradient(180deg, #1baf7a, rgba(27, 175, 122, 0.2));
-  --dapp-bar-tail: rgba(45, 91, 255, 0.16);
-  --dapp-spark-idle: rgba(45, 91, 255, 0.28);
-
-  --dapp-sh-btn: 0 1px 2px rgba(30, 67, 214, 0.24), 0 8px 24px rgba(45, 91, 255, 0.18);
-  --dapp-sh-btn-hover: 0 2px 4px rgba(30, 67, 214, 0.28), 0 14px 34px rgba(45, 91, 255, 0.26);
-  --dapp-sh-deploy: 0 1px 2px rgba(30, 67, 214, 0.24), 0 8px 24px rgba(45, 91, 255, 0.18);
-  --dapp-knob-shadow: 0 1px 3px rgba(18, 21, 26, 0.18);
+  /* Not read by this app's CSS, but packages/connect/src/styles.css reads it
+     (with a fallback) for the wallet avatar — as it does --sh-btn and
+     --sh-card-hover. Keep all three while that package is imported. */
+  --dapp-grad-avatar: linear-gradient(140deg, #2f5fe0, #12805c);
 
   /* On paper a "glow" is a soft ring, not a bloom. */
-  --dapp-glow-success: 0 0 0 3px rgba(27, 175, 122, 0.18);
-  --dapp-glow-warning: 0 0 0 3px rgba(178, 106, 0, 0.18);
   --dapp-glow-error: 0 0 0 3px rgba(196, 52, 42, 0.18);
-  --dapp-glow-primary: 0 0 0 3px rgba(45, 91, 255, 0.16);
 }
 
 /* Every animation in this design must be disabled here */
@@ -453,24 +519,21 @@ img {
 
 /* ---------------------------------------------------------------------------- */
 :root {
-  --nav-ink: light-dark(#4a5163, #a8aebb);
-  --code-ink: light-dark(#12151a, #e8e9ec);
+  --nav-ink: light-dark(#5b6675, #a3adbc);
+  --code-ink: light-dark(#0f1621, #e6ebf2);
   --header-blur: 16px;
-  --dashed-rule: light-dark(#d8d6cf, #3c4351);
-  --grad-mark-tile: linear-gradient(140deg, #ffffff, #f4f3ef);
+  --dashed-rule: light-dark(#d3dae4, #374255);
+  --grad-mark-tile: linear-gradient(140deg, #ffffff, #fbfcfd);
 }
 
 /* ----------------------------------------------------------------------------
    Docs surface tokens.
    -------------------------------------------------------------------------- */
 :root {
-  --docs-rail-active-bg: light-dark(#e9eeff, #1b2440);
-  --docs-callout-border: light-dark(#c3d2ff, #2b3a63);
-  --docs-callout-bg: light-dark(#e9eeff, #1b2440);
-  --docs-r-panel: 20px;
-  --docs-grad-next: linear-gradient(120deg, #ffffff, #f4f3ef 72%);
-  --docs-glow-next: radial-gradient(closest-side, rgba(45, 91, 255, 0.1), transparent 70%);
-  --docs-scrim: light-dark(rgba(18, 21, 26, 0.4), rgba(4, 6, 10, 0.66));
+  --docs-rail-active-bg: light-dark(#eef3ff, #1b2440);
+  --docs-callout-border: light-dark(#cdd9fb, #2b3a63);
+  --docs-callout-bg: light-dark(#eef3ff, #1b2440);
+  --docs-scrim: light-dark(rgba(16, 24, 40, 0.4), rgba(4, 6, 10, 0.66));
 }
 
 /* ----------------------------------------------------------------------------
@@ -479,7 +542,7 @@ img {
 :root {
   --badge-live-border: var(--dapp-badge-ok-border);
   --badge-live-bg: var(--dapp-badge-ok-bg);
-  --badge-live-ink: light-dark(#14795a, #3ed4a0);
+  --badge-live-ink: light-dark(#12805c, #3ed4a0);
 
   --badge-target-border: var(--dapp-badge-mute-border);
   --badge-target-bg: var(--dapp-badge-mute-bg);
@@ -499,72 +562,60 @@ img {
        shadow is invisible; depth becomes a lighter surface plus a lighter
        hairline. So the panel gradients flip direction and the shadows shrink
        to something that only grounds an element rather than lifting it.
-     · TINTS GO SUBTRACTIVE. `#FFF -> #F9F8F5` reads as a gentle sheen on
+     · TINTS GO SUBTRACTIVE. `#FFF -> #f5f7fa` reads as a gentle sheen on
        paper and as a glaring slab in the dark; the dark forms move between two
        near-blacks instead.
    -------------------------------------------------------------------------- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --grad-hero: linear-gradient(115deg, #0e1013 0%, #16191e 48%, #0e1013 100%);
-    --grad-sidebar-active: linear-gradient(90deg, #1b2440, rgba(27, 36, 64, 0.35));
-    --glow-hero: radial-gradient(680px 420px at 78% 42%, rgba(91, 130, 255, 0.14), transparent 70%);
-    --grad-node-core: linear-gradient(160deg, #22262e, #16191e);
-    --grad-node-tile: linear-gradient(160deg, #1b1f25, #16191e);
-    --grad-card: linear-gradient(180deg, #16191e, #14171c);
-    --grad-panel-deep: linear-gradient(180deg, #16191e, #111418);
-    --grad-cta: linear-gradient(120deg, #1b1f25, #0e1013 70%);
-    --glow-cta: radial-gradient(closest-side, rgba(91, 130, 255, 0.16), transparent 70%);
-    --stripes: repeating-linear-gradient(135deg, #16191e 0 9px, #1b1f25 9px 18px);
-    --grad-mark-tile: linear-gradient(140deg, #22262e, #0e1013);
-    --grad-primary: linear-gradient(180deg, #5b82ff, #3b62e6);
+    --grad-hero: linear-gradient(115deg, #0b0f16 0%, #121823 48%, #0b0f16 100%);
+    --grad-sidebar-active: linear-gradient(90deg, #17213b, #17213b);
+    --glow-hero: none;
+    --grad-node-core: linear-gradient(160deg, #1c2433, #121823);
+    --grad-node-tile: linear-gradient(160deg, #171e2a, #121823);
+    --grad-card: linear-gradient(180deg, #121823, #121823);
+    --grad-panel-deep: linear-gradient(180deg, #121823, #0d121a);
+    --grad-cta: linear-gradient(120deg, #171e2a, #0b0f16 70%);
+    --glow-cta: radial-gradient(closest-side, rgba(107, 141, 255, 0.16), transparent 70%);
+    --stripes: repeating-linear-gradient(135deg, #121823 0 9px, #171e2a 9px 18px);
+    --grad-mark-tile: linear-gradient(140deg, #1c2433, #0b0f16);
+    --grad-primary: linear-gradient(180deg, #3d66e8, #3d66e8); /* white on #3d66e8 = 4.92:1; #6b8dff was 3.05:1 */
     --grad-success: linear-gradient(180deg, #3ed4a0, #22a87c);
-    --dapp-grad-panel: linear-gradient(180deg, #16191e, #14171c);
-    --dapp-grad-pool: linear-gradient(120deg, #1b1f25, #0e1013);
-    --docs-grad-next: linear-gradient(120deg, #1b1f25, #0e1013 72%);
-    --docs-glow-next: radial-gradient(closest-side, rgba(91, 130, 255, 0.18), transparent 70%);
 
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.28);
     --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.44), 0 24px 64px rgba(0, 0, 0, 0.5);
     --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     --sh-card-hover: 0 2px 4px rgba(0, 0, 0, 0.44), 0 24px 64px rgba(0, 0, 0, 0.5);
-    --dapp-knob-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 
-    --header-bg: rgba(14, 16, 19, 0.82);
-    --dapp-header-bg: rgba(14, 16, 19, 0.82);
+    --header-bg: rgba(11, 15, 22, 0.88);
 
-    --dapp-badge-danger-border: color-mix(in srgb, var(--error) 42%, #16191e);
-    --dapp-badge-danger-bg: color-mix(in srgb, var(--error) 15%, #16191e);
+    --dapp-badge-danger-border: color-mix(in srgb, var(--error) 42%, #121823);
+    --dapp-badge-danger-bg: color-mix(in srgb, var(--error) 15%, #121823);
   }
 }
 
 :root[data-theme="dark"] {
-    --grad-hero: linear-gradient(115deg, #0e1013 0%, #16191e 48%, #0e1013 100%);
-    --grad-sidebar-active: linear-gradient(90deg, #1b2440, rgba(27, 36, 64, 0.35));
-    --glow-hero: radial-gradient(680px 420px at 78% 42%, rgba(91, 130, 255, 0.14), transparent 70%);
-    --grad-node-core: linear-gradient(160deg, #22262e, #16191e);
-    --grad-node-tile: linear-gradient(160deg, #1b1f25, #16191e);
-    --grad-card: linear-gradient(180deg, #16191e, #14171c);
-    --grad-panel-deep: linear-gradient(180deg, #16191e, #111418);
-    --grad-cta: linear-gradient(120deg, #1b1f25, #0e1013 70%);
-    --glow-cta: radial-gradient(closest-side, rgba(91, 130, 255, 0.16), transparent 70%);
-    --stripes: repeating-linear-gradient(135deg, #16191e 0 9px, #1b1f25 9px 18px);
-    --grad-mark-tile: linear-gradient(140deg, #22262e, #0e1013);
-    --grad-primary: linear-gradient(180deg, #5b82ff, #3b62e6);
+    --grad-hero: linear-gradient(115deg, #0b0f16 0%, #121823 48%, #0b0f16 100%);
+    --grad-sidebar-active: linear-gradient(90deg, #17213b, #17213b);
+    --glow-hero: none;
+    --grad-node-core: linear-gradient(160deg, #1c2433, #121823);
+    --grad-node-tile: linear-gradient(160deg, #171e2a, #121823);
+    --grad-card: linear-gradient(180deg, #121823, #121823);
+    --grad-panel-deep: linear-gradient(180deg, #121823, #0d121a);
+    --grad-cta: linear-gradient(120deg, #171e2a, #0b0f16 70%);
+    --glow-cta: radial-gradient(closest-side, rgba(107, 141, 255, 0.16), transparent 70%);
+    --stripes: repeating-linear-gradient(135deg, #121823 0 9px, #171e2a 9px 18px);
+    --grad-mark-tile: linear-gradient(140deg, #1c2433, #0b0f16);
+    --grad-primary: linear-gradient(180deg, #3d66e8, #3d66e8); /* white on #3d66e8 = 4.92:1; #6b8dff was 3.05:1 */
     --grad-success: linear-gradient(180deg, #3ed4a0, #22a87c);
-    --dapp-grad-panel: linear-gradient(180deg, #16191e, #14171c);
-    --dapp-grad-pool: linear-gradient(120deg, #1b1f25, #0e1013);
-    --docs-grad-next: linear-gradient(120deg, #1b1f25, #0e1013 72%);
-    --docs-glow-next: radial-gradient(closest-side, rgba(91, 130, 255, 0.18), transparent 70%);
 
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.28);
     --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.44), 0 24px 64px rgba(0, 0, 0, 0.5);
     --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     --sh-card-hover: 0 2px 4px rgba(0, 0, 0, 0.44), 0 24px 64px rgba(0, 0, 0, 0.5);
-    --dapp-knob-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 
-    --header-bg: rgba(14, 16, 19, 0.82);
-    --dapp-header-bg: rgba(14, 16, 19, 0.82);
+    --header-bg: rgba(11, 15, 22, 0.88);
 
-    --dapp-badge-danger-border: color-mix(in srgb, var(--error) 42%, #16191e);
-    --dapp-badge-danger-bg: color-mix(in srgb, var(--error) 15%, #16191e);
+    --dapp-badge-danger-border: color-mix(in srgb, var(--error) 42%, #121823);
+    --dapp-badge-danger-bg: color-mix(in srgb, var(--error) 15%, #121823);
   }

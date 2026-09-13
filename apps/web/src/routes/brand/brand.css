@@ -1,25 +1,38 @@
 /* ============================================================================
-   Brand kit page — /brand
-   Built from "latch design/README.md" (authoritative) + SCREENS.md § D, with
-   design-references/Latch Brand Kit.dc.html as the visual diff target.
+   Brand kit page — /brand — OPTION B, "Institutional Clarity"
 
-   Every colour, radius, shadow, gradient and font here resolves to a token in
+   Design of record: latch-design-options/b.html. The page is restyled AROUND
+   the kit: no asset is redrawn, recoloured or re-cropped. Cool ground, white
+   cards on a hairline with a resting shadow, serif headings at weight 500,
+   flat primary button, quiet download chips.
+
+   Every colour, radius, shadow and type size resolves to a token in
    src/styles/tokens.css. There are no literal hexes in this file.
-
-   Layout, per README § Spacing: brand kit = 40px gutters, 1180px max width.
-   Section rhythm on this page is 76px top padding (the reference's value for
-   this page; the README's 96px is stated for the *landing* sections).
    ============================================================================ */
 
 .bk {
+  /* PREVIEW GROUNDS, composed from existing tokens.
+     An asset is always previewed on the ground it is drawn for, and that ground
+     does NOT follow the page theme: the white-and-blue mark is invisible on a
+     light plate in either theme, and the dark-ink art is invisible on a dark
+     one. Nesting two theme-switched tokens inside `light-dark()` yields a ground
+     that stays dark (or light) in both themes without introducing a colour:
+       dark plate  = --ink in the light theme, --void in the dark theme
+       light plate = --panel in the light theme, --ink in the dark theme
+     These are content, not decoration — B's "no dark slabs in light mode" is
+     about chrome, and a mark shown on the wrong ground is a broken preview. */
+  --bk-plate-dark: light-dark(var(--ink), var(--void));
+  --bk-plate-light: light-dark(var(--panel), var(--ink));
+
   background: var(--void);
   color: var(--ink);
+  font-size: var(--b-body);
   /* Belt and braces: nothing on this page may push the page sideways. */
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Zero-specificity reset so every margin below is stated once, in one place. */
-.bk :where(p, ul, ol, pre, figure) {
+.bk :where(p, ul, ol, pre, figure, dl, dd) {
   margin: 0;
 }
 
@@ -33,58 +46,33 @@
 .bk-header {
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 14px 28px;
+  gap: var(--s5);
+  min-height: 64px;
+  /* Full-bleed bar, content held to B's 1180px wrap. */
+  padding-inline: max(var(--b-gutter), calc((100% - var(--b-wrap)) / 2 + var(--b-gutter)));
   background: var(--header-bg);
   backdrop-filter: blur(var(--header-blur));
   -webkit-backdrop-filter: blur(var(--header-blur));
   border-bottom: 1px solid var(--header-border);
 }
 
+/* The mark and lockup are components/BrandLockup (shared by every surface). */
 .bk-lockup {
   display: flex;
   align-items: center;
-  gap: 11px;
   flex: none;
-}
-
-.bk-lockup img {
-  height: 30px;
-  width: auto;
-}
-
-.bk-lockup-type {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  line-height: 1;
-}
-
-.bk-lockup-type .bk-latch {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 19px;
-  letter-spacing: 0.14em;
-  color: var(--ink-bright);
-}
-
-.bk-lockup-type .bk-protocol {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 9.5px;
-  letter-spacing: 0.3em;
-  color: var(--latch-blue);
 }
 
 .bk-nav {
   display: flex;
   align-items: center;
-  gap: 26px;
-  font-size: 14px;
+  gap: var(--s5);
+  font-size: var(--b-card-p);
+  font-weight: 500;
   min-width: 0;
 }
 
@@ -92,82 +80,93 @@
   color: var(--nav-ink);
   text-decoration: none;
   white-space: nowrap;
-  transition: color 0.2s ease;
+  transition: color var(--b-dur) ease;
 }
 
 .bk-nav a:hover {
-  color: var(--sky-ink);
+  color: var(--ink);
 }
 
 .bk-nav a[aria-current='page'] {
-  color: var(--signal-blue);
-  font-weight: 500;
+  color: var(--ink);
+  font-weight: 600;
 }
 
 /* --------------------------------------------------------------- sections -- */
 
 .bk-section {
-  max-width: var(--max-brand);
+  box-sizing: content-box;
+  max-width: calc(var(--b-wrap) - 2 * var(--b-gutter));
   margin: 0 auto;
-  padding: 76px var(--gutter-landing) 0;
+  padding: var(--b-section-pad) var(--b-gutter) 0;
   /* Sticky header must never cover an anchored heading. */
-  scroll-margin-top: 88px;
+  scroll-margin-top: 72px;
 }
 
 .bk-section--hero {
-  padding-top: 72px;
+  padding-top: var(--s9);
 }
 
+/* Uppercase, tracked, sans. B keeps mono for numbers, addresses and code. */
 .bk-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  color: var(--eyebrow-blue);
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--label-ink);
 }
 
 .bk-h1 {
-  margin: 18px 0 0;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(34px, 4.2vw, 58px);
-  line-height: 1.05;
+  max-width: 18ch;
+  margin: var(--s4) 0 0;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: var(--b-h1);
+  line-height: var(--b-h1-lh);
+  letter-spacing: var(--b-h1-track);
 }
 
+/* B's `h1 em`: one clause, italic, in the accent. */
 .bk-h1 span {
+  font-style: italic;
   color: var(--latch-blue);
 }
 
 .bk-h2 {
-  margin: 14px 0 26px;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(26px, 3vw, 38px);
+  margin: var(--s3) 0 var(--s5);
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: var(--b-sec-h);
+  line-height: 1.2;
+  letter-spacing: var(--b-sec-h-track);
 }
 
 .bk-h2--tight {
-  margin-bottom: 8px;
+  margin-bottom: var(--s2);
 }
 
 .bk-lead {
-  max-width: 620px;
-  margin: 20px 0 0;
-  font-size: 16.5px;
-  line-height: 1.62;
-  color: var(--muted-ink-2);
+  max-width: 60ch;
+  margin: var(--s5) 0 0;
+  font-size: var(--b-lede);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
   text-wrap: pretty;
 }
 
 .bk-lead--section {
-  max-width: 620px;
-  margin: 0 0 26px;
-  font-size: 15.5px;
-  line-height: 1.62;
+  max-width: 64ch;
+  margin: 0 0 var(--s5);
+  font-size: var(--b-sec-s);
 }
 
 .bk-micro {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.16em;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--label-ink);
 }
 
@@ -180,75 +179,59 @@
 .bk-cta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 26px;
+  gap: var(--s3);
+  margin-top: var(--s6);
 }
 
+/* B's `.btn`: 8px radius, 600 14px, flat fill, 1px lift on hover. */
 .bk-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  padding: 13px 24px;
-  border-radius: var(--r-pill);
-  font-weight: 600;
-  font-size: 14.5px;
+  padding: 10px var(--s4);
+  border: 1px solid transparent;
+  border-radius: var(--r-btn);
+  font: var(--b-btn);
   text-decoration: none;
+  white-space: nowrap;
+  box-shadow: var(--shadow-1);
+  transition:
+    background-color var(--b-dur),
+    transform var(--b-dur) var(--ease),
+    box-shadow var(--b-dur),
+    border-color var(--b-dur);
 }
 
-/* README § Interactions: primary hover translateY(-2px), shadow grows. */
-.bk-btn--primary {
-  position: relative;
-  overflow: hidden;
+.bk-btn:hover {
+  box-shadow: var(--shadow-2);
+  transform: var(--b-btn-lift);
+}
+
+.bk-btn--primary,
+.bk-btn--primary:hover {
   background: var(--grad-primary);
-  color: var(--ink-bright);
-  box-shadow: var(--sh-btn);
-  transition:
-    transform 0.22s var(--ease),
-    box-shadow 0.22s var(--ease);
+  color: var(--on-accent);
 }
 
 .bk-btn--primary:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--sh-btn-hover);
+  background: var(--btn-primary-hover);
 }
 
-/* README § Interactions: 38–40% wide white gradient, translateX(-140% → 260%),
-   3.6–4.6s infinite. */
-.bk-btn--primary::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 40%;
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.28), transparent);
-  transform: translateX(-140%);
-  animation: bk-sheen 4.2s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes bk-sheen {
-  to {
-    transform: translateX(260%);
-  }
-}
-
-.bk-btn--ghost {
-  border: 1px solid var(--hairline-blue-2);
+.bk-btn--ghost,
+.bk-btn--ghost:hover {
+  border-color: var(--cta-border);
+  background: var(--panel);
   color: var(--btn2-ink);
-  transition:
-    border-color 0.22s ease,
-    color 0.22s ease;
 }
 
 .bk-btn--ghost:hover {
-  border-color: var(--border-hover);
-  color: var(--ink);
+  border-color: var(--btn2-border-hover);
 }
 
-/* Download chips on every asset tile. Real anchors, ≥44px tall. */
+/* Download chips on every asset tile. Real anchors. */
 .bk-dl-row {
   display: flex;
-  gap: 8px;
+  gap: var(--s2);
   margin-left: auto;
   flex-wrap: wrap;
 }
@@ -257,51 +240,54 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  padding: 7px 12px;
-  border: 1px solid var(--hairline-blue-2);
-  border-radius: var(--r-badge);
-  font-family: var(--font-mono);
-  font-size: 11px;
+  min-height: 34px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  font-weight: 600;
   color: var(--btn2-ink);
   text-decoration: none;
   white-space: nowrap;
   transition:
-    border-color 0.22s ease,
-    background 0.22s ease,
-    color 0.22s ease;
+    border-color var(--b-dur) ease,
+    box-shadow var(--b-dur) ease,
+    transform var(--b-dur) ease;
 }
 
 .bk-dl:hover {
   border-color: var(--border-hover);
-  background: var(--panel-alt);
-  color: var(--ink);
+  box-shadow: var(--shadow-2);
+  color: var(--btn2-ink);
+  transform: var(--b-btn-lift);
 }
 
 /* ------------------------------------------------------------------ cards -- */
 
 .bk-card {
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
+  border-radius: var(--r-card);
   background: var(--panel);
+  box-shadow: var(--shadow-1);
 }
 
 .bk-card--pad {
-  padding: 26px;
+  padding: var(--s5);
 }
 
-/* README § Interactions: card hover -4px, border → #25528F, card shadow. */
+/* B's `.card:hover`: the shadow steps up and the card lifts 3px. */
 .bk-card--hover {
   transition:
-    transform 0.25s var(--ease),
-    border-color 0.25s ease,
-    box-shadow 0.25s ease;
+    transform var(--b-dur) ease,
+    box-shadow var(--b-dur) ease;
 }
 
 .bk-card--hover:hover {
-  transform: translateY(-4px);
-  border-color: var(--border-hover);
-  box-shadow: var(--sh-card-hover);
+  transform: var(--b-card-lift);
+  box-shadow: var(--shadow-2);
 }
 
 /* --------------------------------------------------------------- logo grid -- */
@@ -310,7 +296,7 @@
    without it the grid overflows below ~320px. */
 .bk-grid {
   display: grid;
-  gap: 18px;
+  gap: var(--s4);
   grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
 }
 
@@ -328,12 +314,12 @@
 
 .bk-grid--social {
   grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
-  margin-top: 18px;
+  margin-top: var(--s4);
 }
 
 .bk-grid--palette {
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+  gap: var(--s3);
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
 }
 
 .bk-tile {
@@ -342,25 +328,23 @@
   overflow: hidden;
 }
 
-/* The three preview grounds. An asset is always shown on the ground it is
-   drawn for — README § Assets: on-light art goes on --light-surface. */
+/* The preview plates. Each asset declares the ground it is drawn for
+   (assets.ts `ground`), and the plate honours it in both themes. */
 .bk-plate {
   display: grid;
   place-items: center;
-  padding: 42px 26px;
+  padding: 40px var(--s5);
   min-height: 150px;
+  border-bottom: 1px solid var(--hairline);
 }
 
-.bk-plate--void {
-  background: var(--void);
-}
-
+.bk-plate--void,
 .bk-plate--glow {
-  background: var(--grad-mark-tile);
+  background: var(--bk-plate-dark);
 }
 
 .bk-plate--light {
-  background: var(--light-surface);
+  background: var(--bk-plate-light);
 }
 
 .bk-preview--wide {
@@ -387,46 +371,50 @@
 .bk-tile-foot {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 18px;
-  border-top: 1px solid var(--hairline);
+  gap: var(--s3);
+  padding: var(--s4) 18px;
   margin-top: auto;
 }
 
 .bk-tile-name {
-  font-size: 14.5px;
-  font-weight: 500;
+  font-size: var(--b-card-h);
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .bk-tile-meta {
-  margin-top: 3px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--label-ink);
+  margin-top: 2px;
+  font-size: var(--b-caption);
+  color: var(--muted-ink);
+}
+
+.bk-tile-note {
+  font-size: var(--b-card-p);
+  font-weight: 500;
+  color: var(--ink);
 }
 
 /* ------------------------------------------------------- format disclosure -- */
 
 /* What a downloader needs to know about the files themselves, stated plainly.
-   Deliberately not styled as an error — these are facts about the kit, not
-   warnings. See README § "Asset caveats — read this". */
+   Deliberately not styled as an error — these are facts about the kit. */
 .bk-note {
-  margin-top: 18px;
+  margin-top: var(--s4);
   padding: 20px 22px;
   border: 1px solid var(--hairline);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-card);
   background: var(--panel-alt);
 }
 
 .bk-note ul {
-  margin: 14px 0 0;
+  margin: var(--s3) 0 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
   max-width: 78ch;
   text-wrap: pretty;
@@ -441,30 +429,43 @@
   content: '';
   position: absolute;
   left: 0;
-  top: 0.62em;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--eyebrow-blue);
+  top: 0.66em;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--latch-blue);
 }
 
-.bk-note code {
-  color: var(--sky-ink);
-  font-size: 12.5px;
+.bk-note code,
+.bk-swatch-role code {
+  padding: 1px 5px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-micro);
+  background: var(--code-ground);
+  font-size: 0.86em;
+  color: var(--code-ink);
 }
 
 /* --------------------------------------------------------- icon & favicon -- */
 
 .bk-icon-row {
   display: grid;
-  gap: 18px;
+  gap: var(--s4);
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
 }
 
 .bk-icon-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--s2);
+}
+
+.bk-icon-card .bk-app-icon {
+  margin-bottom: var(--s2);
+}
+
+.bk-icon-card .bk-dl {
+  margin-top: var(--s2);
 }
 
 .bk-app-icon {
@@ -478,8 +479,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 24px;
-  margin-top: 24px;
+  gap: var(--s5);
+  margin-top: var(--s5);
 }
 
 /* The whole swatch is one download link, so the hit target clears 44px even
@@ -492,38 +493,43 @@
   min-width: 44px;
   padding: 2px;
   text-decoration: none;
-  border-radius: var(--r-chip);
+  border-radius: var(--r-btn);
 }
 
+/* These favicons are the white-and-blue set, so their plate is the dark one. */
 .bk-fav-box {
   display: grid;
   place-items: center;
-  border: 1px solid var(--hairline-blue);
-  border-radius: var(--r-chip);
-  background: var(--void);
-  transition: border-color 0.22s ease;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--bk-plate-dark);
+  transition:
+    box-shadow var(--b-dur) ease,
+    transform var(--b-dur) ease;
 }
 
 .bk-fav:hover .bk-fav-box {
-  border-color: var(--border-hover);
+  box-shadow: var(--shadow-2);
+  transform: var(--b-btn-lift);
 }
 
 .bk-fav-label {
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--mono-data-dim);
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .bk-fav:hover .bk-fav-label {
-  color: var(--sky-ink);
+  color: var(--ink);
 }
 
 .bk-fav-note {
-  margin-top: 26px;
-  padding-top: 22px;
+  margin-top: var(--s5);
+  padding-top: 20px;
   border-top: 1px solid var(--hairline);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
 }
 
@@ -544,15 +550,15 @@
 }
 
 .bk-banner + .bk-banner {
-  margin-top: 18px;
+  margin-top: var(--s4);
 }
 
 .bk-banner-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
-  padding: 16px 20px;
+  gap: var(--s3);
+  padding: var(--s4) 20px;
   border-top: 1px solid var(--hairline);
 }
 
@@ -567,7 +573,7 @@
 .bk-pfp {
   width: 104px;
   height: 104px;
-  border-radius: 50%;
+  border-radius: var(--r-pill);
   flex: none;
 }
 
@@ -580,9 +586,9 @@
 }
 
 .bk-safe-body {
-  margin-top: 14px;
-  font-size: 14px;
-  line-height: 1.65;
+  margin-top: var(--s3);
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
   text-wrap: pretty;
 }
@@ -592,7 +598,8 @@
 .bk-badge-plate {
   display: grid;
   place-items: center;
-  padding: 46px 26px;
+  padding: 46px var(--s5);
+  border-bottom: 1px solid var(--hairline);
 }
 
 .bk-badge-plate img {
@@ -604,11 +611,10 @@
 
 .bk-swatch-card {
   overflow: hidden;
-  border-radius: var(--r-card);
 }
 
 .bk-swatch {
-  height: 92px;
+  height: 88px;
 }
 
 .bk-swatch--ruled {
@@ -616,56 +622,78 @@
 }
 
 .bk-swatch-body {
-  padding: 14px 16px;
+  padding: 14px var(--s4) var(--s4);
 }
 
 .bk-swatch-name {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--b-card-p);
+  font-weight: 600;
 }
 
-.bk-swatch-hex {
+.bk-swatch-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s3);
   margin-top: 6px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--mono-data-dim);
+}
+
+.bk-swatch-values div {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+}
+
+.bk-swatch-values dt {
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--faint-ink);
+}
+
+.bk-swatch-values dd {
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  color: var(--ink);
 }
 
 .bk-swatch-role {
-  margin-top: 3px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--faint-ink);
+  margin-top: 6px;
+  font-size: var(--b-label);
+  line-height: 1.5;
+  color: var(--muted-ink);
 }
 
 /* ------------------------------------------------------------- typography -- */
 
 .bk-specimen {
-  font-size: 44px;
+  font-size: calc(var(--b-kpi) * 1.4);
   line-height: 1;
+  color: var(--ink);
 }
 
 .bk-specimen-name {
-  margin-top: 18px;
-  font-size: 14.5px;
-  font-weight: 500;
+  margin-top: var(--s4);
+  font-size: var(--b-card-h);
+  font-weight: 600;
 }
 
 .bk-specimen-meta {
-  margin-top: 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--label-ink);
+  margin-top: 4px;
+  font-size: var(--b-caption);
+  color: var(--muted-ink);
 }
 
 /* ------------------------------------------------------------------ usage -- */
 
+/* The on-dark lockup inside a dashed frame — so the frame's interior is the
+   dark plate, or the white half of the lockup would vanish. */
 .bk-clearspace {
   position: relative;
-  padding: 26px;
+  padding: var(--s5);
   border: 1px dashed var(--dashed-rule);
   border-radius: var(--r-btn);
+  background: var(--bk-plate-dark);
 }
 
 .bk-clearspace img {
@@ -675,32 +703,37 @@
 }
 
 .bk-usage-caption {
-  margin: 16px 0 0;
-  font-size: 14px;
-  line-height: 1.6;
+  margin: var(--s4) 0 0;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
 }
 
 .bk-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin: 18px 0 0;
+  gap: 0;
+  margin: var(--s3) 0 0;
   padding: 0;
   list-style: none;
-  font-size: 14px;
-  color: var(--mono-data-ink);
-}
-
-.bk-list--dont {
-  gap: 10px;
-  line-height: 1.5;
+  font-size: var(--b-card-p);
+  color: var(--ink);
 }
 
 .bk-list li {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--s3);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+
+.bk-list li:last-child {
+  border-bottom: none;
+}
+
+.bk-list--dont {
+  line-height: 1.5;
 }
 
 .bk-list--dont li {
@@ -709,7 +742,9 @@
 
 .bk-list-value {
   font-family: var(--font-mono);
-  color: var(--mono-data-dim);
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+  white-space: nowrap;
 }
 
 /* ------------------------------------------------------------------ embed -- */
@@ -720,20 +755,20 @@
 }
 
 .bk-code-bar {
-  padding: 12px 18px;
+  padding: 11px var(--s4);
   border-bottom: 1px solid var(--hairline);
   background: var(--panel);
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--code-comment);
+  font-size: var(--b-label);
+  color: var(--muted-ink);
 }
 
 .bk-code {
   margin: 0;
-  padding: 20px;
+  padding: 18px 20px;
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.9;
+  font-size: var(--b-code);
+  line-height: 1.8;
   color: var(--code-ink);
   white-space: pre-wrap;
   word-break: break-word;
@@ -744,7 +779,7 @@
 }
 
 .bk-str {
-  color: var(--success);
+  color: var(--code-string);
 }
 
 /* ----------------------------------------------------------------- footer -- */
@@ -755,59 +790,50 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  max-width: var(--max-brand);
-  margin: 76px auto 0;
-  padding: 36px var(--gutter-landing) 64px;
-  border-top: 1px solid var(--hairline-dark);
-}
-
-.bk-footer .bk-lockup img {
-  height: 34px;
-}
-
-.bk-footer .bk-latch {
-  font-size: 20px;
-}
-
-.bk-footer .bk-protocol {
-  font-size: 10px;
+  margin-top: var(--b-section-pad);
+  padding: var(--s6) max(var(--b-gutter), calc((100% - var(--b-wrap)) / 2 + var(--b-gutter)))
+    var(--s8);
+  border-top: 1px solid var(--hairline);
+  background: var(--panel);
 }
 
 .bk-footer-links {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 24px;
-  font-size: 13.5px;
-  color: var(--mono-data-dim);
+  gap: var(--s5);
+  font-size: var(--b-caption);
+  color: var(--muted-ink);
 }
 
 .bk-footer-links a {
-  color: var(--mono-data-dim);
+  color: var(--muted-ink);
+  font-weight: 500;
   text-decoration: none;
-  transition: color 0.2s ease;
+  transition: color var(--b-dur) ease;
 }
 
 .bk-footer-links a:hover {
-  color: var(--sky-ink);
+  color: var(--ink);
 }
 
 .bk-copyright {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--faint-ink);
   white-space: nowrap;
 }
 
 /* ----------------------------------------------------------------- motion -- */
 
-/* README § Interactions: opacity 0→1, translateY(26px)→0, 0.85s
-   cubic-bezier(.22,.61,.36,1), per-section delays 0–0.2s. Pure CSS, so the
-   content is never left hidden by a JS failure. */
+/* B's reveal: 16px of travel over --b-reveal. Pure CSS, so the content is never
+   left hidden by a JS failure. */
 @keyframes bk-reveal {
   from {
     opacity: 0;
-    transform: translateY(26px);
+    transform: translateY(16px);
   }
   to {
     opacity: 1;
@@ -816,37 +842,33 @@
 }
 
 .bk-reveal {
-  animation: bk-reveal 0.85s var(--ease) both;
+  animation: bk-reveal var(--b-reveal) var(--ease) both;
   animation-delay: var(--bk-delay, 0s);
 }
 
 /* tokens.css already collapses every duration globally; this makes the end
    state explicit so nothing can settle mid-transform. */
 @media (prefers-reduced-motion: reduce) {
-  .bk-reveal,
-  .bk-btn--primary::after {
+  .bk-reveal {
     animation: none !important;
     opacity: 1;
     transform: none;
   }
 
-  .bk-btn--primary::after {
-    display: none;
-  }
-
   .bk-card--hover:hover,
-  .bk-btn--primary:hover {
+  .bk-btn:hover,
+  .bk-dl:hover,
+  .bk-fav:hover .bk-fav-box {
     transform: none;
   }
 }
 
-/* Every *download* control on this page is already ≥44px at any pointer
-   (.bk-btn, .bk-dl, .bk-fav). Chrome links are 14px text, sized to the
-   reference; on touch they get the full target without changing the desktop
-   header height. */
+/* Download chips are 34px on a mouse; on touch every control gets the full
+   44px target without changing the desktop layout. */
 @media (pointer: coarse) {
   .bk-nav a,
-  .bk-footer-links a {
+  .bk-footer-links a,
+  .bk-dl {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
@@ -863,7 +885,7 @@
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scrollbar-width: thin;
-    padding-bottom: 2px;
+    padding-block: 2px;
   }
 
   .bk-icon-row {
@@ -871,19 +893,23 @@
   }
 }
 
-@media (max-width: 620px) {
-  .bk-section,
-  .bk-footer {
-    padding-left: 24px;
-    padding-right: 24px;
+/* The house narrow step (landing.module.css sets the same on `.page`): B's
+   28px gutter becomes 20px and the section step 48px. Every box reads the two
+   tokens, so nothing restates a padding. */
+@media (max-width: 560px) {
+  .bk {
+    --b-gutter: 20px;
+    --b-section-pad: var(--s7);
   }
 
-  .bk-section {
-    padding-top: 58px;
+  .bk-section--hero {
+    padding-top: var(--s8);
   }
+}
 
+@media (max-width: 720px) {
   .bk-header {
-    padding: 14px 20px;
+    gap: var(--s4);
   }
 
   /* Stack the label above its download row rather than letting the buttons
@@ -892,7 +918,7 @@
   .bk-banner-foot {
     flex-direction: column;
     align-items: flex-start;
-    gap: 12px;
+    gap: var(--s3);
   }
 
   .bk-dl-row {
@@ -904,7 +930,7 @@
   }
 
   .bk-fav-row {
-    gap: 16px;
+    gap: var(--s4);
   }
 
   .bk-app-icon {

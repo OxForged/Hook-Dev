@@ -1,131 +1,126 @@
-import { Activity } from './Activity'
-import { Audiences } from './Audiences'
+import { useEffect, useRef, useState } from 'react'
+
 import { ContractBook } from './ContractBook'
 import { Ecosystem } from './Ecosystem'
 import { FeeChart } from './FeeChart'
 import { FourThings } from './FourThings'
 import { Hero } from './Hero'
 import { LiveStrip } from './LiveStrip'
+import { PermissionBitmap } from './PermissionBitmap'
 import { PresetCurve } from './PresetCurve'
 import { SwapCost } from './SwapCost'
-import { LiquidityFlow } from './LiquidityFlow'
 import { CtaPanel } from './Sections'
 import { SiteFooter } from './SiteFooter'
 import { SiteHeader } from './SiteHeader'
-import { StatsStrip } from './StatsStrip'
 import styles from './landing.module.css'
+import { useRevealOnScroll } from './ui'
+
+/** The hash that opens the contract book. Nav, footer and the CTA band link here. */
+const CONTRACTS_HASH = '#contracts'
 
 /**
- * Latch Protocol landing page.
+ * `location.hash`, kept current.
  *
- * ORDER IS AN ARGUMENT, and this one runs: what is it → is it real → how does
- * the money move → what can I build → how do I start.
+ * Read from `window` and `hashchange` rather than the router: a plain
+ * `<a href="#contracts">` on `/` is an in-document fragment jump, and whether a
+ * router re-renders on one is an implementation detail this should not rest on.
+ */
+function useHash(): string {
+  const [hash, setHash] = useState(() =>
+    typeof window === 'undefined' ? '' : window.location.hash,
+  )
+  useEffect(() => {
+    const onChange = () => setHash(window.location.hash)
+    window.addEventListener('hashchange', onChange)
+    return () => window.removeEventListener('hashchange', onChange)
+  }, [])
+  return hash
+}
+
+/**
+ * Latch Protocol landing page — THE MINIMAL CUT, 2026-09-13.
  *
- * `LiquidityFlow` sits third on purpose. Everything else on the page is a
- * consequence of the sentence it draws — a Latch takes a share of a swap and
- * splits it three ways — and prose was teaching that badly. A reader who
- * understands the diagram can skip the rest; one who does not will not be
- * persuaded by another feature grid.
+ * Owner's brief: "make landing very minimal with charts graphs animations and
+ * interactive". Design language is Option B (latch-design-options/b.html).
  *
- * The old A1–A11 spec order put five explanatory sections (UseCases,
- * RevenueShare, Oracles, HowItWorks, Features) between the hero and anything
- * actionable, which is how a landing page ends up long and unread. Oracles and
- * Roadmap were cut from the page rather than rewritten: oracles are a detail of
- * one hook family and belong in the docs, and a roadmap is a promise, which is
- * the one kind of content this project has decided not to render.
+ * ORDER
+ *   1. SiteHeader        brand, four links, theme, Launch App
+ *   2. Hero              pill, serif H1, one-sentence lede, two actions
+ *   3. LiveStrip         the live KPI row, read from chain
+ *   4. FeeChart          b.html's flagship: what a swap costs, by pool tier
+ *      SwapCost          the same rates applied to a trade size you choose
+ *      PresetCurve       the launch fee decay, from the hook's own formula
+ *      PermissionBitmap  which callbacks a Latch asks for, from core's flags
+ *   5. FourThings        what you do not have to deploy
+ *   6. Ecosystem         who is building on it, and "List your project"
+ *   ·  ContractBook      ONLY when the URL hash is #contracts (see below)
+ *   7. CtaPanel          one-line closing band
+ *   8. SiteFooter        minimal, and the map to everything that left the page
  *
- * Figures are NOT placeholders — `StatsStrip` and `Activity` read whichever
- * chain this build serves (`ACTIVE_CHAIN_ID`, never a spelled-out name), and
- * `LiquidityFlow` is a calculator over the contracts' own constants and says so
- * in the panel. See CLAUDE.md § "No invented data in the UI. Ever."
+ * UNMOUNTED, NOT DELETED — and where each one's content is reachable now:
+ *   · Audiences     its two integration prompts are in the footer's Build
+ *                   column; the hero's secondary action is the DEX prompt.
+ *   · StatsStrip    pools, swaps and vault balances: /app/analytics (footer).
+ *   · Activity      live state and event mix: /app/analytics (footer). Its
+ *                   test-count and audit-status card has no other home yet.
+ *   · LiquidityFlow the interactive revenue-share MODEL has no other home. The
+ *                   docs' #revshare section covers the contract reads.
+ *   · ContractBook  one click away at /#contracts — header nav, footer, and
+ *                   the CTA band all link there, and the book mounts on demand.
+ *   · CodePanel     was only ever mounted inside HowItWorks (Sections.tsx).
+ * Each goes back in one import and one line.
  *
- * UNMOUNTED, NOT DELETED: `Oracles`, `Roadmap` and `Team` still exist in
- * ./Sections.tsx and each goes back into the list below in one line.
- *   · Team rendered four cards reading literally "Name Placeholder". Four
- *     placeholder humans on a landing page is worse than no team section, and
- *     it is the same failure as a placeholder number wearing a different hat.
- *     It returns the day there are names to put in ./data.ts.
- *   · Roadmap is a set of promises with indicative dates. Not dishonest, but it
- *     is the weakest thing on a page whose whole argument is "check the chain".
- *   · Oracles is a detail of one hook family and reads better in the docs.
+ * WHY THE CONTRACT BOOK IS BEHIND A HASH, not a route: no page other than this
+ * one presents every deployed address (the docs name the registry only), and
+ * adding a route is a change to App.tsx. A hash-gated section keeps the book
+ * one click from every page — `/#contracts` from anywhere — without putting its
+ * live `getCode` sweep on every landing visit.
  */
 export default function LandingPage() {
+  const pageRef = useRef<HTMLDivElement>(null)
+  useRevealOnScroll(pageRef)
+
+  const hash = useHash()
+  const showContracts = hash === CONTRACTS_HASH
+
+  /* The browser's own fragment scroll ran before the book existed, so it found
+     nothing. Scroll once the book has mounted. */
+  useEffect(() => {
+    if (!showContracts) return
+    document.getElementById(CONTRACTS_HASH.slice(1))?.scrollIntoView({ block: 'start' })
+  }, [showContracts])
+
   return (
-    <div className={styles['page']}>
+    <div ref={pageRef} className={styles['page']}>
       <SiteHeader />
-      {/* CUT FROM TEN TO FIVE, 2026-09-12.
-          
-          What survives is what MOVES or what is READ FROM CHAIN: the hero's
-          floating satellites, StatsStrip's counters, LiquidityFlow's split bar,
-          Activity's series and gauge — plus the closing CtaPanel, which is not
-          animated but is the only thing on the page asking for a decision.
-
-          Removed: UseCases, RevenueShare, HowItWorks, Features, Chains. Four of
-          the five were explanatory prose with a scroll-reveal fade and nothing
-          else; Features and Chains had no motion at all. UseCases overlapped
-          LiquidityFlow, which shows the same thing with real numbers instead of
-          describing it.
-
-          The components are NOT deleted — they are still exported from
-          Sections.tsx and one line each puts them back. Deleting them would
-          make this a decision somebody has to redo rather than reverse, and
-          nothing here has been live long enough to be sure. Chains in
-          particular carries real deployment facts; if the page needs them
-          again, that is where they are. */}
       <main>
-        {/* ABOVE the hero, per the Option C prototype, which opens with a
-            full-bleed ticker rail rather than a headline. It is the first thing
-            on the page for a reason: four O(1) reads that always answer, so the
-            page's opening claim is a live number rather than a sentence. */}
-        <LiveStrip />
         <Hero />
-        <StatsStrip />
-        {/* Straight after the counters, per the prototype: a reader who has
-            just seen what is live is asking what it consists of. It answers
-            with the four contracts they do NOT have to build, each linking to
-            the deployment so the claim is one click from checkable. */}
-        <FourThings />
-        {/* Directly under the stats: a reader who has just seen "what is live"
-            is exactly the one asking "what does it cost". Before the mechanics
-            in LiquidityFlow, because price is the question that decides whether
-            they read the mechanics at all. */}
+
+        {/* The live KPI row. `.kpiBand` is the column box only; the cells and
+            their four states are LiveStrip's own. */}
+        <div className={styles['kpiBand']}>
+          <LiveStrip />
+        </div>
+
+        {/* ONE VERTICAL RHYTHM. Every block from here down is a `.section` box
+            (or composes it) and carries exactly `--b-section-pad` above it,
+            and nothing else adds space between modules. A grid row-gap used
+            to sit on top of that padding, which opened ~160px voids. */}
         <FeeChart />
-        {/* Immediately after the rate chart, because it answers the question
-            that chart leaves open. FeeChart gives the rate per tier; this
-            applies a rate to an amount the reader chooses. Same subject, one
-            step more concrete. */}
         <SwapCost />
-        {/* After the mechanics, before the evidence. A reader who now knows
-            what a swap costs is the one asking "so what would I build with
-            it" — and Activity, which is the proof, is more persuasive once
-            they have a reason to want the answer. */}
-        <Audiences />
-        {/* Directly under the launchpad column, which promises presets that
-            admit their limits. This is that promise, drawn: the decay curve
-            from the hook's own formula, with the limitation always on screen. */}
-        <PresetCurve />
-        {/* LiquidityFlow sits HERE rather than beside SwapCost on purpose.
-            Both take a swap size, and two size sliders in adjacent sections
-            reads as one control duplicated rather than two questions. Two
-            sections apart, they are plainly about different layers: SwapCost
-            is core (pool fee plus protocol fee, every rate read from chain),
-            this is the hook layer (a Latch's cut, split three ways, modelled
-            from constants and labelled a model). */}
-        <LiquidityFlow />
-        <Activity />
-        {/* Last before the ask, because it is the page's strongest argument
-            and the one a sceptic wants: every address, each independently
-            checkable, with the code check run live. "Read them before you
-            route a swap through them" is only a real invitation if reading
-            them is easy. */}
-        <ContractBook />
-        {/* Social proof immediately before the ask, and the submission route
-            beside it. This lived only at /app/ecosystem, which is the one place
-            a visitor evaluating the protocol will not look — reaching it means
-            launching an app you have not decided to trust yet. A directory
-            nobody sees cannot recruit, and the "list your project" link is
-            worthless to the people most likely to use it. */}
+        <div id="presets" className={styles['anchor']}>
+          <PresetCurve />
+        </div>
+        <PermissionBitmap />
+
+        <FourThings />
+
+        {/* Directly after the inventory of what is deployed: who is building
+            on it, and how to be listed. */}
         <Ecosystem />
+
+        {showContracts ? <ContractBook /> : null}
+
         <CtaPanel />
       </main>
       <SiteFooter />

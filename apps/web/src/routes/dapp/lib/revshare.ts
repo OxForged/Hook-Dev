@@ -34,10 +34,12 @@
       all of it. No view function can decompose it, so nothing here pretends
       to — see `readGlobalClaimable`.
 
-   4. THERE IS NO DISTRIBUTOR TYPE DISCOVERY. `distributorOf` returns a bare
-      address. `probeDistributor` calls `token()` (only Snapshot has it) and
-      `challengeDelay()` (only Merkle has it) and reports 'unknown' when
-      neither answers, rather than defaulting to a type.
+   4. `distributorOf` RETURNS A BARE ADDRESS. Which distributor sits behind it
+      is decided by asking it: `probeDistributor` reads
+      `IEpochDistributor.kind()` and accepts only an exact match on one of the
+      two constants. A revert, zero, or any other value is 'unknown' — never a
+      guessed type, and never a fallback to the old `token()` /
+      `challengeDelay()` selector probe. An RPC failure throws instead.
 
    5. MERKLE PROOFS HAVE NO ON-CHAIN PUBLICATION CHANNEL. Nothing here can
       build a `MerkleEpochDistributor.claim` call, and no function that tries
@@ -45,8 +47,12 @@
    ============================================================================ */
 
 import {
+  AbiDecodingDataSizeTooSmallError,
+  AbiDecodingZeroDataError,
   BaseError,
   ContractFunctionRevertedError,
+  ContractFunctionZeroDataError,
+  ExecutionRevertedError,
   UserRejectedRequestError,
   getAddress,
   isAddress,
@@ -67,6 +73,8 @@ import {
 } from '../../../lib/chain'
 import {
   CL_INITIALIZE_EVENT,
+  DISTRIBUTOR_KIND,
+  DISTRIBUTOR_KIND_ABI,
   ERC20_META_ABI,
   MERKLE_DISTRIBUTOR_ABI,
   POOL_CLAIMED_EVENT,
@@ -75,6 +83,7 @@ import {
   REV_SHARE_TAKEN_EVENT,
   SNAPSHOT_DISTRIBUTOR_ABI,
 } from './revshareAbi'
+import { readPendingConfig, type PendingConfigShape } from '../../../lib/pendingConfig'
 
 export const REVSHARE_CHAIN_ID: DeployedChainId = ACTIVE_CHAIN_ID
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
@@ -348,8 +357,20 @@ export interface ConfigParams {
 }
 
 export interface PendingConfig {
+  /**
+   * Which `PendingConfig` layout the hook returned: 7 words on the hooks
+   * deployed before proposal expiry existed (Robinhood 0x23CE…, Sepolia
+   * 0x1C86…), 8 on the current source. See `lib/pendingConfig.ts`.
+   */
+  shape: PendingConfigShape
   /** 0 means no proposal outstanding. */
   effectiveBlock: bigint
+  /**
+   * Last applicable block on the current shape. NULL on the legacy shape, which
+   * has no expiry: a matured proposal there stays armed until cancelled or
+   * frozen. Never replaced with a number.
+   */
+  expiryBlock: bigint | null
   params: ConfigParams
 }
 
@@ -533,9 +554,13 @@ export async function readPoolOverview(hook: Address, poolId: Hex): Promise<Pool
   }
   if (rawConfig.owner === ZERO_ADDRESS) return { k: 'not-configured', hook, poolId }
 
-  const [rawPending, rawBeneficiaries, totalWeight, distributorRaw, pendingOwnerRaw, paused, delay, blockNumber, poolManager] =
+  /* `getPendingConfig` is read RAW and decoded by length — never through
+     `read`. Two struct shapes exist on chain and a typed ABI throws on one and
+     silently misreads the other. A failure here throws into the screen's error
+     state; it is never caught into "no proposal". */
+  const [pending, rawBeneficiaries, totalWeight, distributorRaw, pendingOwnerRaw, paused, delay, blockNumber, poolManager] =
     await Promise.all([
-      read<PendingConfig>('getPendingConfig', [poolId]),
+      readPendingConfig(c, hook, poolId),
       read<readonly Beneficiary[]>('getBeneficiaries', [poolId]),
       read<bigint>('totalWeight', [poolId]),
       read<Address>('distributorOf', [poolId]),
@@ -588,17 +613,7 @@ export async function readPoolOverview(hook: Address, poolId: Hex): Promise<Pool
         enabled: rawConfig.enabled,
         frozen: rawConfig.frozen,
       },
-      pending: {
-        effectiveBlock: BigInt(rawPending.effectiveBlock),
-        params: {
-          feePips: Number(rawPending.params.feePips),
-          lpDonateBps: Number(rawPending.params.lpDonateBps),
-          beneficiaryBps: Number(rawPending.params.beneficiaryBps),
-          distributorBps: Number(rawPending.params.distributorBps),
-          distributor: rawPending.params.distributor,
-          enabled: rawPending.params.enabled,
-        },
-      },
+      pending,
       beneficiaries: rawBeneficiaries.map((b) => ({ recipient: b.recipient, weight: BigInt(b.weight) })),
       totalWeight,
       distributor,
@@ -626,6 +641,8 @@ export interface OwnedPool {
   distributor: Address | null
   /** `getPendingConfig().effectiveBlock`; 0 when nothing is proposed. */
   pendingEffectiveBlock: bigint
+  /** `expiryBlock` on the current hook; null on a legacy hook, which has no expiry. */
+  pendingExpiryBlock: bigint | null
 }
 
 export interface OwnedPools {
@@ -706,7 +723,9 @@ export async function readOwnedPools(hook: Address, owner: Address): Promise<Own
     const [config, distributorRaw, pending] = await Promise.all([
       read<PoolConfig>('getConfig', [poolId]),
       read<Address>('distributorOf', [poolId]),
-      read<PendingConfig>('getPendingConfig', [poolId]),
+      /* Raw, by length — see `readPendingConfig`. A throw fails the whole list
+         rather than listing this pool as having no proposal. */
+      readPendingConfig(c, hook, poolId),
     ])
     pools.push({
       poolId,
@@ -720,7 +739,8 @@ export async function readOwnedPools(hook: Address, owner: Address): Promise<Own
         frozen: config.frozen,
       },
       distributor: distributorRaw === ZERO_ADDRESS ? null : distributorRaw,
-      pendingEffectiveBlock: BigInt(pending.effectiveBlock),
+      pendingEffectiveBlock: pending.effectiveBlock,
+      pendingExpiryBlock: pending.expiryBlock,
     })
   }
 
@@ -801,7 +821,15 @@ export interface MerkleEpoch {
   root: Hex
   closedAt: bigint
   claimableAt: bigint
+  /** 0 while no root stands (never posted, or cancelled). */
   expiresAt: bigint
+  /**
+   * `rolloverEligibleAt(id)` — when `rollover` stops reverting `NotExpiredYet`.
+   * Equal to `expiresAt` once a root stands; for a rootless epoch it is the
+   * abandonment fallback (or a later `cancelRoot` floor), which `getEpoch` does
+   * not carry. Read from chain, never recomputed.
+   */
+  rolloverEligibleAt: bigint
   rolledOver: boolean
 }
 
@@ -827,24 +855,58 @@ export type DistributorState =
   | { kind: 'unknown'; address: Address }
 
 /**
- * Which distributor is this?
+ * Map a `kind()` return value onto a distributor. Exact match only. Zero, an
+ * unrecognised hash, or a value of the wrong width are all 'unknown'. Mirrors
+ * `kindFromBytes32` in `packages/keeper/src/decode.ts`.
+ */
+export function kindFromBytes32(value: unknown): DistributorKind {
+  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(value)) return 'unknown'
+  const v = value.toLowerCase()
+  if (v === DISTRIBUTOR_KIND.snapshot.toLowerCase()) return 'snapshot'
+  if (v === DISTRIBUTOR_KIND.merkle.toLowerCase()) return 'merkle'
+  return 'unknown'
+}
+
+/**
+ * Which distributor is this? Ask it.
  *
- * There is no `kind()` and the two contracts share no interface, so the probe
- * is by selector: `token()` exists only on the snapshot distributor,
- * `challengeDelay()` only on the merkle one. Both failing means the address is
- * not one of ours, and 'unknown' is reported as such — never guessed into a
- * type, because decoding the wrong nine-field epoch struct produces plausible
- * numbers that mean nothing.
+ * Both distributors implement `IEpochDistributor.kind()`, which returns one of
+ * two domain-separated constants. Anything else — a revert, empty return data,
+ * zero, an unrecognised hash — is 'unknown', and 'unknown' is rendered as "not
+ * a distributor this build understands". It is never guessed into a type,
+ * because decoding the wrong nine-field epoch struct produces plausible numbers
+ * that mean nothing, and it never falls back to probing `token()` /
+ * `challengeDelay()`: any contract with a `token()` getter passed that probe.
+ * A distributor deployed before `kind()` existed reads as 'unknown' too, which
+ * is the honest answer.
+ *
+ * Only a verdict ABOUT THE ADDRESS becomes 'unknown': a revert, no return data,
+ * or return data too short to be a bytes32. A transport failure THROWS, so the
+ * screen renders "chain unreachable" rather than "not a distributor" — the
+ * RPC not answering is not evidence about the contract.
  */
 export async function probeDistributor(address: Address): Promise<DistributorKind> {
   const c = client(REVSHARE_CHAIN_ID)
-  const [token, delay] = await Promise.all([
-    c.readContract({ address, abi: SNAPSHOT_DISTRIBUTOR_ABI, functionName: 'token' }).catch(() => null),
-    c.readContract({ address, abi: MERKLE_DISTRIBUTOR_ABI, functionName: 'challengeDelay' }).catch(() => null),
-  ])
-  if (token !== null && delay === null) return 'snapshot'
-  if (delay !== null && token === null) return 'merkle'
-  return 'unknown'
+  let raw: unknown
+  try {
+    raw = await c.readContract({ address, abi: DISTRIBUTOR_KIND_ABI, functionName: 'kind' })
+  } catch (e) {
+    const aboutTheAddress =
+      e instanceof BaseError &&
+      Boolean(
+        e.walk(
+          (x) =>
+            x instanceof ContractFunctionRevertedError ||
+            x instanceof ContractFunctionZeroDataError ||
+            x instanceof ExecutionRevertedError ||
+            x instanceof AbiDecodingZeroDataError ||
+            x instanceof AbiDecodingDataSizeTooSmallError,
+        ),
+      )
+    if (aboutTheAddress) return 'unknown'
+    throw e
+  }
+  return kindFromBytes32(raw)
 }
 
 /** Newest epochs first, capped — an epoch list is unbounded on chain. */
@@ -928,7 +990,14 @@ export async function readDistributor(address: Address): Promise<DistributorStat
   const [challengeDelay, guardian] = await Promise.all([read<bigint>('challengeDelay'), read<Address>('guardian')])
   const epochs = await Promise.all(
     ids.map(async (id) => {
-      const e = await read<MerkleEpoch>('getEpoch', [id])
+      /* `rolloverEligibleAt` is read for MERKLE epochs only, exactly as the
+         keeper's rollover job does. Without it a rootless epoch
+         (`expiresAt == 0`) could never be offered for rollover — or, gated on
+         `expiresAt` alone, would look due the moment it closed. */
+      const [e, eligibleAt] = await Promise.all([
+        read<Omit<MerkleEpoch, 'id' | 'rolloverEligibleAt'>>('getEpoch', [id]),
+        read<bigint | number>('rolloverEligibleAt', [id]),
+      ])
       return {
         id,
         amount0: e.amount0,
@@ -939,6 +1008,7 @@ export async function readDistributor(address: Address): Promise<DistributorStat
         closedAt: BigInt(e.closedAt),
         claimableAt: BigInt(e.claimableAt),
         expiresAt: BigInt(e.expiresAt),
+        rolloverEligibleAt: BigInt(eligibleAt),
         rolledOver: e.rolledOver,
       }
     }),
@@ -1109,8 +1179,11 @@ const ERROR_COPY: Record<string, (args: readonly unknown[]) => string> = {
     'The token needs delegated votes before an epoch can close.',
   UnknownEpoch: ([id]) => `Epoch ${String(id)} does not exist on this distributor.`,
   AlreadyRolledOver: ([id]) => `Epoch ${String(id)} has already been rolled over. Nothing further to do.`,
-  NotExpiredYet: ([id, expiresAt]) =>
-    `Epoch ${String(id)} is still claimable until unix ${String(expiresAt)}; it cannot be rolled over before then.`,
+  /* The second argument is the deadline that governs, which on the merkle
+     distributor is the abandonment fallback for an epoch with no root — not a
+     claim window. Worded so it is true of both. */
+  NotExpiredYet: ([id, eligibleAt]) =>
+    `Epoch ${String(id)} cannot be rolled over until unix ${String(eligibleAt)}.`,
   ClaimWindowClosed: (args) =>
     `The claim window for epoch ${String(args[0])} closed at unix ${String(args[1])}. ` +
     'Whatever was left returns to the next epoch through `rollover`.',
@@ -1125,6 +1198,9 @@ const ERROR_COPY: Record<string, (args: readonly unknown[]) => string> = {
   NoPendingConfig: () => 'There is no config proposal outstanding for this pool.',
   PendingConfigNotDue: (args) =>
     `The proposal for this pool does not become applicable until block ${String(args[1])}.`,
+  PendingConfigExpired: (args) =>
+    `The proposal for this pool expired after block ${String(args[1])} and can no longer be applied. ` +
+    'The owner would have to propose it again and wait out the full delay.',
   PoolNotConfigured: () => 'This pool has never been configured on this hook.',
   HookMismatch: ([declared]) =>
     `The pool key names ${String(declared)} as its hook, which is not this contract. The key is wrong.`,

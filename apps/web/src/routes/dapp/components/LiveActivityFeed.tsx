@@ -55,14 +55,14 @@ export function LiveActivityFeed() {
     <section className="dapp-card" style={{ animationDelay: '0.16s' }}>
       <div className="dapp-card__bar">
         <h2 className="dapp-microlabel">PROTOCOL ACTIVITY</h2>
-        <span className="lr-badge">
-          <span className="lr-dot" aria-hidden="true" />
+        <span className="live-badge">
+          <span className="live-dot" aria-hidden="true" />
           LIVE
         </span>
       </div>
 
       {state.k === 'loading' && (
-        <p className="live-note" role="status">
+        <p className="live-note dapp-state--loading" role="status">
           Reading contract logs&hellip;
         </p>
       )}
@@ -74,7 +74,7 @@ export function LiveActivityFeed() {
       )}
 
       {state.k === 'ready' && state.events.length === 0 && (
-        <p className="live-note">
+        <p className="live-note dapp-state--empty">
           Nothing has happened on this deployment yet. Shown empty rather than filled with
           examples.
         </p>

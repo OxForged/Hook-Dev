@@ -23,7 +23,7 @@
    the whole system to stop.
    ============================================================================ */
 
-import { useId, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { CSSProperties, MouseEvent, ReactNode } from 'react'
 
 import { useChartTip } from '../../../charts/useChartTip'
@@ -117,7 +117,6 @@ export function SeriesChart({
   empty,
 }: SeriesChartProps) {
   const tip = useChartTip()
-  const gradId = useId().replace(/:/g, '')
 
   const proj = useMemo(() => (points.length >= 2 ? project(points) : []), [points])
 
@@ -125,7 +124,7 @@ export function SeriesChart({
      letting the reader infer a stability nobody measured. */
   if (proj.length < 2) {
     return (
-      <p className="live-note" role="status">
+      <p className="live-note dapp-state--empty" role="status">
         {empty ??
           (points.length === 0
             ? 'No readings yet, so there is no series to draw.'
@@ -151,13 +150,6 @@ export function SeriesChart({
       aria-label={label}
       data-active={active ? 'true' : undefined}
     >
-      <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
-          <stop offset="100%" stopColor={stroke} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-
       {/* Grid first, so the series sits on top of it. */}
       {[0.25, 0.5, 0.75].map((f) => (
         <line
@@ -171,7 +163,8 @@ export function SeriesChart({
         />
       ))}
 
-      {area && <path className="dapp-series__area" d={fill} fill={`url(#${gradId})`} />}
+      {/* A flat, faint fill (opacity in dapp.css): Option B draws no gradients. */}
+      {area && <path className="dapp-series__area" d={fill} fill={stroke} />}
       <path
         className="dapp-series__line"
         d={line}

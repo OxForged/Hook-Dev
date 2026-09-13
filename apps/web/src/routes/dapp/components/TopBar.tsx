@@ -1,18 +1,13 @@
 /* ============================================================================
    Header — README § Dapp shell.
 
-   Screen title + subtitle, a mono block chip carrying the real Sepolia head
-   behind a pulsing green dot, and the primary "Deploy Latch" button with its
-   sheen sweep.
+   Screen title + subtitle, a mono block chip carrying the real chain head
+   behind a pulsing green dot, and the primary "Deploy Latch" button — flat
+   Option B blue, no sheen: B draws no decorative motion on a control.
 
-   TYPE IS SET IN dapp.css, NOT HERE, and the values moved on 2026-09-13. This
-   comment used to specify "Chakra Petch 600 20px" for the title — a face this
-   repo has never shipped (tokens.css names Inter, Instrument Serif and
-   JetBrains Mono) at a weight and size that are also no longer right. The
-   title is now Instrument Serif 400 at `clamp(24px, 2.4vw, 30px)`, which is
-   the house heading voice from landing.module.css scaled to fit a bar it
-   shares with five chips and a button. `.dapp-header__title` in dapp.css is
-   the single place that decides it.
+   TYPE IS SET IN dapp.css, NOT HERE. The title is Option B's serif heading
+   voice at 500, sized to the bar it shares with chips and a button;
+   `.dapp-header__title` is the single place that decides it.
 
    Plus two pieces of truth-telling. The sample-data chip: every figure in this
    dapp is a placeholder, so the shell says so where a visitor reading the block
@@ -160,7 +155,6 @@ export function TopBar({
 
             <Link to={deployHref} className="dapp-btn dapp-btn--primary dapp-btn--sm">
               Deploy Latch
-              <span className="dapp-sheen" aria-hidden="true" />
             </Link>
           </div>
         </div>

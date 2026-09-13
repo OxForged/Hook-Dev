@@ -1,5 +1,6 @@
-import type { CSSProperties, ReactNode } from 'react'
-import type { Download } from './assets'
+import { useState, type CSSProperties, type ReactNode } from 'react'
+import { BrandLockup } from '../../components/BrandLockup'
+import type { Download, Swatch } from './assets'
 
 /**
  * Small building blocks for the brand kit page.
@@ -66,18 +67,76 @@ export function DownloadRow({ downloads }: { downloads: readonly Download[] }) {
   )
 }
 
+/**
+ * The two values a colour token declares, read from the token itself.
+ *
+ * Every palette token is `light-dark(<light>, <dark>)`. A custom property's
+ * computed value is its declared token stream, so reading it back returns that
+ * string and the two hexes can be lifted out of it. Printing them this way
+ * means the swatch label is whatever tokens.css says today — not a copy of it
+ * that someone has to remember to update.
+ *
+ * Read once, on first render: the stylesheet is already applied by then (the
+ * route imports it), and a declaration does not change when the theme does —
+ * only which of its two values is in effect.
+ *
+ * Returns null if the declaration is not in that shape. The caller renders
+ * nothing for null rather than a guessed value.
+ */
+function readTokenValues(token: string): { light: string; dark: string } | null {
+  if (typeof document === 'undefined') return null
+  const declared = getComputedStyle(document.documentElement).getPropertyValue(token)
+  const [light, dark, ...rest] = declared.match(/#[0-9a-f]{3,8}\b/gi) ?? []
+  if (light === undefined || rest.length > 0) return null
+  if (dark !== undefined && !declared.includes('light-dark(')) return null
+  return { light: light.toUpperCase(), dark: (dark ?? light).toUpperCase() }
+}
+
+function useTokenValues(token: string): { light: string; dark: string } | null {
+  const [values] = useState(() => readTokenValues(token))
+  return values
+}
+
+/** One palette swatch: painted from its token, labelled with the token's own values. */
+export function PaletteSwatch({ swatch }: { swatch: Swatch }) {
+  const values = useTokenValues(swatch.token)
+  return (
+    <li className="bk-card bk-swatch-card">
+      <div
+        className={`bk-swatch${swatch.needsRule ? ' bk-swatch--ruled' : ''}`}
+        style={{ background: `var(${swatch.token})` }}
+      />
+      <div className="bk-swatch-body">
+        <p className="bk-swatch-name">{swatch.name}</p>
+        {values ? (
+          <dl className="bk-swatch-values">
+            <div>
+              <dt>Light</dt>
+              <dd>{values.light}</dd>
+            </div>
+            <div>
+              <dt>Dark</dt>
+              <dd>{values.dark}</dd>
+            </div>
+          </dl>
+        ) : null}
+        <p className="bk-swatch-role">
+          {swatch.role} · <code>{swatch.token}</code>
+        </p>
+      </div>
+    </li>
+  )
+}
+
 /** The header / footer lockup: mark image plus the typed LATCH · PROTOCOL. */
 export function Lockup() {
   return (
     <div className="bk-lockup">
-      {/* The typed wordmark beside it already says "Latch Protocol", so the
-          image is decorative here — announcing it twice helps nobody. Every
-          image that *is* content (the asset previews) carries real alt text. */}
-      <img src="/brand/latch-mark-transparent.png" alt="" aria-hidden="true" />
-      <span className="bk-lockup-type">
-        <span className="bk-latch">LATCH</span>
-        <span className="bk-protocol">PROTOCOL</span>
-      </span>
+      {/* The shared lockup (components/BrandLockup): the two shipped marks,
+          one per theme, beside the typed wordmark — identical to the landing,
+          docs and dapp lockups. The images are decorative there; every image
+          that *is* content on this page (the asset previews) has real alt. */}
+      <BrandLockup />
     </div>
   )
 }

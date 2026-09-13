@@ -52,7 +52,7 @@
    a `React.` namespace: `verbatimModuleSyntax` is on, so there is no default
    React import to hang a namespace off, and the DOM's global `PointerEvent` is
    a different type that would silently not match the handler. */
-import { useState, type PointerEvent } from 'react'
+import { useState, type KeyboardEvent, type PointerEvent } from 'react'
 import {
   PRESET_NAMES,
   PRESET_PARAMS,
@@ -63,8 +63,10 @@ import {
   type PresetParams,
 } from '@latchprotocol/sdk'
 import { DEPLOYMENTS, ROBINHOOD_CHAIN_ID, explorerAddress } from '../../lib/chain'
+import { useFirstView, useMeasuredWidth } from './chartMotion'
 import page from './landing.module.css'
 import styles from './presetcurve.module.css'
+import { cx } from './ui'
 
 /* ----------------------------------------------------------------------------
    THE TWO BLOCK TIMES, AND WHY THERE ARE TWO.
@@ -183,17 +185,20 @@ function feeAtBlock(p: PresetParams, elapsedBlocks: number, decayBlocks: number)
 }
 
 /* ----------------------------------------------------------------------------
-   Geometry. A viewBox, never a fixed width — the card has to survive 400px.
+   Geometry — in REAL PIXELS at the measured width (see useMeasuredWidth).
+
+   The card used to scale a fixed 760-wide viewBox, which put every axis tick
+   at ~5px on a phone. Drawing at the container's width keeps ticks at
+   `--b-axis`; below MIN_W the chart scrolls inside its own box.
    ---------------------------------------------------------------------------- */
 
-const W = 760
 const H = 300
-const PL = 66
+const PL = 62
 const PR = 20
-const PT = 22
+const PT = 24
 const PB = 46
-const IW = W - PL - PR
 const IH = H - PT - PB
+const MIN_W = 520
 
 /**
  * Ceiling on plotted points. Above this the window has more blocks than the
@@ -203,100 +208,75 @@ const IH = H - PT - PB
 const MAX_SAMPLES = 260
 
 /**
- * A static id, deliberately not `useId()`.
- *
- * React 19's generated ids contain characters that are not valid in an XML
- * name, and an SVG paint server is referenced by fragment (`url(#id)`), not by
- * selector. One instance of this card exists on the page, so a constant is
- * both correct and legible in the DOM.
+ * A static id, deliberately not `useId()`: React's generated ids contain
+ * characters invalid in an XML name, and a paint server is referenced by
+ * fragment. One instance of this card exists on the page.
  */
 const FILL_ID = 'latch-preset-curve-fill'
 
+interface Frame {
+  /** Plot-area width in px. */
+  iw: number
+  xMax: number
+  yMax: number
+}
+
 interface Plot {
-  /** The fee line. */
   line: string
-  /** The same line, closed to the baseline. */
   area: string
   /** True when every block in the window is plotted, so the steps are real. */
   steppedPerBlock: boolean
 }
 
-const xFor = (block: number, xMax: number): number => PL + (block / xMax) * IW
-const yFor = (pips: number, yMax: number): number => PT + IH - (pips / yMax) * IH
+const xFor = (f: Frame, block: number): number => PL + (block / f.xMax) * f.iw
+const yFor = (f: Frame, pips: number): number => PT + IH - (pips / f.yMax) * IH
 
 /**
  * Build the path for one preset.
  *
- * TWO RENDERINGS, AND THE CHOICE IS ABOUT HONESTY RATHER THAN LOOKS.
+ * TWO RENDERINGS, AND THE CHOICE IS ABOUT HONESTY RATHER THAN LOOKS. When the
+ * whole window fits inside `MAX_SAMPLES`, every block is evaluated and drawn
+ * as literal steps — the fee does not move within a block. When it does not
+ * fit, real block numbers are sampled and joined with straight segments; a
+ * step spanning sixty blocks would assert a plateau the contract does not
+ * have. The vertices are always real `_decayedFee` evaluations.
  *
- * When the whole window fits inside `MAX_SAMPLES`, every block is evaluated and
- * the path is drawn as literal steps: horizontal across the block, vertical at
- * the boundary. That is the true shape — the fee does not move within a block.
- *
- * When it does not fit, the path samples real block numbers and joins them with
- * straight segments. It does NOT draw steps in that case, because a step
- * spanning sixty blocks would assert a plateau the contract does not have. The
- * plotted vertices are still real `_decayedFee` evaluations at real block
- * numbers; only the joins between them are drawn rather than computed, and the
- * function is linear between samples up to the flooring, so the join is
- * accurate to within one pip at this scale.
- *
- * WHICH BRANCH RUNS DEPENDS ON THE CHAIN, which is the point the whole card is
- * making. At the declared 0.10s block time no preset takes the step branch: the
- * shortest window, Stealth's two minutes, is 1,200 blocks, so each step is one
- * pip tall and a fraction of a pixel wide and the sampled path draws what the
- * step path would have drawn anyway. Move the same preset to a 12-second chain
- * and FairLaunch's five minutes is TWENTY-FIVE blocks — a visibly coarse
- * staircase, and a materially different product from the one rendered here.
- * The presets are declared in seconds precisely so they port; the step branch
- * is what shows what porting them does to the shape.
+ * At the declared 0.10s block time no preset takes the step branch (Stealth's
+ * two minutes is 1,200 blocks). On a 12-second chain FairLaunch's five minutes
+ * would be twenty-five blocks — a visibly coarse staircase.
  */
-function buildPath(p: PresetParams, decayBlocks: number, xMax: number, yMax: number): Plot {
+function buildPath(p: PresetParams, decayBlocks: number, f: Frame): Plot {
   const baseline = PT + IH
   const parts: string[] = []
+  const close = (line: string): string =>
+    `${line} L ${xFor(f, f.xMax)} ${baseline} L ${xFor(f, 0)} ${baseline} Z`
 
   if (!p.enabled) {
-    /* No gate: one flat line at the floor, across the whole domain. */
-    const y = yFor(p.finalFeeBips, yMax)
-    parts.push(`M ${xFor(0, xMax)} ${y} L ${xFor(xMax, xMax)} ${y}`)
-    const line = parts.join(' ')
-    return {
-      line,
-      area: `${line} L ${xFor(xMax, xMax)} ${baseline} L ${xFor(0, xMax)} ${baseline} Z`,
-      steppedPerBlock: false,
-    }
+    const y = yFor(f, p.finalFeeBips)
+    const line = `M ${xFor(f, 0)} ${y} L ${xFor(f, f.xMax)} ${y}`
+    return { line, area: close(line), steppedPerBlock: false }
   }
 
   const steppedPerBlock = decayBlocks + 1 <= MAX_SAMPLES
 
   if (steppedPerBlock) {
-    let y = yFor(feeAtBlock(p, 0, decayBlocks), yMax)
-    parts.push(`M ${xFor(0, xMax)} ${y}`)
+    parts.push(`M ${xFor(f, 0)} ${yFor(f, feeAtBlock(p, 0, decayBlocks))}`)
     for (let b = 0; b < decayBlocks; b++) {
-      /* Horizontal across block b at block b's fee, then step down at the
-         boundary to block b+1's fee. */
-      parts.push(`H ${xFor(b + 1, xMax)}`)
-      y = yFor(feeAtBlock(p, b + 1, decayBlocks), yMax)
-      parts.push(`V ${y}`)
+      parts.push(`H ${xFor(f, b + 1)}`)
+      parts.push(`V ${yFor(f, feeAtBlock(p, b + 1, decayBlocks))}`)
     }
   } else {
     for (let i = 0; i < MAX_SAMPLES; i++) {
       const b = Math.round((i / (MAX_SAMPLES - 1)) * decayBlocks)
-      const cmd = i === 0 ? 'M' : 'L'
-      parts.push(`${cmd} ${xFor(b, xMax)} ${yFor(feeAtBlock(p, b, decayBlocks), yMax)}`)
+      parts.push(`${i === 0 ? 'M' : 'L'} ${xFor(f, b)} ${yFor(f, feeAtBlock(p, b, decayBlocks))}`)
     }
   }
 
-  /* The tail: at and after `decayBlocks` the fee is exactly `finalFeeBips`,
-     forever. Drawn so the floor is visibly a floor and not the end of data. */
-  parts.push(`L ${xFor(xMax, xMax)} ${yFor(p.finalFeeBips, yMax)}`)
+  /* At and after `decayBlocks` the fee is exactly `finalFeeBips`, forever. */
+  parts.push(`L ${xFor(f, f.xMax)} ${yFor(f, p.finalFeeBips)}`)
 
   const line = parts.join(' ')
-  return {
-    line,
-    area: `${line} L ${xFor(xMax, xMax)} ${baseline} L ${xFor(0, xMax)} ${baseline} Z`,
-    steppedPerBlock,
-  }
+  return { line, area: close(line), steppedPerBlock }
 }
 
 /** Seconds, at the DECLARED block time — the one the contract divides by. */
@@ -312,338 +292,379 @@ const int = (n: number): string => Math.round(n).toLocaleString('en-US')
    ---------------------------------------------------------------------------- */
 
 /**
- * There is no loading or error state here, and that is not an omission.
- *
- * Every figure comes from `PRESET_PARAMS` — a compile-time mirror of
+ * There is no loading or error state here, and that is not an omission. Every
+ * figure comes from `PRESET_PARAMS` — a compile-time mirror of
  * `LaunchPresets.sol`, held to it by `packages/sdk/test/launchpadPresets.test.ts`
- * — and from the hook's decay function transcribed above. Nothing is fetched,
- * so nothing can be pending or unreachable. The footnote says what this card
- * therefore cannot tell you.
+ * — and from the hook's decay function transcribed above. Nothing is fetched.
+ *
+ * INTERACTION. The cursor is persistent: drag or click anywhere on the plot,
+ * or focus the chart and use the arrow keys (Shift for 10x, Home/End for the
+ * ends). It is exposed as a `slider`, so assistive tech hears the fee at the
+ * cursor as the value text.
+ *
+ * MOTION. The curve draws itself once, on first view; choosing another preset
+ * draws the new curve. Under `prefers-reduced-motion` both render complete.
  */
 export function PresetCurve() {
   const [selected, setSelected] = useState<LivePresetName>('FairLaunch')
-  const [hoverBlock, setHoverBlock] = useState<number | null>(null)
+  /** `null` = not yet moved; the cursor then rests mid-window. */
+  const [cursor, setCursor] = useState<number | null>(null)
+  /** Set once the reader picks a preset, so a redraw plays only on a change. */
+  const [changed, setChanged] = useState(false)
+  const [dragging, setDragging] = useState(false)
+
+  const { ref: plotRef, hidden: drawHidden } = useFirstView<HTMLDivElement>()
+  const { ref: scrollerRef, width: measuredWidth } = useMeasuredWidth<HTMLDivElement>(760)
 
   const params = PRESET_PARAMS[selected]
 
-  /* The kit's own conversion, from the SDK, at the deployed block time. Rounds
-     up and floors at 1, exactly as `LaunchPresets.secondsToBlocks` does. */
+  /* The kit's own conversion, from the SDK, at the deployed block time. */
   const decayBlocks = Number(secondsToBlocks(params.windowSeconds, BLOCK_TIME_CENTIS_DECLARED))
 
-  /* Domain. Enabled presets get ~18% past the window so the floor plateau is
-     visible as a plateau; a disabled one has no window worth extending. */
-  const xMaxBlocks = params.enabled ? Math.ceil(decayBlocks * 1.18) : decayBlocks
-  const yMaxPips = params.initialFeeBips * 1.12
-
-  const plot = buildPath(params, decayBlocks, xMaxBlocks, yMaxPips)
-
-  /* Scrubbing a flat line reports the same number at every position while
-     implying the position matters. Disabled presets are static instead. */
-  const scrubbable = params.enabled
-
-  const readBlock = hoverBlock === null ? null : hoverBlock
-  const readFee = readBlock === null ? null : feeAtBlock(params, readBlock, decayBlocks)
-
-  function onScrub(e: PointerEvent<SVGSVGElement>): void {
-    if (!scrubbable) return
-    const r = e.currentTarget.getBoundingClientRect()
-    if (r.width === 0) return
-    /* The SVG scales uniformly from its viewBox, so client x maps linearly
-       onto viewBox x. No getScreenCTM needed, and none of its edge cases. */
-    const vbX = ((e.clientX - r.left) / r.width) * W
-    const frac = (vbX - PL) / IW
-    const block = Math.round(frac * xMaxBlocks)
-    setHoverBlock(Math.min(Math.max(block, 0), xMaxBlocks))
+  const W = Math.max(measuredWidth, MIN_W)
+  const frame: Frame = {
+    iw: W - PL - PR,
+    /* ~18% past the window so the floor plateau reads as a plateau. */
+    xMax: params.enabled ? Math.ceil(decayBlocks * 1.18) : decayBlocks,
+    yMax: params.initialFeeBips * 1.12,
   }
 
-  const windowEndX = xFor(decayBlocks, xMaxBlocks)
-  const floorY = yFor(params.finalFeeBips, yMaxPips)
-  const openY = yFor(params.initialFeeBips, yMaxPips)
+  const plot = buildPath(params, decayBlocks, frame)
+  const scrubbable = params.enabled
 
-  const ariaLabel = params.enabled
+  const block = scrubbable
+    ? Math.min(Math.max(cursor ?? Math.round(decayBlocks / 2), 0), frame.xMax)
+    : 0
+  const fee = feeAtBlock(params, block, decayBlocks)
+
+  function blockAtClientX(e: PointerEvent<HTMLDivElement>): number | null {
+    const r = e.currentTarget.getBoundingClientRect()
+    if (r.width === 0) return null
+    const x = e.clientX - r.left
+    return Math.min(Math.max(Math.round(((x - PL) / frame.iw) * frame.xMax), 0), frame.xMax)
+  }
+
+  function onPointerDown(e: PointerEvent<HTMLDivElement>): void {
+    if (!scrubbable) return
+    const b = blockAtClientX(e)
+    if (b === null) return
+    /* Capture, so a drag that leaves the plot keeps steering the cursor. */
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setDragging(true)
+    setCursor(b)
+  }
+
+  function onPointerMove(e: PointerEvent<HTMLDivElement>): void {
+    if (!scrubbable) return
+    /* Hover previews on a mouse; on touch only a drag moves it, so a finger
+       scrolling past the chart does not yank the cursor. */
+    if (!dragging && e.pointerType !== 'mouse') return
+    const b = blockAtClientX(e)
+    if (b !== null) setCursor(b)
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
+    if (!scrubbable) return
+    const unit = Math.max(1, Math.round(frame.xMax / 100))
+    const step = e.shiftKey ? unit * 10 : unit
+    let next: number | null = null
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = block + step
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = block - step
+    else if (e.key === 'PageUp') next = block + unit * 10
+    else if (e.key === 'PageDown') next = block - unit * 10
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = frame.xMax
+    if (next === null) return
+    e.preventDefault()
+    setCursor(Math.min(Math.max(next, 0), frame.xMax))
+  }
+
+  const windowEndX = xFor(frame, decayBlocks)
+  const floorY = yFor(frame, params.finalFeeBips)
+  const openY = yFor(frame, params.initialFeeBips)
+  const cursorX = xFor(frame, block)
+  const cursorY = yFor(frame, fee)
+  /* The value label flips to the left of the cursor in the right third, so it
+     never runs off the plot. */
+  const labelLeft = cursorX > PL + frame.iw * 0.66
+
+  const valueText =
+    `${formatPips(fee)} at block +${int(block)}, ${declaredSeconds(block).toFixed(1)}s from the open` +
+    (block >= decayBlocks ? ', past the window, at the floor' : '')
+
+  const summary = params.enabled
     ? `${LABELS[selected]} preset: the LP fee decays from ${formatPips(params.initialFeeBips)} at the open ` +
       `to a floor of ${formatPips(params.finalFeeBips)} over ${humanDuration(params.windowSeconds)}, ` +
       `which is ${int(decayBlocks)} blocks on ${CHAIN.name}.`
     : `${LABELS[selected]} preset: the gate is off, so the LP fee is a flat ` +
       `${formatPips(params.finalFeeBips)} at every block.`
 
+  const lineClass = cx(
+    styles['line'],
+    drawHidden && styles['lineHidden'],
+    !drawHidden && changed && styles['lineRedraw'],
+  )
+
   return (
-    /* The card is WRAPPED rather than made into the section, because those are
-       two different boxes: the section carries the page's shared max-width,
-       gutter and top rhythm, and the card carries the border, radius and
-       shadow. Merging them is what put this component's content edge 15px left
-       of every other section's. */
     <section className={page['section']} aria-labelledby="preset-curve-title">
       <div className={styles['card']}>
-      <header className={styles['head']}>
-        <div className={styles['headText']}>
-          <p className={styles['eyebrow']}>Launchpad presets</p>
-          {/* h2, not h3 — every peer section on this page heads with an h2,
-              and an h3 here skips a level in the document outline. */}
-          <h2 className={styles['title']} id="preset-curve-title">
-            What the pool charges, block by block
-          </h2>
-          <p className={styles['sub']}>
-            Four named launch shapes. Each is a decaying LP fee that
-            <code> LaunchGuardHook</code> applies from the open — priced, never prohibited.
-          </p>
-        </div>
+        <header className={styles['head']}>
+          <div className={styles['headText']}>
+            <h2 className={styles['title']} id="preset-curve-title">
+              What the pool charges, block by block
+            </h2>
+            <p className={styles['sub']}>
+              Four launch presets, each a decaying LP fee applied by{' '}
+              <code>LaunchGuardHook</code>. Drag along the curve, or focus it and use the arrow
+              keys.
+            </p>
+          </div>
 
-        <div className={styles['selector']} role="group" aria-label="Launch preset">
-          {SELECTABLE.map((name) => (
-            <button
-              key={name}
-              type="button"
-              className={name === selected ? styles['tabOn'] : styles['tab']}
-              aria-pressed={name === selected}
-              onClick={() => {
-                setSelected(name)
-                setHoverBlock(null)
-              }}
+          <div className={styles['selector']} role="group" aria-label="Launch preset">
+            {SELECTABLE.map((name) => (
+              <button
+                key={name}
+                type="button"
+                className={cx(styles['tab'], name === selected && styles['tabOn'])}
+                aria-pressed={name === selected}
+                onClick={() => {
+                  if (name === selected) return
+                  setSelected(name)
+                  setCursor(null)
+                  setChanged(true)
+                }}
+              >
+                {LABELS[name]}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        <div className={styles['scroller']} ref={scrollerRef}>
+          <div
+            ref={plotRef}
+            className={cx(styles['plot'], scrubbable && styles['plotScrub'])}
+            style={{ width: W, height: H }}
+            /* A slider when there is something to scrub; a labelled image of
+               a flat line when there is not. */
+            role={scrubbable ? 'slider' : 'img'}
+            tabIndex={scrubbable ? 0 : undefined}
+            aria-label={scrubbable ? `Fee cursor. ${summary}` : summary}
+            aria-valuemin={scrubbable ? 0 : undefined}
+            aria-valuemax={scrubbable ? frame.xMax : undefined}
+            aria-valuenow={scrubbable ? block : undefined}
+            aria-valuetext={scrubbable ? valueText : undefined}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={() => setDragging(false)}
+            onPointerCancel={() => setDragging(false)}
+            onKeyDown={onKeyDown}
+          >
+            <svg
+              /* Keyed on the preset so a changed curve mounts fresh and its
+                 redraw keyframe runs from the start. */
+              key={selected}
+              width={W}
+              height={H}
+              viewBox={`0 0 ${W} ${H}`}
+              className={styles['svg']}
+              aria-hidden="true"
             >
-              {LABELS[name]}
-            </button>
-          ))}
-        </div>
-      </header>
+              <defs>
+                <linearGradient id={FILL_ID} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" className={styles['fillTop']} />
+                  <stop offset="100%" className={styles['fillBottom']} />
+                </linearGradient>
+              </defs>
 
-      <div className={styles['chartWrap']}>
-        <svg
-          /* Keyed on the preset so the draw-in keyframe restarts when the shape
-             changes. The base styles are the FINISHED state, so a paused tab,
-             a throttled frame budget or reduced motion all render the complete
-             curve — the animation is never what makes it visible. */
-          key={selected}
-          viewBox={`0 0 ${W} ${H}`}
-          className={styles['svg']}
-          role="img"
-          aria-label={ariaLabel}
-          onPointerMove={onScrub}
-          onPointerDown={onScrub}
-          onPointerLeave={() => setHoverBlock(null)}
-        >
-          <defs>
-            <linearGradient id={FILL_ID} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" className={styles['fillTop']} />
-              <stop offset="100%" className={styles['fillBottom']} />
-            </linearGradient>
-          </defs>
+              {/* Y grid at quarters of the OPENING fee. */}
+              {[0, 1, 2, 3, 4].map((i) => {
+                const pips = (params.initialFeeBips / 4) * i
+                const y = yFor(frame, pips)
+                return (
+                  <g key={i}>
+                    <line
+                      className={i === 0 ? styles['baseline'] : styles['grid']}
+                      x1={PL}
+                      x2={W - PR}
+                      y1={y}
+                      y2={y}
+                    />
+                    <text className={styles['axis']} x={PL - 10} y={y + 3.5} textAnchor="end">
+                      {formatPips(pips)}
+                    </text>
+                  </g>
+                )
+              })}
 
-          {/* Y grid at quarters of the OPENING fee, so every label is a round
-              fraction of the number the preset actually starts at. */}
-          <g aria-hidden="true">
-            {[0, 1, 2, 3, 4].map((i) => {
-              const pips = (params.initialFeeBips / 4) * i
-              const y = yFor(pips, yMaxPips)
-              return (
-                <g key={i}>
-                  <line className={styles['grid']} x1={PL} x2={W - PR} y1={y} y2={y} />
-                  <text className={styles['axis']} x={PL - 10} y={y + 3.5} textAnchor="end">
-                    {formatPips(pips)}
+              <path
+                className={cx(styles['area'], drawHidden && styles['areaHidden'])}
+                d={plot.area}
+                fill={`url(#${FILL_ID})`}
+              />
+              {/* `pathLength="1"` normalises the dash for the draw-in. */}
+              <path className={lineClass} d={plot.line} pathLength={1} />
+
+              <line className={styles['floorLine']} x1={PL} x2={W - PR} y1={floorY} y2={floorY} />
+              <text className={styles['floorLabel']} x={W - PR} y={floorY - 8} textAnchor="end">
+                floor {formatPips(params.finalFeeBips)}
+              </text>
+
+              {params.enabled ? (
+                <g>
+                  <circle className={styles['openDot']} cx={xFor(frame, 0)} cy={openY} r={4} />
+                  <text className={styles['openLabel']} x={xFor(frame, 0) + 10} y={openY + 4}>
+                    opens at {formatPips(params.initialFeeBips)}
+                  </text>
+                  <line
+                    className={styles['windowLine']}
+                    x1={windowEndX}
+                    x2={windowEndX}
+                    y1={PT}
+                    y2={PT + IH}
+                  />
+                  <text className={styles['windowLabel']} x={windowEndX + 8} y={PT + 12}>
+                    window ends · {int(decayBlocks)} blocks
                   </text>
                 </g>
-              )
-            })}
-          </g>
+              ) : null}
 
-          <path className={styles['area']} d={plot.area} fill={`url(#${FILL_ID})`} aria-hidden="true" />
-          {/* `pathLength="1"` normalises the dash so the draw-in keyframe is one
-              rule regardless of how long the path is. */}
-          <path className={styles['line']} d={plot.line} pathLength={1} aria-hidden="true" />
-
-          {/* The floor. Dashed, because it is the value the curve approaches
-              from above and then sits on forever. */}
-          <g aria-hidden="true">
-            <line className={styles['floorLine']} x1={PL} x2={W - PR} y1={floorY} y2={floorY} />
-            <text className={styles['floorLabel']} x={W - PR} y={floorY - 8} textAnchor="end">
-              floor {formatPips(params.finalFeeBips)}
-            </text>
-          </g>
-
-          {params.enabled ? (
-            <g aria-hidden="true">
-              <circle className={styles['openDot']} cx={xFor(0, xMaxBlocks)} cy={openY} r={4.5} />
-              <text className={styles['openLabel']} x={xFor(0, xMaxBlocks) + 10} y={openY + 4}>
-                opens at {formatPips(params.initialFeeBips)}
-              </text>
-
-              <line className={styles['windowLine']} x1={windowEndX} x2={windowEndX} y1={PT} y2={PT + IH} />
-              <text className={styles['windowLabel']} x={windowEndX + 8} y={PT + 12}>
-                window ends
-              </text>
-              <text className={styles['windowSub']} x={windowEndX + 8} y={PT + 28}>
-                {humanDuration(params.windowSeconds)} · {int(decayBlocks)} blocks
-              </text>
-            </g>
-          ) : null}
-
-          {/* X axis. A disabled preset's x position carries no information, so
-              it gets a sentence instead of tick values it would be lying with. */}
-          <g aria-hidden="true">
-            {params.enabled ? (
-              [0, 0.25, 0.5, 0.75, 1].map((f) => {
-                const block = Math.round(f * xMaxBlocks)
-                return (
-                  <text
-                    key={f}
-                    className={styles['axis']}
-                    x={xFor(block, xMaxBlocks)}
-                    y={H - PB + 20}
-                    textAnchor="middle"
-                  >
-                    {Math.round(declaredSeconds(block))}s
+              {/* X axis: seconds at the DECLARED block time. A disabled preset's
+                  x position carries no information, so it gets a sentence. */}
+              {params.enabled ? (
+                <>
+                  {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+                    const b = Math.round(t * frame.xMax)
+                    return (
+                      <text
+                        key={t}
+                        className={styles['axis']}
+                        x={xFor(frame, b)}
+                        y={H - PB + 20}
+                        textAnchor="middle"
+                      >
+                        {Math.round(declaredSeconds(b))}s
+                      </text>
+                    )
+                  })}
+                  <text className={styles['axisNote']} x={PL + frame.iw / 2} y={H - PB + 38} textAnchor="middle">
+                    seconds from the open, at the declared {BLOCK_TIME_CENTIS_DECLARED / 100}s block
                   </text>
-                )
-              })
-            ) : (
-              <text className={styles['axisNote']} x={PL + IW / 2} y={H - PB + 20} textAnchor="middle">
-                the fee does not vary with the block — the gate is off
-              </text>
-            )}
-            {params.enabled ? (
-              <text className={styles['axisNote']} x={PL + IW / 2} y={H - PB + 38} textAnchor="middle">
-                seconds from the open, at the declared {BLOCK_TIME_CENTIS_DECLARED / 100}s block
-              </text>
-            ) : null}
-          </g>
+                </>
+              ) : (
+                <text className={styles['axisNote']} x={PL + frame.iw / 2} y={H - PB + 20} textAnchor="middle">
+                  the fee does not vary with the block — the gate is off
+                </text>
+              )}
 
-          {readBlock !== null && readFee !== null ? (
-            <g aria-hidden="true">
-              <line
-                className={styles['crosshair']}
-                x1={xFor(readBlock, xMaxBlocks)}
-                x2={xFor(readBlock, xMaxBlocks)}
-                y1={PT}
-                y2={PT + IH}
-              />
-              <circle
-                className={styles['crossDot']}
-                cx={xFor(readBlock, xMaxBlocks)}
-                cy={yFor(readFee, yMaxPips)}
-                r={5}
-              />
-            </g>
-          ) : null}
-        </svg>
-      </div>
+              {scrubbable ? (
+                <g className={styles['cursor']}>
+                  <line className={styles['crosshair']} x1={cursorX} x2={cursorX} y1={PT} y2={PT + IH} />
+                  <circle className={styles['crossDot']} cx={cursorX} cy={cursorY} r={5.5} />
+                  <rect
+                    className={styles['handle']}
+                    x={cursorX - 7}
+                    y={PT + IH - 7}
+                    width={14}
+                    height={14}
+                    rx={3}
+                  />
+                  <text
+                    className={styles['cursorLabel']}
+                    x={labelLeft ? cursorX - 12 : cursorX + 12}
+                    y={Math.max(cursorY - 12, PT + 10)}
+                    textAnchor={labelLeft ? 'end' : 'start'}
+                  >
+                    {formatPips(fee)}
+                  </text>
+                </g>
+              ) : null}
+            </svg>
+          </div>
+        </div>
 
-      {/* The readout is a fixed row rather than a floating tooltip: at 400px a
-          tooltip has nowhere to go, and a row that is always present cannot
-          push the layout around when it appears.
-
-          Deliberately NOT an `aria-live` region. It updates on every pointer
-          move, which would fire dozens of announcements a second at a screen
-          reader that cannot hover anyway. The same figures are in the `<dl>`
-          below and in the SVG's `aria-label`, both of which change only when
-          the preset does. */}
-      <div className={styles['readout']}>
-        {readBlock !== null && readFee !== null ? (
-          <>
-            <span className={styles['readFee']}>{formatPips(readFee)}</span>
+        {/* The readout is a fixed row, not a floating tooltip: at 400px a
+            tooltip has nowhere to go. Deliberately NOT a live region — it
+            changes on every pointer move; the slider's value text is what
+            assistive tech hears. */}
+        <div className={styles['readout']} aria-hidden="true">
+          {scrubbable ? (
+            <>
+              <span className={styles['readFee']}>{formatPips(fee)}</span>
+              <span className={styles['readMeta']}>
+                block +{int(block)} · {declaredSeconds(block).toFixed(1)}s declared · ~
+                {measuredSeconds(block).toFixed(1)}s at the measured {BLOCK_TIME_CENTIS_MEASURED / 100}s
+                {block >= decayBlocks ? ' · past the window, at the floor' : ''}
+              </span>
+            </>
+          ) : (
             <span className={styles['readMeta']}>
-              at block +{int(readBlock)} · {declaredSeconds(readBlock).toFixed(1)}s from the open
-              {readBlock >= decayBlocks ? ' · past the window, at the floor' : ''}
+              Flat {formatPips(params.finalFeeBips)} at every block — nothing to scrub.
             </span>
-          </>
-        ) : (
-          <span className={styles['readIdle']}>
-            {scrubbable
-              ? 'Move along the curve to read the fee at any block.'
-              : `Flat ${formatPips(params.finalFeeBips)} at every block. There is nothing to scrub.`}
-          </span>
-        )}
-      </div>
+          )}
+        </div>
 
-      <dl className={styles['facts']}>
-        <div className={styles['fact']}>
-          <dt>Opens at</dt>
-          <dd>{formatPips(params.initialFeeBips)}</dd>
-        </div>
-        <div className={styles['fact']}>
-          <dt>Decays to</dt>
-          <dd>{formatPips(params.finalFeeBips)}</dd>
-        </div>
-        <div className={styles['fact']}>
-          <dt>Window</dt>
-          <dd>
-            {params.enabled ? humanDuration(params.windowSeconds) : 'none'}
-            <span className={styles['factSub']}>
-              {params.enabled
-                ? `${int(params.windowSeconds)}s declared`
-                : 'the gate is off'}
-            </span>
-          </dd>
-        </div>
-        <div className={styles['fact']}>
-          <dt>In blocks on {CHAIN.name}</dt>
-          <dd>
-            {int(decayBlocks)}
-            <span className={styles['factSub']}>
-              {params.enabled
-                ? `~${int(measuredSeconds(decayBlocks))}s at the measured ${
-                    BLOCK_TIME_CENTIS_MEASURED / 100
-                  }s`
-                : `${int(decayBlocks)} blocks exists only because zero is rejected`}
-            </span>
-          </dd>
-        </div>
-      </dl>
+        <dl className={styles['facts']}>
+          <div className={styles['fact']}>
+            <dt>Opens at</dt>
+            <dd>{formatPips(params.initialFeeBips)}</dd>
+          </div>
+          <div className={styles['fact']}>
+            <dt>Decays to</dt>
+            <dd>{formatPips(params.finalFeeBips)}</dd>
+          </div>
+          <div className={styles['fact']}>
+            <dt>Window</dt>
+            <dd>
+              {params.enabled ? humanDuration(params.windowSeconds) : 'none'}
+              <span className={styles['factSub']}>
+                {params.enabled ? `${int(params.windowSeconds)}s declared` : 'the gate is off'}
+              </span>
+            </dd>
+          </div>
+          <div className={styles['fact']}>
+            <dt>In blocks on {CHAIN.name}</dt>
+            <dd>
+              {int(decayBlocks)}
+              <span className={styles['factSub']}>
+                {params.enabled
+                  ? `~${int(measuredSeconds(decayBlocks))}s at the measured ${BLOCK_TIME_CENTIS_MEASURED / 100}s`
+                  : 'exists only because zero is rejected'}
+              </span>
+            </dd>
+          </div>
+        </dl>
 
-      {/* Not behind a disclosure. See the module header. */}
-      <p className={styles['limit']}>
-        <span className={styles['limitTag']}>Does not protect against</span>{' '}
-        {params.doesNotProtectAgainst}
-      </p>
+        {/* Not behind a disclosure: it is the sentence that argues with the
+            preset's own name, and it renders at full weight, always. */}
+        <p className={styles['limit']}>
+          <span className={styles['limitTag']}>Does not protect against</span>{' '}
+          {params.doesNotProtectAgainst}
+        </p>
 
-      <p className={params.requiresMaxBuyPerTx ? styles['requireOn'] : styles['requireOff']}>
         {params.requiresMaxBuyPerTx ? (
-          <>
-            <strong>Requires a per-transaction cap.</strong> A launch that supplies no{' '}
-            <code>maxBuyPerTx</code> reverts <code>MaxBuyRequiredByPreset</code>. A 50% tax a whale
-            can pay once, in one enormous buy, is a worse outcome than one they have to pay in
-            slices — so this preset refuses to be configured without the cap. Note the cap bounds
-            ONE transaction; splitting across transactions or wallets defeats it.
-          </>
-        ) : (
-          <>
-            No per-transaction cap required. <code>maxBuyPerTx</code> is still available and still
-            optional; this preset is coherent without it.
-          </>
-        )}
-      </p>
+          <p className={styles['requireOn']}>
+            <strong>Requires a per-transaction cap.</strong> A launch without{' '}
+            <code>maxBuyPerTx</code> reverts <code>MaxBuyRequiredByPreset</code>. The cap bounds one
+            transaction; splitting across transactions or wallets defeats it.
+          </p>
+        ) : null}
 
-      <footer className={styles['foot']}>
-        <p>
-          Every figure is <code>PRESET_PARAMS</code> from the MIT SDK, a mirror of{' '}
-          <code>LaunchPresets.sol</code> held to it by a parity test. The curve is{' '}
-          <code>LaunchGuardHook._decayedFee</code> transcribed with Solidity&rsquo;s floor division,
-          not an interpolation between two endpoints
+        <p className={styles['provenance']}>
+          <code>PRESET_PARAMS</code> (MIT SDK, parity-tested against <code>LaunchPresets.sol</code>)
+          through <code>LaunchGuardHook._decayedFee</code> with Solidity&rsquo;s floor division —{' '}
           {!params.enabled
-            ? `. This preset decays nothing: with enabled = false the hook returns finalFeeBips at every block, before the window is ever consulted.`
+            ? 'with enabled = false the hook returns finalFeeBips at every block'
             : plot.steppedPerBlock
-              ? ' — every block in this window is plotted, so the steps you see are the real ones.'
-              : `. The fee is constant within a block, so the true shape is a staircase; at ${int(
-                  decayBlocks,
-                )} blocks each step is one pip tall and finer than a pixel, so real blocks are sampled and joined — the vertices are computed, only the joins are drawn.`}
-        </p>
-        <p>
-          Block counts use <code>blockTimeCentis = {BLOCK_TIME_CENTIS_DECLARED}</code>, the value
-          the deployed kit was constructed with. The chain measures{' '}
-          {BLOCK_TIME_CENTIS_MEASURED / 100}s per block, so a window runs about{' '}
-          {(((BLOCK_TIME_CENTIS_MEASURED - BLOCK_TIME_CENTIS_DECLARED) /
-            BLOCK_TIME_CENTIS_DECLARED) *
-            100).toFixed(0)}
-          % longer in wall clock than its declared seconds. Neither number is read from chain here.
-        </p>
-        <p>
-          <strong>This card renders; it does not decide.</strong> The runtime authority is{' '}
-          <code>previewSchedule(params)</code> on the deployed kit, which resolves the preset with
-          the kit&rsquo;s own block time and returns the exact{' '}
-          <code>LaunchConfig</code> your launch will get. Call it before broadcasting.
+              ? 'every block plotted'
+              : 'real blocks sampled and joined'}
+          . Blocks at the deployed <code>blockTimeCentis = {BLOCK_TIME_CENTIS_DECLARED}</code>; wall
+          clock also shown at the measured {BLOCK_TIME_CENTIS_MEASURED / 100}s. Nothing is read from
+          chain — <code>previewSchedule(params)</code> on the kit is the runtime authority.
           {CHAIN.launchGuardHook !== null ? (
             <>
               {' '}
-              The hook this draws is{' '}
+              Hook:{' '}
               <a
                 href={explorerAddress(ROBINHOOD_CHAIN_ID, CHAIN.launchGuardHook)}
                 target="_blank"
@@ -655,7 +676,6 @@ export function PresetCurve() {
             </>
           ) : null}
         </p>
-      </footer>
       </div>
     </section>
   )

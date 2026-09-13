@@ -16,11 +16,6 @@
    ============================================================================ */
 
 :root {
-  /* The old sheet's one geometry value with no equivalent in tokens.css.
-     Scoped here rather than added to the design system, because it describes
-     this chart kit's inner controls and nothing else. */
-  --radius-viz-sm: 6px;
-
   /* The two-series palette. index.css hardcoded these as #2a78d6 / #eb6834 with
      a second pair under a media query; both are gone. They now resolve through
      the same tokens the dapp's SERIES_VAR uses (lib/series.ts), so the two
@@ -59,47 +54,50 @@
 
 .viz-heading { min-width: 0; }
 
-.viz-title { font-size: 15.5px; font-weight: 620; letter-spacing: -0.01em; margin: 0 0 5px; }
+.viz-title { font-size: var(--b-card-h); font-weight: 640; line-height: 1.35; letter-spacing: -0.012em; margin: 0 0 var(--s1); color: var(--ink-bright); }
 
-.viz-sub { margin: 0; font-size: 13px; color: var(--label-ink); max-width: 58ch; }
+/* Sentence-case prose: --muted-ink (AA), never the 3:1 --label-ink. */
+.viz-sub { margin: 0; font-size: var(--b-caption); line-height: 1.5; color: var(--muted-ink); max-width: 58ch; }
 
-.viz-toggle { display: flex; gap: 2px; padding: 2px; background: var(--code-ground); border: 1px solid var(--hairline); border-radius: 8px; flex: none; }
+/* The house segmented toggle (primitives.module.css `.toggle`). */
+.viz-toggle { display: flex; gap: 2px; padding: 3px; background: var(--panel-alt); border: 1px solid var(--hairline); border-radius: var(--r-toggle); flex: none; }
 
 .viz-toggle button {
-  font: inherit;
-  font-size: 12px;
-  font-weight: 550;
-  padding: 4px 11px;
+  font: 600 var(--b-label) / 1 var(--font-body);
+  padding: 7px 13px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-toggle-seg);
   background: transparent;
-  color: var(--label-ink);
+  color: var(--muted-ink);
   cursor: pointer;
+  transition: background-color var(--b-dur), color var(--b-dur), box-shadow var(--b-dur);
 }
 
-.viz-toggle button[aria-pressed='true'] { background: var(--deep-panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .07); }
+.viz-toggle button:hover { color: var(--ink); }
 
-.viz-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; margin: 0 0 16px; padding: 0; font-size: 12.5px; color: var(--label-ink); }
+.viz-toggle button[aria-pressed='true'] { background: var(--light-surface); color: var(--ink); box-shadow: var(--shadow-1); }
+
+.viz-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; margin: 0 0 16px; padding: 0; font-size: var(--b-label); color: var(--muted-ink); }
 
 .viz-legend li { display: flex; align-items: center; gap: 7px; }
 
-.viz-swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.viz-swatch { width: 10px; height: 10px; border-radius: var(--r-micro); flex: none; }
 
 /* clip (not hidden) so an axis label can never push the page sideways,
    without turning the plot into a scroll container */
 .viz-plot { position: relative; overflow-x: clip; }
 
-.viz-band { padding: 6px 0 12px; border-radius: 6px; }
+.viz-band { padding: 6px 0 12px; border-radius: var(--r-toggle-seg); }
 
 /* Sized for a plot dropped into a host card that already carries the heading
    and the caption, so the bands do not also have to hold the figure apart. */
 .viz-plot--compact .viz-band { padding-block: 5px 9px; }
-.viz-plot--compact .viz-band-name { font-size: 12.5px; }
+.viz-plot--compact .viz-band-name { font-size: var(--b-label); }
 
 .viz-band:hover,
 .viz-band[data-on='true'] { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 
-.viz-band:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 1px; }
+.viz-band:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 2px; }
 
 /* A band that is a real control rather than a focusable div: same box, button
    chrome stripped, and inset padding so the hover wash has something to sit in.
@@ -116,36 +114,38 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.18s var(--ease);
+  transition: background-color var(--b-dur) var(--ease);
 }
 
 .viz-band-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
 
-.viz-band-name { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+.viz-band-name { font-family: var(--font-mono); font-size: var(--b-label); color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
 
-.viz-band-delta { font-size: 11.5px; color: var(--label-ink); white-space: nowrap; flex: none; font-variant-numeric: tabular-nums; }
+.viz-band-delta { font-size: var(--b-label); color: var(--muted-ink); white-space: nowrap; flex: none; font-variant-numeric: tabular-nums; }
 
-.viz-val { font-family: var(--font-mono); font-size: 10.5px; fill: var(--label-ink); font-variant-numeric: tabular-nums; }
+.viz-val { font-family: var(--font-mono); font-size: var(--b-axis); fill: var(--faint-ink); font-variant-numeric: tabular-nums; }
 
-.viz-tick { font-family: var(--font-mono); font-size: 10.5px; fill: var(--label-ink); font-variant-numeric: tabular-nums; }
+.viz-tick { font-family: var(--font-mono); font-size: var(--b-axis); fill: var(--faint-ink); font-variant-numeric: tabular-nums; }
 
 .viz-axis { margin-top: 2px; }
 
-.viz-axis-title { margin: 5px 0 0; font-size: 11.5px; color: var(--label-ink); }
+.viz-axis-title { margin: 5px 0 0; font-size: var(--b-label); color: var(--muted-ink); }
 
+/* The house tooltip: --tip-* tokens, inverted against the theme. */
 .viz-tip {
   position: absolute;
   z-index: 5;
   pointer-events: none;
-  background: var(--deep-panel);
-  border: 1px solid var(--hairline-blue);
-  border-radius: var(--radius-viz-sm);
-  box-shadow: 0 6px 20px rgb(0 0 0 / .16);
+  background: var(--tip-bg);
+  color: var(--tip-ink);
+  border-radius: var(--r-btn);
+  box-shadow: var(--shadow-2);
   padding: 9px 11px;
-  font-size: 12px;
+  font-size: var(--b-label);
+  line-height: 1.45;
 }
 
-.viz-tip-title { font-family: var(--font-mono); font-size: 10.5px; color: var(--label-ink); margin-bottom: 6px; overflow-wrap: anywhere; }
+.viz-tip-title { font-family: var(--font-mono); font-size: var(--b-axis); color: var(--tip-mut); margin-bottom: 6px; overflow-wrap: anywhere; }
 
 .viz-tip-row { display: flex; align-items: baseline; gap: 7px; }
 
@@ -153,20 +153,20 @@
 
 .viz-tip-key { width: 10px; height: 2px; border-radius: 1px; flex: none; transform: translateY(-3px); }
 
-.viz-tip-val { font-family: var(--font-mono); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.viz-tip-val { font-family: var(--font-mono); font-weight: 600; color: var(--tip-ink); font-variant-numeric: tabular-nums; }
 
-.viz-tip-series { color: var(--label-ink); font-size: 11.5px; }
+.viz-tip-series { color: var(--tip-mut); font-size: var(--b-label); }
 
 .viz-cap {
   margin: 16px 0 0;
   padding-top: 14px;
   border-top: 1px solid var(--hairline);
-  font-size: 12.5px;
+  font-size: var(--b-label);
   line-height: 1.6;
-  color: var(--label-ink);
+  color: var(--muted-ink);
   max-width: 76ch;
 }
 
-.viz-cap code { font-size: 11.5px; color: var(--ink); background: var(--code-ground); padding: 1px 5px; border-radius: 4px; }
+.viz-cap code { font-family: var(--font-mono); font-size: 0.86em; color: var(--code-ink); background: var(--code-ground); border: 1px solid var(--hairline); padding: 1px 5px; border-radius: var(--r-micro); }
 
 .viz-cap strong { color: var(--ink); font-weight: 600; }

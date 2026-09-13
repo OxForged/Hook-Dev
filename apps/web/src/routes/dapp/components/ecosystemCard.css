@@ -1,0 +1,901 @@
+/* ============================================================================
+   Ecosystem card, shared buttons and the "Submit app" modal — plain CSS,
+   prefix `eco2-`, loaded by EcosystemCard.tsx and SubmitAppModal.tsx.
+
+   Plain CSS rather than a module because the same classes render on the
+   landing page (CSS modules) and in the dapp (global CSS); one global file
+   with a private prefix is the only thing both can import unchanged.
+
+   TOKENS ONLY. Every colour, radius, shadow, type size and space is a token
+   from src/styles/tokens.css, so both themes resolve through `light-dark()`
+   with nothing restated here. The only literals are 1-2px hairlines and
+   letter-spacing, which the rest of the B port also writes literally.
+
+   CONTRAST. `--label-ink` / `--faint-ink` are NOT used on anything here that
+   is read as prose; sentence-case text is `--muted-ink` or stronger.
+   ============================================================================ */
+
+/* ---- utility ------------------------------------------------------------- */
+
+.eco2-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- grid wrapper --------------------------------------------------------
+   Columns belong to each surface (landing: 3/2/1, directory: auto-fill). This
+   only makes an <li> stretch its card so a row of cards shares one height. */
+
+.eco2-grid {
+  display: grid;
+  gap: var(--s4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.eco2-grid > li {
+  display: flex;
+  min-width: 0;
+}
+
+.eco2-grid > li > .eco2-card {
+  flex: 1 1 auto;
+}
+
+/* ---- the card (b.html `.card`, Ink's structure) -------------------------- */
+
+.eco2-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--s5);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  transition:
+    box-shadow var(--b-dur) var(--ease),
+    transform var(--b-dur) var(--ease),
+    border-color var(--b-dur);
+}
+
+.eco2-card[data-linked="true"]:hover {
+  transform: var(--b-card-lift);
+  box-shadow: var(--shadow-2);
+  border-color: var(--hairline-blue);
+}
+
+/* The focus ring goes on the CARD, because the card is what the link covers.
+   The anchor's own outline would draw around the name only. */
+.eco2-card:has(.eco2-card__link:focus-visible) {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 2px;
+}
+
+.eco2-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+/* A neutral tile. The logo sits on it untinted; the tile is never coloured to
+   "match" a brand, which would be restyling somebody else's mark. */
+.eco2-card__tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(var(--s8) + var(--s2));
+  height: calc(var(--s8) + var(--s2));
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  user-select: none;
+}
+
+.eco2-card__tile--img {
+  background: var(--panel-alt);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.eco2-card__tile--img img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* `contain`, never `cover`: cropping somebody's logo is redrawing it. */
+  object-fit: contain;
+}
+
+/* The monogram fallback: b.html `.ic`, scaled to the tile. */
+.eco2-card__tile--mono {
+  background: var(--accent-soft);
+  color: var(--sky-ink);
+  font-family: var(--font-body);
+  font-weight: 640;
+  font-size: var(--b-mini);
+  letter-spacing: 0.02em;
+}
+
+.eco2-card__tile--mono[data-len="3"] {
+  font-size: var(--b-lede);
+}
+
+.eco2-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Uppercase and tracked, but the ink is --sky-ink, not --label-ink: a badge is
+   the sole carrier of its meaning and has to clear 4.5:1. */
+.eco2-badge {
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--dapp-badge-info-border);
+  border-radius: var(--r-micro);
+  background: var(--dapp-badge-info-bg);
+  color: var(--sky-ink);
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eco2-card__name {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--b-lede);
+  font-weight: 640;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.eco2-card__link,
+.eco2-card__link:hover {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Stretched: the whole card is this one link. */
+.eco2-card__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+.eco2-card__link:focus-visible {
+  outline: none;
+}
+
+/* A hostname is an address of sorts: mono, and --muted-ink because it is
+   lowercase and must clear 4.5:1. */
+.eco2-card__host {
+  margin: var(--s1) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+  overflow-wrap: anywhere;
+}
+
+.eco2-card__tagline {
+  display: -webkit-box;
+  margin: var(--s3) 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+  text-wrap: pretty;
+}
+
+.eco2-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  /* `auto` pushes chips and footer to the bottom when descriptions differ in
+     length, so a row of cards shares one baseline. */
+  margin: auto 0 0;
+  padding: var(--s4) 0 0;
+  list-style: none;
+}
+
+.eco2-chip {
+  padding: var(--s1) var(--s3);
+  border-radius: var(--r-chip);
+  background: var(--panel-alt);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  font-size: var(--b-label);
+  font-weight: 560;
+  line-height: var(--s4);
+  color: var(--muted-ink);
+}
+
+.eco2-chip--category {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--dapp-badge-info-border);
+  color: var(--sky-ink);
+}
+
+.eco2-card__foot {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--hairline);
+}
+
+.eco2-card__chains {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* `ChainTag` is styled globally by the dapp; restated here, scoped, so the
+   card renders the same on the landing page whatever loads first. */
+.eco2-card .chain-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-width: 0;
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+  white-space: nowrap;
+}
+
+.eco2-card .chain-tag__mark {
+  flex: none;
+  width: var(--s4);
+  height: var(--s4);
+  object-fit: contain;
+  border-radius: var(--r-micro);
+}
+
+/* A chain with no sourceable official mark renders `ChainMark`'s monogram in a
+   <span> with the same class. Without this it is two letters overflowing a
+   16px box. A typographic chip in tokens, never a drawn logo. */
+:is(.eco2-card, .eco2-check, .eco2-menu) span.chain-tag__mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--s4);
+  height: var(--s4);
+  overflow: hidden;
+  border-radius: var(--r-micro);
+  background: var(--accent-soft);
+  color: var(--sky-ink);
+  font-family: var(--font-body);
+  font-size: calc(var(--s3) * 0.75);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+/* Quiet, present, not shrunk past legibility. The one line that qualifies
+   everything else on the card. */
+.eco2-card__prov {
+  margin: 0;
+  font-size: var(--b-label);
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+
+/* ---- buttons (b.html `.btn`, `.btn--p`) ---------------------------------- */
+
+.eco2-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s4);
+  min-height: calc(var(--s6) + var(--s1));
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  color: var(--btn2-ink);
+  font: var(--b-btn);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition:
+    background-color var(--b-dur),
+    box-shadow var(--b-dur),
+    transform var(--b-dur) var(--ease),
+    border-color var(--b-dur);
+}
+
+.eco2-btn:hover:not(:disabled) {
+  color: var(--btn2-ink);
+  border-color: var(--btn2-border-hover);
+  box-shadow: var(--shadow-2);
+  transform: var(--b-btn-lift);
+}
+
+.eco2-btn--primary,
+.eco2-btn--primary:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--grad-primary);
+  color: var(--on-accent);
+}
+
+.eco2-btn--primary:hover:not(:disabled) {
+  background: var(--btn-primary-hover);
+}
+
+.eco2-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.eco2-btn--ghost {
+  background: transparent;
+  box-shadow: none;
+}
+
+.eco2-btn__plus {
+  font-size: var(--b-panel-h);
+  line-height: 1;
+}
+
+/* ============================================================================
+   THE SUBMISSION MODAL
+   A centred dialog on wide screens; a full-height sheet at phone width. The
+   header and footer stay put and only the body scrolls, as in Ink's form.
+   ============================================================================ */
+
+.eco2-modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  padding: var(--s5) var(--s4);
+  background: var(--docs-scrim);
+  animation: eco2-fade var(--b-dur) var(--ease);
+}
+
+.eco2-modal__dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, calc(var(--s10) * 5));
+  max-height: min(calc(100dvh - var(--s7)), calc(var(--s10) * 6));
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card-lg);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-2);
+  animation: eco2-rise var(--b-reveal) var(--ease);
+}
+
+/* Focusable only so clicks inside keep focus in the dialog; never a ring. */
+.eco2-modal__dialog:focus {
+  outline: none;
+}
+
+.eco2-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s5) var(--s5) var(--s4);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.eco2-modal__title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: var(--b-mini);
+  letter-spacing: var(--b-sec-h-track);
+  line-height: 1.2;
+  color: var(--ink-bright);
+}
+
+.eco2-modal__sub {
+  margin: var(--s1) 0 0;
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+}
+
+.eco2-modal__close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(var(--s6) + var(--s1));
+  height: calc(var(--s6) + var(--s1));
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-btn);
+  background: transparent;
+  color: var(--muted-ink);
+  font-size: var(--b-panel-h);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color var(--b-dur),
+    color var(--b-dur);
+}
+
+.eco2-modal__close:hover {
+  background: var(--panel-alt);
+  color: var(--ink);
+}
+
+.eco2-modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s4) var(--s5) var(--s5);
+  display: grid;
+  gap: var(--s5);
+  align-content: start;
+}
+
+.eco2-modal__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s4) var(--s5);
+  border-top: 1px solid var(--hairline);
+  background: var(--panel);
+  border-radius: 0 0 var(--r-card-lg) var(--r-card-lg);
+}
+
+.eco2-modal__foot-note {
+  flex: 1 1 calc(var(--s10) * 2);
+  margin: 0;
+  font-size: var(--b-label);
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+
+.eco2-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-left: auto;
+}
+
+/* ---- notes inside the modal ---------------------------------------------- */
+
+.eco2-note {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--dapp-badge-info-border);
+  border-radius: var(--r-badge);
+  background: var(--dapp-badge-info-bg);
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  color: var(--ink);
+}
+
+.eco2-note--warn {
+  border-color: var(--dapp-badge-warn-border);
+  background: var(--dapp-badge-warn-bg);
+}
+
+.eco2-note strong {
+  font-weight: 640;
+}
+
+.eco2-note a {
+  color: var(--signal-blue);
+  overflow-wrap: anywhere;
+}
+
+/* ---- fields --------------------------------------------------------------- */
+
+.eco2-field {
+  display: grid;
+  gap: var(--s2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.eco2-field__label {
+  padding: 0;
+  font-size: var(--b-card-p);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.eco2-field__req {
+  margin-left: calc(var(--s1) / 2);
+  color: var(--error);
+}
+
+.eco2-field__opt {
+  font-weight: 400;
+  color: var(--muted-ink);
+}
+
+.eco2-field__hint {
+  margin: 0;
+  font-size: var(--b-label);
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+
+.eco2-field__hint code {
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  color: var(--ink);
+}
+
+.eco2-field__error {
+  margin: 0;
+  font-size: var(--b-label);
+  line-height: 1.5;
+  font-weight: 560;
+  color: var(--error);
+}
+
+.eco2-field__count {
+  justify-self: end;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  color: var(--muted-ink);
+}
+
+.eco2-field__count[data-over="true"] {
+  color: var(--error);
+}
+
+.eco2-input {
+  width: 100%;
+  min-width: 0;
+  padding: var(--s2) var(--s3);
+  min-height: calc(var(--s7) - var(--s2));
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-btn);
+  background: var(--panel-alt);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--b-card-p);
+  line-height: 1.5;
+  transition: border-color var(--b-dur);
+}
+
+.eco2-input::placeholder {
+  color: var(--muted-ink);
+}
+
+.eco2-input:hover {
+  border-color: var(--border-hover);
+}
+
+.eco2-input:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 1px;
+  border-color: var(--latch-blue);
+}
+
+.eco2-input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+textarea.eco2-input {
+  resize: vertical;
+  min-height: calc(var(--s9) + var(--s2));
+}
+
+select.eco2-input {
+  cursor: pointer;
+}
+
+/* ---- checkbox grids ------------------------------------------------------- */
+
+.eco2-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(var(--s10) + var(--s8) + var(--s5))), 1fr));
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.eco2-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  min-width: 0;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  font-size: var(--b-caption);
+  line-height: 1.4;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color var(--b-dur),
+    background-color var(--b-dur);
+}
+
+.eco2-check:hover {
+  border-color: var(--border-hover);
+}
+
+.eco2-check:has(input:checked) {
+  border-color: var(--dapp-badge-info-border);
+  background: var(--accent-soft);
+}
+
+.eco2-check:has(input:focus-visible) {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 1px;
+}
+
+.eco2-check input {
+  flex: none;
+  width: var(--s4);
+  height: var(--s4);
+  margin: calc(var(--s1) / 2) 0 0;
+  accent-color: var(--latch-blue);
+}
+
+.eco2-check input:focus-visible {
+  outline: none;
+}
+
+.eco2-check__text {
+  display: grid;
+  gap: calc(var(--s1) / 2);
+  min-width: 0;
+}
+
+.eco2-check__code {
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  color: var(--muted-ink);
+  overflow-wrap: anywhere;
+}
+
+.eco2-check .chain-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  font-size: var(--b-caption);
+  color: var(--ink);
+}
+
+.eco2-check .chain-tag__mark {
+  flex: none;
+  width: var(--s4);
+  height: var(--s4);
+  object-fit: contain;
+  border-radius: var(--r-micro);
+}
+
+.eco2-check__net {
+  font-size: var(--b-axis);
+  color: var(--muted-ink);
+}
+
+/* ---- icon drop zone ------------------------------------------------------- */
+
+.eco2-drop {
+  display: grid;
+  justify-items: center;
+  gap: var(--s2);
+  padding: var(--s5) var(--s4);
+  border: 1px dashed var(--dashed-rule);
+  border-radius: var(--r-sm);
+  background: var(--panel-alt);
+  text-align: center;
+  font-size: var(--b-caption);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color var(--b-dur),
+    background-color var(--b-dur);
+}
+
+.eco2-drop:hover,
+.eco2-drop[data-over="true"] {
+  border-color: var(--latch-blue);
+  background: var(--accent-soft);
+}
+
+/* The file input is visually hidden; its focus is drawn on the zone. */
+.eco2-drop-input:focus-visible + .eco2-drop {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 2px;
+}
+
+.eco2-drop__glyph {
+  display: grid;
+  place-items: center;
+  width: var(--s6);
+  height: var(--s6);
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  color: var(--muted-ink);
+  font-size: var(--b-panel-h);
+  line-height: 1;
+}
+
+.eco2-drop__sub {
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+}
+
+.eco2-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  min-width: 0;
+  padding: var(--s3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+}
+
+.eco2-preview__tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(var(--s8) + var(--s2));
+  height: calc(var(--s8) + var(--s2));
+  border-radius: var(--r-sm);
+  background: var(--panel-alt);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  overflow: hidden;
+}
+
+.eco2-preview__tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.eco2-preview__meta {
+  display: grid;
+  gap: calc(var(--s1) / 2);
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: var(--b-label);
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+
+.eco2-preview__name {
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* ---- the "finish on GitHub" step ------------------------------------------ */
+
+.eco2-steps {
+  display: grid;
+  gap: var(--s3);
+  margin: 0;
+  padding-left: var(--s5);
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
+  color: var(--ink);
+}
+
+.eco2-steps li::marker {
+  font-weight: 640;
+  color: var(--sky-ink);
+}
+
+/* ---- motion --------------------------------------------------------------- */
+
+@keyframes eco2-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes eco2-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--s3));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- phone width: the dialog becomes a full-height sheet ------------------ */
+
+@media (max-width: 560px) {
+  .eco2-modal {
+    padding: 0;
+    place-items: stretch;
+  }
+
+  .eco2-modal__dialog {
+    width: 100%;
+    max-height: none;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .eco2-modal__foot {
+    border-radius: 0;
+  }
+
+  .eco2-modal__head,
+  .eco2-modal__body,
+  .eco2-modal__foot {
+    padding-inline: var(--s4);
+  }
+
+  .eco2-modal__actions {
+    width: 100%;
+  }
+
+  .eco2-modal__actions .eco2-btn {
+    flex: 1 1 auto;
+  }
+
+  .eco2-card {
+    padding: var(--s4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eco2-card,
+  .eco2-btn,
+  .eco2-input,
+  .eco2-check,
+  .eco2-drop,
+  .eco2-modal__close {
+    transition: none;
+  }
+
+  .eco2-card[data-linked="true"]:hover,
+  .eco2-btn:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .eco2-modal,
+  .eco2-modal__dialog {
+    animation: none;
+  }
+}

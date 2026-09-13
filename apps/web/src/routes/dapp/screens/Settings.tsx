@@ -169,7 +169,7 @@ export default function Settings() {
             onPick={(chain) => setNet(chain.key)}
           />
 
-          <p className="dapp-microlabel dapp-microlabel--tight" style={{ marginTop: 18 }}>
+          <p className="dapp-microlabel dapp-microlabel--tight dapp-mt-4">
             VERIFIED PUBLIC RPCS PER CHAIN
           </p>
           <BarList

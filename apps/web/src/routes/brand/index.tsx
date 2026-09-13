@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { DownloadRow, Lockup, Section } from './components'
+import { DownloadRow, Lockup, PaletteSwatch, Section } from './components'
 import { donts, favicons, logos, minimums, palette, specimens } from './assets'
 import './brand.css'
 
@@ -300,7 +300,7 @@ export default function BrandKit() {
                 />
               </div>
               <div className="bk-tile-foot">
-                <p style={{ fontSize: 14, margin: 0 }}>Light ink · for dark surfaces</p>
+                <p className="bk-tile-note">Light ink · for dark surfaces</p>
                 <DownloadRow
                   downloads={[
                     {
@@ -326,7 +326,7 @@ export default function BrandKit() {
                 />
               </div>
               <div className="bk-tile-foot">
-                <p style={{ fontSize: 14, margin: 0 }}>Dark ink · for light surfaces</p>
+                <p className="bk-tile-note">Dark ink · for light surfaces</p>
                 <DownloadRow
                   downloads={[
                     {
@@ -348,22 +348,16 @@ export default function BrandKit() {
 
         {/* ----------------------------------------------------------- color */}
         <Section id="color" eyebrow="COLOR" delay={0.05} labelledBy="bk-color-h">
-          <h2 className="bk-h2" id="bk-color-h">
+          <h2 className="bk-h2 bk-h2--tight" id="bk-color-h">
             Palette.
           </h2>
+          <p className="bk-lead bk-lead--section">
+            Every colour has a light and a dark value, and the swatch paints whichever theme you
+            are viewing. Both values are read from the stylesheet as this page loads.
+          </p>
           <ul className="bk-grid bk-grid--palette bk-grid--list">
             {palette.map((c) => (
-              <li key={c.token} className="bk-card bk-swatch-card">
-                <div
-                  className={`bk-swatch${c.needsRule ? ' bk-swatch--ruled' : ''}`}
-                  style={{ background: `var(${c.token})` }}
-                />
-                <div className="bk-swatch-body">
-                  <p className="bk-swatch-name">{c.name}</p>
-                  <p className="bk-swatch-hex">{c.hex}</p>
-                  <p className="bk-swatch-role">{c.role}</p>
-                </div>
-              </li>
+              <PaletteSwatch key={c.token} swatch={c} />
             ))}
           </ul>
         </Section>

@@ -114,7 +114,7 @@ export default function PoolDetail() {
         <h2 className="dapp-card__title">
           {state.k === 'loading' ? 'Reading the pool…' : 'Could not reach the chain'}
         </h2>
-        <p className={`live-note${state.k === 'error' ? ' live-note--err' : ''}`}>
+        <p className={`live-note ${state.k === 'error' ? 'live-note--err' : 'dapp-state--loading'}`}>
           {state.k === 'loading'
             ? `Reading pool state, vault balances and swap history from ${d.name}.`
             : `${state.message}. Nothing shown rather than placeholder figures.`}
@@ -403,7 +403,7 @@ function PoolActivityCard({
 
       {sides.length > 0 && (
         <>
-          <h3 className="dapp-microlabel" style={{ marginTop: 14 }}>
+          <h3 className="dapp-microlabel dapp-mt-4">
             WHERE THE FEES WENT
           </h3>
           {sides.map((s) => {

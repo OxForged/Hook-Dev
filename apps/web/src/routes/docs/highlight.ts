@@ -1,9 +1,8 @@
 /**
  * A ~40-line syntax tokenizer for the handful of Solidity and shell snippets on
- * this page. Deliberately not a highlighting library: the spec fixes exactly
- * five colours (README § Design tokens — Code Keyword #C56BFF,
- * Code Comment #6D80A0, Amber #FFD166 for type names, plus Signal Blue for
- * function names and Success green for literals and shell verbs) and pulling in
+ * this page. Deliberately not a highlighting library: the palette is Option B's
+ * `--code-*` tokens (keyword, type, string, number; comments on --muted-ink —
+ * see docs.css for why), plus --signal-blue for function names, and pulling in
  * a grammar package for three snippets would ship a lot of CSS we would then
  * have to fight back into the palette.
  *

@@ -1,318 +1,125 @@
-/* THE SECTION BOX IS NOT THIS FILE'S JOB.
+/* ============================================================================
+   Built on Latch — the landing section's own layout.
 
-   It comes from `.section` in landing.module.css, applied alongside these
-   classes in the TSX. Four panels each declared their own box and the page
-   ended up with content edges at 238px, 263px and 278px; this file does not
-   repeat that. Layout INSIDE the section belongs here, the box around it does
-   not.
+   THE SECTION BOX AND HEADING ARE NOT THIS FILE'S JOB. They come from
+   `.section`, `.eyebrow`, `.h2` and `.sectionLead` in landing.module.css.
+   THE CARD, THE BUTTONS AND THE MODAL ARE NOT EITHER: they are the shared
+   `eco2-` classes in routes/dapp/components/ecosystemCard.css, so the landing
+   page and the directory render one card.
 
-   Every value below is a token from src/styles/tokens.css — no raw hex, no
-   off-scale px — and every type value matches the house roles established in
-   landing.module.css: 10.5px/0.16em micro-labels, 13.5px small body, 14.5px
-   leads, cards at --r-card-lg with a -4px hover lift over 0.3s. */
+   What is here: the heading row with "View all apps" on the right (Ink's
+   layout), the 3 / 2 / 1 column grid, the footer row and the empty states.
 
-/* ---- the carousel --------------------------------------------------------
+   TOKENS ONLY — every colour, radius, shadow, type size and space is a token
+   from src/styles/tokens.css. Breakpoints are landing.module.css's own set
+   (860px, 560px); media queries cannot read custom properties.
+   ========================================================================== */
 
-   A native scroller with snap points, not a JS slideshow. The browser owns the
-   scrolling — swipe, trackpad, shift-wheel and arrow keys all work for free,
-   momentum feels right on touch, and with JS dead every card is still
-   reachable. The two buttons only call `scrollBy`; they add nothing the track
-   cannot already do.
-
-   It does NOT auto-advance and must not be made to. Content that moves on a
-   timer steals reading position, is unusable for anyone who reads slowly, and
-   drags WCAG 2.2.2 in with it. Every movement here is reader-initiated. */
-
-.carousel {
-  position: relative;
-  margin-top: var(--s7);
-}
-
-.track {
-  overflow-x: auto;
-  scroll-snap-type: x proximity;
-  /* `proximity`, not `mandatory`: with mandatory, a track whose last page is a
-     partial screenful fights the reader at the end, yanking back to the
-     previous card. Proximity snaps when you land near a card and leaves you
-     alone otherwise. */
-  scroll-padding-left: var(--s1);
-  /* Room for the cards' hover lift and shadow, which would otherwise be
-     clipped by the scroll container. The negative margin keeps the first card
-     flush with the section's own left edge despite that padding. */
-  padding: var(--s2) var(--s1) var(--s5);
-  margin: calc(var(--s2) * -1) calc(var(--s1) * -1) calc(var(--s5) * -1);
-  scrollbar-width: thin;
-  scrollbar-color: var(--hairline) transparent;
-}
-
-.track::-webkit-scrollbar {
-  height: 6px;
-}
-
-.track::-webkit-scrollbar-thumb {
-  border-radius: var(--r-pill);
-  background: var(--hairline);
-}
-
-.strip {
-  display: flex;
-  gap: var(--s4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* ---- nav buttons ---------------------------------------------------------
-   Rendered only when the track measures as overflowing. Disabled at each end
-   rather than hidden, so the control does not move under the cursor mid-press. */
-
-.nav {
-  display: flex;
-  gap: var(--s2);
-  justify-content: flex-end;
-  margin-top: var(--s3);
-}
-
-.navBtn {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-pill);
-  background: var(--panel);
-  color: var(--muted-ink);
-  font-size: 13px;
-  cursor: pointer;
-  transition:
-    border-color 0.2s,
-    color 0.2s,
-    background-color 0.2s;
-}
-
-.navBtn:hover:not(:disabled) {
-  border-color: var(--border-hover);
-  color: var(--ink-bright);
-}
-
-.navBtn:disabled {
-  /* Visibly inert, and still in the tab order so the control does not vanish
-     from under a keyboard user at the end of the track. */
-  opacity: 0.4;
-  cursor: default;
-}
-
-.card {
-  display: flex;
-  flex-direction: column;
-  scroll-snap-align: start;
-  /* A fixed basis, because a flex item in a horizontal scroller has no
-     container width to be a fraction of. `min(80vw, …)` keeps the card from
-     filling a phone screen edge to edge — a sliver of the next card is what
-     tells a reader the row scrolls at all. */
-  flex: 0 0 min(80vw, 320px);
-  min-width: 0;
-  padding: var(--s5);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  background: var(--grad-card);
-  box-shadow: var(--shadow-1);
-  transition:
-    transform 0.3s var(--ease),
-    border-color 0.3s,
-    box-shadow 0.3s;
-}
-
-.card:hover {
-  border-color: var(--border-hover);
-  transform: translateY(-4px);
-  box-shadow: var(--sh-card-hover);
-}
-
-/* The whole card is one link. `:focus-visible` is left to the global ring in
-   tokens.css rather than restyled here — three concentric rings is what
-   happens when a component adds its own on top, and that bug was just removed
-   from the contract book. */
-.cardLink {
-  display: flex;
-  gap: var(--s4);
-  align-items: flex-start;
-  min-width: 0;
-  text-decoration: none;
-  color: inherit;
-}
-
-.mark {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--tile-border);
-  border-radius: var(--r-btn);
-  background: var(--tile-bg-strong);
-  overflow: hidden;
-}
-
-.mark img {
-  width: 40px;
-  height: 40px;
-  /* `contain`, never `cover`: these are marks supplied by their owners at
-     whatever aspect they ship, and cropping somebody's logo to fill a square
-     is a form of redrawing it. */
-  object-fit: contain;
-}
-
-.monogram {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--label-ink);
-}
-
-.cardBody {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.name {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 16px;
-  line-height: 1.3;
-  color: var(--ink-bright);
-}
-
-.host {
-  margin-top: 2px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--label-ink);
-  /* A host is one unbreakable token; without this a long one widens the card. */
-  overflow-wrap: anywhere;
-}
-
-.tagline {
-  margin-top: var(--s3);
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-  text-wrap: pretty;
-}
-
-/* What the project SAYS it uses. Rendered as chips rather than prose because
-   they are claims from a form, not sentences we wrote — and `title` carries
-   each kind's `meaning` from the shared data module. */
-.kinds {
+.head {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--s2);
-  margin: var(--s4) 0 0;
-  padding: 0;
-  list-style: none;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s3) var(--s5);
 }
 
-.kind {
-  padding: 2px var(--s2);
-  border: 1px solid var(--pill-border);
-  border-radius: var(--r-badge);
-  background: var(--pill-bg);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  color: var(--pill-ink);
+.headText {
+  min-width: 0;
 }
 
-/* ---- footer: provenance on the left, the two actions on the right -------- */
+/* A link, set as B's quiet text action: the brand blue, underline on hover. */
+.viewAll {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding-block: var(--s1);
+  font-family: var(--font-body);
+  font-size: var(--b-card-p);
+  font-weight: 600;
+  color: var(--signal-blue);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.viewAll:hover,
+.viewAll:focus-visible {
+  color: var(--deep-blue);
+  text-decoration: underline;
+  text-underline-offset: var(--s1);
+}
+
+/* `ul.grid`, not `.grid`: the shared `.eco2-grid` resets margin, and the two
+   single-class rules would otherwise race on stylesheet order. */
+ul.grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: var(--s6);
+}
 
 .foot {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--s4);
   align-items: center;
   justify-content: space-between;
-  margin-top: var(--s6);
-  padding-top: var(--s5);
-  border-top: 1px solid var(--hairline);
+  gap: var(--s3) var(--s5);
+  margin-top: var(--s5);
 }
 
-/* Not shrunk, not italicised, not tucked under a disclosure. Three of the
-   listings carry seeded `uses` and `chains` values, so this line is the only
-   thing on screen telling a reader those are self-reported. */
-.provenance {
+.footNote {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  max-width: 64ch;
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s5);
-  align-items: center;
-}
-
-.cta {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: var(--latch-blue);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition:
-    color 0.2s,
-    border-color 0.2s;
-}
-
-.cta:hover {
-  color: var(--ink-bright);
-  border-bottom-color: var(--border-hover);
-}
-
-.secondary {
-  composes: cta;
+/* Listings exist, none featured: a sentence, not a blank grid. */
+.none {
+  margin: var(--s6) 0 0;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
 }
 
-/* ---- empty state --------------------------------------------------------- */
+/* ---- empty state (b.html `.empty`) --------------------------------------- */
 
 .empty {
-  margin-top: var(--s7);
+  display: grid;
+  justify-items: center;
+  margin-top: var(--s6);
   padding: var(--s7) var(--s5);
   border: 1px dashed var(--dashed-rule);
-  border-radius: var(--r-card-lg);
+  border-radius: var(--r-sm);
+  background: var(--panel);
   text-align: center;
 }
 
 .emptyTitle {
   margin: 0;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 16px;
-  color: var(--ink-bright);
+  font-family: var(--font-body);
+  font-weight: 640;
+  font-size: var(--b-card-p);
+  color: var(--ink);
 }
 
 .emptyBody {
   max-width: 52ch;
-  margin: var(--s3) auto var(--s5);
-  font-size: 13.5px;
-  line-height: 1.6;
+  margin: var(--s2) auto var(--s5);
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
 }
 
-/* ---- narrow --------------------------------------------------------------
-   560px is the house narrow stop (landing.module.css uses 1278 / 1138 / 1024 /
-   860 / 560). No rail correction is needed: the only query here restacks the
-   footer, which depends on its own content rather than on the grid column, and
-   the track itself is a scroller that adapts to any width without a query —
-   which is precisely why it cannot repeat the 238px-late bug the sibling files
-   had. */
+@media (max-width: 860px) {
+  ul.grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 
 @media (max-width: 560px) {
+  ul.grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .foot {
     align-items: flex-start;
     flex-direction: column;

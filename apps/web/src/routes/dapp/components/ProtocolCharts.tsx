@@ -159,14 +159,14 @@ export function SwapVolumeCard() {
     <section className="dapp-card dapp-card--chart">
       <div className="dapp-card__bar">
         <h2 className="dapp-card__title">Swaps by block</h2>
-        <span className="lr-badge">
-          <span className="lr-dot" aria-hidden="true" />
+        <span className="live-badge">
+          <span className="live-dot" aria-hidden="true" />
           LIVE
         </span>
       </div>
 
       {state.k === 'loading' && (
-        <p className="live-note" role="status">
+        <p className="live-note dapp-state--loading" role="status">
           Reading contract logs&hellip;
         </p>
       )}
@@ -221,8 +221,8 @@ export function ActivityMixCard() {
     <section className="dapp-card" style={{ animationDelay: '0.08s' }}>
       <div className="dapp-card__bar">
         <h2 className="dapp-microlabel">ACTIVITY MIX</h2>
-        <span className="lr-badge">
-          <span className="lr-dot" aria-hidden="true" />
+        <span className="live-badge">
+          <span className="live-dot" aria-hidden="true" />
           LIVE
         </span>
       </div>
@@ -239,7 +239,15 @@ export function ActivityMixCard() {
           </p>
         </>
       ) : (
-        <p className={`live-note${state.k === 'error' ? ' live-note--err' : ''}`}>
+        <p
+          className={`live-note ${
+            state.k === 'error'
+              ? 'live-note--err'
+              : state.k === 'loading'
+                ? 'dapp-state--loading'
+                : 'dapp-state--empty'
+          }`}
+        >
           {state.k === 'loading'
             ? 'Reading contract logs…'
             : state.k === 'error'

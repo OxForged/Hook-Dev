@@ -2,16 +2,32 @@
    C · /app/protocol/:poolId/epochs — the distributor's epoch timeline.
 
    The pool's distributor comes from `distributorOf(poolId)`, which returns a
-   BARE ADDRESS. There is no `kind()`, no shared interface and no registry, and
-   the two distributors' epoch structs are both nine fields with DIFFERENT
-   meanings in slot five — a vote total on the snapshot distributor, a merkle
-   root on the merkle one. Decoding with the wrong ABI succeeds and produces
-   plausible nonsense.
+   BARE ADDRESS, and the two distributors' epoch structs are both nine fields
+   with DIFFERENT meanings at index 4 — a vote total on the snapshot
+   distributor, a merkle root on the merkle one. Decoding with the wrong ABI
+   succeeds and produces plausible nonsense.
 
-   So the type is probed by selector before anything is decoded: `token()`
-   answers only on `SnapshotEpochDistributor`, `challengeDelay()` only on
-   `MerkleEpochDistributor`. Neither answering is reported as `unknown` and the
-   screen stops there rather than guessing.
+   So the type is asked for before anything is decoded: both distributors
+   implement `IEpochDistributor.kind()`
+   (packages/hooks-revshare/src/interfaces/IEpochDistributor.sol), which
+   returns one of two domain-separated constants,
+   `keccak256("latch.revshare.distributor.snapshot.v1")` or
+   `…merkle.v1`. `probeDistributor` accepts an exact match only. A revert, empty
+   return data, zero or any other hash is `unknown`, and the screen stops there
+   rather than guessing. There is no fallback to the old `token()` /
+   `challengeDelay()` selector probe — any contract with a `token()` getter
+   passed it.
+
+   CONSEQUENCE, STATED ON THE SCREEN: a distributor deployed before `kind()`
+   existed has no such function and reads as `unknown`. That is the honest
+   answer, and it is the one the only distributor on chain gets today —
+   Sepolia 0x5A908Ad96Bd4770B65c8E83a9ede093C1Cb7966c predates `kind()`.
+
+   ROLLOVER HAS TWO CLOCKS on the merkle distributor. Once a root stands its
+   claim window governs; with no root (`expiresAt == 0`) an abandonment
+   fallback does, floored by any `cancelRoot`, and `getEpoch` does not record
+   the floor. Rollover is therefore offered on `rolloverEligibleAt(id)`, read
+   from chain, never on `expiresAt`.
 
    Two permissionless calls live here, `closeEpoch` and `rollover`. Both are
    simulated before the button is enabled, which is how `EpochTooSoon`,
@@ -54,6 +70,7 @@ import {
   PoolIdText,
   Reading,
   ScreenIntro,
+  Unconfigured,
   Unreachable,
 } from '../lib/revshareParts'
 import { PermissionlessAction } from '../lib/revshareWrite'
@@ -95,7 +112,7 @@ export default function ProtocolEpochs() {
           funds never return to the next one.
         </p>
         {poolId && (
-          <p style={{ marginTop: 6 }}>
+          <p className="dapp-mt-2">
             Pool <PoolIdText value={poolId} /> ·{' '}
             <Link to={withHook(dappPath(`protocol/${poolId}`))}>← back to the pool</Link>
           </p>
@@ -129,37 +146,50 @@ export default function ProtocolEpochs() {
       )}
 
       {state.k === 'ready' && state.data.k === 'not-configured' && (
-        <Empty title="This pool has no revenue-share configuration">
+        <Unconfigured title="This pool has no revenue-share configuration">
           <p>
             <code>poolOwner(poolId)</code> is <code>address(0)</code>, so there is no configuration
             and therefore no distributor.
           </p>
-        </Empty>
+        </Unconfigured>
       )}
 
       {state.k === 'ready' && state.data.k === 'no-distributor' && (
-        <Empty title="This pool routes nothing to a distributor">
+        <Unconfigured title="This pool routes nothing to a distributor">
           <p>
             <code>distributorOf(poolId)</code> returns <code>address(0)</code>. The pool&rsquo;s cut
             goes to LPs and to its beneficiary roster only, so there are no epochs — this is a
             configuration, not a missing piece.
           </p>
-        </Empty>
+        </Unconfigured>
       )}
 
       {state.k === 'ready' && state.data.k === 'ready' && state.data.d.kind === 'unknown' && (
-        <Empty title="The distributor's type could not be identified">
+        <Unconfigured title="The distributor's type could not be identified">
           <p>
-            <Addr value={state.data.d.address} /> answered neither <code>token()</code> nor{' '}
-            <code>challengeDelay()</code>. Those two selectors are the only way to tell a{' '}
-            <code>SnapshotEpochDistributor</code> from a <code>MerkleEpochDistributor</code> — there
-            is no <code>kind()</code> and no common interface.
+            <Addr value={state.data.d.address} /> did not answer <code>kind()</code> with either
+            value this build recognises. Both current distributors implement{' '}
+            <code>IEpochDistributor.kind()</code>, which returns{' '}
+            <code>keccak256(&quot;latch.revshare.distributor.snapshot.v1&quot;)</code> on a{' '}
+            <code>SnapshotEpochDistributor</code> and{' '}
+            <code>keccak256(&quot;latch.revshare.distributor.merkle.v1&quot;)</code> on a{' '}
+            <code>MerkleEpochDistributor</code>. Only an exact match is accepted: a revert, empty
+            return data, zero or any other hash all land here.
           </p>
-          <p style={{ marginTop: 8 }}>
+          <p className="dapp-mt-2">
+            <strong>A distributor deployed before <code>kind()</code> existed lands here too</strong>
+            , because it has no such function to call. The only distributor on chain today —{' '}
+            <code>0x5A908Ad96Bd4770B65c8E83a9ede093C1Cb7966c</code> on Sepolia — is one of those, so
+            this screen cannot show its epochs. That is a limit of this build, not a verdict on the
+            contract. The old way to tell the two apart, probing <code>token()</code> and{' '}
+            <code>challengeDelay()</code>, is deliberately not used: any contract with a{' '}
+            <code>token()</code> getter passed it.
+          </p>
+          <p className="dapp-mt-2">
             The two epoch structs are both nine fields, so decoding this with either ABI would
             succeed and return numbers that mean nothing. This screen stops instead.
           </p>
-        </Empty>
+        </Unconfigured>
       )}
 
       {state.k === 'ready' && state.data.k === 'ready' && state.data.d.kind === 'snapshot' && (
@@ -201,7 +231,7 @@ function CloseEpochCard({
         {fmtTimestamp(earliest)}. Chain time when this was read: {fmtTimestamp(common.now)}.
         {!open && ' Closing before that reverts EpochTooSoon.'}
       </p>
-      <p className="live-note" style={{ marginTop: 6 }}>
+      <p className="live-note dapp-mt-2">
         The pot to be closed over is whatever the distributor has pulled from the hook plus the
         carry-over: <Money v={common.carryOver0} token={common.token0} /> and{' '}
         <Money v={common.carryOver1} token={common.token1} />.
@@ -291,7 +321,7 @@ function EpochTokenCharts({
   const claimedBps = Number((claimedTotal * 10_000n) / potTotal)
 
   return (
-    <div style={{ marginTop: 14 }}>
+    <div className="dapp-mt-4">
       <h4 className="dapp-microlabel">{token.symbol} · POT BY EPOCH</h4>
       <ColumnChart
         label={`Pot closed into each epoch, in ${token.symbol}, across ${ordered.length} epoch${ordered.length === 1 ? '' : 's'}`}
@@ -519,7 +549,7 @@ function SnapshotTable({ epochs, common }: { epochs: SnapshotEpoch[]; common: Di
           </tbody>
         </table>
       </div>
-      <p className="live-note" style={{ marginTop: 8 }}>
+      <p className="live-note dapp-mt-2">
         Each row is one <code>getEpoch(id)</code>. At most the newest 24 are listed; the list is
         unbounded on chain.
       </p>
@@ -606,14 +636,29 @@ function MerkleView({ d }: { d: Extract<DistributorState, { kind: 'merkle' }> })
         )}
       </section>
 
+      {/* Gated on `rolloverEligibleAt(id)`, not on `expiresAt`. A rootless epoch
+          has expiresAt == 0 and used to be filtered out here forever, so its
+          funds could never be offered back to the carry-over from this screen.
+          The action still simulates before it can be sent. */}
       {epochs
-        .filter((e) => !e.rolledOver && common.now >= e.expiresAt && e.expiresAt !== 0n)
+        .filter((e) => !e.rolledOver && common.now >= e.rolloverEligibleAt)
         .map((e) => (
           <section className="dapp-card" key={`ro-${e.id.toString()}`}>
-            <p className="dapp-microlabel">EPOCH {e.id.toString()} EXPIRED</p>
+            <p className="dapp-microlabel">
+              EPOCH {e.id.toString()} {e.expiresAt === 0n ? 'ABANDONED — NO ROOT STANDS' : 'EXPIRED'}
+            </p>
             <p className="live-note">
-              Claim window closed at {fmtTimestamp(e.expiresAt)}. Unclaimed:{' '}
-              <Money v={e.amount0 - e.claimed0} token={common.token0} /> and{' '}
+              {e.expiresAt === 0n ? (
+                <>
+                  No root stands for this epoch — none was posted, or the one posted was cancelled —
+                  and its abandonment deadline passed at {fmtTimestamp(e.rolloverEligibleAt)} (
+                  <code>rolloverEligibleAt</code>). Nobody can claim from it, so rolling it over is
+                  the only way its pot reaches holders.
+                </>
+              ) : (
+                <>Claim window closed at {fmtTimestamp(e.expiresAt)}.</>
+              )}{' '}
+              Unclaimed: <Money v={e.amount0 - e.claimed0} token={common.token0} /> and{' '}
               <Money v={e.amount1 - e.claimed1} token={common.token1} />.
             </p>
             <RolloverAction common={common} abi={MERKLE_DISTRIBUTOR_ABI} epochId={e.id} />
@@ -664,7 +709,15 @@ function MerkleTable({ epochs, common }: { epochs: MerkleEpoch[]; common: Distri
                     {e.rolledOver ? (
                       <span className="dapp-badge dapp-badge--mute">rolled over</span>
                     ) : !posted ? (
-                      <span className="dapp-badge dapp-badge--warn">awaiting postRoot (owner)</span>
+                      common.now >= e.rolloverEligibleAt ? (
+                        <span className="dapp-badge dapp-badge--warn">
+                          no root · rollover open since {fmtTimestamp(e.rolloverEligibleAt)}
+                        </span>
+                      ) : (
+                        <span className="dapp-badge dapp-badge--warn">
+                          awaiting postRoot (owner) · rollover from {fmtTimestamp(e.rolloverEligibleAt)}
+                        </span>
+                      )
                     ) : inChallenge ? (
                       <span className="dapp-badge dapp-badge--info">
                         challenge period, opens {fmtTimestamp(e.claimableAt)}
@@ -685,7 +738,7 @@ function MerkleTable({ epochs, common }: { epochs: MerkleEpoch[]; common: Distri
           </tbody>
         </table>
       </div>
-      <p className="live-note" style={{ marginTop: 8 }}>
+      <p className="live-note dapp-mt-2">
         Each row is one <code>getEpoch(id)</code>. Note the struct differs from the snapshot
         distributor&rsquo;s: field five is the merkle <code>root</code> here and a voting supply
         there, which is why the two are decoded with separate ABIs.

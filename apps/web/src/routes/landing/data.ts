@@ -88,29 +88,26 @@ export interface NavItem {
  * how it works, the reference, who is building it.
  */
 /*
- * REPOINTED 2026-09-13, because three of the four went nowhere.
+ * REPOINTED AGAIN 2026-09-13, for the minimal landing.
  *
- * `#ecosystem`, `#developers` and `#about` are ids on UseCases, HowItWorks and
- * Team — all three unmounted from the landing page in the ten-to-five cut (see
- * ./index.tsx). The links still rendered, still looked live, and set a hash
- * matching no element in the document, so clicking one did nothing at all.
+ * The owner cut the landing to hero · live KPIs · interactive modules · the
+ * four deployed pieces · one CTA band. `#build` (Audiences) and `#activity`
+ * (Activity) are no longer mounted, so those links went nowhere. The rule
+ * recorded here the first time still applies: a section anchor is a dependency
+ * on a component being MOUNTED, which no compiler checks.
  *
- * This is the same failure as the old `#audit` recorded under LINKS below, and
- * it is worth stating the rule that catches it: a section anchor is a
- * dependency on a component being MOUNTED, which no compiler checks. If a
- * section is removed from index.tsx, the nav has to be read in the same pass.
- *
- * Every href below resolves to an element that renders unconditionally:
- * `#build` on Audiences, `#fees` on FeeChart, `#activity` on Activity.
- *
- * About is dropped rather than repointed. It named the Team section, which is
- * unmounted because its cards read "Name Placeholder", and there is no other
- * honest destination for it. A nav item is a promise that something is there.
+ * Every href below resolves on `/`:
+ *   `#fees`       FeeChart's section wrapper, rendered on every branch
+ *   `#presets`    the wrapper index.tsx puts around PresetCurve
+ *   `#contracts`  ContractBook — mounted ON DEMAND by index.tsx when the hash
+ *                 is `#contracts`, so this link is what opens it
+ *   `#ecosystem`  Ecosystem's section, mounted again after FourThings
+ *                 (2026-09-13, owner request). Used by MENU_NAV and the footer.
  */
 export const NAV: readonly NavItem[] = [
-  { label: 'Build', href: '#build', icon: 'developers' },
   { label: 'Fees', href: '#fees', icon: 'revenue' },
-  { label: 'Activity', href: '#activity', icon: 'analytics' },
+  { label: 'Presets', href: '#presets', icon: 'launch' },
+  { label: 'Contracts', href: '#contracts', icon: 'explorer' },
   { label: 'Docs', href: '/docs', icon: 'docs' },
 ]
 
@@ -121,6 +118,7 @@ export const NAV: readonly NavItem[] = [
  */
 export const MENU_NAV: readonly NavItem[] = [
   ...NAV,
+  { label: 'Ecosystem', href: '#ecosystem', icon: 'ecosystem' },
   { label: 'Brand Kit', href: '/brand', icon: 'brand' },
 ]
 
@@ -128,9 +126,9 @@ export const MENU_NAV: readonly NavItem[] = [
  * Route targets. `github` is the real org, imported from ./socials.ts so
  * exactly one module in the app knows the URL.
  *
- * `audits` used to be `#audit` — an anchor that exists on no page, so the
- * footer link silently did nothing. It now points at the activity section,
- * which is where the audit status is actually stated (and stated as "None").
+ * `audits` is gone. It pointed at `#activity`, and Activity — where the audit
+ * status was stated as "None" — is no longer mounted on the landing page. The
+ * live figures it carried are on `/app/analytics` (`analytics` below).
  */
 export const LINKS = {
   docs: '/docs',
@@ -144,7 +142,9 @@ export const LINKS = {
      404'd from the dapp for a while precisely because nobody checked. */
   promptDex: `${GITHUB_URL}/latch-sdk/blob/main/prompts/dex-integration.md`,
   promptLaunchpad: `${GITHUB_URL}/latch-sdk/blob/main/prompts/launchpad-integration.md`,
-  audits: '#activity',
+  analytics: '/app/analytics',
+  ecosystem: '/app/ecosystem',
+  contracts: '#contracts',
   privacy: '/privacy',
   terms: '/terms',
 } as const
@@ -484,30 +484,36 @@ export interface FooterGroup {
 export const FOOTER_GROUPS: readonly FooterGroup[] = [
   {
     title: 'Protocol',
-    /* Four dead anchors lived here — see the note on NAV above. `#ecosystem`,
-       `#revenue` and `#developers` name UseCases, RevenueShare and HowItWorks,
-       none of which the landing page mounts. What replaces them is what the
-       page actually renders, in the order it renders it. */
+    /* What the minimal landing renders, plus the two places the unmounted
+       sections' live figures now live. `#contracts` opens the contract book on
+       demand (see NAV). */
     links: [
-      { label: 'What it costs', href: '#fees' },
-      { label: 'How the split works', href: '#flow' },
-      { label: 'Integrate', href: '#build' },
-      { label: 'Activity & audits', href: LINKS.audits },
+      { label: 'What a swap costs', href: '#fees' },
+      { label: 'Launch presets', href: '#presets' },
+      { label: 'Deployed contracts', href: LINKS.contracts },
+      { label: 'Analytics', href: LINKS.analytics },
     ],
   },
   {
     title: 'Build',
+    /* The two integration prompts were the Audiences cards' CTAs. Audiences is
+       unmounted; the prompts must not become unreachable with it. */
     links: [
       { label: 'Docs', href: LINKS.docs },
-      { label: 'Launch App', href: LINKS.app },
+      { label: 'DEX integration prompt', href: LINKS.promptDex },
+      { label: 'Launchpad integration prompt', href: LINKS.promptLaunchpad },
       { label: 'GitHub', href: LINKS.github },
     ],
   },
   {
     title: 'Project',
-    /* About pointed at the Team section, which is unmounted because its cards
-       read "Name Placeholder". It comes back the day ./data.ts has names. */
-    links: [{ label: 'Brand Kit', href: LINKS.brand }],
+    /* `#ecosystem` is the landing section again; its "Open the full directory"
+       action is the route into /app/ecosystem. */
+    links: [
+      { label: 'Launch App', href: LINKS.app },
+      { label: 'Ecosystem', href: '#ecosystem' },
+      { label: 'Brand Kit', href: LINKS.brand },
+    ],
   },
   {
     title: 'Legal',

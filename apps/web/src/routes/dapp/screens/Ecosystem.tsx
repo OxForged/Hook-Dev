@@ -10,43 +10,58 @@
    The consequence, and the thing every part of this layout says out loud: a
    listing here is the project's own words, merged as written. Nobody has
    checked that the integration exists, works, or is safe. That status is a
-   property of the whole surface — it is in the header badge and on every card —
-   rather than a per-entry flag that nothing could ever set the other way.
+   property of the whole surface — it is in the header badge, the count line
+   and on every card — rather than a per-entry flag nothing could set.
 
-   The layout is the Marketplace's, on purpose: the same rail, toolbar, grid and
-   card grammar, so the two pages read as the same product. What is NOT copied
-   is the trust strip and the capability ledger, because there is no on-chain
-   fact here to put in them. Where the Marketplace card leads with what the
-   registry decoded from bytecode, this card leads with a monogram and a name
-   and says whose words the rest are.
+   THE LAYOUT is Ink's app directory, taken for structure only: search with a
+   `/` shortcut, category tabs, two filter menus (Tags = Latch families from
+   `uses`, Network = `chains`), "Submit app", and the card grid. The card and
+   the submission form are shared with the landing page. Visuals are Option B.
 
-   With zero entries — the state this ships in — the page is the empty state,
-   the legend and the submission panel. There is no filter row over nothing.
+   WHAT EVERY FILTER IS BUILT FROM. Tabs, tags and networks are derived from
+   the listings themselves (`categoriesListed`, `kindsListed`, `chainsListed`),
+   so there is never a tab or an option that matches nothing.
+
+   With zero entries the page is the empty state and the explanatory panels.
+   There is no filter row over nothing.
    ============================================================================ */
 
-import { useEffect, useMemo, useState } from 'react'
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { Link } from 'react-router-dom'
 
 import { ChainTag, chainNameFor } from '../../../components/ChainTag.tsx'
 import { BarList } from '../components/charts.tsx'
-import { safeHttpUrl } from '../components/latchModel.ts'
+import { EcosystemCard } from '../components/EcosystemCard.tsx'
+import { SubmitAppModal } from '../components/SubmitAppModal.tsx'
+import '../components/ecosystemCard.css'
 import {
   ECOSYSTEM_ISSUES_REPO,
   ECOSYSTEM_PROJECTS,
   LATCH_KINDS,
   LATCH_KIND_ORDER,
   LISTING_PROVENANCE,
+  categoriesListed,
   chainCounts,
   chainsListed,
   hostOf,
-  listingIssueUrl,
-  monogramFor,
+  kindsListed,
   sortedProjects,
+  type EcosystemCategory,
   type EcosystemProject,
   type LatchKind,
 } from '../data/ecosystem.ts'
 import type { LabelledBar, SeriesColor } from '../data/types.ts'
 import { dappPath } from '../paths.ts'
+import '../ecosystem.css'
 
 /** A keystroke should not interrupt the previous announcement (see Explorer). */
 const ANNOUNCE_DELAY_MS = 700
@@ -61,202 +76,233 @@ function matchesQuery(p: EcosystemProject, q: string): boolean {
   return (
     p.name.toLowerCase().includes(q) ||
     p.tagline.toLowerCase().includes(q) ||
+    p.category.toLowerCase().includes(q) ||
     hostOf(p.url).toLowerCase().includes(q) ||
     p.uses.some((k) => LATCH_KINDS[k].label.toLowerCase().includes(q))
   )
 }
 
-/* ---- the mark ---------------------------------------------------------------- */
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+/* ---- filter menu: a button that opens a single-select listbox ------------------ */
+
+interface MenuOption<T> {
+  readonly value: T
+  /** Plain text: the accessible name, and the button text when selected. */
+  readonly label: string
+  /** Optional visual, e.g. a chain mark. Falls back to `label`. */
+  readonly render?: ReactNode
+  readonly count: number
+}
+
+interface FilterMenuProps<T extends string | number> {
+  /** The menu's name, shown on the button while nothing is selected: "Tags". */
+  readonly name: string
+  readonly allLabel: string
+  readonly allCount: number
+  readonly value: T | 'all'
+  readonly options: readonly MenuOption<T>[]
+  readonly onChange: (value: T | 'all') => void
+}
 
 /**
- * A supplied official asset, or a typographic monogram. Never an approximation
- * of the project's logo — see the `logo` slot on EcosystemProject.
+ * WAI-ARIA APG "listbox" behind a disclosure button.
+ *
+ * Keyboard: ArrowDown / ArrowUp / Enter / Space on the button open the list
+ * with the current value active; in the list, ArrowUp/Down move, Home/End jump,
+ * Enter/Space choose and close, Escape closes without choosing, Tab closes.
+ * Focus sits on the listbox and `aria-activedescendant` names the active
+ * option, so a screen reader reads each option as it is reached. Focus returns
+ * to the button whenever the list closes from the keyboard.
  */
-function ProjectMark({ project }: { project: EcosystemProject }) {
-  if (project.logo) {
-    return (
-      <img
-        className="eco-mark eco-mark--img"
-        src={project.logo}
-        alt=""
-        width={48}
-        height={48}
-        loading="lazy"
-        decoding="async"
-      />
-    )
+function FilterMenu<T extends string | number>({
+  name,
+  allLabel,
+  allCount,
+  value,
+  options,
+  onChange,
+}: FilterMenuProps<T>) {
+  const uid = useId()
+  const buttonId = `${uid}-button`
+  const listId = `${uid}-list`
+
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+
+  const all: MenuOption<T | 'all'>[] = useMemo(
+    () => [{ value: 'all', label: allLabel, count: allCount }, ...options],
+    [allLabel, allCount, options],
+  )
+
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const [alignEnd, setAlignEnd] = useState(false)
+
+  const selectedIndex = Math.max(
+    0,
+    all.findIndex((o) => o.value === value),
+  )
+  const selected = all[selectedIndex]
+
+  const openList = (index: number = selectedIndex) => {
+    setActive(index)
+    /* Measure from the default alignment every time, or a flip from a previous
+       opening would be measured against itself. */
+    setAlignEnd(false)
+    setOpen(true)
   }
-  const mono = monogramFor(project.name)
-  return (
-    <span
-      className="eco-mark"
-      data-len={mono.length}
-      role="img"
-      aria-label={`${project.name} — no logo supplied, shown as a monogram`}
-    >
-      <span aria-hidden="true">{mono}</span>
-    </span>
-  )
-}
 
-/* ---- one listing --------------------------------------------------------------- */
+  const close = (returnFocus: boolean) => {
+    setOpen(false)
+    if (returnFocus) buttonRef.current?.focus()
+  }
 
-function ProjectCard({ project, index }: { project: EcosystemProject; index: number }) {
-  const site = safeHttpUrl(project.url)
-  const source = project.source ? safeHttpUrl(project.source) : null
+  const choose = (index: number) => {
+    const option = all[index]
+    if (option) onChange(option.value)
+    close(true)
+  }
 
-  return (
-    <article className="dapp-card eco-card" style={{ animationDelay: `${(index * 0.05).toFixed(2)}s` }}>
-      <header className="eco-card__top">
-        <ProjectMark project={project} />
-        <div className="eco-card__id">
-          <h3 className="eco-card__name">
-            {site ? (
-              // The whole card is the hit target — this anchor's ::after covers
-              // it; the source link below is lifted above the overlay.
-              <a className="eco-card__go" href={site} target="_blank" rel="noopener noreferrer">
-                {project.name}
-              </a>
-            ) : (
-              project.name
-            )}
-          </h3>
-          <p className="eco-card__sub">
-            <span>{site ? hostOf(site) : 'No usable link'}</span>
-            <span className="eco-card__dot" aria-hidden="true">
-              ·
-            </span>
-            <span>
-              listed <time dateTime={project.addedAt}>{project.addedAt}</time>
-            </span>
-          </p>
-        </div>
-        {site && (
-          <span className="eco-card__cta" aria-hidden="true">
-            Visit
-          </span>
-        )}
-      </header>
+  /* On open: focus the list, and flip it to the right edge if it would run
+     off the viewport — the menus sit at the end of a row that wraps. */
+  useLayoutEffect(() => {
+    if (!open) return
+    const list = listRef.current
+    if (!list) return
+    list.focus()
+    const rect = list.getBoundingClientRect()
+    setAlignEnd(rect.right > document.documentElement.clientWidth)
+  }, [open])
 
-      {/* Their words. Styled as prose and never as a claim this page makes. */}
-      <p className="eco-card__tag">{project.tagline}</p>
+  /* Keep the active option in view as the arrows move it. */
+  useEffect(() => {
+    if (!open) return
+    document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: 'nearest' })
+  }, [open, active, listId])
 
-      <dl className="eco-facts">
-        <div className="eco-facts__row">
-          <dt className="dapp-microlabel dapp-microlabel--tight">USES</dt>
-          <dd>
-            <ul className="eco-uses" aria-label="Latches this project says it uses">
-              {project.uses.map((k) => (
-                <li key={k}>
-                  <span
-                    className="dapp-badge dapp-badge--info"
-                    title={LATCH_KINDS[k].contract ?? 'A hook contract the project authored'}
-                  >
-                    {LATCH_KINDS[k].label}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </dd>
-        </div>
-        <div className="eco-facts__row">
-          <dt className="dapp-microlabel dapp-microlabel--tight">CHAINS</dt>
-          <dd>
-            <ul className="eco-chains" aria-label="Chains this project says it is live on">
-              {project.chains.map((id) => (
-                <li key={id}>
-                  <ChainTag chainId={id} size={13} />
-                </li>
-              ))}
-            </ul>
-          </dd>
-        </div>
-      </dl>
+  /* A pointer press anywhere else closes the list without moving focus. */
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) close(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [open])
 
-      <footer className="eco-card__foot">
-        <span className="eco-card__by">{LISTING_PROVENANCE}</span>
-        <span className="lx-links">
-          {source ? (
-            <a href={source} target="_blank" rel="noopener noreferrer">
-              Source ↗
-            </a>
-          ) : (
-            <span className="hx-muted">No source given</span>
-          )}
-        </span>
-      </footer>
-    </article>
-  )
-}
+  const onButtonKey = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      openList()
+    }
+  }
 
-/* ---- the rail ------------------------------------------------------------------- */
+  const onListKey = (e: KeyboardEvent<HTMLUListElement>) => {
+    const last = all.length - 1
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        setActive((i) => Math.min(last, i + 1))
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        setActive((i) => Math.max(0, i - 1))
+        break
+      case 'Home':
+        e.preventDefault()
+        setActive(0)
+        break
+      case 'End':
+        e.preventDefault()
+        setActive(last)
+        break
+      case 'Enter':
+      case ' ':
+        e.preventDefault()
+        choose(active)
+        break
+      case 'Escape':
+        e.preventDefault()
+        e.stopPropagation()
+        close(true)
+        break
+      case 'Tab':
+        close(false)
+        break
+      default:
+        break
+    }
+  }
 
-/**
- * The submission panel. Two optional inputs that only shape the URL of the
- * issue — there is no submit handler, no fetch and nothing stored. The anchor
- * IS the submission; the inputs just save retyping the two fields that make a
- * listing identifiable.
- */
-function SubmitPanel() {
-  const [name, setName] = useState('')
-  const [url, setUrl] = useState('')
-  const href = useMemo(() => listingIssueUrl({ name, url }), [name, url])
+  const isActive = value !== 'all'
 
   return (
-    <section className="dapp-card lx-rail__card eco-submit" aria-labelledby="eco-submit-h">
-      <h2 id="eco-submit-h" className="dapp-card__title">
-        Submit your project
-      </h2>
-      <p className="live-note">
-        Free and open to any team building on Latch. It is a GitHub issue, merged as written.
-      </p>
-
-      <div className="eco-field">
-        <label className="dapp-microlabel dapp-microlabel--tight" htmlFor="eco-name">
-          PROJECT NAME
-        </label>
-        <input
-          id="eco-name"
-          className="eco-input"
-          type="text"
-          autoComplete="organization"
-          spellCheck={false}
-          maxLength={80}
-          placeholder="Optional — prefills the issue"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
-      <div className="eco-field">
-        <label className="dapp-microlabel dapp-microlabel--tight" htmlFor="eco-url">
-          WEBSITE
-        </label>
-        <input
-          id="eco-url"
-          className="eco-input"
-          type="url"
-          inputMode="url"
-          autoComplete="url"
-          spellCheck={false}
-          maxLength={200}
-          placeholder="https://"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-      </div>
-
-      <a
-        className="dapp-btn dapp-btn--primary dapp-btn--sm eco-submit__go"
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
+    <div ref={wrapRef} className="eco2-menu">
+      <button
+        ref={buttonRef}
+        id={buttonId}
+        type="button"
+        className="eco2-menu__button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-label={`${name}: ${selected?.label ?? allLabel}`}
+        data-active={isActive ? 'true' : 'false'}
+        onClick={() => (open ? close(false) : openList())}
+        onKeyDown={onButtonKey}
       >
-        Open listing issue ↗
-      </a>
-      <p className="live-note eco-submit__note">
-        Nothing is sent from this page — the issue is the submission.
-      </p>
-    </section>
+        <span className="eco2-menu__text">
+          {isActive && selected ? (selected.render ?? selected.label) : name}
+        </span>
+        <span className="eco2-menu__caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <ul
+          ref={listRef}
+          id={listId}
+          role="listbox"
+          tabIndex={-1}
+          aria-labelledby={buttonId}
+          aria-activedescendant={`${listId}-${active}`}
+          className="eco2-menu__list"
+          data-align={alignEnd ? 'end' : 'start'}
+          onKeyDown={onListKey}
+        >
+          {all.map((o, i) => {
+            const isSelected = o.value === value
+            return (
+              <li
+                key={String(o.value)}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={isSelected}
+                data-focused={i === active ? 'true' : 'false'}
+                className="eco2-menu__option"
+                onPointerEnter={() => setActive(i)}
+                onClick={() => choose(i)}
+              >
+                <span className="eco2-menu__label">
+                  <span className="eco2-menu__tick" aria-hidden="true">
+                    {isSelected ? '✓' : ''}
+                  </span>
+                  {o.render ?? o.label}
+                </span>
+                <span className="eco2-menu__count" aria-label={o.count === 1 ? '1 project' : `${o.count} projects`}>
+                  {o.count}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -304,7 +350,7 @@ function ChainMix({ projects }: { projects: readonly EcosystemProject[] }) {
   )
 }
 
-/** What the USES badges mean. Every row names a contract family in this repo. */
+/** What the Latch-family chips mean. Every row names a contract family in this repo. */
 function KindLegend() {
   return (
     <section className="dapp-card lx-rail__card" aria-labelledby="eco-kinds-h">
@@ -312,7 +358,7 @@ function KindLegend() {
         Reading the badges
       </h2>
       <p className="live-note">
-        The badge is the project&rsquo;s claim; the contract name is what the family is called on
+        The chip is the project&rsquo;s claim; the contract name is what the family is called on
         chain.
       </p>
       <ul className="lx-legend">
@@ -329,6 +375,10 @@ function KindLegend() {
           )
         })}
       </ul>
+      <p className="live-note">
+        &ldquo;Featured&rdquo; is an editorial choice by Latch about which cards the landing page
+        shows. It is not a review, an audit or an endorsement.
+      </p>
     </section>
   )
 }
@@ -354,7 +404,7 @@ function HowItWorks() {
             <a href={`${ECOSYSTEM_ISSUES_REPO}/issues`} target="_blank" rel="noopener noreferrer">
               GitHub issue ↗
             </a>
-            .
+            . &ldquo;Submit app&rdquo; prefills it; nothing is sent from this site.
           </dd>
         </div>
         <div>
@@ -377,24 +427,32 @@ function HowItWorks() {
 
 export default function Ecosystem() {
   const all = useMemo(() => sortedProjects(ECOSYSTEM_PROJECTS), [])
+  const categories = useMemo(() => categoriesListed(all), [all])
+  const kinds = useMemo(() => kindsListed(all), [all])
   const chains = useMemo(() => chainsListed(all), [all])
 
   const [query, setQuery] = useState('')
+  const [category, setCategory] = useState<EcosystemCategory | 'all'>('all')
   const [kind, setKind] = useState<LatchKind | 'all'>('all')
   const [chain, setChain] = useState<number | 'all'>('all')
+  const [submitting, setSubmitting] = useState(false)
+
+  const searchRef = useRef<HTMLInputElement>(null)
+  const tabsRef = useRef<HTMLDivElement>(null)
 
   const q = query.trim().toLowerCase()
-  const filtersOn = kind !== 'all' || chain !== 'all' || q !== ''
+  const filtersOn = category !== 'all' || kind !== 'all' || chain !== 'all' || q !== ''
 
   const visible = useMemo(
     () =>
       all.filter(
         (p) =>
           matchesQuery(p, q) &&
+          (category === 'all' || p.category === category) &&
           (kind === 'all' || p.uses.includes(kind)) &&
           (chain === 'all' || p.chains.includes(chain)),
       ),
-    [all, q, kind, chain],
+    [all, q, category, kind, chain],
   )
 
   /* The count is announced once it has settled, not on every keystroke. */
@@ -406,184 +464,236 @@ export default function Ecosystem() {
     return () => window.clearTimeout(t)
   }, [summary])
 
+  /* `/` focuses search — Ink's shortcut. Ignored while typing in any field, in
+     an open menu, with a modifier held, or while the submission dialog is up
+     (it would otherwise pull focus out of a modal). */
+  useEffect(() => {
+    if (all.length === 0 || submitting) return
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
+      const t = e.target
+      if (
+        t instanceof HTMLElement &&
+        (t.isContentEditable || t.closest('input, textarea, select, [role="listbox"], [role="dialog"]'))
+      ) {
+        return
+      }
+      e.preventDefault()
+      searchRef.current?.focus()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [all.length, submitting])
+
+  /* A chosen tab that sits past the scroll edge is brought into view. Not on
+     first render: `scrollIntoView` also scrolls the PAGE, and a visitor who has
+     not touched the tabs should not be moved to them. */
+  const lastCategory = useRef(category)
+  useEffect(() => {
+    if (lastCategory.current === category) return
+    lastCategory.current = category
+    const row = tabsRef.current
+    const pressed = row?.querySelector<HTMLElement>('[aria-pressed="true"]')
+    pressed?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    })
+  }, [category])
+
   const clear = () => {
     setQuery('')
+    setCategory('all')
     setKind('all')
     setChain('all')
   }
 
+  const kindOptions: MenuOption<LatchKind>[] = useMemo(
+    () =>
+      kinds.map((k) => ({
+        value: k,
+        label: LATCH_KINDS[k].label,
+        count: all.filter((p) => p.uses.includes(k)).length,
+      })),
+    [kinds, all],
+  )
+
+  const chainOptions: MenuOption<number>[] = useMemo(
+    () =>
+      chains.map((id) => ({
+        value: id,
+        label: chainNameFor(id),
+        render: <ChainTag chainId={id} size={14} />,
+        count: all.filter((p) => p.chains.includes(id)).length,
+      })),
+    [chains, all],
+  )
+
+  const submitButton = (
+    <button type="button" className="eco2-btn" onClick={() => setSubmitting(true)}>
+      <span className="eco2-btn__plus" aria-hidden="true">
+        +
+      </span>
+      Submit app
+    </button>
+  )
+
   return (
-    <div className="lx-layout">
-      <div className="lx-main">
-        <section className="dapp-card hx-head eco-head" aria-labelledby="eco-h">
-          <div className="dapp-card__head">
-            <h2 id="eco-h" className="dapp-card__title dapp-card__title--lg">
-              Projects building on Latch
-            </h2>
-            {/* Not a LIVE badge. Nothing on this page is read from chain, and
-                the badge that says so has to be the first thing after the title. */}
-            <span className="dapp-badge dapp-badge--mute">SELF-SUBMITTED · UNVERIFIED</span>
-          </div>
-          {/* The last sentence is the caveat, not padding: without it a
-              directory of names reads as a directory of endorsements. */}
-          <p className="live-note">
-            Teams and products, not contracts — those are on the{' '}
-            <Link to={dappPath('marketplace')}>Marketplace</Link>, read from the registry. Every
-            entry here was written by the project itself and merged as submitted, so a listing says
-            a team asked to be listed. It does not say the integration works, is safe, or is
-            still live.
-          </p>
-        </section>
-
-        {all.length > 0 && (
-          <div className="lx-toolbar">
-            <div className="dapp-search lx-search">
-              <span className="dapp-search__ring" aria-hidden="true" />
-              <input
-                type="search"
-                className="dapp-search__input"
-                placeholder="Search projects by name, tagline or site…"
-                aria-label="Search projects by name, tagline or site"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
-
-            <div className="hx-filters">
-              <div className="hx-filterset">
-                <p className="dapp-microlabel dapp-microlabel--tight" id="eco-f-kind">
-                  USES
-                </p>
-                <div className="dapp-chips dapp-chips--tight" role="group" aria-labelledby="eco-f-kind">
-                  <button
-                    type="button"
-                    className={kind === 'all' ? 'dapp-chip is-active' : 'dapp-chip'}
-                    aria-pressed={kind === 'all'}
-                    onClick={() => setKind('all')}
-                  >
-                    All
-                    <span className="hx-count">{all.length}</span>
-                  </button>
-                  {LATCH_KIND_ORDER.map((k) => {
-                    const n = all.filter((p) => p.uses.includes(k)).length
-                    if (n === 0) return null
-                    return (
-                      <button
-                        key={k}
-                        type="button"
-                        className={kind === k ? 'dapp-chip is-active' : 'dapp-chip'}
-                        aria-pressed={kind === k}
-                        onClick={() => setKind(k)}
-                      >
-                        {LATCH_KINDS[k].label}
-                        <span className="hx-count">{n}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="hx-filterset">
-                <p className="dapp-microlabel dapp-microlabel--tight" id="eco-f-chain">
-                  CHAIN
-                </p>
-                <div className="dapp-chips dapp-chips--tight" role="group" aria-labelledby="eco-f-chain">
-                  <button
-                    type="button"
-                    className={chain === 'all' ? 'dapp-chip is-active' : 'dapp-chip'}
-                    aria-pressed={chain === 'all'}
-                    onClick={() => setChain('all')}
-                  >
-                    All
-                    <span className="hx-count">{all.length}</span>
-                  </button>
-                  {chains.map((id) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={chain === id ? 'dapp-chip is-active eco-chip' : 'dapp-chip eco-chip'}
-                      aria-pressed={chain === id}
-                      aria-label={chainNameFor(id)}
-                      onClick={() => setChain(id)}
-                    >
-                      <ChainTag chainId={id} size={13} className="eco-chip__tag" />
-                      <span className="hx-count">{all.filter((p) => p.chains.includes(id)).length}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <p className="dapp-sr" role="status" aria-live="polite">
-          {summary === '' ? '' : settled}
+    <div className="eco2-dir">
+      <section className="dapp-card hx-head eco-head" aria-labelledby="eco-h">
+        <div className="dapp-card__head">
+          <h2 id="eco-h" className="dapp-card__title dapp-card__title--lg">
+            Projects building on Latch
+          </h2>
+          {/* Not a LIVE badge. Nothing on this page is read from chain, and
+              the badge that says so has to be the first thing after the title. */}
+          <span className="dapp-badge dapp-badge--mute">SELF-SUBMITTED · UNVERIFIED</span>
+        </div>
+        {/* The last sentence is the caveat, not padding: without it a
+            directory of names reads as a directory of endorsements. */}
+        <p className="live-note">
+          Teams and products, not contracts — those are on the{' '}
+          <Link to={dappPath('marketplace')}>Marketplace</Link>, read from the registry. Every
+          entry here was written by the project itself and merged as submitted, so a listing says
+          a team asked to be listed. It does not say the integration works, is safe, or is
+          still live.
         </p>
+      </section>
 
-        {all.length === 0 && (
-          <section className="dapp-card eco-empty" aria-labelledby="eco-empty-h">
-            <span className="dapp-tile eco-empty__tile" aria-hidden="true">
-              <span className="dapp-tile__diamond" />
-            </span>
-            <div className="eco-empty__body">
-              <h3 id="eco-empty-h" className="eco-empty__title">
-                No projects are listed yet.
-              </h3>
-              <p>
-                Any team building on Latch can list itself with a GitHub issue — no review queue,
-                no fee. It ships empty rather than seeded: every entry names a real third party
-                that asked to be here, and none has yet.
-              </p>
-              <p className="eco-empty__aside">
-                Looking for the Latches themselves? They are on the{' '}
-                <Link to={dappPath('marketplace')}>Marketplace</Link>, read from the on-chain
-                registry.
-              </p>
-              <a
-                className="dapp-btn dapp-btn--primary dapp-btn--sm eco-empty__cta"
-                href={listingIssueUrl()}
-                target="_blank"
-                rel="noopener noreferrer"
+      {all.length > 0 && (
+        <div className="eco2-dir__toolbar">
+          <div className="eco2-dir__search">
+            <span className="eco2-dir__search-ring" aria-hidden="true" />
+            <input
+              ref={searchRef}
+              type="search"
+              className="eco2-dir__search-input"
+              placeholder="Search apps by name, description, category or site"
+              aria-label="Search apps by name, description, category or site"
+              aria-keyshortcuts="/"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <kbd className="eco2-dir__kbd" aria-hidden="true" title="Press / to search">
+              /
+            </kbd>
+          </div>
+
+          <div className="eco2-dir__bar">
+            <div ref={tabsRef} className="eco2-dir__tabs" role="group" aria-label="Category">
+              <button
+                type="button"
+                className="eco2-dir__tab"
+                aria-pressed={category === 'all'}
+                onClick={() => setCategory('all')}
               >
-                Be the first — open a listing issue ↗
-              </a>
-            </div>
-          </section>
-        )}
-
-        {visible.length > 0 && (
-          <>
-            <p className="lx-count" role="presentation">
-              <span>
-                {visible.length === 1 ? '1 project' : `${visible.length} projects`}
-                {filtersOn ? ' matching' : ' listed'}
-              </span>
-              <span className="lx-count__note">— {LISTING_PROVENANCE}.</span>
-            </p>
-            <div className="lx-grid">
-              {visible.map((p, i) => (
-                <ProjectCard key={`${p.name}|${p.url}`} project={p} index={i} />
+                All categories
+              </button>
+              {categories.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className="eco2-dir__tab"
+                  aria-pressed={category === c}
+                  onClick={() => setCategory(c)}
+                >
+                  {c}
+                </button>
               ))}
             </div>
-          </>
-        )}
 
-        {all.length > 0 && visible.length === 0 && (
-          <p className="dapp-empty hx-state">
-            No project matches that {filtersOn ? 'search and filter' : 'view'}.{' '}
-            <button type="button" className="hx-linkbtn" onClick={clear}>
-              Clear filters
+            <div className="eco2-dir__menus">
+              <FilterMenu
+                name="Tags"
+                allLabel="All Latch families"
+                allCount={all.length}
+                value={kind}
+                options={kindOptions}
+                onChange={setKind}
+              />
+              <FilterMenu
+                name="Network"
+                allLabel="All networks"
+                allCount={all.length}
+                value={chain}
+                options={chainOptions}
+                onChange={setChain}
+              />
+              {submitButton}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <p className="dapp-sr" role="status" aria-live="polite">
+        {summary === '' ? '' : settled}
+      </p>
+
+      {all.length === 0 && (
+        <section className="dapp-card eco-empty" aria-labelledby="eco-empty-h">
+          <span className="dapp-tile eco-empty__tile" aria-hidden="true">
+            <span className="dapp-tile__diamond" />
+          </span>
+          <div className="eco-empty__body">
+            <h3 id="eco-empty-h" className="eco-empty__title">
+              No projects are listed yet.
+            </h3>
+            <p>
+              Any team building on Latch can list itself with a GitHub issue — no review queue,
+              no fee. It ships empty rather than seeded: every entry names a real third party
+              that asked to be here, and none has yet.
+            </p>
+            <p className="eco-empty__aside">
+              Looking for the Latches themselves? They are on the{' '}
+              <Link to={dappPath('marketplace')}>Marketplace</Link>, read from the on-chain
+              registry.
+            </p>
+            <button
+              type="button"
+              className="dapp-btn dapp-btn--primary dapp-btn--sm eco-empty__cta"
+              onClick={() => setSubmitting(true)}
+            >
+              Be the first — submit your app
             </button>
+          </div>
+        </section>
+      )}
+
+      {visible.length > 0 && (
+        <>
+          <p className="lx-count" role="presentation">
+            <span>
+              {visible.length === 1 ? '1 project' : `${visible.length} projects`}
+              {filtersOn ? ' matching' : ' listed'}
+            </span>
+            <span className="lx-count__note">— {LISTING_PROVENANCE}.</span>
           </p>
-        )}
+          <ul className="eco2-grid eco2-dir__grid" aria-label="Apps">
+            {visible.map((p) => (
+              <li key={`${p.name}|${p.url}`}>
+                <EcosystemCard project={p} />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {all.length > 0 && visible.length === 0 && (
+        <p className="dapp-empty hx-state dapp-state--empty">
+          No project matches that {filtersOn ? 'search and filter' : 'view'}.{' '}
+          <button type="button" className="hx-linkbtn" onClick={clear}>
+            Clear filters
+          </button>
+        </p>
+      )}
+
+      <div className="eco2-dir__notes">
+        <HowItWorks />
+        <KindLegend />
+        {all.length > 0 && <ChainMix projects={all} />}
       </div>
 
-      <aside className="lx-rail" aria-label="Submit a project and how to read this page">
-        <SubmitPanel />
-        {all.length > 0 && <ChainMix projects={all} />}
-        <KindLegend />
-        <HowItWorks />
-      </aside>
+      {submitting ? <SubmitAppModal onClose={() => setSubmitting(false)} /> : null}
     </div>
   )
 }

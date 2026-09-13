@@ -54,40 +54,51 @@ function FooterTextLink({ label, href }: { label: string; href: string }) {
 export function SiteFooter() {
   return (
     <footer className={styles['footer']}>
-      <div className={styles['footerTop']}>
-        <div className={styles['footerBrand']}>
-          <Lockup size="lg" />
+      {/* Option B: the footer is a full-width white band under a hairline, and
+          its content sits in the same column as every section above it. The
+          band is `.footer`; the column is `.footerInner`. */}
+      <div className={styles['footerInner']}>
+        <div className={styles['footerTop']}>
+          <div className={styles['footerBrand']}>
+            <Lockup size="lg" />
+          </div>
+
+          {/* One landmark, four labelled lists — not four <nav>s, which would
+              hand a screen-reader user four more landmarks to skip past, and not
+              headings, which would put "Legal" into the page's heading outline
+              beside the real sections. */}
+          <nav className={styles['footerGroups']} aria-label="Footer">
+            {FOOTER_GROUPS.map((group) => (
+              <div key={group.title}>
+                <p className={styles['footerGroupTitle']} id={`footer-${group.title}`}>
+                  {group.title}
+                </p>
+                <ul className={styles['footerList']} aria-labelledby={`footer-${group.title}`}>
+                  {group.links.map((link) => (
+                    <li key={link.label}>
+                      <FooterTextLink label={link.label} href={link.href} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </nav>
         </div>
 
-        {/* One landmark, four labelled lists — not four <nav>s, which would
-            hand a screen-reader user four more landmarks to skip past, and not
-            headings, which would put "Legal" into the page's heading outline
-            beside the real sections. */}
-        <nav className={styles['footerGroups']} aria-label="Footer">
-          {FOOTER_GROUPS.map((group) => (
-            <div key={group.title}>
-              <p className={styles['footerGroupTitle']} id={`footer-${group.title}`}>
-                {group.title}
-              </p>
-              <ul className={styles['footerList']} aria-labelledby={`footer-${group.title}`}>
-                {group.links.map((link) => (
-                  <li key={link.label}>
-                    <FooterTextLink label={link.label} href={link.href} />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </nav>
-      </div>
-
-      <div className={styles['footerBottom']}>
-        <span className={styles['copyright']}>{COPYRIGHT}</span>
-        <ul className={styles['socials']} aria-label="Latch Protocol social accounts">
-          {SOCIALS.map((social) => (
-            <SocialIconLink key={social.id} social={social} />
-          ))}
-        </ul>
+        <div className={styles['footerBottom']}>
+          {/* The licensing line moved here from the hero in the minimal cut.
+              It is load-bearing — a tenant needs to know what they must
+              open-source — so it moved rather than went. */}
+          <p className={styles['footerMeta']}>
+            <span className={styles['copyright']}>{COPYRIGHT}</span>
+            <span className={styles['footerLicense']}>MIT SDK · GPL-2.0 core · no listing fees</span>
+          </p>
+          <ul className={styles['socials']} aria-label="Latch Protocol social accounts">
+            {SOCIALS.map((social) => (
+              <SocialIconLink key={social.id} social={social} />
+            ))}
+          </ul>
+        </div>
       </div>
     </footer>
   )

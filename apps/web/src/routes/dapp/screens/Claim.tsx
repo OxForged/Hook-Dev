@@ -68,6 +68,7 @@ import {
   NotDeployed,
   Reading,
   ScreenIntro,
+  Unconfigured,
   Unreachable,
 } from '../lib/revshareParts'
 import { PermissionlessAction } from '../lib/revshareWrite'
@@ -104,7 +105,7 @@ function Solvency({ row }: { row: ClaimableRow }) {
   })
 
   return (
-    <div style={{ marginTop: 14 }}>
+    <div className="dapp-mt-4">
       <p className="dapp-microlabel dapp-microlabel--tight">
         {row.token.symbol}{' '}
         <span className={solvent ? 'dapp-badge dapp-badge--ok' : 'dapp-badge dapp-badge--danger'}>
@@ -219,7 +220,7 @@ export default function Claim() {
             </details>
 
             {!isConnected && (
-              <div className="dp-gate" style={{ marginTop: 12 }}>
+              <div className="dp-gate dapp-mt-3">
                 <p className="dp-gate__title">Connect a wallet to see your balance</p>
                 <p className="dp-gate__body">The balance is keyed by address. Connecting reads only.</p>
                 <LatchConnectButton variant="inline" label="Connect wallet" />
@@ -227,7 +228,7 @@ export default function Claim() {
             )}
 
             {isConnected && !onChain && (
-              <div className="dp-gate dp-gate--warn" style={{ marginTop: 12 }}>
+              <div className="dp-gate dp-gate--warn dapp-mt-3">
                 <p className="dp-gate__title">Not deployed on this chain</p>
                 <p className="dp-gate__body">
                   This RevShareHook is on {CHAIN.name}. The chain your wallet is on has no such
@@ -244,7 +245,7 @@ export default function Claim() {
               </div>
             )}
 
-            <div className="dp-field" style={{ marginTop: 12 }}>
+            <div className="dp-field dapp-mt-3">
               <label className="dapp-microlabel" htmlFor="rs-extra-token">
                 CHECK A SPECIFIC TOKEN
               </label>
@@ -350,7 +351,7 @@ export default function Claim() {
                   ))}
 
               {global.state.data.rows.every((r) => r.amount === 0n) && (
-                <p className="live-note" style={{ marginTop: 10 }}>
+                <p className="live-note dapp-mt-3">
                   Nothing claimable, so no claim button — <code>claim</code> reverts{' '}
                   <code>NothingToClaim</code> on zero. A balance appears once{' '}
                   <code>settleBeneficiaries</code> has run for a pool you are on the roster of.
@@ -371,7 +372,7 @@ export default function Claim() {
               <code>distributorOf</code>.
             </p>
 
-            <div className="dp-field" style={{ marginTop: 12 }}>
+            <div className="dp-field dapp-mt-3">
               <label className="dapp-microlabel" htmlFor="rs-dist">
                 DISTRIBUTOR ADDRESS
               </label>
@@ -389,7 +390,7 @@ export default function Claim() {
               )}
             </div>
 
-            <div className="dp-field" style={{ marginTop: 12 }}>
+            <div className="dp-field dapp-mt-3">
               <label className="dapp-microlabel" htmlFor="rs-account">
                 ACCOUNT TO CLAIM FOR
               </label>
@@ -415,13 +416,24 @@ export default function Claim() {
           {dist.state.k === 'error' && <Unreachable message={dist.state.message} onRetry={dist.reload} />}
 
           {dist.state.k === 'ready' && dist.state.data.kind === 'unknown' && (
-            <Empty title="That address is not a distributor this app recognises">
+            <Unconfigured title="That address is not a distributor this app recognises">
               <p>
-                It answered neither <code>token()</code> nor <code>challengeDelay()</code>, the only
-                two selectors that distinguish a snapshot distributor from a merkle one. Nothing was
-                decoded — guessing a type would produce numbers that mean nothing.
+                It did not answer <code>IEpochDistributor.kind()</code> with either value this app
+                recognises — <code>keccak256(&quot;latch.revshare.distributor.snapshot.v1&quot;)</code>{' '}
+                or <code>keccak256(&quot;latch.revshare.distributor.merkle.v1&quot;)</code>. Only an
+                exact match is accepted; a revert, empty return data, zero or any other hash lands
+                here. Nothing was decoded — guessing a type would produce numbers that mean nothing.
               </p>
-            </Empty>
+              <p className="dapp-mt-2">
+                <strong>A distributor deployed before <code>kind()</code> existed lands here too</strong>
+                , because it has no such function. The only distributor on chain today —{' '}
+                <code>0x5A908Ad96Bd4770B65c8E83a9ede093C1Cb7966c</code> on Sepolia — is one of those,
+                so its claims cannot be built from this screen. That is a limit of this build, not a
+                verdict on the contract. The old test, probing <code>token()</code> and{' '}
+                <code>challengeDelay()</code>, is not used: any contract with a <code>token()</code>{' '}
+                getter passed it.
+              </p>
+            </Unconfigured>
           )}
 
           {dist.state.k === 'ready' && dist.state.data.kind === 'merkle' && (
@@ -527,7 +539,7 @@ function SnapshotClaims({
       </p>
 
       {account === null && (
-        <div className="dp-gate" style={{ marginTop: 12 }}>
+        <div className="dp-gate dapp-mt-3">
           <p className="dp-gate__title">No account to check</p>
           <p className="dp-gate__body">
             Connect a wallet, or type an address above. Amounts are per account, so there is nothing
@@ -538,7 +550,7 @@ function SnapshotClaims({
       )}
 
       {account !== null && standings.k === 'loading' && (
-        <p className="dp-tx__row" style={{ marginTop: 12 }}>
+        <p className="dp-tx__row dapp-mt-3">
           <span className="dapp-dot dapp-dot--primary dapp-dot--lg dapp-dot--pulse" aria-hidden="true" />
           Reading this account&rsquo;s standing in each epoch…
         </p>
@@ -549,7 +561,7 @@ function SnapshotClaims({
 
       {account !== null && standings.k === 'ready' && (
         <>
-          <div className="dapp-table-wrap" style={{ marginTop: 12 }}>
+          <div className="dapp-table-wrap dapp-mt-3">
             <table className="dapp-table">
               <thead>
                 <tr>
@@ -601,7 +613,7 @@ function SnapshotClaims({
               </tbody>
             </table>
           </div>
-          <p className="live-note" style={{ marginTop: 8 }}>
+          <p className="live-note dapp-mt-2">
             Share is <code>claimableAmounts(epochId, account)</code> — reported whether or not it
             has been taken. Already claimed is <code>claimed(epochId, account)</code>.
           </p>
@@ -621,7 +633,7 @@ function SnapshotClaims({
             ))}
 
           {standings.data.every((s) => s.amount0 === 0n && s.amount1 === 0n) && (
-            <div className="an-empty" style={{ marginTop: 12 }}>
+            <div className="an-empty dapp-mt-3">
               <p className="an-empty__title">Nothing claimable for this account</p>
               <p className="live-note">
                 <code>claimableAmounts</code> returns zero for every listed epoch — most often

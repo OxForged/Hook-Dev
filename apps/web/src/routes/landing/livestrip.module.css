@@ -1,223 +1,244 @@
-/* THE SECTION BOX IS NOT THIS FILE'S JOB.
-
-   It comes from `.section` in landing.module.css, applied alongside these
-   classes in the TSX. Every top-level section on the page has to share one
-   max-width, one gutter and one top rhythm, and a component that declares its
-   own inevitably picks slightly different numbers — this file did, and so did
-   its three siblings, giving the page content edges at 238px, 263px and 278px
-   and four section boundaries with literally zero space between them.
-
-   So: layout INSIDE the section belongs here; the box AROUND it does not. */
-
 /* ============================================================================
    Live strip — four cells that prove the protocol is running.
+   Option B ("Institutional Clarity") treatment: b.html's `.kpis` row.
 
-   Every colour, radius, shadow, duration and spacing step is a token from
-   src/styles/tokens.css. There is no literal value in this file, which is the
-   same rule landing.module.css states at its head and the reason both themes
-   work without a second palette here: `light-dark()` is resolved by the token,
-   not by this surface.
+   B PRIMITIVE DUPLICATED LOCALLY (consolidate once landing.module.css carries
+   it): `.strip` + `.cell` + `.label` + `.value` + `.note` are b.html's
+   `.kpis` / `.kpi` / `.k` / `.v` / `.s`. SwapCost's `.breakdown` is the same
+   primitive.
+
+   The page width and gutter come from `.kpiBand` in landing.module.css,
+   which index.tsx wraps around this component.
+
+   MOTION: a count-up on each cell's first real value (in LiveStrip.tsx), a
+   flash when a new block-height read lands, and the live dot. All three are
+   off under `prefers-reduced-motion`.
+
+   TOKENS ONLY. Every colour, radius, shadow and type size comes from
+   src/styles/tokens.css, so `light-dark()` resolves both themes here.
 
    THE FOUR STATES ARE VISUALLY DISTINCT, not just textually. `data-state` on
-   the cell drives `--tone`, and the tone paints the value, the note and the
-   rule beneath the label. A reader glancing at the strip can see that a cell
-   failed without reading a word of it — which matters, because the failure copy
-   is the part people skip.
+   the cell reassigns `--tone`, which paints the value and the note. A reader
+   glancing at the strip can see that a cell failed without reading a word.
    ========================================================================== */
 
 .wrap {
+  /* The KPI row answers to its OWN width, not the viewport's, so the column
+     count is right whether or not any shell chrome sits beside it.
+
+     No max-width or gutter here: index.tsx wraps this in `.kpiBand`, which is
+     the column box. Declaring a second one doubled the gutter. */
+  container-type: inline-size;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--s3);
   width: 100%;
   min-width: 0;
-  /* Full-bleed rail: the cells run edge to edge, and only the provenance line
-     below is inset to the page gutter. */
-  padding: 0 0 var(--s3);
 }
 
-/* The 1px gap over a hairline ground is the divider — one rule instead of
-   per-cell borders that double up at the seams and need a :last-child reset. */
+/* b.html `.kpis`: the 1px gap over a hairline ground IS the divider, inside a
+   bordered, rounded box. One rule instead of per-cell borders that double at
+   the seams. */
 .strip {
-  /* A TICKER RAIL, not a card. The prototype opens the page with a full-bleed
-     row of facts under the header — one hairline top and bottom, no radius, no
-     shadow, cells divided by a rule rather than floating apart. A rounded
-     shadowed card here would read as the first section of content; this has to
-     read as chrome. */
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   background: var(--hairline);
-  border-top: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
-  /* Clips the cell corners to the card radius. Nothing here scrolls or is
-     positioned outside the box, so `hidden` costs nothing. */
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
   overflow: hidden;
 }
 
 .cell {
   display: flex;
   flex-direction: column;
-  gap: var(--s1);
-  /* Grid items default to min-content width, which lets one long value push the
-     whole strip wider than the viewport. This is the fix, and it must stay. */
+  /* Grid items default to min-content width; one long value would otherwise
+     push the whole strip wider than the viewport. */
   min-width: 0;
-  padding: var(--s3) var(--s4);
+  padding: 22px 22px 20px;
   background: var(--panel);
-  /* Default tone: a healthy, readable cell. Every state below only reassigns
-     this one variable. */
   --tone: var(--ink);
+  --tone-weight: 600;
   --tone-note: var(--muted-ink);
 }
 
 /* ---- the four states, plus ready -----------------------------------------
-   `loading` is dimmed and quiet; the three failures are progressively louder.
-   `unconfigured` is deliberately NOT red: a contract that is deployed and not
-   wired is a fact about the deployment, not a fault. */
+   `loading` and `empty` take b.html's `.v.zero` treatment (dimmed, lighter
+   weight); the two failures are louder. `unconfigured` is deliberately NOT
+   red: a contract deployed and not wired is a fact, not a fault. */
 
-.cell[data-state="loading"] {
-  --tone: var(--label-ink);
-  --tone-note: var(--muted-ink);
-}
-
+.cell[data-state="loading"],
 .cell[data-state="empty"] {
-  --tone: var(--label-ink);
-  --tone-note: var(--muted-ink);
+  --tone: var(--faint-ink);
+  --tone-weight: 500;
 }
 
 .cell[data-state="unconfigured"] {
   --tone: var(--warning);
-  --tone-note: var(--muted-ink);
 }
 
 .cell[data-state="error"] {
   --tone: var(--error);
+  --tone-weight: 500;
   --tone-note: var(--error);
 }
 
 /* ---- contents ------------------------------------------------------------ */
 
-/* Micro-label. Uppercase and tracked, which is the condition tokens.css puts on
-   using --label-ink at this size — the letterforms carry the separation the
-   contrast ratio does not. */
+/* b.html `.kpi .k`. The label strings are uppercase in the markup, so they are
+   tracked lightly to read as labels rather than as shouting. */
 .label {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 16px;
-  letter-spacing: 0.16em;
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  font-weight: 560;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--label-ink);
+  color: var(--muted-ink);
 }
 
 .valueRow {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--s2);
   min-width: 0;
+  margin-top: var(--s2);
 }
 
+/* b.html `.kpi .v`: sans, 600, tabular, tight tracking. Tabular because the
+   block height changes every poll and the digits must not reflow. */
 .value {
-  font-family: var(--font-mono);
-  font-size: 20px;
-  line-height: 28px;
-  font-weight: 500;
-  /* Tabular figures: the block height changes every poll and the digits must
-     not reflow the cell while it does. */
+  /* A little inline room so the update flash has a ground to paint, pulled
+     back by the same amount so the figure stays on the label's edge. */
+  margin-inline: -4px;
+  padding-inline: 4px;
+  border-radius: var(--r-micro);
+  font-family: var(--font-body);
+  font-size: var(--b-kpi);
+  line-height: 1.15;
+  font-weight: var(--tone-weight);
+  letter-spacing: -0.026em;
   font-variant-numeric: tabular-nums;
   color: var(--tone);
-  /* A chain name is a word and may need to break; a number never will. */
-  overflow-wrap: anywhere;
+  /* A chain name is words and wraps between them; a number never needs to. */
+  overflow-wrap: break-word;
   min-width: 0;
 }
 
-/* Provenance or reason, one line of prose per cell. Prose reads at
-   --muted-ink, never --label-ink — see the contrast note in tokens.css. */
+/* A value that is words (the chain name). b.html's KPI row only ever holds
+   figures, and a two-word name at --b-kpi wrapped onto two lines in a quarter
+   of the row. One type step down, on the SAME line box as a figure, so the
+   four values still share a baseline and the notes beneath stay level. If a
+   very narrow cell ever clips it, the full name is in the element's `title`
+   and in the cell's hidden text for assistive tech. */
+.valueText {
+  font-size: var(--b-mini);
+  line-height: calc(var(--b-kpi) * 1.15);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* b.html `.kpi .s` is --dim (--faint-ink here), which fails 4.5:1 for
+   sentence-case prose; --muted-ink carries it. */
 .note {
-  font-size: 12px;
-  line-height: 16px;
+  margin-top: var(--s1);
+  font-size: var(--b-label);
+  line-height: 1.45;
   color: var(--tone-note);
   overflow-wrap: anywhere;
 }
 
 /* ---- the live indicator ---------------------------------------------------
-   Decoration only. It is `aria-hidden` in the markup and it never gates the
-   height's visibility: the number is painted by the same render whether or not
-   this element animates, and whether or not JS is running at all. A section of
-   this page was once hidden by a throttled background tab because content
-   waited on an animation; nothing here waits on anything. */
+   b.html `.pill i`: a small dot breathing in opacity only — no ring, no glow.
+   Decoration, `aria-hidden` in the markup, resting fully opaque so a paused
+   animation leaves a visible dot. */
 .pulse {
   flex: none;
-  width: var(--s2);
-  height: var(--s2);
+  width: 7px;
+  height: 7px;
   border-radius: var(--r-pill);
   background: var(--success);
-  box-shadow: var(--dapp-glow-success);
-  /* The resting state is fully opaque, so a paused, blocked or disabled
-     animation leaves a visible dot rather than an invisible one. */
   opacity: 1;
-  animation: livePulse 2400ms var(--ease) infinite;
+  animation: livePulse 2400ms ease-in-out infinite;
 }
 
 @keyframes livePulse {
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
   }
   50% {
-    opacity: 0.45;
-    transform: scale(0.72);
+    opacity: 0.35;
   }
 }
 
-/* ---- provenance line ------------------------------------------------------ */
-
-.provenance {
-  /* One quiet line under the rail, aligned to the page gutter — not a centred
-     paragraph. This is chrome: the rule that every figure names its source
-     still applies, but at the weight of a caption rather than of body copy,
-     because three centred lines above the headline push the hero off the fold. */
-  box-sizing: content-box;
-  max-width: var(--max-landing);
-  margin: 0 auto;
-  padding: var(--s2) var(--gutter-landing) 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--faint-ink);
+/* ---- the update flash ----------------------------------------------------
+   One pass of the soft accent behind a value that a NEW read just replaced.
+   Never on the first value (that one counts up), never between reads. */
+.flash {
+  animation: flash 900ms var(--ease);
 }
 
-/* ---- responsive -----------------------------------------------------------
-   Two columns from tablet down. The tracks stay `minmax(0, 1fr)` at every
-   width, so a long value wraps inside its cell instead of widening the page. */
+@keyframes flash {
+  from {
+    background-color: var(--accent-soft);
+  }
+  to {
+    background-color: transparent;
+  }
+}
 
-/* 1098 == 860 + the 238px rail. See the .flowGrid note in landing.module.css:
-   this element sits in the grid's second track, so a viewport query fires
-   238px late — at viewport 861 the column is 623px and all four values wrap. */
-@media (max-width: 1098px) {
+/* The real value, for assistive tech; the painted figure is aria-hidden. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- provenance line ------------------------------------------------------
+   One quiet caption under the row. --muted-ink, not --faint-ink: it is
+   sentence-case prose and has to clear 4.5:1. */
+.provenance {
+  margin: 0;
+  font-size: var(--b-label);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+}
+
+/* ---- responsive: against the row's own width ------------------------------ */
+
+@container (max-width: 860px) {
   .strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 560px) {
+@container (max-width: 520px) {
   .cell {
-    padding: var(--s3);
+    padding: var(--s4);
   }
   .value {
-    font-size: 17px;
-    line-height: 24px;
+    font-size: var(--b-mini);
+  }
+  .valueText {
+    font-size: var(--b-panel-h);
+    line-height: calc(var(--b-mini) * 1.15);
   }
 }
 
-/* ---- reduced motion -------------------------------------------------------
-   tokens.css already collapses every animation globally, but that block works
-   by shortening the duration — which lands on whichever keyframe happens to be
-   last. Pinning the finished state explicitly means this dot is defined rather
-   than incidental. */
 @media (prefers-reduced-motion: reduce) {
-  .pulse {
+  .pulse,
+  .flash {
     animation: none;
     opacity: 1;
-    transform: none;
   }
 }

@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Was a single #04060C, the old dark ground. Canvas has two, so this does
          too: paper in light, near-black in dark. Both are the --void token. -->
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F3EF" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0E1013" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfcfd" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0f16" />
 
     <!-- Anti-flash: set data-theme synchronously, before any stylesheet loads.
          Mirrors lib/theme.ts's storage contract (key `latch-theme`, values
@@ -116,15 +116,18 @@
       content="Latch Protocol — Latches for a bigger ecosystem. Infrastructure for Latches: hook contracts that attach programmable logic to a pool."
     />
 
-    <!-- Canvas: Inter 400/500/600/700 (UI + display) · Instrument Serif italic
-         (the display accent, one clause per headline) · JetBrains Mono 400/500
-         (numbers and code). Weights are enumerated rather than requesting the
-         variable range: the four used are the four served. -->
+    <!-- Option B: Inter for UI and body, JetBrains Mono 400/500 for numbers and
+         addresses. Inter is requested as the 400-700 variable range, not four
+         static weights, because Option B sets intermediate weights (560 labels,
+         640 card titles, 660 brand) that a static cut would snap to 500/600/700.
+         Headings are serif, and that serif is a SYSTEM stack (`--font-serif`:
+         Iowan Old Style / Palatino Linotype / Georgia) — no web font is loaded
+         for it, so there is nothing to request here. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=JetBrains+Mono:wght@400;500&display=swap"
     />
   </head>
   <body>

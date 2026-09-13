@@ -1,9 +1,20 @@
 # Ecosystem directory listing.
 #
-# This form is the submission path for apps/web's /app/ecosystem directory.
-# The dapp opens it prefilled via `listingIssueUrl()` in
-# apps/web/src/routes/dapp/data/ecosystem.ts. Field `id`s below are URL query
-# parameters that function sets (`project_name`, `url`) — keep them in step.
+# This form is the submission path for apps/web's ecosystem directory
+# (/app/ecosystem and the landing page's "Built on Latch" section). The site's
+# "Submit app" form opens it prefilled via `buildListingIssue()` in
+# apps/web/src/routes/dapp/data/ecosystem.ts. Field `id`s below are the URL
+# query parameters that function sets — `LISTING_FIELDS` in that file is the
+# other half of this list. Keep them in step.
+#
+# GitHub prefills issue-form fields from the URL for TEXT fields only (`input`
+# and `textarea`). Category, Latch families and chains are therefore text
+# inputs rather than a dropdown and checkboxes: a box the submitter already
+# ticked on the site would otherwise arrive unticked. Only the confirmations
+# stay checkboxes, because a person must tick those here.
+#
+# The site is static and uploads nothing. An icon is attached by dragging the
+# file into the Icon box below.
 #
 # A merged listing is added to `ECOSYSTEM_PROJECTS` exactly as written. It is
 # rendered as "submitted by the project, not verified by Latch Protocol" on
@@ -11,7 +22,7 @@
 # changes it.
 
 name: Ecosystem project listing
-description: List a project that builds on Latch in the dapp's ecosystem directory.
+description: List a project that builds on Latch in the ecosystem directory.
 title: "Ecosystem listing: "
 labels: ["ecosystem"]
 body:
@@ -28,7 +39,7 @@ body:
   - type: input
     id: project_name
     attributes:
-      label: Project name
+      label: App name
       description: As you want it shown. 80 characters or fewer.
       placeholder: Acme Swap
     validations:
@@ -37,8 +48,8 @@ body:
   - type: input
     id: tagline
     attributes:
-      label: Tagline
-      description: One line, 120 characters or fewer. Shown under the name as your words.
+      label: Description
+      description: Shown on the card under the name, as your words. 280 characters or fewer; the card shows the first three lines.
       placeholder: Time-boxed token launches with sniper protection built in.
     validations:
       required: true
@@ -60,25 +71,34 @@ body:
     validations:
       required: false
 
-  - type: checkboxes
+  - type: input
+    id: category
+    attributes:
+      label: Category
+      description: >-
+        One of DEX, Launchpad, Quests, Lending, RWA, Analytics, Wallet, Infrastructure —
+        or "Other: " followed by your own.
+      placeholder: DEX
+    validations:
+      required: true
+
+  - type: input
     id: uses
     attributes:
       label: Which Latches does the project use?
-      description: Tick every family that applies. Names in code are the contract names.
-      options:
-        - label: "Launch guard (`LaunchGuardHook` / `BinLaunchGuardHook`)"
-        - label: "Revenue share (`RevShareHook`)"
-        - label: "Permissioned pool (`PermissionedPoolHook`)"
-        - label: "Market hours (`MarketHoursHook`)"
-        - label: "Stock pair (`StockPairHook`)"
-        - label: "Our own Latch (give the address or Marketplace link below)"
+      description: >-
+        Comma-separated. Launch guard (LaunchGuardHook / BinLaunchGuardHook), Revenue share
+        (RevShareHook), Permissioned pool (PermissionedPoolHook), Market hours
+        (MarketHoursHook), Stock pair (StockPairHook), or Their own Latch (give the address
+        or Marketplace link below).
+      placeholder: Launch guard (launch-guard), Revenue share (rev-share)
     validations:
       required: true
 
   - type: input
     id: own_latch
     attributes:
-      label: Your own Latch, if ticked above
+      label: Your own Latch, if listed above
       description: Contract address, or the Marketplace link once it is registered.
       placeholder: 0x…
     validations:
@@ -88,16 +108,36 @@ body:
     id: chains
     attributes:
       label: Chains
-      description: EIP-155 chain ids the integration is live on, comma-separated. Sepolia is 11155111.
-      placeholder: "11155111"
+      description: EIP-155 chain ids the integration is live on, comma-separated. Sepolia is 11155111; Robinhood Chain is 4663.
+      placeholder: "4663"
     validations:
       required: true
+
+  - type: textarea
+    id: icon
+    attributes:
+      label: Icon (optional)
+      description: >-
+        Drag your icon file into this box to attach it — the Latch site does not upload it.
+        It must be your own official mark exactly as published on your own site, CDN or
+        GitHub org (never redrawn or recoloured): SVG preferred, otherwise a square PNG.
+        Give the URL it is published at. Without one, the card shows a typographic monogram.
+    validations:
+      required: false
+
+  - type: input
+    id: contact
+    attributes:
+      label: Contact (optional)
+      description: Not rendered. A handle or address a maintainer can reach you at about this listing.
+    validations:
+      required: false
 
   - type: textarea
     id: notes
     attributes:
       label: Anything a maintainer should know (optional)
-      description: Not rendered. Contact handle, launch timing, a link to the integration in your code.
+      description: Not rendered. Launch timing, a link to the integration in your code.
     validations:
       required: false
 
@@ -110,5 +150,5 @@ body:
           required: true
         - label: I understand the listing is rendered as self-submitted and not verified by Latch Protocol, and that a maintainer may decline or remove it.
           required: true
-        - label: I understand no logo is shown unless we later supply our own official asset with its source. The card will show a typographic monogram of the name.
+        - label: I understand an icon is shown only if it is our own official asset with the URL it is published at. Otherwise the card shows a typographic monogram of the name.
           required: true

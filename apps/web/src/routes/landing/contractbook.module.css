@@ -1,43 +1,27 @@
-/* Transition durations are literal seconds scaled by control size, matching the
-   rest of the page: 0.15s tabs, 0.2-0.22s small controls and chips, 0.25s
-   buttons, 0.3s cards. `var(--dur)` is 320ms and is used ZERO times in
-   landing.module.css — adopting it here made every control in these panels take
-   roughly twice as long to respond as the identical control one section away,
-   which reads as lag with no visible cause. */
-
-/* THE SECTION BOX IS NOT THIS FILE'S JOB.
-
-   It comes from `.section` in landing.module.css, applied alongside these
-   classes in the TSX. Every top-level section on the page has to share one
-   max-width, one gutter and one top rhythm, and a component that declares its
-   own inevitably picks slightly different numbers — this file did, and so did
-   its three siblings, giving the page content edges at 238px, 263px and 278px
-   and four section boundaries with literally zero space between them.
-
-   So: layout INSIDE the section belongs here; the box AROUND it does not. */
-
 /* ============================================================================
    Contract book — the address table, and the four states a row can be in.
+   Option B ("Institutional Clarity") treatment.
 
-   NO LITERAL COLOUR IN THIS FILE. Every colour, radius, shadow, duration and
-   spacing step is a token from src/styles/tokens.css, which is what makes both
-   themes work without a second palette here: `light-dark()` is resolved by the
-   token, not by this surface. Light mode is the warm paper ground (`--void`)
-   with white panels, never a flat white.
+   THE SECTION BOX IS NOT THIS FILE'S JOB. It comes from `.section` in
+   landing.module.css, applied alongside these classes in the TSX.
+
+   SHARED PRIMITIVES: `.title` / `.lede` are paired with the page's `.h2` /
+   `.sectionLead` in the TSX; composed from primitives.module.css: `.chipRow` / `.chip` the house toggle,
+   `.copy` / `.explorer` / `.recheck` the small button and `.sr` the hidden
+   text helper (primitives.module.css). `.scroller` is b.html's `.panel`
+   without the padding — the table runs to the edge.
+
+   NO LITERAL COLOUR, RADIUS, SHADOW OR TYPE SIZE IN THIS FILE. Every one is a
+   token from src/styles/tokens.css, so `light-dark()` resolves both themes.
 
    THE STATES ARE VISUALLY DISTINCT, NOT JUST TEXTUALLY. `data-state` drives
    `--tone` and every state paints its own dot and text colour. Colour is never
-   the only carrier though — each state's wording says what it is, so the table
-   survives greyscale, a printout and colour-vision deficiency intact. That
-   matters most for the pair this component exists to keep apart: "no code" and
-   "could not check" are different words as well as different colours.
+   the only carrier — each state's wording says what it is. That matters most
+   for the pair this component exists to keep apart: "no code" and "could not
+   check" are different words as well as different colours.
 
    ANIMATION IS DECORATION AND NOTHING WAITS ON IT. The only animated thing is
-   the small dot beside a pending check. It rests fully opaque, so a paused
-   tab, a throttled timer or a disabled animation leaves it visible rather than
-   invisible, and no row's text is ever gated on it. There is no
-   IntersectionObserver and no reveal-on-scroll anywhere in this component: the
-   table is painted by the same render whether or not anything animates.
+   the dot beside a pending check, resting fully opaque.
    ========================================================================== */
 
 .wrap {
@@ -45,12 +29,9 @@
   flex-direction: column;
   gap: var(--s5);
   width: 100%;
-  /* Anchors the absolutely-positioned `.sr` elements to this component rather
-     than to the page, so a visually-hidden live region can never park itself
-     somewhere that grows the document. */
+  /* Anchors the absolutely-positioned `.sr` elements to this component. */
   position: relative;
-  /* Flex and grid children default to min-content width, which is how one long
-     address ends up widening the page. This is the fix and it must stay. */
+  /* One long address must never widen the page. */
   min-width: 0;
 }
 
@@ -59,34 +40,23 @@
 .head {
   display: flex;
   flex-direction: column;
-  gap: var(--s4);
   min-width: 0;
 }
 
+/* Paired in the TSX with landing.module.css `.h2` / `.sectionLead` (not
+   composed: composing from that sheet inlines all of it again). No eyebrow
+   above the title, so no top margin. */
 .title {
-  /* The house section heading — see .h2 in landing.module.css. */
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: clamp(28px, 3.2vw, 42px);
-  line-height: 1.15;
-  letter-spacing: -0.015em;
-}
-
-.lede {
   margin: 0;
-  max-width: 74ch;
-  font-size: 14.5px;
-  line-height: 1.65;
-  color: var(--muted-ink);
 }
 
 .lede code,
 .note code {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--sky-ink);
-  background: var(--code-ground);
-  border: 1px solid var(--hairline-soft);
+  font-size: var(--b-label);
+  color: var(--ink);
+  background: var(--panel-alt);
+  border: 1px solid var(--hairline);
   border-radius: var(--r-micro);
   padding: 0 var(--s1);
   /* An address-book key is one token and must never be split across lines. */
@@ -106,40 +76,38 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--s1);
-  /* Grows to fill, shrinks below its content, never forces the row wider. */
+  gap: 6px;
   flex: 1 1 240px;
   min-width: 0;
 }
 
-/* Micro-label. Uppercase and tracked, which is the condition tokens.css puts
-   on using --label-ink at this size: the letterforms carry the separation that
-   the contrast ratio does not. */
+/* Sentence-case label copy, so --muted-ink (4.5:1) rather than --faint-ink. */
 .fieldLabel {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  font-weight: 560;
   line-height: 16px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--label-ink);
+  color: var(--muted-ink);
 }
 
 .input {
   width: 100%;
   min-width: 0;
-  padding: var(--s2) var(--s3);
+  padding: 9px var(--s3);
   font-family: var(--font-body);
-  font-size: 14px;
-  line-height: 24px;
+  font-size: var(--b-card-p);
+  line-height: 20px;
   color: var(--ink);
-  background: var(--panel-alt);
-  border: 1px solid var(--hairline);
+  background: var(--panel);
+  border: 1px solid var(--cta-border);
   border-radius: var(--r-btn);
-  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--b-dur);
 }
 
+/* Placeholder text is an example, not content; --muted-ink keeps it legible. */
 .input::placeholder {
-  color: var(--label-ink);
+  color: var(--muted-ink);
 }
 
 .input:hover {
@@ -147,62 +115,43 @@
 }
 
 .input:focus-visible {
-  /* Replaces the global ring rather than stacking on it. tokens.css already
-     draws a 2px outline on :focus-visible; adding a border colour AND a glow
-     put three concentric rings around this one input. The house pattern
-     (.feeChartTab) is an outline only. */
-  outline: 2px solid var(--signal-blue);
+  /* Replaces the global ring rather than stacking on it. */
+  outline: 2px solid var(--latch-blue);
   outline-offset: 2px;
 }
 
 .chips {
   display: flex;
   flex-direction: column;
-  gap: var(--s1);
+  gap: 6px;
   min-width: 0;
 }
 
+/* The house toggle: surface-2 track, 3px pad, active segment raised. */
 .chipRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2);
+  composes: toggle from './primitives.module.css';
 }
 
 .chip {
-  padding: var(--s1) var(--s3);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 20px;
-  letter-spacing: 0.04em;
-  color: var(--pill-ink);
-  background: var(--pill-bg);
-  border: 1px solid var(--pill-border);
-  border-radius: var(--r-chip);
-  cursor: pointer;
-  transition: color 0.2s var(--ease), background 0.2s var(--ease),
-    border-color 0.2s var(--ease);
+  composes: toggleSeg from './primitives.module.css';
 }
 
-.chip:hover {
-  border-color: var(--border-hover);
-  color: var(--ink);
-}
-
-/* The pressed state is the accessible state: `aria-pressed` is the selector,
-   so the styling cannot drift out of step with what a screen reader announces. */
+/* The pressed state is the accessible state: `aria-pressed` is the selector.
+   --light-surface is white in light and one step lighter than the track in
+   dark, where elevation is a lighter surface rather than a shadow. */
 .chip[aria-pressed="true"] {
-  color: var(--sky-ink);
-  background: var(--active-nav);
-  border-color: var(--hairline-blue);
+  color: var(--ink);
+  background: var(--light-surface);
+  box-shadow: var(--shadow-1);
 }
 
 .tally {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
+  margin: var(--s4) 0 0;
+  font-size: var(--b-label);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
   font-variant-numeric: tabular-nums;
-  max-width: 74ch;
+  max-width: 80ch;
 }
 
 /* ---- the not-configured banner -------------------------------------------- */
@@ -210,18 +159,17 @@
 .banner {
   margin: 0;
   padding: var(--s3) var(--s4);
-  font-size: 13.5px;
-  line-height: 1.6;
-  border-radius: var(--r-card-lg);
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  border-radius: var(--r-sm);
   color: var(--error);
   background: var(--dapp-badge-danger-bg);
   border: 1px solid var(--dapp-badge-danger-border);
 }
 
 /* ---- the table ------------------------------------------------------------
-   The scroller is the insurance policy. At 400px the three columns fit inside
-   it, but if a long endpoint error ever pushes the code column past the
-   viewport it is THIS box that scrolls sideways, never the page. */
+   The scroller is the panel. If a long endpoint error ever pushes the code
+   column past the viewport it is THIS box that scrolls, never the page. */
 
 .scroller {
   width: 100%;
@@ -229,29 +177,30 @@
   overflow-x: auto;
   background: var(--panel);
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card);
+  border-radius: var(--r-card-lg);
   box-shadow: var(--shadow-1);
 }
 
 .table {
   width: 100%;
-  /* Small enough to fit a 400px viewport once the page gutter is taken off. */
   min-width: 320px;
   border-collapse: collapse;
   text-align: left;
 }
 
+/* Uppercase and tracked — the only condition under which --faint-ink may
+   carry text at this size. */
 .table thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: var(--s3) var(--s4);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  padding: 10px var(--s4);
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
   line-height: 16px;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  font-weight: 500;
+  font-weight: 640;
   color: var(--faint-ink);
   background: var(--panel-alt);
   border-bottom: 1px solid var(--hairline);
@@ -271,10 +220,8 @@
 }
 
 .row {
-  border-bottom: 1px solid var(--hairline-soft);
-  /* The hover background snapped while every other control in this file
-     eased. Same 0.2s as the chips. */
-  transition: background-color 0.2s;
+  border-bottom: 1px solid var(--hairline);
+  transition: background-color var(--b-dur);
 }
 
 .row:last-child {
@@ -298,10 +245,9 @@
 .keyName {
   display: block;
   font-family: var(--font-mono);
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
   color: var(--ink);
-  /* A key is one identifier; break it anywhere rather than widen the column. */
   overflow-wrap: anywhere;
 }
 
@@ -313,27 +259,25 @@
 }
 
 .tag {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 16px;
-  letter-spacing: 0.06em;
+  font-family: var(--font-body);
+  font-size: var(--b-axis);
+  font-weight: 600;
+  line-height: 18px;
   padding: 0 var(--s2);
-  border-radius: var(--r-badge);
+  border-radius: var(--r-pill);
   white-space: nowrap;
 }
 
-/* Amber, not red: a redeployable contract is not a fault, it is a fact about
-   how the address must be consumed. */
+/* Amber, not red: a redeployable contract is not a fault. */
 .tag[data-tag="redeployable"] {
   color: var(--warning);
   background: var(--dapp-badge-warn-bg);
-  border: 1px solid var(--dapp-badge-warn-border);
 }
 
 .tag[data-tag="token"] {
   color: var(--muted-ink);
-  background: var(--dapp-badge-mute-bg);
-  border: 1px solid var(--dapp-badge-mute-border);
+  background: var(--panel-alt);
+  box-shadow: inset 0 0 0 1px var(--hairline);
 }
 
 /* ---- address column ------------------------------------------------------- */
@@ -347,9 +291,9 @@
 
 .addr {
   font-family: var(--font-mono);
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--mono-data-ink);
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
@@ -360,32 +304,20 @@
   gap: var(--s2);
 }
 
-.copy,
+/* The house small button (primitives.module.css `.btnSm`). */
+.copy {
+  composes: btnSm from './primitives.module.css';
+}
+
 .explorer {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 20px;
-  letter-spacing: 0.04em;
-  padding: 0 var(--s2);
-  border-radius: var(--r-badge);
-  border: 1px solid var(--cta-border);
-  background: var(--panel-alt);
-  color: var(--muted-ink);
-  text-decoration: none;
-  cursor: pointer;
-  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+  composes: btnSm from './primitives.module.css';
 }
 
-.copy:hover,
-.explorer:hover {
-  color: var(--ink);
-  border-color: var(--border-hover);
+.recheck {
+  composes: btnSm from './primitives.module.css';
 }
 
-/* The copy button's three results. `Copy failed` is a real, visible state:
-   navigator.clipboard is undefined outside a secure context and writeText can
-   be rejected, and a tick that appears either way would be a lie about where
-   the address went. */
+/* The copy button's three results. `Copy failed` is a real, visible state. */
 .copy[data-result="ok"] {
   color: var(--success);
   border-color: var(--dapp-badge-ok-border);
@@ -398,12 +330,12 @@
   background: var(--dapp-badge-danger-bg);
 }
 
-.explorer {
+/* Two classes: every composing module re-injects primitives.module.css, so
+   a later copy of `.btnSm { color }` would otherwise win at equal
+   specificity. */
+.addrActions .explorer,
+.addrActions .explorer:hover:not(:disabled) {
   color: var(--signal-blue);
-}
-
-.explorer:hover {
-  color: var(--deep-blue);
 }
 
 /* ---- the check column, and the four states -------------------------------- */
@@ -412,16 +344,17 @@
   display: inline-flex;
   align-items: baseline;
   gap: var(--s2);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--b-label);
+  line-height: var(--b-body-lh);
   color: var(--tone, var(--muted-ink));
   overflow-wrap: anywhere;
 }
 
-/* loading — a check that has not answered yet. Quiet, and never a tick. */
+/* loading — a check that has not answered yet. Quiet, and never a tick. The
+   text stays --muted-ink (it is sentence case); only the dot goes faint. */
 .statusText[data-state="loading"] {
-  --tone: var(--label-ink);
-  --dot-tone: var(--label-ink);
+  --tone: var(--muted-ink);
+  --dot-tone: var(--faint-ink);
 }
 
 /* ready — the chain answered and there are bytes there. */
@@ -431,46 +364,38 @@
 }
 
 /* empty — the chain answered and the address is EMPTY. A measurement, and a
-   damning one for an address in our own book, so it is amber rather than
-   grey. It is not red: red is reserved for the state below, which is the one
-   people misread. */
+   damning one, so amber. Not red: red is reserved for the state below. */
 .statusText[data-state="empty"] {
   --tone: var(--warning);
   --dot-tone: var(--warning);
 }
 
-/* error — nobody answered. Says nothing about the contract, and is kept
-   visibly apart from `empty` above precisely so the two cannot be confused at
-   a glance. */
+/* error — nobody answered. Says nothing about the contract. */
 .statusText[data-state="error"] {
   --tone: var(--error);
   --dot-tone: var(--error);
 }
 
-/* not-configured — the book records no address, so there was nothing to ask
-   about. Deliberately the quietest of the four: an absent contract is a fact
-   about the deployment, not a fault in it. */
+/* not-configured — the book records no address. The quietest of the four,
+   told apart from loading by italics and by having no dot. */
 .statusText[data-state="unconfigured"] {
-  --tone: var(--label-ink);
-  --dot-tone: var(--label-ink);
+  --tone: var(--muted-ink);
+  --dot-tone: var(--faint-ink);
   font-style: italic;
 }
 
 .dot {
   flex: none;
   align-self: center;
-  width: var(--s2);
-  height: var(--s2);
+  width: 7px;
+  height: 7px;
   border-radius: var(--r-pill);
-  background: var(--dot-tone, var(--label-ink));
-  /* Resting state is fully opaque, so a paused or disabled animation leaves a
-     visible dot rather than an invisible one. */
+  background: var(--dot-tone, var(--faint-ink));
   opacity: 1;
 }
 
-/* Only the pending state animates, and only the dot. */
 .statusText[data-state="loading"] .dot {
-  animation: checkPulse 1600ms var(--ease) infinite;
+  animation: checkPulse 1600ms ease-in-out infinite;
 }
 
 @keyframes checkPulse {
@@ -488,8 +413,8 @@
 .emptyCell {
   padding: var(--s6) var(--s4);
   text-align: center;
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
 }
 
@@ -506,65 +431,28 @@
 .note {
   margin: 0;
   max-width: 82ch;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--b-label);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
 }
 
 .note strong {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: 640;
 }
 
-.recheck {
-  padding: var(--s2) var(--s4);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 20px;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-  background: var(--panel-alt);
-  border: 1px solid var(--cta-border);
-  border-radius: var(--r-btn);
-  cursor: pointer;
-  transition: border-color 0.2s var(--ease);
-}
 
-.recheck:hover {
-  border-color: var(--border-hover);
-}
-
-/* ---- screen-reader-only ---------------------------------------------------
-   Carries the FULL address next to its truncated form, so assistive tech reads
-   every character while the eye gets the short version. Never `display: none`,
-   which removes it from the accessibility tree along with the pixels. */
+/* ---- screen-reader-only --------------------------------------------------- */
 
 .sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
+  composes: sr from './primitives.module.css';
 }
 
 /* ---- responsive -----------------------------------------------------------
-   Down to 400px the table keeps its three columns and simply tightens: the
-   address is already truncated, the key breaks anywhere, and the code column's
-   text wraps. Nothing here can push the PAGE sideways — the scroller above
-   absorbs any overflow. */
+   The table keeps its three columns and tightens; the scroller absorbs any
+   overflow, so nothing here can push the PAGE sideways. */
 
-/* 958 == 720 + the 238px rail. Between 861 and 958px the table's column is
-   623-720px while the fixed percentage widths are still in force, squeezing
-   the address column and wrapping keys mid-identifier. */
-@media (max-width: 958px) {
-  .title {
-    font-size: 22px;
-    line-height: 28px;
-  }
+@media (max-width: 1023.98px) {
   .colKey,
   .colAddr,
   .colCode {
@@ -581,19 +469,12 @@
   }
   .keyName,
   .addr {
-    font-size: 12px;
+    font-size: var(--b-label);
   }
-  /* The action buttons stack rather than squeezing below a comfortable target;
-     tokens.css already floors them at 44px on coarse pointers. */
   .addrActions {
     gap: var(--s1);
   }
 }
-
-/* ---- reduced motion -------------------------------------------------------
-   tokens.css collapses every animation globally, but it does so by shortening
-   the duration, which lands on whichever keyframe happens to be last. Pinning
-   the finished state here means the dot is defined rather than incidental. */
 
 @media (prefers-reduced-motion: reduce) {
   .statusText[data-state="loading"] .dot {
@@ -601,10 +482,7 @@
     opacity: 1;
   }
   .input,
-  .chip,
-  .copy,
-  .explorer,
-  .recheck {
+  .row {
     transition: none;
   }
 }

@@ -1,65 +1,32 @@
 /* ============================================================================
-   Swap cost simulator — what one trade costs, and who receives each part.
+   Swap cost calculator — FeeChart's companion, directly beneath it.
 
-   WHAT THIS ANSWERS THAT NOTHING ELSE ON THE PAGE DOES.
+   THE DIVISION OF LABOUR. FeeChart draws the RATE at every tier and compares
+   splits. This panel answers the one question a rate cannot: "I am about to
+   move this much — what comes off it, at each tier, and who receives it". So
+   it carries no rate chart and no mode toggle of its own; it applies the same
+   live rates to a size the reader chooses, in token units.
 
-   `FeeChart` plots the RATE across every tier: five bars, no trade, no amount.
-   `LiquidityFlow` models the RevShareHook layer — a Latch's take on the
-   unspecified currency and the three-way split that follows — over constants
-   from this repository, and it reads nothing from chain.
+   EVERY RATE IS AN ON-CHAIN READ. The tier list and each tier's protocol fee
+   are `feeForLpFee(lpFee)` on the live controller (`readFeeTiers`), and
+   `readProtocolStatus` says whether that schedule is in force. `feeMath.ts`
+   only composes the two fees and computes the cited PancakeSwap comparison —
+   the same functions FeeChart uses, so the two panels cannot disagree.
 
-   Neither one answers the question a trader actually asks, which is "I am about
-   to move this much; what comes off it, and where does it land". That needs a
-   size, the live rate for the tier, and the composition of the two fees. It is
-   the CORE layer (pool LP fee + protocol fee), one step upstream of the hook
-   layer LiquidityFlow draws, and every rate in it is an on-chain read.
+   THE FEES COMPOSE, THEY DO NOT ADD. `allIn = lp + protocol - lp*protocol/1e6`
+   (ProtocolFeeLibrary.calculateSwapFee). `lpAmount` is derived by subtraction
+   from the all-in total, so the parts always sum to the total on screen.
 
-   THE FEES COMPOSE, THEY DO NOT ADD — the single most misread thing here.
+   THE SIZE IS THE READER'S, AND IT SAYS SO. It is labelled a calculator input,
+   is denominated in token units, and is never converted to dollars: the tokens
+   on the chains Latch is deployed to are test tokens nothing prices
+   (CLAUDE.md, "No dollar figures for unpriced tokens").
 
-   The protocol fee is taken off the INPUT first; the LP fee then applies to
-   what is left. So the all-in rate is
-
-       allIn = lp + protocol - (lp * protocol) / 1e6
-
-   and NOT `lp + protocol`. The subtracted term is the LP fee that is never
-   charged on the slice the protocol already took. At a 0.30% pool the
-   difference is two pips — small, and wrong is wrong: a panel that adds them
-   overstates the cost, and the same error inverted is how a protocol
-   accidentally double-charges. Core does it this way in
-   `ProtocolFeeLibrary.calculateSwapFee`, and `chain.ts:splitFee` inverts the
-   same formula to recover the LP slice from a real Swap event.
-
-   THE PIP ARITHMETIC IS INTEGER, ON PURPOSE. `Math.floor` everywhere a pip
-   value is derived, matching Solidity's truncating division, so the comparison
-   against PancakeSwap's split is like for like rather than a float
-   approximation that drifts by a pip and makes the delta unfalsifiable. The
-   TOKEN column is float, because it applies those pips to a whole-token figure
-   the reader typed rather than to a wei amount the chain settled — it is a
-   proportion of their number, and it says so.
-
-   WHY THERE IS NO FALLBACK TABLE. If the controller cannot be read, this panel
-   renders the reason and NO figures. CLAUDE.md records that a previous
-   `FeeChart` was deleted from this repo — not disabled — for being fed by
-   sample data: "a chart component whose only input was fiction is a loaded
-   gun". A tier schedule hardcoded here would look identical to a live one on
-   the day it went stale, and a reader has no way to tell which numbers to
-   discount.
-
-   WHY THE SIZE IS IN TOKEN UNITS AND NEVER IN DOLLARS. The tokens on the
-   chains Latch is deployed to are test tokens that nothing prices. Multiplying
-   them by an invented price to produce a dollar headline is the exact failure
-   CLAUDE.md's "No dollar figures for unpriced tokens" rule was written for. The
-   symbol comes from the address book's reference pool; where a chain has no
-   reference pool the unit is stated as "input token" with no symbol invented
-   for it.
-
-   PROVENANCE IS SPLIT ACROSS THE PANEL, VISIBLY. The rates are a measurement
-   and carry a READ FROM CHAIN chip; the trade size is the reader's and carries
-   a YOUR NUMBER chip. Nothing about the layout may suggest the size came from
-   chain, because it did not.
+   WHY THERE IS NO FALLBACK TABLE. If the controller cannot be read, the panel
+   renders the reason and NO figures.
    ========================================================================== */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState, type CSSProperties } from 'react'
 
 import {
   ACTIVE_CHAIN_ID,
@@ -68,6 +35,8 @@ import {
   readProtocolStatus,
   type FeeTier,
 } from '../../lib/chain'
+import { useFirstView } from './chartMotion'
+import { ONE, allInPips, pancakeFeeFor, pct } from './feeMath'
 import page from './landing.module.css'
 import styles from './swapcost.module.css'
 import { cx } from './ui'
@@ -76,24 +45,14 @@ import { cx } from './ui'
 const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
 /**
- * The unit everything on this panel is denominated in.
- *
- * `symbol0` of the chain's reference pool, which is a real ERC-20 this repo's
- * own exercise scripts created and swapped. `null` when the chain has no
- * reference pool: the honest output there is "input token", never a symbol
- * borrowed from some other chain's table.
+ * The unit: `symbol0` of the chain's reference pool, a real ERC-20 this repo's
+ * own scripts created. `null` when there is no reference pool — the honest
+ * output is then "input token", never a symbol borrowed from another chain.
  */
 const UNIT: string | null = CHAIN.demoPool?.symbol0 ?? null
 const UNIT_LABEL = UNIT ?? 'input token'
 
-/**
- * Whether that token is one of this repo's throwaways.
- *
- * Read off the address book's own `isTestToken` flag rather than off the
- * chain's `isMainnet`, because they are different claims: a mainnet chain can
- * still carry a worthless test ERC-20, and it is the TOKEN's pricelessness
- * that forbids a dollar figure here.
- */
+/** Read off the address book's own `isTestToken` flag, not off `isMainnet`. */
 const UNIT_IS_TEST: boolean =
   CHAIN.demoPool !== null &&
   (CHAIN.tokens.find(
@@ -101,89 +60,51 @@ const UNIT_IS_TEST: boolean =
   )?.isTestToken ??
     false)
 
-/** Hundredths of a bip, matching `ProtocolFeeLibrary.PIPS_DENOMINATOR`. */
-const ONE = 1_000_000
-
 /**
- * PancakeSwap Infinity's split ratio, from their published source
- * (`ProtocolFeeController.sol:32`, `protocolFeeSplitRatio = 33 * 1e4`).
- *
- * A CITATION, not a measurement of their deployment — this repo has never
- * called their contracts and does not claim to have. It is restated here
- * rather than imported because `FeeChart.tsx` keeps it as a module-private
- * constant; if a third surface ever needs it, the right move is to hoist it and
- * `pancakeFeeFor` into one shared module rather than to make a third copy.
+ * A token amount, adaptive precision: this panel spans six orders of
+ * magnitude, and a fixed 2 dp prints a small protocol cut as "0.00".
  */
-const PANCAKE_SPLIT = 330_000
-
-/** Core's `ProtocolFeeLibrary.MAX_PROTOCOL_FEE` — 4000 pips, a hard 0.4% cap. */
-const MAX_PROTOCOL_FEE = 4000
-
-/**
- * The protocol fee PancakeSwap's controller would stamp on a pool at this LP
- * fee, computed with their own formula and their own ratio.
- *
- * Solving `p / (p + l - p*l/ONE) == ratio` for `p`. Integer division
- * throughout, matching Solidity — the same arithmetic `FeeChart` uses, so the
- * two surfaces cannot disagree about the comparison column.
- */
-function pancakeFeeFor(lpFee: number): number {
-  const denominator = lpFee + Math.floor((ONE * ONE) / PANCAKE_SPLIT) - ONE
-  if (denominator <= 0) return MAX_PROTOCOL_FEE
-  return Math.min(Math.floor((lpFee * ONE) / denominator), MAX_PROTOCOL_FEE)
+function decimalsFor(v: number): number {
+  const magnitude = Math.abs(v)
+  if (magnitude === 0 || magnitude >= 1000) return 0
+  if (magnitude >= 1) return 2
+  return Math.min(6, 2 + Math.ceil(-Math.log10(magnitude)))
 }
 
-/**
- * The rate a trader actually pays. See the header: the two fees COMPOSE.
- *
- * `Math.floor` on the product term because Solidity's `/` truncates, and this
- * value is the basis of the comparison — a rounded version of it would make
- * Latch look a pip cheaper or dearer than it is, at random.
- */
-function allInPips(lp: number, protocol: number): number {
-  return lp + protocol - Math.floor((lp * protocol) / ONE)
-}
-
-/** A pip figure as a percentage. 3000 pips is 0.30%. */
-function pct(pips: number, dp = 4): string {
-  return `${(pips / 10_000).toFixed(dp)}%`
-}
-
-/**
- * A token amount, in units of the trade's own token.
- *
- * Adaptive precision, because this panel spans six orders of magnitude: a
- * fixed 2 dp prints the protocol's cut on a 100-token trade as "0.10" and its
- * saving against PancakeSwap as "0.00", which reads as nothing rather than as
- * a small number. Never a currency, never a dollar sign — see the header.
- */
 function tokens(v: number): string {
   if (v === 0) return '0'
-  const magnitude = Math.abs(v)
-  const dp =
-    magnitude >= 1000 ? 0 : magnitude >= 1 ? 2 : Math.min(6, 2 + Math.ceil(-Math.log10(magnitude)))
-  return v.toLocaleString('en-US', { maximumFractionDigits: dp })
+  return v.toLocaleString('en-US', { maximumFractionDigits: decimalsFor(v) })
 }
 
-/* --------------------------------------------------------------------------
-   The size slider.
+/**
+ * ONE precision per table column. `tokens` drops trailing zeros per cell, so a
+ * column read "0.8 less" beside "0.16 less" — the same unit at two apparent
+ * precisions. The column takes the decimals its smallest non-zero value needs
+ * and every cell is printed to exactly that many. Formatting only: the amounts
+ * themselves are untouched.
+ */
+function columnDecimals(values: readonly number[]): number {
+  return values.reduce((dp, v) => (v === 0 ? dp : Math.max(dp, decimalsFor(v))), 0)
+}
 
-   LOG SCALE, because the interesting range spans four orders of magnitude and
-   a linear track spends 90% of its travel above 100,000 — a reader dragging
-   for a realistic retail trade would be working in the leftmost few pixels.
-   The slider's own value is a POSITION on the track; the token amount is
-   derived from it, so `step` stays uniform and the keyboard arrows move by a
-   constant proportion rather than a constant amount.
-   -------------------------------------------------------------------------- */
+function tokensFixed(v: number, dp: number): string {
+  return v.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
+}
 
-const SIZE_MIN_EXP = 2 // 100 tokens
-const SIZE_MAX_EXP = 6 // 1,000,000 tokens
+/* ---- the size input -------------------------------------------------------
+   LOG-SCALE SLIDER plus a free number field. The slider's value is a position;
+   the amount is derived from it, so arrow keys move by a constant proportion.
+   The field accepts any positive amount, and the slider pins at its ends when
+   the typed amount is outside 100 – 1,000,000. */
+
+const SIZE_MIN_EXP = 2
+const SIZE_MAX_EXP = 6
 const SLIDER_STEPS = 400
 /** 10,000 tokens. The reader's starting point, not a measurement of anything. */
-const START_POS = 200
+const START_SIZE = 10_000
+/** Upper bound on a typed size: past this, float token maths stops being exact. */
+const SIZE_CEILING = 1e12
 
-/** Round to `digits` significant figures, so the slider lands on 4,700 rather
-    than 4,712.891 — a number a reader can repeat back. */
 function roundSignificant(v: number, digits: number): number {
   const mag = 10 ** (Math.floor(Math.log10(v)) - digits + 1)
   return Math.round(v / mag) * mag
@@ -194,32 +115,57 @@ function sizeAt(pos: number): number {
   return roundSignificant(10 ** exp, 3)
 }
 
+function posFor(size: number): number {
+  const exp = Math.log10(size)
+  const pos = ((exp - SIZE_MIN_EXP) / (SIZE_MAX_EXP - SIZE_MIN_EXP)) * SLIDER_STEPS
+  return Math.min(SLIDER_STEPS, Math.max(0, Math.round(pos)))
+}
+
+/** Accepts "10000", "10,000", " 1e4 ". Returns null for anything not a positive finite amount. */
+function parseSize(text: string): number | null {
+  const n = Number(text.replace(/[,\s_]/g, ''))
+  if (!Number.isFinite(n) || n <= 0 || n > SIZE_CEILING) return null
+  return n
+}
+
 /* -------------------------------------------------------------------------- */
 
 type State =
   | { k: 'loading' }
   | { k: 'error'; message: string }
-  | {
-      k: 'ready'
-      tiers: FeeTier[]
-      splitRatio: number
-      /** `CLPoolManager.protocolFeeController()` points at our controller. */
-      wired: boolean
-      /** The controller's guardian switch. */
-      disabled: boolean
-    }
+  | { k: 'ready'; tiers: FeeTier[]; wired: boolean; disabled: boolean }
+
+interface Row {
+  lpFee: number
+  protocolPips: number
+  allIn: number
+  total: number
+  protocolAmount: number
+  lpAmount: number
+  /** Positive when Latch is cheaper. Token units. */
+  saving: number
+}
+
+function compute(size: number, tier: FeeTier): Row {
+  const allIn = allInPips(tier.lpFee, tier.protocolFeePips)
+  const total = (size * allIn) / ONE
+  const protocolAmount = (size * tier.protocolFeePips) / ONE
+  const pancakeTotal = (size * allInPips(tier.lpFee, pancakeFeeFor(tier.lpFee))) / ONE
+  return {
+    lpFee: tier.lpFee,
+    protocolPips: tier.protocolFeePips,
+    allIn,
+    total,
+    protocolAmount,
+    lpAmount: total - protocolAmount,
+    saving: pancakeTotal - total,
+  }
+}
 
 export function SwapCost() {
-  /* The section wrapper is outside the body so the anchor exists on every
-     branch — a target that only mounts on the ready path is a dead link for
-     the whole duration of the read, and forever if the read fails. That lesson
-     is written up at the top of FeeChart.tsx; it generalises. */
+  /* The section is outside the body so the anchor exists on every branch. */
   return (
-    <section
-      id="swap-cost"
-      className={cx(page['section'], styles['section'])}
-      aria-label="What a swap costs"
-    >
+    <section id="swap-cost" className={page['section']} aria-label="Swap cost calculator">
       <SwapCostBody />
     </section>
   )
@@ -227,28 +173,16 @@ export function SwapCost() {
 
 function SwapCostBody() {
   const [s, setS] = useState<State>({ k: 'loading' })
-  const [pos, setPos] = useState(START_POS)
-  const [tier, setTier] = useState<number | null>(null)
-  /** Debounced copy of the summary, for the polite live region. See below. */
-  const [announced, setAnnounced] = useState('')
 
   useEffect(() => {
     let off = false
-
-    /* BOTH READS, OR NEITHER.
-       `readFeeTiers` gives the schedule; `readProtocolStatus` gives whether
-       that schedule is in force at all. Publishing the first without the
-       second is the exact contradiction CLAUDE.md records from the dashboard —
-       a controller default rendered as "the protocol fee" beside an activity
-       feed reading "0 to protocol" on every swap. Both true, flatly
-       inconsistent, and only one of them answering the reader's question. */
+    /* BOTH READS, OR NEITHER: the schedule, and whether it is in force. */
     Promise.all([readFeeTiers(), readProtocolStatus()])
       .then(([fees, status]) => {
         if (off) return
         setS({
           k: 'ready',
           tiers: fees.tiers,
-          splitRatio: fees.splitRatio,
           wired: status.controllerWired,
           disabled: status.feesDisabled,
         })
@@ -257,73 +191,37 @@ function SwapCostBody() {
         if (off) return
         setS({ k: 'error', message: e instanceof Error ? e.message : 'the chain was unreachable' })
       })
-
     return () => {
       off = true
     }
   }, [])
 
-  const size = useMemo(() => sizeAt(pos), [pos])
-
-  /* The active tier, resolved rather than stored, so a redeploy that changes
-     the tier list cannot leave this pointing at a tier the controller no longer
-     knows about. */
-  const tiers = s.k === 'ready' ? s.tiers : []
-  const active: FeeTier | undefined =
-    tiers.find((t) => t.lpFee === tier) ?? preferredTier(tiers)
-
-  const figures = active ? compute(size, active) : null
-
-  const summary =
-    figures && active
-      ? `${tokens(size)} ${UNIT_LABEL} through a ${pct(active.lpFee, 2)} pool costs ` +
-        `${tokens(figures.total)} ${UNIT_LABEL} all in, at ${pct(figures.allIn)}. ` +
-        `${tokens(figures.lpAmount)} to liquidity providers, ` +
-        `${tokens(figures.protocolAmount)} to the protocol.`
-      : ''
-
-  /* THE LIVE REGION IS DEBOUNCED, and the visible figures are not.
-     A range input fires `change` on every pixel of a drag. Wiring the numbers
-     straight into `aria-live` queues one utterance per frame, which a screen
-     reader either reads for a minute or drops entirely. The sighted reader
-     wants the number now; the listening reader wants it once the drag stops.
-     Those are different requirements and this is the only place they diverge.
-
-     The dependency is the SENTENCE, not the figures that produced it. A
-     freshly-built object is a new identity on every render, which would re-arm
-     the timer each time the timer itself fired — a string compares by value and
-     settles after one pass. */
-  useEffect(() => {
-    if (summary === '') return
-    const id = setTimeout(() => setAnnounced(summary), 600)
-    return () => clearTimeout(id)
-  }, [summary])
-
   if (s.k === 'loading') {
     return (
-      <p className={styles['note']}>Reading the fee controller on {CHAIN.name}…</p>
-    )
-  }
-
-  /* No fallback tiers, no default split, no example trade. The reason, and
-     nothing that could be mistaken for a figure. */
-  if (s.k === 'error') {
-    return (
-      <div className={styles['card']}>
-        <p className={styles['note']}>
-          The fee controller on {CHAIN.name} could not be read, so no figures are shown here.
-          Nothing on this panel is computed from anything but that read.
-          <br />
-          <span className={styles['raw']}>{s.message}</span>
+      <div className={cx(styles['card'], styles['stateCard'])} data-state="loading">
+        <p className={styles['state']}>
+          <i className={styles['stateDot']} aria-hidden="true" />
+          Reading the fee controller on {CHAIN.name}…
         </p>
       </div>
     )
   }
 
-  if (!active || !figures) {
+  if (s.k === 'error') {
     return (
-      <div className={styles['card']}>
-        <p className={styles['note']}>
+      <div className={cx(styles['card'], styles['stateCard'])} data-state="error">
+        <p className={styles['state']}>
+          The fee controller on {CHAIN.name} could not be read, so no trade is priced here.
+        </p>
+        <p className={styles['raw']}>{s.message}</p>
+      </div>
+    )
+  }
+
+  if (s.tiers.length === 0) {
+    return (
+      <div className={cx(styles['card'], styles['stateCard'])} data-state="empty">
+        <p className={styles['state']}>
           The controller on {CHAIN.name} returned no fee tiers, so there is nothing to price a
           trade against.
         </p>
@@ -331,353 +229,203 @@ function SwapCostBody() {
     )
   }
 
-  const lpShare = (figures.lpPips / figures.allIn) * 100
-  const protocolShare = 100 - lpShare
+  return <Calculator tiers={s.tiers} wired={s.wired} disabled={s.disabled} />
+}
+
+function Calculator({
+  tiers,
+  wired,
+  disabled,
+}: {
+  tiers: FeeTier[]
+  wired: boolean
+  disabled: boolean
+}) {
+  const [size, setSize] = useState(START_SIZE)
+  const [draft, setDraft] = useState(START_SIZE.toLocaleString('en-US'))
+  const [announced, setAnnounced] = useState('')
+  const fieldId = useId()
+  const sliderId = useId()
+  const hintId = useId()
+  const { ref: tableRef, hidden: growHidden } = useFirstView<HTMLTableElement>()
+
+  const invalid = parseSize(draft) === null
+  const rows = useMemo(() => tiers.map((t) => compute(size, t)), [tiers, size])
+  const maxTotal = Math.max(...rows.map((r) => r.total), Number.MIN_VALUE)
+  const dp = {
+    total: columnDecimals(rows.map((r) => r.total)),
+    lp: columnDecimals(rows.map((r) => r.lpAmount)),
+    protocol: columnDecimals(rows.map((r) => r.protocolAmount)),
+    saving: columnDecimals(rows.map((r) => r.saving)),
+  }
+
+  /* THE LIVE REGION IS DEBOUNCED, the visible figures are not: a slider drag
+     fires on every pixel, and one utterance per frame is noise. */
+  const summary = `Fees recalculated for ${tokens(size)} ${UNIT_LABEL} at ${rows.length} pool tiers.`
+  useEffect(() => {
+    const id = setTimeout(() => setAnnounced(summary), 600)
+    return () => clearTimeout(id)
+  }, [summary])
 
   return (
     <div className={styles['card']}>
-      <header className={styles['head']}>
+      <div className={styles['head']}>
         <div className={styles['headText']}>
-          <p className={styles['eyebrow']}>SWAP COST</p>
-          <h2 className={styles['title']}>
-            What a trade costs, and who <span className={styles['accent']}>receives each part</span>
-          </h2>
-          <p className={styles['lead']}>
-            Latch takes {(s.splitRatio / 10_000).toFixed(0)}% of the total swap fee. The rest stays
-            with the pool. Set a size and a tier — every rate below is read from the controller on{' '}
-            {CHAIN.name}.
+          <h2 className={styles['title']}>Price a trade at every tier</h2>
+          <p className={styles['caption']}>
+            Set a size. Each row applies that tier&rsquo;s live rate, from the chart above, to it.
           </p>
         </div>
-      </header>
 
-      {/* The schedule is not the same claim as the charge. Say which one is on
-          screen whenever they differ, rather than letting a reader assume. */}
-      {!s.wired || s.disabled ? (
-        <p className={styles['notice']}>
-          <strong>Scheduled, not yet charged.</strong>{' '}
-          {s.disabled
-            ? 'The controller’s fee switch is off, so a pool initialized right now is stamped a zero protocol fee.'
-            : `The pool manager on ${CHAIN.name} does not point at this controller yet, so a pool initialized right now is stamped a zero protocol fee.`}{' '}
-          The protocol figures below are the schedule the controller would apply once it is in
-          force. The LP fee is charged today either way.
-        </p>
-      ) : null}
-
-      <div className={styles['controls']}>
-        {/* ------------------------------------------------------ TRADE SIZE */}
-        <div className={styles['field']}>
-          <div className={styles['fieldHead']}>
-            <label className={styles['label']} htmlFor="swapcost-size">
-              TRADE SIZE
+        {/* ------------------------------------------------ the calculator input */}
+        <div className={styles['input']}>
+          <div className={styles['inputHead']}>
+            <label className={styles['label']} htmlFor={fieldId}>
+              Trade size
             </label>
-            <span className={cx(styles['chip'], styles['chipInput'])}>YOUR NUMBER</span>
+            <span className={styles['chip']}>Calculator input</span>
           </div>
-
-          <output className={styles['sizeOut']} htmlFor="swapcost-size">
-            <span className={styles['sizeValue']}>{tokens(size)}</span>
-            <span className={styles['sizeUnit']}>{UNIT_LABEL}</span>
-          </output>
-
+          <div className={styles['fieldRow']}>
+            <input
+              id={fieldId}
+              className={styles['field']}
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              spellCheck={false}
+              value={draft}
+              aria-invalid={invalid}
+              aria-describedby={hintId}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                const n = parseSize(e.target.value)
+                if (n !== null) setSize(n)
+              }}
+              onBlur={() => {
+                if (!invalid) setDraft(size.toLocaleString('en-US'))
+              }}
+            />
+            <span className={styles['unit']}>{UNIT_LABEL}</span>
+          </div>
           <input
-            id="swapcost-size"
+            id={sliderId}
             type="range"
             className={styles['range']}
             min={0}
             max={SLIDER_STEPS}
             step={1}
-            value={pos}
-            /* The track is logarithmic, so the raw value is a position and
-               means nothing to a listener. `aria-valuetext` carries the amount
-               the position stands for, which is the only number a reader
-               cares about. */
+            value={posFor(size)}
+            aria-label="Trade size, logarithmic slider"
             aria-valuetext={`${tokens(size)} ${UNIT_LABEL}`}
-            onChange={(e) => setPos(Number(e.target.value))}
+            onChange={(e) => {
+              const next = sizeAt(Number(e.target.value))
+              setSize(next)
+              setDraft(next.toLocaleString('en-US'))
+            }}
           />
-
-          <p className={styles['hint']}>
-            Logarithmic, {tokens(10 ** SIZE_MIN_EXP)} to {tokens(10 ** SIZE_MAX_EXP)}
-            {UNIT === null ? null : <> {UNIT}</>}. This is a number you chose, not a measurement.
-            It is denominated in token units because {UNIT_LABEL}{' '}
-            {UNIT_IS_TEST ? 'is a test token and ' : ''}has no price this page can read — a dollar
-            headline would have to invent one.
-          </p>
-        </div>
-
-        {/* ------------------------------------------------------------ TIER */}
-        <div className={styles['field']}>
-          <div className={styles['fieldHead']}>
-            <span className={styles['label']} id="swapcost-tier-label">
-              POOL TIER
-            </span>
-            <span className={cx(styles['chip'], styles['chipChain'])}>READ FROM CHAIN</span>
-          </div>
-
-          <div className={styles['tiers']} role="group" aria-labelledby="swapcost-tier-label">
-            {/* Whatever the controller returned, in the order it returned it.
-                No tier is named in this file. */}
-            {s.tiers.map((t) => (
-              <button
-                key={t.lpFee}
-                type="button"
-                className={cx(styles['tier'], t.lpFee === active.lpFee && styles['tierOn'])}
-                aria-pressed={t.lpFee === active.lpFee}
-                onClick={() => setTier(t.lpFee)}
-              >
-                <span className={styles['tierPct']}>{pct(t.lpFee, 2)}</span>
-                <span className={styles['tierPips']}>{t.lpFee.toLocaleString('en-US')} pips</span>
-              </button>
-            ))}
-          </div>
-
-          <p className={styles['hint']}>
-            The protocol fee for each tier is <code>feeForLpFee(lpFee)</code> on the live
-            controller — derived on chain, never recomputed here, so the split arithmetic exists in
-            exactly one place.
+          <p id={hintId} className={cx(styles['hint'], invalid && styles['hintBad'])}>
+            {invalid
+              ? `Enter a positive amount up to ${SIZE_CEILING.toLocaleString('en-US')}.`
+              : `Your number, not a measurement. Slider runs ${tokens(10 ** SIZE_MIN_EXP)} – ${tokens(10 ** SIZE_MAX_EXP)}.`}
           </p>
         </div>
       </div>
 
-      {/* ---------------------------------------------------------- BREAKDOWN */}
-      <div className={styles['breakdown']}>
-        <Cell
-          name="LP fee"
-          who="to liquidity providers"
-          rate={pct(figures.lpPips, 2)}
-          amount={tokens(figures.lpAmount)}
-        />
-        <Cell
-          name="Protocol fee"
-          who="to the Latch treasury"
-          rate={pct(figures.protocolPips)}
-          amount={tokens(figures.protocolAmount)}
-        />
-        <Cell
-          name="All-in"
-          who="what leaves the trade"
-          rate={pct(figures.allIn)}
-          amount={tokens(figures.total)}
-          strong
-        />
-      </div>
-
-      <p className={styles['compose']}>
-        The two <strong>compose, they do not add</strong>: the protocol fee comes off the input
-        first and the LP fee applies to what is left, so the all-in rate is{' '}
-        <code>
-          {figures.lpPips.toLocaleString('en-US')} + {figures.protocolPips.toLocaleString('en-US')} −{' '}
-          {Math.floor((figures.lpPips * figures.protocolPips) / ONE).toLocaleString('en-US')} ={' '}
-          {figures.allIn.toLocaleString('en-US')}
-        </code>{' '}
-        pips, not {(figures.lpPips + figures.protocolPips).toLocaleString('en-US')}.
-      </p>
-
-      {/* -------------------------------------------------------- WHERE IT GOES */}
-      <div className={styles['where']}>
-        <div className={styles['whereHead']}>
-          <span className={styles['label']}>WHERE THE {tokens(figures.total)} GOES</span>
-        </div>
-
-        {/* Proportional, animated by a CSS width transition only — the segments
-            are laid out and painted with JS paused, and the transition merely
-            interpolates between two states that are each complete on their own. */}
-        <div
-          className={styles['bar']}
-          role="img"
-          aria-label={
-            `Of the ${tokens(figures.total)} ${UNIT_LABEL} fee, ` +
-            `${lpShare.toFixed(1)} percent goes to liquidity providers and ` +
-            `${protocolShare.toFixed(1)} percent to the protocol.`
-          }
-        >
-          <span className={cx(styles['seg'], styles['segLp'])} style={{ width: `${lpShare}%` }} />
-          <span
-            className={cx(styles['seg'], styles['segProtocol'])}
-            style={{ width: `${protocolShare}%` }}
-          />
-        </div>
-
-        {/* The bar's text equivalent, visible rather than hidden: the same three
-            facts, readable by anyone who cannot judge a length. */}
-        <ul className={styles['legend']}>
-          <li>
-            <span className={cx(styles['swatch'], styles['swatchLp'])} aria-hidden="true" />
-            <span className={styles['legendName']}>Liquidity providers</span>
-            <strong className={styles['legendPct']}>{lpShare.toFixed(1)}%</strong>
-            <span className={styles['legendAmt']}>
-              {tokens(figures.lpAmount)} {UNIT_LABEL}
-            </span>
-          </li>
-          <li>
-            <span className={cx(styles['swatch'], styles['swatchProtocol'])} aria-hidden="true" />
-            <span className={styles['legendName']}>Protocol</span>
-            <strong className={styles['legendPct']}>{protocolShare.toFixed(1)}%</strong>
-            <span className={styles['legendAmt']}>
-              {tokens(figures.protocolAmount)} {UNIT_LABEL}
-            </span>
-          </li>
-        </ul>
-      </div>
-
-      {/* ------------------------------------------------------- THE COMPARISON */}
-      <div className={styles['compare']}>
-        <div className={styles['compareRow']}>
-          <span className={styles['compareName']}>
-            Latch · {(s.splitRatio / 10_000).toFixed(0)}% split
-          </span>
-          <span className={styles['compareRate']}>{pct(figures.allIn)}</span>
-          <span className={styles['compareAmt']}>
-            {tokens(figures.total)} {UNIT_LABEL}
-          </span>
-        </div>
-        <div className={cx(styles['compareRow'], styles['compareRowAlt'])}>
-          <span className={styles['compareName']}>PancakeSwap Infinity · 33% split</span>
-          <span className={styles['compareRate']}>{pct(figures.pancakeAllIn)}</span>
-          <span className={styles['compareAmt']}>
-            {tokens(figures.pancakeTotal)} {UNIT_LABEL}
-          </span>
-        </div>
-
-        {/* Direction is computed, not assumed. If governance ever raised the
-            split above 33% this line would say so rather than quietly printing
-            a negative saving as a saving. */}
-        <p className={styles['delta']}>
-          {figures.saving > 0 ? (
-            <>
-              On this trade a trader keeps{' '}
-              <strong>
-                {tokens(figures.saving)} {UNIT_LABEL}
-              </strong>{' '}
-              more at the same pool tier — the LP fee is identical, and the whole difference is the
-              protocol slice.
-            </>
-          ) : figures.saving < 0 ? (
-            <>
-              On this trade Latch costs{' '}
-              <strong>
-                {tokens(-figures.saving)} {UNIT_LABEL}
-              </strong>{' '}
-              more at the same pool tier. The LP fee is identical; the difference is the protocol
-              slice.
-            </>
-          ) : (
-            <>At this tier the two splits round to the same protocol fee, so the cost is identical.</>
-          )}
+      {/* The schedule is not the same claim as the charge. */}
+      {!wired || disabled ? (
+        <p className={styles['notice']}>
+          <strong>Scheduled, not yet charged.</strong>{' '}
+          {disabled
+            ? 'The controller’s fee switch is off, so a pool initialized now is stamped a zero protocol fee.'
+            : `The pool manager on ${CHAIN.name} does not point at this controller yet, so a pool initialized now is stamped a zero protocol fee.`}{' '}
+          The protocol column is the schedule; the LP fee is charged today either way.
         </p>
+      ) : null}
+
+      <div className={styles['scroller']}>
+        <table className={styles['table']} ref={tableRef}>
+          <caption className={styles['sr']}>
+            Fee on a trade of {tokens(size)} {UNIT_LABEL}, at each pool tier read from the{' '}
+            {CHAIN.name} fee controller.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Pool tier</th>
+              <th scope="col" className={styles['colBar']}>
+                All-in fee · {UNIT_LABEL}
+              </th>
+              <th scope="col" className={styles['num']}>
+                To LPs
+              </th>
+              <th scope="col" className={styles['num']}>
+                To protocol
+              </th>
+              <th scope="col" className={styles['num']}>
+                vs PancakeSwap 33%
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const lpShare = r.total > 0 ? (r.lpAmount / r.total) * 100 : 0
+              return (
+                <tr key={r.lpFee}>
+                  <th scope="row" className={styles['tier']}>
+                    {pct(r.lpFee, 2)}
+                    <span className={styles['tierSub']}>{pct(r.allIn)} all-in</span>
+                  </th>
+                  <td className={styles['colBar']}>
+                    <span className={styles['barCell']}>
+                      {/* Length is this row's all-in amount against the largest
+                          row's, split LP | protocol inside. Same two colours as
+                          FeeChart. Decorative: the figures are in the cells. */}
+                      <span className={styles['barTrack']} aria-hidden="true">
+                        <span
+                          className={cx(styles['bar'], growHidden && styles['barHidden'])}
+                          style={
+                            {
+                              width: `${(r.total / maxTotal) * 100}%`,
+                              '--stagger': `${i * 60}ms`,
+                            } as CSSProperties
+                          }
+                        >
+                          <span className={styles['segLp']} style={{ width: `${lpShare}%` }} />
+                          <span className={styles['segProtocol']} />
+                        </span>
+                      </span>
+                      <span className={styles['total']}>{tokensFixed(r.total, dp.total)}</span>
+                    </span>
+                  </td>
+                  <td className={styles['num']}>{tokensFixed(r.lpAmount, dp.lp)}</td>
+                  <td className={styles['num']}>
+                    {tokensFixed(r.protocolAmount, dp.protocol)}
+                    <span className={styles['numSub']}>{pct(r.protocolPips)}</span>
+                  </td>
+                  <td className={cx(styles['num'], r.saving > 0 && styles['better'])}>
+                    {/* Direction is computed, not assumed. */}
+                    {r.saving > 0
+                      ? `${tokensFixed(r.saving, dp.saving)} less`
+                      : r.saving < 0
+                        ? `${tokensFixed(-r.saving, dp.saving)} more`
+                        : 'same'}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
 
-      {/* The polite region. Visually hidden because the same words are already
-          on screen for anyone reading them. */}
       <div className={styles['sr']} aria-live="polite">
         {announced}
       </div>
 
-      <p className={styles['foot']}>
-        <strong>Rates are read; the size is yours.</strong> Every Latch rate on this panel comes
-        from the fee controller deployed on {CHAIN.name} — the tier list and each tier&rsquo;s
-        protocol fee from <code>feeForLpFee</code>, the split from{' '}
-        <code>protocolFeeSplitRatio</code>. The trade size is a number you chose with the slider
-        and is not a measurement of any pool, volume or balance. PancakeSwap&rsquo;s 33% is a
-        constant in their published source (<code>ProtocolFeeController.sol:32</code>) applied with
-        their own formula — a citation, not a measurement of their deployment. No amount here is
-        converted to a currency: {UNIT_LABEL} {UNIT_IS_TEST ? 'is a test token and ' : ''}has no
-        price this page could read.
+      <p className={styles['provenance']}>
+        Rates: <code>feeForLpFee</code> on the {CHAIN.name} controller, composed as{' '}
+        <code>lp + protocol − lp·protocol/10⁶</code>. The size is yours, in token units —{' '}
+        {UNIT_LABEL} {UNIT_IS_TEST ? 'is a test token and ' : ''}has no price here, so nothing is
+        shown in dollars. PancakeSwap&rsquo;s 33% is cited from their source, not measured.
       </p>
-    </div>
-  )
-}
-
-/* -------------------------------------------------------------------------- */
-
-/**
- * Which tier to show before the reader picks one.
- *
- * The chain's reference pool, when the controller happens to list that tier —
- * it is the pool this repo's own scripts created and swapped through, so it is
- * the tier a reader is most likely to meet. Otherwise the middle of whatever
- * came back. Neither branch names a tier: a hardcoded default would be a
- * silent claim about which tier matters, surviving any change to the list.
- */
-function preferredTier(tiers: readonly FeeTier[]): FeeTier | undefined {
-  const reference = CHAIN.demoPool
-  if (reference) {
-    const match = tiers.find((t) => t.lpFee === reference.lpFee)
-    if (match) return match
-  }
-  return tiers[Math.floor(tiers.length / 2)] ?? tiers[0]
-}
-
-interface Figures {
-  lpPips: number
-  protocolPips: number
-  allIn: number
-  lpAmount: number
-  protocolAmount: number
-  total: number
-  pancakeAllIn: number
-  pancakeTotal: number
-  /** Positive when Latch is cheaper. Token units of the trade. */
-  saving: number
-}
-
-/**
- * Everything the panel prints, from one size and one tier.
- *
- * PIPS ARE INTEGERS AND AMOUNTS ARE NOT, deliberately. The pip layer mirrors
- * Solidity so the Latch/PancakeSwap comparison is exact; the token layer
- * applies those pips to a whole-token figure the reader typed, which is a
- * proportion of their number rather than a settlement the chain performed.
- *
- * `lpAmount` is derived by SUBTRACTION rather than by applying the LP rate a
- * second time. On chain the LP fee is charged on `size - protocolAmount`, so
- * `total - protocolAmount` is that same quantity exactly — and it guarantees
- * the two parts add up to the total on screen, which a second rounding pass
- * would not.
- */
-function compute(size: number, tier: FeeTier): Figures {
-  const lpPips = tier.lpFee
-  const protocolPips = tier.protocolFeePips
-  const allIn = allInPips(lpPips, protocolPips)
-
-  const total = (size * allIn) / ONE
-  const protocolAmount = (size * protocolPips) / ONE
-
-  const pancakeAllIn = allInPips(lpPips, pancakeFeeFor(lpPips))
-  const pancakeTotal = (size * pancakeAllIn) / ONE
-
-  return {
-    lpPips,
-    protocolPips,
-    allIn,
-    total,
-    protocolAmount,
-    lpAmount: total - protocolAmount,
-    pancakeAllIn,
-    pancakeTotal,
-    saving: pancakeTotal - total,
-  }
-}
-
-function Cell({
-  name,
-  who,
-  rate,
-  amount,
-  strong = false,
-}: {
-  name: string
-  who: string
-  rate: string
-  amount: string
-  strong?: boolean
-}) {
-  return (
-    <div className={cx(styles['cell'], strong && styles['cellStrong'])}>
-      <span className={styles['cellName']}>{name}</span>
-      <span className={styles['cellRate']}>{rate}</span>
-      <span className={styles['cellAmount']}>
-        {amount} {UNIT_LABEL}
-      </span>
-      <span className={styles['cellWho']}>{who}</span>
     </div>
   )
 }

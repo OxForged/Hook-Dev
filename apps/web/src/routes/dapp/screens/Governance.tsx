@@ -482,7 +482,7 @@ export default function Governance() {
           <h2 className="dapp-microlabel">GOVERNANCE</h2>
           <ChainTag chainId={browsingChain} />
         </div>
-        <p className={`live-note${state.k === 'error' ? ' live-note--err' : ''}`}>
+        <p className={`live-note ${state.k === 'error' ? 'live-note--err' : 'dapp-state--loading'}`}>
           {state.k === 'error'
             ? `Could not reach ${chainName}: ${state.message}. Nothing shown rather than placeholder figures.`
             : `Reading the Safe, both timelocks, ownership and queued operations from ${chainName}…`}

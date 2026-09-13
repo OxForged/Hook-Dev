@@ -171,54 +171,32 @@ export const favicons: readonly Favicon[] = [16, 32, 64, 180, 512].map((size) =>
 
 export interface Swatch {
   readonly name: string
-  readonly hex: string
   readonly role: string
-  /** Token the swatch paints itself with — never a literal hex in a component. */
+  /**
+   * Token the swatch paints itself with — never a literal hex in a component.
+   *
+   * There is deliberately no `hex` field any more. This list used to carry
+   * hand-copied values (#2B8BFF, #04060C…) from the retired dark palette, and
+   * went on printing them under swatches painted from tokens that had since
+   * moved — a label contradicting the colour directly above it. The values
+   * shown now are read from the token's own declaration at runtime (see
+   * `useTokenValues` in components.tsx), so they cannot drift from tokens.css.
+   */
   readonly token: string
-  /** Grounds this dark need a hairline so the swatch edge is visible. */
+  /** Grounds close to the card's own colour need a hairline so the swatch edge is visible. */
   readonly needsRule: boolean
 }
 
-/** § Color — the eight swatches named in SCREENS.md, with README roles. */
+/** § Color — Option B: one blue doing the work, green for live status, cool neutrals. */
 export const palette: readonly Swatch[] = [
-  {
-    name: 'Latch Blue',
-    hex: '#2B8BFF',
-    role: 'primary · CTA, accents',
-    token: '--latch-blue',
-    needsRule: false,
-  },
-  {
-    name: 'Deep Blue',
-    hex: '#0A63E0',
-    role: 'gradient end, pressed',
-    token: '--deep-blue',
-    needsRule: false,
-  },
-  {
-    name: 'Signal Blue',
-    hex: '#4A9BFF',
-    role: 'links, secondary data',
-    token: '--signal-blue',
-    needsRule: false,
-  },
-  { name: 'Void', hex: '#04060C', role: 'page background', token: '--void', needsRule: true },
-  { name: 'Panel', hex: '#070C17', role: 'cards, surfaces', token: '--panel', needsRule: true },
-  {
-    name: 'Hairline',
-    hex: '#16223A',
-    role: 'borders, dividers',
-    token: '--hairline',
-    needsRule: false,
-  },
-  { name: 'Ink', hex: '#E4ECF9', role: 'primary text', token: '--ink', needsRule: false },
-  {
-    name: 'Muted Ink',
-    hex: '#8A9BB6',
-    role: 'body text, labels',
-    token: '--muted-ink',
-    needsRule: false,
-  },
+  { name: 'Latch Blue', role: 'primary · actions, accents', token: '--latch-blue', needsRule: false },
+  { name: 'Deep Blue', role: 'hover, pressed', token: '--deep-blue', needsRule: false },
+  { name: 'Live Green', role: 'live status, success', token: '--success', needsRule: false },
+  { name: 'Ground', role: 'page background', token: '--void', needsRule: true },
+  { name: 'Surface', role: 'cards, panels', token: '--panel', needsRule: true },
+  { name: 'Hairline', role: 'borders, dividers', token: '--hairline', needsRule: true },
+  { name: 'Ink', role: 'primary text', token: '--ink', needsRule: false },
+  { name: 'Muted Ink', role: 'body copy, subtitles', token: '--muted-ink', needsRule: false },
 ]
 
 export interface TypeSpecimen {
@@ -229,18 +207,25 @@ export interface TypeSpecimen {
   readonly weight: number
 }
 
-/** § Typography — three specimens. */
+/**
+ * § Typography — three specimens, named for what index.html actually loads.
+ *
+ * The previous names (Chakra Petch, IBM Plex Sans, IBM Plex Mono) were from an
+ * earlier direction and rendered in none of those faces. Inter and JetBrains
+ * Mono are the Google Fonts request in index.html; the heading serif is a
+ * system stack with no web font behind it, and the specimen says so.
+ */
 export const specimens: readonly TypeSpecimen[] = [
   {
-    name: 'Chakra Petch',
-    meta: '600 / 700 · headlines, wordmark support',
-    font: 'var(--font-display)',
-    weight: 700,
+    name: 'Serif · system stack',
+    meta: 'Iowan Old Style, Palatino, Georgia · 500 · headings',
+    font: 'var(--font-serif)',
+    weight: 500,
   },
-  { name: 'IBM Plex Sans', meta: '400 / 500 · body, UI', font: 'var(--font-body)', weight: 400 },
+  { name: 'Inter', meta: '400 / 600 · body, UI', font: 'var(--font-body)', weight: 400 },
   {
-    name: 'IBM Plex Mono',
-    meta: '400 / 500 · labels, code, addresses',
+    name: 'JetBrains Mono',
+    meta: '400 / 500 · numbers, addresses, code',
     font: 'var(--font-mono)',
     weight: 500,
   },

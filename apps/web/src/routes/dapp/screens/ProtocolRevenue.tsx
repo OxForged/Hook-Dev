@@ -21,6 +21,7 @@ import { Link } from 'react-router-dom'
 import { useAccount, useSwitchChain } from 'wagmi'
 
 import { DEPLOYMENTS } from '../../../lib/chain'
+import { proposalStatus } from '../../../lib/pendingConfig'
 import { BarList } from '../components/charts'
 import { Methodology } from '../components/ProtocolCharts'
 import {
@@ -28,6 +29,7 @@ import {
   bpsPct,
   pipsPct,
   shortHex,
+  type OwnedPool,
   type OwnedPools,
 } from '../lib/revshare'
 import {
@@ -47,6 +49,39 @@ import { useHookRef } from '../lib/useHookRef'
 import { dappPath } from '../paths'
 
 const CHAIN = DEPLOYMENTS[REVSHARE_CHAIN_ID]
+
+/**
+ * A pool's outstanding proposal, by where it stands at the head that was read.
+ * Hazard item 5: `armed` is shown as armed — a legacy 7-word hook's matured
+ * proposal never expires, so on 0x23CE… it reads armed however old it is.
+ */
+function PendingBadge({ pool, head }: { pool: OwnedPool; head: bigint }) {
+  const status = proposalStatus(
+    { effectiveBlock: pool.pendingEffectiveBlock, expiryBlock: pool.pendingExpiryBlock },
+    head,
+  )
+  if (status === 'none') return null
+  if (status === 'queued') {
+    return (
+      <span className="dapp-badge dapp-badge--info">
+        change at block {pool.pendingEffectiveBlock.toString()}
+      </span>
+    )
+  }
+  if (status === 'expired') {
+    return (
+      <span className="dapp-badge dapp-badge--mute">
+        proposal expired at block {pool.pendingExpiryBlock?.toString()}
+      </span>
+    )
+  }
+  return (
+    <span className="dapp-badge dapp-badge--warn">
+      change armed · applicable by anyone
+      {pool.pendingExpiryBlock === null ? ' · never expires' : ` until block ${pool.pendingExpiryBlock.toString()}`}
+    </span>
+  )
+}
 
 export default function ProtocolRevenue() {
   const { ref: hook, malformed, withHook } = useHookRef()
@@ -84,7 +119,7 @@ export default function ProtocolRevenue() {
             Pool ownership on the hook is an address, so there is nothing to look up until one is
             known. Connecting reads only; it signs nothing.
           </p>
-          <ul className="live-list" style={{ marginTop: 10 }}>
+          <ul className="live-list dapp-mt-3">
             <li>
               <span>Every pool you configured or were handed</span>
               <span className="live-fee">PoolClaimed + PoolOwnerChanged, verified by poolOwner</span>
@@ -98,10 +133,10 @@ export default function ProtocolRevenue() {
               <span className="live-fee">getPendingConfig(poolId).effectiveBlock</span>
             </li>
           </ul>
-          <div style={{ marginTop: 12 }}>
+          <div className="dapp-mt-3">
             <LatchConnectButton variant="inline" label="Connect wallet" />
           </div>
-          <p className="live-note" style={{ marginTop: 14 }}>
+          <p className="live-note dapp-mt-4">
             A pool&rsquo;s revenue share is public — you do not need a wallet to read one. If you
             already have the pool id, open it directly.
           </p>
@@ -141,7 +176,7 @@ export default function ProtocolRevenue() {
               : `${state.data.transferredAway} pool(s) it once owned but has since transferred`}
             .
           </p>
-          <p style={{ marginTop: 8 }}>
+          <p className="dapp-mt-2">
             A pool appears here once its owner calls <code>configure(key, params)</code> — an
             owner-only action, not offered from this screen.
           </p>
@@ -181,7 +216,7 @@ export default function ProtocolRevenue() {
                 own input and no token amount is involved. Drawn only with
                 something to compare: a bar list of one row ranks nothing. */}
             {state.data.pools.length > 1 && (
-              <div style={{ marginBottom: 12 }}>
+              <div className="dapp-mb-3">
                 <BarList
                   items={[...state.data.pools]
                     .sort((a, b) => b.config.feePips - a.config.feePips)
@@ -248,18 +283,14 @@ export default function ProtocolRevenue() {
                           {p.config.enabled ? 'enabled' : 'disabled'}
                         </span>{' '}
                         {p.config.frozen && <span className="dapp-badge dapp-badge--info">frozen</span>}{' '}
-                        {p.pendingEffectiveBlock !== 0n && (
-                          <span className="dapp-badge dapp-badge--warn">
-                            change at block {p.pendingEffectiveBlock.toString()}
-                          </span>
-                        )}
+                        <PendingBadge pool={p} head={state.data.blockNumber} />
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <p className="live-note" style={{ marginTop: 10 }}>
+            <p className="live-note dapp-mt-3">
               <strong>
                 Log scan covered blocks {state.data.fromBlock.toString()} →{' '}
                 {state.data.toBlock.toString()}

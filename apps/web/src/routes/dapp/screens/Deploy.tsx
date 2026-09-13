@@ -655,18 +655,18 @@ export default function Deploy() {
           <h2 className="dapp-microlabel">PERMISSIONS READ FROM THE LATCH</h2>
 
           {!hookAddress && (
-            <p className="dapp-empty dp-gap">
+            <p className="dapp-empty dp-gap dapp-state--empty">
               Enter a Latch address above. Permissions are read from its own
               <code> getHooksRegistrationBitmap()</code>, never declared here.
             </p>
           )}
 
           {hookAddress && probeState.k === 'reading' && (
-            <p className="dapp-empty dp-gap">Reading {short(hookAddress)}&hellip;</p>
+            <p className="dapp-empty dp-gap dapp-state--loading">Reading {short(hookAddress)}&hellip;</p>
           )}
 
           {probeState.k === 'error' && (
-            <p className="hx-alert dp-gap">
+            <p className="dapp-state--error dp-gap">
               Could not reach {REGISTRY_CHAIN_NAME}: {probeState.message}. Nothing is shown rather
               than a stale or assumed bitmap.
             </p>

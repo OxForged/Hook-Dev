@@ -1,18 +1,11 @@
 /* ============================================================================
-   Sidebar — README § Dapp shell, ported to Canvas.
-   238px, white surface on the paper ground (the lighter surface now — Canvas
-   inverts the old dark-sidebar-on-dark-content depth cue). The active row is a
-   flat `--active-nav` ground with `--sky-ink` text and a Latch Blue accent bar
-   pinned to its left edge, not a gradient: a gradient built to fade into a dark
-   ground reads as a faint smudge on white. 0.22s transitions.
-
-   LOCKUP RESIZED TO MATCH THE LANDING RAIL, 2026-09-13. The mark, the wordmark
-   and the tag were 26 / 16 / 8px against the landing header's 30 / 19 / 9.5,
-   so the one element that appears on both surfaces changed size the moment a
-   visitor clicked through from the marketing site into the app. They are the
-   same object now; see the note on `.dapp-lockup` in dapp.css. Nothing in this
-   file sets a size — the rail's whole visual contract lives in that stylesheet,
-   which is why the restyle did not have to touch this component's markup.
+   Sidebar — Option B ("Institutional Clarity"), b.html's `.app-side`.
+   206px, white, a hairline right rule over the surface-2 content well.
+   Uppercase tracked group labels; full-bleed rows, muted -> ink on hover, and
+   the active row is blue text on `--accent-soft` at 600 — no accent bar, which
+   B does not draw. Icons are 16px so they sit under the 14px label rather than
+   competing with it. The rail's visual contract lives in dapp.css; the lockup
+   is the shared components/BrandLockup, at its `lg` size.
 
    GROUPED, 2026-09-12. Twelve flat rows plus a collapsed "More" disclosure
    became five labelled blocks and a sixth for the exits. Where the groups come
@@ -34,6 +27,7 @@
    ============================================================================ */
 
 import { ACTIVE_CHAIN_ID, DEPLOYMENTS, IS_TESTNET_BUILD } from '../../../lib/chain'
+import { BrandLockup } from '../../../components/BrandLockup'
 import { useRef } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import type { ShellData } from '../data/shell.ts'
@@ -79,11 +73,9 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
             button. `Link`, not NavLink: it navigates out of the dapp, so it
             never carries an active state. */}
         <Link to="/" className="dapp-lockup" aria-label="Latch Protocol — home">
-          <img src="/brand/latch-mark-transparent.png" alt="" className="dapp-lockup__mark" />
-          <span className="dapp-lockup__type">
-            <span className="dapp-lockup__name">LATCH</span>
-            <span className="dapp-lockup__tag">PROTOCOL</span>
-          </span>
+          {/* The shared lockup: the same mark, theme swap and proportions as
+              the landing and docs headers (components/BrandLockup). */}
+          <BrandLockup size="lg" />
         </Link>
 
         {/* GROUPED, with a quiet micro-label over each block. The groups and the
@@ -118,8 +110,7 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
                         }
                         onClick={onClose}
                       >
-                        <span className="dapp-nav__bar" aria-hidden="true" />
-                        {item.icon && <NavIcon name={item.icon} size={18} />}
+                        {item.icon && <NavIcon name={item.icon} size={16} />}
                         <span className="dapp-nav__label">{item.label}</span>
                       </NavLink>
                     </li>
@@ -162,11 +153,7 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
                   rel="noopener noreferrer"
                   onClick={onClose}
                 >
-                  {/* No `.dapp-nav__bar` here. The accent bar marks the row you
-                      are standing on, and you can never be standing on an exit
-                      — an element that exists only to stay transparent is a
-                      node somebody later wires up by mistake. */}
-                  <NavIcon name={link.icon} size={18} />
+                  <NavIcon name={link.icon} size={16} />
                   <span className="dapp-nav__stack">
                     <span className="dapp-nav__label">
                       {link.label}

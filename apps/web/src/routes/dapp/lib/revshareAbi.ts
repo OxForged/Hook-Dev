@@ -23,12 +23,13 @@
                claimableAt expiresAt rolledOver
 
    Field 5 is a vote total in one and a merkle root in the other. Hence two
-   separate ABIs here rather than the keeper's single shared one, and hence the
-   type probe (`token()` answers only on Snapshot, `challengeDelay()` only on
-   Merkle) before either is used.
+   separate ABIs here, and hence `IEpochDistributor.kind()` is read FIRST (see
+   `DISTRIBUTOR_KIND_ABI` below) before either is used. The old selector probe —
+   `token()` answers only on Snapshot, `challengeDelay()` only on Merkle — is
+   gone: any contract with a `token()` getter passed it.
    ============================================================================ */
 
-import { parseAbi, parseAbiItem } from 'viem'
+import { keccak256, parseAbi, parseAbiItem, toHex, type Hex } from 'viem'
 
 /* PoolKey is `(currency0, currency1, hooks, poolManager, fee, parameters)`.
    viem takes it as a positional tuple — see `keyTuple()` in ./revshare.ts. */
@@ -36,15 +37,15 @@ import { parseAbi, parseAbiItem } from 'viem'
 export const REV_SHARE_HOOK_ABI = parseAbi([
   /* --- reads ------------------------------------------------------------ */
   'function getConfig(bytes32 poolId) view returns ((address owner, uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, bool enabled, bool frozen))',
-  /* `expiryBlock` sits at index 1, AFTER effectiveBlock and BEFORE params.
-     Leaving it out does not error — the decoder reads expiryBlock as
-     params.feePips and every field after it shifts by one, so the UI would
-     print a block number as a fee. That is the getEpoch shape trap CLAUDE.md
-     documents, in a second place: a tuple that decodes cleanly while meaning
-     something else. A proposal is now refused past its expiry, so a screen
-     showing an armed proposal must read this field or it will show one that
-     can no longer be applied. */
-  'function getPendingConfig(bytes32 poolId) view returns ((uint48 effectiveBlock, uint48 expiryBlock, (uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, address distributor, bool enabled) params))',
+  /* `getPendingConfig` is deliberately NOT in this ABI. It has two shapes on
+     chain — 7 words on the hooks deployed before proposal expiry existed
+     (Robinhood 0x23CE…E446, which carries the LTT1/LTT2 pool; Sepolia
+     0x1C86…BE28), 8 words on the current source — and a typed ABI is right on
+     exactly one: the 8-field ABI THROWS on the 7-word return, and the 7-field
+     ABI silently reads the 8-word return's `expiryBlock` as `feePips`. It is
+     called raw and decoded by length in `lib/pendingConfig.ts`. Do not add a
+     typed entry back: a `readContract` against it would compile and be wrong
+     on one of the two hooks. */
   'function getBeneficiaries(bytes32 poolId) view returns ((address recipient, uint96 weight)[])',
   'function totalWeight(bytes32 poolId) view returns (uint256)',
   'function poolOwner(bytes32 poolId) view returns (address)',
@@ -83,6 +84,8 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   'error NotPoolOwner(bytes32 poolId, address caller)',
   'error NoPendingConfig(bytes32 poolId)',
   'error PendingConfigNotDue(bytes32 poolId, uint48 effectiveBlock)',
+  /* Current hook only. The legacy hook has no expiry and never raises it. */
+  'error PendingConfigExpired(bytes32 poolId, uint48 expiryBlock)',
   'error ConfigFrozen(bytes32 poolId)',
   'error HookMismatch(address declared)',
   'error PoolManagerMismatch(address declared)',
@@ -146,6 +149,31 @@ export const REV_SHARE_OWNER_ABI = parseAbi([
   'error InsufficientBackedBalance(address currency, uint256 needed, uint256 available)',
 ])
 
+/**
+ * `IEpochDistributor.kind()` — implemented by BOTH distributors, and the only
+ * thing that decides which of the two ABIs below is used. It returns a
+ * domain-separated keccak constant, never zero, so an EOA, a proxy to nothing,
+ * or an unrelated contract that happens to expose `token()` fails to match
+ * instead of being mistaken for a distributor.
+ */
+export const DISTRIBUTOR_KIND_ABI = parseAbi(['function kind() pure returns (bytes32)'])
+
+/**
+ * The values `kind()` may return, computed exactly as `EpochDistributorKind` in
+ * `packages/hooks-revshare/src/interfaces/IEpochDistributor.sol` computes them,
+ * and exactly as `packages/keeper/src/abi.ts` does. The `.v1` suffix is
+ * load-bearing: a distributor that changes its `Epoch` layout gets a NEW
+ * string, so this build fails to match it instead of decoding a new layout
+ * with an old ABI.
+ *
+ *   snapshot  0x6c8c753e7c890a8073f5cfa610b29805cf941f79c7bf9c9a8bbac78de7c5a7c1
+ *   merkle    0xa4c52bdd5374e29d7759675f0150c74d0a7b6631fa9c38e09feea924a000a516
+ */
+export const DISTRIBUTOR_KIND: Readonly<{ snapshot: Hex; merkle: Hex }> = {
+  snapshot: keccak256(toHex('latch.revshare.distributor.snapshot.v1')),
+  merkle: keccak256(toHex('latch.revshare.distributor.merkle.v1')),
+}
+
 /** `SnapshotEpochDistributor`. Field 5 of the epoch is `totalVotingSupply`. */
 export const SNAPSHOT_DISTRIBUTOR_ABI = parseAbi([
   'function poolKey() view returns ((address currency0, address currency1, address hooks, address poolManager, uint24 fee, bytes32 parameters))',
@@ -195,6 +223,14 @@ export const MERKLE_DISTRIBUTOR_ABI = parseAbi([
   'function carryOver1() view returns (uint256)',
   'function getEpoch(uint256 epochId) view returns ((uint256 amount0, uint256 amount1, uint256 claimed0, uint256 claimed1, bytes32 root, uint64 closedAt, uint64 claimableAt, uint64 expiresAt, bool rolledOver))',
   'function isClaimed(uint256 epochId, uint256 index) view returns (bool)',
+  /* The exact timestamp `rollover(epochId)` becomes callable. Two clocks govern
+     a merkle epoch: its claim window once a root stands (`expiresAt != 0`), or
+     the abandonment fallback `closedAt + minEpochDuration + claimWindow +
+     ROOT_GRACE_PERIOD` — floored by any `cancelRoot` — when none does
+     (`expiresAt == 0`). `getEpoch` does not record the cancelRoot floor, so
+     this view is the only correct answer; never recompute it off chain.
+     Merkle only: the snapshot distributor has no such call. */
+  'function rolloverEligibleAt(uint256 epochId) view returns (uint64)',
 
   /* writes — only the two permissionless ones. `claim` is NOT here: it needs a
      merkle proof and nothing on chain publishes the tree. See Epochs.tsx. */

@@ -33,6 +33,7 @@
 import { Link, useParams } from 'react-router-dom'
 
 import { DEPLOYMENTS } from '../../../lib/chain'
+import { proposalStatus } from '../../../lib/pendingConfig'
 import { BarList } from '../components/charts'
 import { PoolOwnerActions } from '../components/PoolOwnerActions'
 import { Methodology } from '../components/ProtocolCharts'
@@ -59,6 +60,7 @@ import {
   PoolIdText,
   Reading,
   ScreenIntro,
+  Unconfigured,
   Unreachable,
 } from '../lib/revshareParts'
 import { PermissionlessAction } from '../lib/revshareWrite'
@@ -111,7 +113,7 @@ export default function ProtocolPool() {
             'No pool id in this URL.'
           )}
         </p>
-        <p style={{ marginTop: 6 }}>
+        <p className="dapp-mt-2">
           <Link to={withHook(dappPath('protocol'))}>← pools you own</Link>
         </p>
       </ScreenIntro>
@@ -145,7 +147,7 @@ export default function ProtocolPool() {
             <Addr value={state.data.hook} /> has contract code on {CHAIN.name}, but{' '}
             <code>getConfig(bytes32)</code> reverted on it. It is some other contract.
           </p>
-          <p style={{ marginTop: 8 }}>
+          <p className="dapp-mt-2">
             This is a verdict about the address, not about the chain — the RPC answered fine. The
             raw error was: <code>{state.data.detail}</code>
           </p>
@@ -153,7 +155,7 @@ export default function ProtocolPool() {
       )}
 
       {state.k === 'ready' && state.data.k === 'not-configured' && (
-        <Empty title="This pool has no revenue-share configuration">
+        <Unconfigured title="This pool has no revenue-share configuration">
           <p>
             <code>getConfig</code> on <Addr value={state.data.hook} /> returns an owner of{' '}
             <code>address(0)</code> for <PoolIdText value={state.data.poolId} />, which means the
@@ -167,7 +169,7 @@ export default function ProtocolPool() {
               tests.
             </p>
           </Methodology>
-        </Empty>
+        </Unconfigured>
       )}
 
       {state.k === 'ready' && state.data.k === 'ready' && (
@@ -196,10 +198,15 @@ function PoolBody({
         'Until the key is known, this transaction cannot be built at all.'
       : null
 
+  /* Hazard item 5: a matured proposal is ARMED — applicable by anyone, in the
+     next block — whatever `getConfig` says. On the legacy 7-word hook
+     (0x23CE…, the LTT1/LTT2 pool) it has no expiry and stays armed until the
+     owner cancels or freezes; only the current 8-word hook can say `expired`. */
   const pending = o.pending
-  const hasPending = pending.effectiveBlock !== 0n
-  const blocksToGo = hasPending ? pending.effectiveBlock - o.blockNumber : 0n
-  const pendingDue = hasPending && blocksToGo <= 0n
+  const status = proposalStatus(pending, o.blockNumber)
+  const hasPending = status !== 'none'
+  const blocksToGo = status === 'queued' ? pending.effectiveBlock - o.blockNumber : 0n
+  const pendingDue = status === 'armed'
 
   const lifetimeTotal = (row: { lpDonated: bigint; toBeneficiaries: bigint; toDistributor: bigint }) =>
     row.lpDonated + row.toBeneficiaries + row.toDistributor
@@ -216,7 +223,7 @@ function PoolBody({
         </div>
 
         {o.lifetime.rows.length === 0 ? (
-          <div className="an-empty" style={{ marginTop: 10 }}>
+          <div className="an-empty dapp-mt-3">
             <p className="an-empty__title">No revenue taken yet</p>
             <p className="live-note">
               No <code>RevShareTaken</code> log for this pool between block{' '}
@@ -276,7 +283,7 @@ function PoolBody({
           const lpBps = bps(r.lpDonated)
           const benBps = bps(r.toBeneficiaries)
           return (
-            <div key={`split-${r.token.address}`} style={{ marginTop: 12 }}>
+            <div key={`split-${r.token.address}`} className="dapp-mt-3">
               <StackedBar
                 total={SPLIT_TOTAL_BPS}
                 unit={`of the ${r.token.symbol} taken`}
@@ -306,7 +313,7 @@ function PoolBody({
           )
         })}
 
-        <p className="live-note" style={{ marginTop: 10 }}>
+        <p className="live-note dapp-mt-3">
           <strong>Summed from logs since block {o.lifetime.fromBlock.toString()}</strong> (head{' '}
           {o.lifetime.toBlock.toString()}) — a window total, not a lifetime total.
         </p>
@@ -324,9 +331,23 @@ function PoolBody({
       {hasPending && (
         <section className={pendingDue ? 'dapp-card hx-alert' : 'dapp-card'}>
           <div className="dapp-card__head">
-            <h3 className="dapp-card__title">A configuration change is waiting</h3>
-            <span className={pendingDue ? 'dapp-badge dapp-badge--warn' : 'dapp-badge dapp-badge--info'}>
-              {pendingDue ? 'due now' : `${blocksToGo.toString()} blocks to go`}
+            <h3 className="dapp-card__title">
+              {status === 'expired' ? 'A configuration proposal has expired' : 'A configuration change is waiting'}
+            </h3>
+            <span
+              className={
+                pendingDue
+                  ? 'dapp-badge dapp-badge--warn'
+                  : status === 'expired'
+                    ? 'dapp-badge dapp-badge--mute'
+                    : 'dapp-badge dapp-badge--info'
+              }
+            >
+              {pendingDue
+                ? 'armed · applicable by anyone now'
+                : status === 'expired'
+                  ? 'expired · cannot be applied'
+                  : `${blocksToGo.toString()} blocks to go`}
             </span>
           </div>
           <p className="live-note">
@@ -336,8 +357,31 @@ function PoolBody({
             is <strong>permissionless</strong> — deliberately, so a proposal cannot be stranded by an
             owner who proposed it and walked away.
           </p>
+          <p className="live-note dapp-mt-2">
+            {pending.expiryBlock === null ? (
+              <>
+                <strong>This hook&rsquo;s proposals never expire.</strong> It returns the older
+                seven-word <code>getPendingConfig</code>, which has no <code>expiryBlock</code>: once
+                matured, this change stays applicable by anyone until the owner calls{' '}
+                <code>cancelPendingConfig</code> or <code>freezeConfig</code>.{' '}
+                <code>disable</code> and <code>reduceFee</code> do not clear it.
+              </>
+            ) : status === 'expired' ? (
+              <>
+                Its window closed at block {pending.expiryBlock.toString()}.{' '}
+                <code>applyPendingConfig</code> now reverts <code>PendingConfigExpired</code>, so it
+                cannot land; re-proposing restarts the full delay.
+              </>
+            ) : (
+              <>
+                It stays applicable through block {pending.expiryBlock.toString()} (
+                <code>expiryBlock</code>), then expires. <code>disable</code> and{' '}
+                <code>reduceFee</code> do not clear it before then.
+              </>
+            )}
+          </p>
 
-          <dl className="dapp-fields" style={{ marginTop: 10 }}>
+          <dl className="dapp-fields dapp-mt-3">
             <Field name="Proposed cut" value={`${pipsPct(pending.params.feePips)} (${pending.params.feePips} pips)`} was={`${pipsPct(o.config.feePips)}`} />
             <Field name="To LPs" value={bpsPct(pending.params.lpDonateBps)} was={bpsPct(o.config.lpDonateBps)} />
             <Field name="To beneficiaries" value={bpsPct(pending.params.beneficiaryBps)} was={bpsPct(o.config.beneficiaryBps)} />
@@ -430,7 +474,7 @@ function PoolBody({
           ]}
         />
 
-        <dl className="dapp-fields" style={{ marginTop: 12 }}>
+        <dl className="dapp-fields dapp-mt-3">
           <Field name="Pool owner" value={<Addr value={o.config.owner} />} />
           {o.pendingOwner && (
             <Field
@@ -455,7 +499,7 @@ function PoolBody({
           <Field name="Pool manager" value={<Addr value={o.poolManager} />} note="hook.poolManager()" />
         </dl>
 
-        <p className="live-note" style={{ marginTop: 10 }}>
+        <p className="live-note dapp-mt-3">
           Owner-only actions appear in their own panel below, and only for this pool&rsquo;s owner.
         </p>
       </section>
@@ -479,7 +523,7 @@ function PoolBody({
               so every write below needs this. It is shown because the source of a key is part of
               trusting the transaction built from it.
             </p>
-            <dl className="dapp-fields" style={{ marginTop: 10 }}>
+            <dl className="dapp-fields dapp-mt-3">
               <Field name="currency0" value={<Addr value={resolved.key.currency0} />} />
               <Field name="currency1" value={<Addr value={resolved.key.currency1} />} />
               <Field name="hooks" value={<Addr value={resolved.key.hooks} />} />
@@ -553,7 +597,7 @@ function PoolBody({
             same total weight, so the comparison is unit-consistent by
             construction. */}
         {o.beneficiaries.length > 0 && o.totalWeight > 0n && (
-          <div style={{ marginTop: 12 }}>
+          <div className="dapp-mt-3">
             <BarList
               items={o.beneficiaries.map((b) => ({
                 name: shortHex(b.recipient),
@@ -567,7 +611,7 @@ function PoolBody({
           </div>
         )}
 
-        <p className="live-note" style={{ marginTop: 10 }}>
+        <p className="live-note dapp-mt-3">
           Weight is per-pool; a claimable balance is not.{' '}
           <Link to={withHook(dappPath('claim'))}>See a global balance on the claim screen →</Link>
         </p>
@@ -625,7 +669,7 @@ function PoolBody({
                 </tbody>
               </table>
             </div>
-            <p className="live-note" style={{ marginTop: 8 }}>
+            <p className="live-note dapp-mt-2">
               Left column: <code>pendingBeneficiary(poolId, currency)</code> — accrued on the swap
               path, not yet split across the roster. Right column:{' '}
               <code>pendingDistributorShare(poolId, currency)</code> — waiting for the distributor to
@@ -655,7 +699,7 @@ function PoolBody({
 
             {o.unsettled.every((u) => u.beneficiary === 0n) && (
               <>
-                <p className="live-note" style={{ marginTop: 10 }}>
+                <p className="live-note dapp-mt-3">
                   Nothing is pending for the roster, so <code>settleBeneficiaries</code> is not
                   offered.
                 </p>

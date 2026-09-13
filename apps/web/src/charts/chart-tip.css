@@ -4,28 +4,31 @@
 
    The fade is a CSS transition, so tokens.css's global
    `prefers-reduced-motion: reduce` block collapses it to nothing.
+
+   The house tooltip (b.html `.tip`), the same chip FeeChart draws on the
+   landing: the --tip-* tokens invert the theme — a dark chip on paper, a light
+   chip on the dark ground.
    ============================================================================ */
 
 .chart-tip {
   position: fixed;
   left: 0;
   top: 0;
-  z-index: 60;
+  z-index: var(--z-tooltip);
   /* Never intercept a pointer: on touch the card can land under the finger. */
   pointer-events: none;
   width: max-content;
   max-width: min(280px, calc(100vw - 16px));
   padding: 9px 11px;
-  border: 1px solid var(--hairline-blue);
-  border-radius: var(--r-badge);
-  background: var(--panel);
-  box-shadow: var(--sh-card-hover);
+  border-radius: var(--r-btn);
+  background: var(--tip-bg);
+  box-shadow: var(--shadow-2);
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: var(--b-label);
   line-height: 1.45;
-  color: var(--dapp-ink-data);
+  color: var(--tip-ink);
   opacity: 0;
-  transition: opacity 0.12s var(--ease);
+  transition: opacity var(--b-dur) var(--ease);
 }
 
 .chart-tip[data-ready='true'] {
@@ -35,9 +38,9 @@
 .chart-tip__title {
   margin: 0 0 6px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--b-axis);
   letter-spacing: 0.04em;
-  color: var(--label-ink);
+  color: var(--tip-mut);
   overflow-wrap: anywhere;
 }
 
@@ -64,12 +67,12 @@
   font-family: var(--font-mono);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
+  color: var(--tip-ink);
 }
 
 .chart-tip__label {
-  color: var(--dapp-ink-sub);
-  font-size: 11.5px;
+  color: var(--tip-mut);
+  font-size: var(--b-label);
   min-width: 0;
   overflow-wrap: anywhere;
 }

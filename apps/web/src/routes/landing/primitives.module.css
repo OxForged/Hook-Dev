@@ -1,0 +1,295 @@
+/* ============================================================================
+   Option B primitives shared by the landing modules — ONE copy.
+
+   Four module agents each restated b.html's `.panel`, `.panel-h`, `.toggle`,
+   `.kpis` and the loading/error/empty card, with values that had already
+   begun to drift (18px vs 22px panel gaps, `calc(var(--r-btn) - 3px)` toggle
+   segments, three different dashed-rule tokens). Modules now pull these in
+   with CSS Modules `composes`, so the TSX keeps its own class names and each
+   module states only what is genuinely its own.
+
+     .panel / .panelHead / .panelHeadText / .panelTitle / .panelCaption
+                                   b.html `.panel` + `.panel-h`
+     .toggle / .toggleSeg / .toggleSegOn
+                                   b.html `.toggle`
+     .kpiRow / .kpiCell            b.html `.kpis` / `.kpi`, nested-in-a-panel size
+     .stateCard / .stateText / .stateDot / .stateRaw
+                                   the loading / error / empty shapes
+     .provenance                   the one-line source caption under a module
+     .btnSm                        b.html `.btn`, one size down
+     .sr                           visually hidden, still announced
+
+   Descendant and attribute rules below (`.provenance code`,
+   `.stateCard[data-state]`) reach a composing element too, because composing
+   adds this file's class to it.
+
+   TOKENS ONLY. Every colour, radius, shadow, duration and type size is a token
+   from src/styles/tokens.css.
+   ========================================================================== */
+
+/* ---- panel ---------------------------------------------------------------- */
+
+.panel {
+  min-width: 0;
+  padding: 26px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+}
+
+.panelHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px var(--s6);
+  min-width: 0;
+}
+
+.panelHeadText {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.panelTitle {
+  margin: 0 0 var(--s1);
+  font-family: var(--font-body);
+  font-size: var(--b-panel-h);
+  font-weight: 640;
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+  color: var(--ink-bright);
+}
+
+.panelCaption {
+  max-width: 62ch;
+  margin: 0;
+  font-size: var(--b-caption);
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+
+.panelCaption code {
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  color: var(--ink);
+}
+
+/* ---- segmented toggle ----------------------------------------------------- */
+
+.toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-toggle);
+  background: var(--panel-alt);
+}
+
+.toggleSeg {
+  appearance: none;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: var(--r-toggle-seg);
+  background: transparent;
+  font: 600 var(--b-label) / 1 var(--font-body);
+  color: var(--muted-ink);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--b-dur),
+    color var(--b-dur),
+    box-shadow var(--b-dur);
+}
+
+.toggleSeg:hover {
+  color: var(--ink);
+}
+
+/* --light-surface, never --panel: on the dark track --panel sinks. */
+.toggleSegOn {
+  background: var(--light-surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
+}
+
+/* ---- KPI row, nested inside a panel ---------------------------------------
+   The page-level row (LiveStrip) uses the full --b-kpi figure; inside a panel
+   the figure steps down to b.html's `.mini` size. */
+
+.kpiRow {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--hairline);
+  overflow: hidden;
+}
+
+.kpiCell {
+  min-width: 0;
+  padding: 18px 20px;
+  background: var(--panel);
+}
+
+/* ---- the loading / error / empty card -------------------------------------
+   Shapes match the dapp's four states (dapp.css, THE FOUR STATES):
+     loading   no rule, a pulsing blue dot leads the sentence
+     error     warm ground, warning hairline and a 3px warning rule — "the
+               chain did not answer" is not a contract fault, and red is kept
+               for real hazards
+     empty     b.html `.empty`: dashed, unshadowed
+   Reserves roughly a module's height so the page does not jump on arrival. */
+
+.stateCard {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--s2);
+  min-height: 200px;
+}
+
+.stateCard[data-state='error'] {
+  border-color: var(--dapp-badge-warn-border);
+  border-left: 3px solid var(--warning);
+  background: var(--dapp-badge-warn-bg);
+}
+
+.stateCard[data-state='empty'] {
+  border-style: dashed;
+  border-color: var(--dashed-rule);
+  box-shadow: none;
+}
+
+.stateText {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+}
+
+.stateCard[data-state='error'] .stateText {
+  color: var(--ink);
+}
+
+.stateDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--latch-blue);
+  animation: statePulse 1.6s ease-in-out infinite;
+}
+
+.stateRaw {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  color: var(--muted-ink);
+  overflow-wrap: anywhere;
+}
+
+@keyframes statePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---- provenance ----------------------------------------------------------- */
+
+.provenance {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--b-label);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+}
+
+.provenance code {
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  color: var(--ink);
+}
+
+/* ---- small button --------------------------------------------------------- */
+
+.btnSm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px var(--s3);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  font: 600 var(--b-label) / 1 var(--font-body);
+  color: var(--btn2-ink);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    box-shadow var(--b-dur),
+    border-color var(--b-dur),
+    transform var(--b-dur) var(--ease);
+}
+
+.btnSm:hover:not(:disabled) {
+  color: var(--btn2-ink);
+  border-color: var(--btn2-border-hover);
+  box-shadow: var(--shadow-2);
+  transform: var(--b-btn-lift);
+}
+
+/* ---- visually hidden ------------------------------------------------------ */
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- narrow + reduced motion ---------------------------------------------- */
+
+@media (max-width: 560px) {
+  .panel {
+    padding: var(--s4);
+  }
+
+  .kpiCell {
+    padding: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toggleSeg,
+  .btnSm {
+    transition: none;
+  }
+
+  .btnSm:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .stateDot {
+    animation: none;
+    opacity: 1;
+  }
+}

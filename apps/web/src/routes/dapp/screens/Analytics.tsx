@@ -204,7 +204,7 @@ export default function Analytics() {
           <h2 className="dapp-microlabel">PROTOCOL ANALYTICS</h2>
           <LiveBadge />
         </div>
-        <p className={`live-note${state.k === 'error' ? ' live-note--err' : ''}`} role="status">
+        <p className={`live-note ${state.k === 'error' ? 'live-note--err' : 'dapp-state--loading'}`} role="status">
           {state.k === 'loading'
             ? `Reading protocol events, pools and swap fees from the ${chain.name} contracts…`
             : `Could not reach ${chain.name}: ${state.message}. Nothing shown rather than placeholder figures.`}

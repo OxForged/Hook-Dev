@@ -28,7 +28,7 @@
    answer, plus two facts derived from the address book.
    ========================================================================== */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   ACTIVE_CHAIN_ID,
@@ -38,6 +38,7 @@ import {
   type ProtocolStatus,
 } from '../../lib/chain'
 import styles from './livestrip.module.css'
+import { cx, prefersReducedMotion } from './ui'
 
 /** The chain this build serves. Never a spelled-out name: see landing/data.ts. */
 const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
@@ -208,20 +209,118 @@ function feeCell(s: Status): Cell {
    View
    --------------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------------
+   Motion: a count-up on the FIRST real value, and a flash on each real update.
+
+   WHAT THIS IS NOT. It is not a ticker. Nothing increments between reads: the
+   count-up runs once, from zero to a value that has already come back from
+   the chain, and is over in under a second; after that every change on screen
+   is a new read landing, marked by a brief flash. A counter animating between
+   polls would be an invented number — exactly what BLOCK_POLL_MS's note rules
+   out.
+
+   Under `prefers-reduced-motion` neither runs: the value is simply shown.
+   --------------------------------------------------------------------------- */
+
+/** Prefix, a grouped/decimal number, suffix. "0.0999%" -> "", "0.0999", "%". */
+const NUMERIC = /^([^0-9]*)(\d[\d,]*(?:\.\d+)?)(.*)$/
+const COUNT_MS = 900
+
+function useCountOnce(value: string | null): { text: string | null; flash: number } {
+  const [anim, setAnim] = useState<string | null>(null)
+  const [flash, setFlash] = useState(0)
+  const started = useRef(false)
+  const last = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (value === null) return
+
+    if (started.current) {
+      if (value !== last.current) {
+        last.current = value
+        setFlash((n) => n + 1)
+      }
+      return
+    }
+
+    started.current = true
+    last.current = value
+    if (prefersReducedMotion()) return
+
+    const m = NUMERIC.exec(value)
+    if (m === null) return
+    const prefix = m[1] ?? ''
+    const digits = m[2] ?? ''
+    const suffix = m[3] ?? ''
+    const plain = digits.replace(/,/g, '')
+    const target = Number(plain)
+    if (!Number.isFinite(target) || target === 0) return
+    const decimals = (plain.split('.')[1] ?? '').length
+    const grouped = digits.includes(',')
+    const format = (n: number): string => {
+      const fixed = n.toFixed(decimals)
+      const body = grouped
+        ? Number(fixed).toLocaleString('en-US', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+          })
+        : fixed
+      return prefix + body + suffix
+    }
+
+    let frame = 0
+    let finished = false
+    const t0 = performance.now()
+    const step = (now: number): void => {
+      const p = Math.min(1, (now - t0) / COUNT_MS)
+      if (p < 1) {
+        setAnim(format(target * (1 - Math.pow(1 - p, 3))))
+        frame = requestAnimationFrame(step)
+      } else {
+        finished = true
+        setAnim(null)
+      }
+    }
+    frame = requestAnimationFrame(step)
+
+    return () => {
+      cancelAnimationFrame(frame)
+      /* An interrupted count (StrictMode's dev double-run, or a fast unmount)
+         is not a completed first load; let the next run start it again. */
+      if (!finished) started.current = false
+      setAnim(null)
+    }
+  }, [value])
+
+  return { text: anim ?? value, flash }
+}
+
 function CellView({
   label,
   cell,
   liveRegion = false,
   pulse = false,
+  flashOnUpdate = false,
+  text = false,
 }: {
   label: string
   cell: Cell
+  /**
+   * The value is WORDS, not a figure (the chain name). Set a step smaller on
+   * the same line box as the figures beside it, so it neither wraps at KPI
+   * size nor drops the row out of line.
+   */
+  text?: boolean
   /** Announce changes politely. Only the block height needs this. */
   liveRegion?: boolean
   /** Show the live indicator when the cell is ready. Purely decorative. */
   pulse?: boolean
+  /** Flash the value when a NEW real read replaces the previous one. */
+  flashOnUpdate?: boolean
 }) {
-  const value = cell.k === 'ready' ? cell.value : cell.k === 'loading' ? '·' : UNREAD
+  const real = cell.k === 'ready' ? cell.value : null
+  const counted = useCountOnce(real)
+  const value = real !== null ? (counted.text ?? real) : cell.k === 'loading' ? '·' : UNREAD
   const note =
     cell.k === 'ready' ? cell.note : cell.k === 'loading' ? `reading ${CHAIN.name}…` : cell.reason
 
@@ -230,12 +329,28 @@ function CellView({
       <span className={styles['label']}>{label}</span>
       <span className={styles['valueRow']}>
         {pulse && cell.k === 'ready' ? <i className={styles['pulse']} aria-hidden="true" /> : null}
+        {/* The painted figure is aria-hidden: mid count-up it is a frame of an
+            animation, not a value, and must never be announced as one. The
+            real value is exposed beside it. Keyed on the flash count so each
+            new read restarts the flash. */}
         <span
-          className={styles['value']}
+          key={counted.flash}
+          className={cx(
+            styles['value'],
+            text && styles['valueText'],
+            flashOnUpdate && counted.flash > 0 && styles['flash'],
+          )}
+          aria-hidden="true"
+          title={text && real !== null ? real : undefined}
+        >
+          {value}
+        </span>
+        <span
+          className={styles['sr']}
           aria-live={liveRegion ? 'polite' : undefined}
           aria-atomic={liveRegion ? true : undefined}
         >
-          {value}
+          {real ?? value}
         </span>
       </span>
       <span className={styles['note']}>{note}</span>
@@ -299,8 +414,8 @@ export function LiveStrip() {
       aria-label={`Live protocol status on ${CHAIN.name}`}
     >
       <div className={styles['strip']}>
-        <CellView label="CHAIN" cell={chainCell} />
-        <CellView label="BLOCK" cell={headCell(head)} liveRegion pulse />
+        <CellView label="CHAIN" cell={chainCell} text />
+        <CellView label="BLOCK" cell={headCell(head)} liveRegion pulse flashOnUpdate />
         <CellView label="FEE" cell={feeCell(status)} />
         <CellView label="CONTRACTS" cell={contractsCell()} />
       </div>

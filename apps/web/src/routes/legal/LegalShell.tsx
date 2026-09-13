@@ -54,7 +54,7 @@ export function LegalShell({
       <main>
         <div className={styles['wrap']}>
           <p className={landing['eyebrow']}>{eyebrow}</p>
-          <h1 className={landing['h1']}>{title}</h1>
+          <h1 className={`${landing['h1'] ?? ''} ${styles['title'] ?? ''}`}>{title}</h1>
           <p className={styles['meta']}>
             <span>Last updated: {lastUpdated}</span>
             <span>Status: draft, pending legal review</span>

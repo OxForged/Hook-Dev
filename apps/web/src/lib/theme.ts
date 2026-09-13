@@ -100,7 +100,7 @@ function applyTheme(choice: ThemeChoice): ResolvedTheme {
 
 /** The two --void values. Duplicated from tokens.css because a <meta> content
     attribute cannot read a CSS custom property. */
-const THEME_COLOR: Record<ResolvedTheme, string> = { light: '#F4F3EF', dark: '#0E1013' }
+const THEME_COLOR: Record<ResolvedTheme, string> = { light: '#fbfcfd', dark: '#0b0f16' }
 
 /**
  * Keeps the browser chrome colour in step with the ACTIVE theme.

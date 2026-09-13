@@ -35,6 +35,7 @@
    card and in the page header.
    ============================================================================ */
 
+import { CHAIN_ROWS } from '../../../data/chains.ts'
 import { ACTIVE_CHAIN_ID, DEPLOYMENTS } from '../../../lib/chain'
 import { GITHUB_URL } from '../../landing/socials.ts'
 
@@ -112,6 +113,45 @@ export const LATCH_KIND_ORDER: readonly LatchKind[] = [
   'own',
 ]
 
+/* ---- categories ------------------------------------------------------------ */
+
+/**
+ * What KIND OF PRODUCT a project is, in the words a trader browses by. This is
+ * the axis the directory's category tabs filter on; `uses` (the Latch families)
+ * is a different axis and drives the `Tags` menu.
+ *
+ * A closed union for the same reason `LatchKind` is one: a typo fails `tsc`
+ * instead of rendering a tab nobody can match. The list is a VOCABULARY, not a
+ * set of listings — the directory renders a tab only for a category at least
+ * one real entry carries, so an unused member here never reaches the screen.
+ * The submission form offers every member plus "Other"; a listing that picks
+ * "Other" gets a new member added here when it is merged.
+ */
+export type EcosystemCategory =
+  | 'DEX'
+  | 'Launchpad'
+  | 'Quests'
+  | 'Lending'
+  | 'RWA'
+  | 'Analytics'
+  | 'Wallet'
+  | 'Infrastructure'
+
+/** Display order for tabs and the submission form. */
+export const ECOSYSTEM_CATEGORIES: readonly EcosystemCategory[] = [
+  'DEX',
+  'Launchpad',
+  'Quests',
+  'Lending',
+  'RWA',
+  'Analytics',
+  'Wallet',
+  'Infrastructure',
+]
+
+/** The form's escape hatch. Never a value an entry carries — see above. */
+export const CATEGORY_OTHER = 'Other'
+
 /* ---- the entry shape ------------------------------------------------------- */
 
 export interface EcosystemProject {
@@ -123,6 +163,22 @@ export interface EcosystemProject {
   readonly url: string
   /** Public source repository, if the project gave one. */
   readonly source?: string
+  /**
+   * What kind of product this is. Taken from the project's own words — the
+   * listing issue's category field, or for the seeded entries below, their own
+   * tagline — never inferred from what the product looks like.
+   */
+  readonly category: EcosystemCategory
+  /**
+   * FEATURED IS AN EDITORIAL CHOICE BY LATCH, NOT A CLAIM ABOUT THE PROJECT.
+   *
+   * It means "Latch chose to put this card on the landing page", and nothing
+   * else: not reviewed, not audited, not endorsed, not more used. The card's
+   * badge reads "Featured" and its footer caption still carries
+   * `LISTING_PROVENANCE`, so the badge cannot be read as verification. A
+   * project cannot set this through the listing issue.
+   */
+  readonly featured?: boolean
   /** Which Latch families the project says it uses. At least one. */
   readonly uses: readonly LatchKind[]
   /** EIP-155 chain ids the project says the integration is live on. At least one. */
@@ -188,6 +244,11 @@ export const ECOSYSTEM_PROJECTS: readonly EcosystemProject[] = [
     /* Their own <title> and og:title, verbatim. */
     tagline: 'Launch memecoins paired to stocks.',
     url: 'https://peddles.xyz',
+    /* Derived from the tagline above and nothing else: "Launch memecoins" is
+       a launchpad in the project's own words. */
+    category: 'Launchpad',
+    /* Editorial choice by Latch, not a claim about the project — see `featured`. */
+    featured: true,
     /* PLACEHOLDER. A stock-paired launch is what the tagline describes, so
        these are the families it WOULD use — not families anything has
        confirmed it does use. */
@@ -204,6 +265,11 @@ export const ECOSYSTEM_PROJECTS: readonly EcosystemProject[] = [
        is a state rather than a description of the product. */
     tagline: 'Trade, provide liquidity, and lock tokens across V2 and V3.',
     url: 'https://peddleswap.xyz',
+    /* Derived from the tagline above and nothing else: "Trade, provide
+       liquidity" is a DEX in the project's own words. */
+    category: 'DEX',
+    /* Editorial choice by Latch, not a claim about the project — see `featured`. */
+    featured: true,
     /* PLACEHOLDER — see the block above. */
     uses: ['rev-share'],
     /* PLACEHOLDER. */
@@ -220,6 +286,11 @@ export const ECOSYSTEM_PROJECTS: readonly EcosystemProject[] = [
        sentence with an exclamation mark and does not fit a one-line slot. */
     tagline: 'Complete tasks, earn crypto rewards.',
     url: 'https://peddlequest.xyz',
+    /* Derived from the tagline above and nothing else: "Complete tasks, earn
+       rewards" is a quests product in the project's own words. */
+    category: 'Quests',
+    /* Editorial choice by Latch, not a claim about the project — see `featured`. */
+    featured: true,
     /* PLACEHOLDER — see the block above. */
     uses: ['rev-share'],
     /* PLACEHOLDER. */
@@ -231,7 +302,10 @@ export const ECOSYSTEM_PROJECTS: readonly EcosystemProject[] = [
 
 /* ---- provenance: a property of the surface, not a field ------------------- */
 
-/** Rendered on every card and in the header. One string so it cannot drift. */
+/**
+ * Rendered on every card (`EcosystemCard`, landing and directory alike) and in
+ * the directory's count line. One string so it cannot drift.
+ */
 export const LISTING_PROVENANCE = 'Submitted by the project · not verified by Latch Protocol'
 
 /* ---- helpers --------------------------------------------------------------- */
@@ -250,6 +324,22 @@ export function chainsListed(projects: readonly EcosystemProject[]): number[] {
   const ids = new Set<number>()
   for (const p of projects) for (const c of p.chains) ids.add(c)
   return [...ids].sort((a, b) => a - b)
+}
+
+/**
+ * Every category at least one listing carries, in `ECOSYSTEM_CATEGORIES` order.
+ * Drives the category tabs, so there is never a tab that matches nothing.
+ */
+export function categoriesListed(projects: readonly EcosystemProject[]): EcosystemCategory[] {
+  const present = new Set(projects.map((p) => p.category))
+  return ECOSYSTEM_CATEGORIES.filter((c) => present.has(c))
+}
+
+/** Every Latch family at least one listing names, in `LATCH_KIND_ORDER`. Drives the Tags menu. */
+export function kindsListed(projects: readonly EcosystemProject[]): LatchKind[] {
+  const present = new Set<LatchKind>()
+  for (const p of projects) for (const k of p.uses) present.add(k)
+  return LATCH_KIND_ORDER.filter((k) => present.has(k))
 }
 
 export interface ChainCount {
@@ -331,66 +421,292 @@ export const ECOSYSTEM_ISSUES_REPO = `${GITHUB_URL}/.github`
 
 export const LISTING_TEMPLATE = 'project-listing.yml'
 
+/**
+ * The issue form's field ids, keyed by what the submission form calls them.
+ *
+ * KEEP IN STEP WITH `.github/ISSUE_TEMPLATE/project-listing.yml`. Each value is
+ * an `id:` in that file and is sent as a query parameter of the same name.
+ *
+ * GitHub prefills issue-form fields from the URL for TEXT fields only (`input`
+ * and `textarea`). That is why category, Latch families and chains are text
+ * inputs in the template rather than a dropdown and checkboxes: a checkbox the
+ * submitter already ticked on this site would arrive unticked. The two
+ * confirmation checkboxes are the deliberate exception — a person has to tick
+ * those on GitHub themselves.
+ */
+export const LISTING_FIELDS = {
+  name: 'project_name',
+  description: 'tagline',
+  url: 'url',
+  source: 'source',
+  category: 'category',
+  uses: 'uses',
+  ownLatch: 'own_latch',
+  chains: 'chains',
+  icon: 'icon',
+  contact: 'contact',
+} as const
+
+/**
+ * Character limits the form enforces. `name` and `description` are the limits
+ * the issue template states to the submitter; the rest only keep one field from
+ * eating the URL budget below.
+ */
+export const LISTING_LIMITS = {
+  name: 80,
+  description: 280,
+  url: 300,
+  source: 300,
+  categoryOther: 40,
+  ownLatch: 200,
+  iconSource: 300,
+  contact: 200,
+} as const
+
+/**
+ * The longest prefilled issue URL we will hand to the browser.
+ *
+ * GitHub answers a request URL of roughly 8 KB with an error page instead of
+ * the form, which loses everything the submitter typed. 7,500 leaves headroom
+ * under that for proxies that count differently. When the URL would exceed it,
+ * `buildListingIssue` shortens the DESCRIPTION — the one free-text field long
+ * enough to matter — and reports that it did, so the form can say so.
+ */
+export const MAX_ISSUE_URL_LENGTH = 7_500
+
+/** What the browser could read about a chosen icon file. Nothing is uploaded. */
+export interface ListingIcon {
+  readonly fileName: string
+  readonly type: string
+  readonly bytes: number
+  readonly width?: number
+  readonly height?: number
+}
+
 export interface ListingPrefill {
   readonly name?: string
   readonly url?: string
+  readonly description?: string
+  readonly category?: EcosystemCategory | typeof CATEGORY_OTHER | ''
+  /** Free text, used only when `category` is "Other". */
+  readonly categoryOther?: string
+  readonly source?: string
+  readonly uses?: readonly LatchKind[]
+  /** Used only when `uses` includes `own`. */
+  readonly ownLatch?: string
+  readonly chains?: readonly number[]
+  readonly icon?: ListingIcon | null
+  /** Where the icon file is published on the project's own site. */
+  readonly iconSource?: string
+  readonly contact?: string
+}
+
+export interface ListingIssue {
+  readonly url: string
+  /** Characters of the description in the URL when it had to be cut; `null` when nothing was cut. */
+  readonly descriptionKeptChars: number | null
+  readonly descriptionTotalChars: number
+  /**
+   * True only when even an empty description could not fit, so the markdown
+   * fallback `body` was dropped too. Unreachable within `LISTING_LIMITS` for
+   * ASCII input; reported rather than assumed.
+   */
+  readonly bodyOmitted: boolean
+  /** True when no combination fits. The URL is still returned; GitHub may reject it. */
+  readonly overLimit: boolean
+}
+
+interface NormalisedListing {
+  readonly name: string
+  readonly url: string
+  readonly description: string
+  readonly category: string
+  readonly source: string
+  readonly uses: readonly LatchKind[]
+  readonly ownLatch: string
+  readonly chains: readonly number[]
+  readonly icon: ListingIcon | null
+  readonly iconSource: string
+  readonly contact: string
+}
+
+function normalise(prefill: ListingPrefill): NormalisedListing {
+  const t = (s: string | undefined) => s?.trim() ?? ''
+  const uses = LATCH_KIND_ORDER.filter((k) => prefill.uses?.includes(k) ?? false)
+  const other = t(prefill.categoryOther)
+  const category =
+    prefill.category === CATEGORY_OTHER
+      ? other
+        ? `${CATEGORY_OTHER}: ${other}`
+        : CATEGORY_OTHER
+      : (prefill.category ?? '')
+  return {
+    name: t(prefill.name),
+    url: t(prefill.url),
+    description: t(prefill.description),
+    category,
+    source: t(prefill.source),
+    uses,
+    ownLatch: uses.includes('own') ? t(prefill.ownLatch) : '',
+    chains: [...new Set(prefill.chains ?? [])].sort((a, b) => a - b),
+    icon: prefill.icon ?? null,
+    iconSource: t(prefill.iconSource),
+    contact: t(prefill.contact),
+  }
+}
+
+function chainLabel(id: number): string {
+  return CHAIN_ROWS.find((r) => r.chainId === id)?.name ?? `Chain ${id}`
+}
+
+/** `3.2 KB`. Decimal units, which is what GitHub and file managers show. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${bytes} B`
+  if (bytes < 1_000_000) return `${(bytes / 1000).toFixed(1)} KB`
+  return `${(bytes / 1_000_000).toFixed(1)} MB`
+}
+
+function iconText(v: NormalisedListing): string {
+  const lines: string[] = []
+  if (v.icon) {
+    const dims =
+      v.icon.width !== undefined && v.icon.height !== undefined
+        ? `, ${v.icon.width}×${v.icon.height} px`
+        : ''
+    lines.push(
+      `File chosen on the Latch site: ${v.icon.fileName} (${v.icon.type || 'unknown type'}${dims}, ${formatBytes(v.icon.bytes)})`,
+      'It was NOT uploaded from there. Drag that file into this box to attach it.',
+    )
+  }
+  if (v.iconSource) lines.push(`Published on our own site at: ${v.iconSource}`)
+  return lines.join('\n')
 }
 
 /** Markdown mirror of the issue form — used only when the template is absent. */
-function fallbackBody(name: string, url: string): string {
+function fallbackBody(v: NormalisedListing, description: string): string {
   const kinds = LATCH_KIND_ORDER.map((k) => {
     const info = LATCH_KINDS[k]
     const code = info.contract ? ` (\`${info.contract}\`)` : ''
-    return `- [ ] ${info.label}${code}`
+    return `- [${v.uses.includes(k) ? 'x' : ' '}] ${info.label}${code}`
   }).join('\n')
+
+  const chains = v.chains.map((id) => `${id} (${chainLabel(id)})`).join(', ')
 
   return [
     '## Project',
-    `- **Name:** ${name}`,
-    '- **Tagline (one line, 120 characters or fewer):** ',
-    `- **Website:** ${url}`,
-    '- **Public source repository (optional):** ',
+    `- **Name:** ${v.name}`,
+    `- **Description (${LISTING_LIMITS.description} characters or fewer):** ${description}`,
+    `- **Category:** ${v.category}`,
+    `- **Website:** ${v.url}`,
+    `- **Public source repository (optional):** ${v.source}`,
     '',
     '## Built with',
     'Tick every Latch the project uses:',
     kinds,
-    '- If "Their own Latch": contract address or Marketplace link: ',
+    `- If "Their own Latch": contract address or Marketplace link: ${v.ownLatch}`,
     '',
     '## Chains',
     /* The example is the chain this build actually reads from. It was pinned to
        Sepolia, which asked every submitter on a Robinhood Chain deployment to
        copy an id for a network the app was not talking to. */
-    `EIP-155 chain ids the integration is live on (for example \`${ACTIVE_CHAIN_ID}\` for ${DEPLOYMENTS[ACTIVE_CHAIN_ID].name}): `,
+    `EIP-155 chain ids the integration is live on (for example \`${ACTIVE_CHAIN_ID}\` for ${DEPLOYMENTS[ACTIVE_CHAIN_ID].name}): ${chains}`,
+    '',
+    '## Icon (optional)',
+    'Your own official mark, attached to this issue, with the URL it is published at.',
+    iconText(v),
+    '',
+    '## Contact (optional)',
+    v.contact,
     '',
     '## Confirmations',
     '- [ ] I represent this project and am authorised to list it.',
     '- [ ] I understand the listing is rendered as self-submitted and not verified by Latch Protocol.',
-    '- [ ] I understand there is no logo unless we later supply our own official asset with its source.',
+    '- [ ] I understand an icon is shown only if it is our own official asset with its source; otherwise the card shows a monogram.',
     '',
-    '_Opened from the Latch dapp ecosystem directory._',
+    '_Opened from the Latch ecosystem submission form._',
   ].join('\n')
 }
 
-/**
- * The prefilled issue URL. Everything goes through `URLSearchParams`, so
- * project names with `&`, `#` or non-ASCII characters survive the round trip.
- *
- * Two prefill mechanisms are used at once, on purpose:
- *   - `project_name` and `url` match the issue form's field ids and prefill the
- *     form when the template resolves.
- *   - `title` and `body` prefill a blank issue if it does not.
- */
-export function listingIssueUrl(prefill: ListingPrefill = {}): string {
-  const name = prefill.name?.trim() ?? ''
-  const url = prefill.url?.trim() ?? ''
-
+function assemble(v: NormalisedListing, description: string, withBody: boolean): string {
   const p = new URLSearchParams()
   p.set('template', LISTING_TEMPLATE)
   p.set('labels', 'ecosystem')
-  p.set('title', `Ecosystem listing: ${name || '[project name]'}`)
-  if (name) p.set('project_name', name)
-  if (url) p.set('url', url)
-  p.set('body', fallbackBody(name, url))
+  p.set('title', `Ecosystem listing: ${v.name || '[project name]'}`)
 
+  const put = (id: string, value: string) => {
+    if (value) p.set(id, value)
+  }
+  put(LISTING_FIELDS.name, v.name)
+  put(LISTING_FIELDS.description, description)
+  put(LISTING_FIELDS.url, v.url)
+  put(LISTING_FIELDS.source, v.source)
+  put(LISTING_FIELDS.category, v.category)
+  put(LISTING_FIELDS.uses, v.uses.map((k) => `${LATCH_KINDS[k].label} (${k})`).join(', '))
+  put(LISTING_FIELDS.ownLatch, v.ownLatch)
+  put(LISTING_FIELDS.chains, v.chains.join(', '))
+  put(LISTING_FIELDS.icon, iconText(v))
+  put(LISTING_FIELDS.contact, v.contact)
+
+  if (withBody) p.set('body', fallbackBody(v, description))
   return `${ECOSYSTEM_ISSUES_REPO}/issues/new?${p.toString()}`
+}
+
+/**
+ * The prefilled issue, and whether the description had to be shortened to fit.
+ *
+ * Everything goes through `URLSearchParams`, so names with `&`, `#` or
+ * non-ASCII characters survive the round trip.
+ *
+ * Two prefill mechanisms are used at once, on purpose:
+ *   - the `LISTING_FIELDS` ids prefill the issue form when the template resolves;
+ *   - `title` and `body` prefill a blank issue if it does not.
+ * That doubles the description's cost in the URL, which is why the cut below
+ * measures the assembled URL rather than guessing from the field length.
+ *
+ * The cut is by code point (`Array.from`), so an emoji or a CJK character is
+ * never split into a broken surrogate, and a cut description ends in "…" so
+ * the maintainer can see it was cut.
+ */
+export function buildListingIssue(prefill: ListingPrefill = {}): ListingIssue {
+  const v = normalise(prefill)
+  const chars = Array.from(v.description)
+  const total = chars.length
+  const cut = (n: number) => (n >= total ? v.description : `${chars.slice(0, n).join('')}…`)
+
+  const full = assemble(v, v.description, true)
+  if (full.length <= MAX_ISSUE_URL_LENGTH) {
+    return { url: full, descriptionKeptChars: null, descriptionTotalChars: total, bodyOmitted: false, overLimit: false }
+  }
+
+  for (const withBody of [true, false]) {
+    if (assemble(v, cut(0), withBody).length > MAX_ISSUE_URL_LENGTH) continue
+    /* Largest n whose URL fits. `lo` always fits; `hi` is the upper bound. */
+    let lo = 0
+    let hi = total
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2)
+      if (assemble(v, cut(mid), withBody).length <= MAX_ISSUE_URL_LENGTH) lo = mid
+      else hi = mid - 1
+    }
+    return {
+      url: assemble(v, cut(lo), withBody),
+      descriptionKeptChars: lo >= total ? null : lo,
+      descriptionTotalChars: total,
+      bodyOmitted: !withBody,
+      overLimit: false,
+    }
+  }
+
+  return {
+    url: assemble(v, cut(0), false),
+    descriptionKeptChars: 0,
+    descriptionTotalChars: total,
+    bodyOmitted: true,
+    overLimit: true,
+  }
+}
+
+/** The prefilled issue URL. See `buildListingIssue` for the length guard. */
+export function listingIssueUrl(prefill: ListingPrefill = {}): string {
+  return buildListingIssue(prefill).url
 }

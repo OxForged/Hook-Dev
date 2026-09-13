@@ -465,7 +465,7 @@ export function SwapPanel({ context, pool, hook, compact = false, onTraded }: Sw
 
   if (context.routerPaused) {
     return (
-      <section className="dapp-card swap-panel">
+      <section className="dapp-card swap-panel dapp-state--unconfigured">
         <h2 className="dapp-card__title">Swapping is paused</h2>
         <p className="live-note">
           <code>UniversalRouter.paused()</code> reads true on {context.chainName}, so the router
@@ -479,7 +479,7 @@ export function SwapPanel({ context, pool, hook, compact = false, onTraded }: Sw
   if (decimalsIn === null || decimalsOut === null) {
     const unreadable = decimalsIn === null ? tokenIn : tokenOut
     return (
-      <section className="dapp-card swap-panel">
+      <section className="dapp-card swap-panel dapp-state--unconfigured">
         <h2 className="dapp-card__title">This pool cannot be traded from here</h2>
         <p className="live-note">
           <code>decimals()</code> could not be read from{' '}
@@ -501,7 +501,7 @@ export function SwapPanel({ context, pool, hook, compact = false, onTraded }: Sw
 
   if (pool.liquidity === 0n) {
     return (
-      <section className="dapp-card swap-panel">
+      <section className="dapp-card swap-panel dapp-state--unconfigured">
         <h2 className="dapp-card__title">No liquidity in this pool</h2>
         <p className="live-note">
           <code>CLPoolManager.getLiquidity</code> returns 0 for{' '}

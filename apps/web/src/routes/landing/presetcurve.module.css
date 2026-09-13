@@ -1,214 +1,175 @@
-/* Transition durations are literal seconds scaled by control size, matching the
-   rest of the page: 0.15s tabs, 0.2-0.22s small controls and chips, 0.25s
-   buttons, 0.3s cards. `var(--dur)` is 320ms and is used ZERO times in
-   landing.module.css — adopting it here made every control in these panels take
-   roughly twice as long to respond as the identical control one section away,
-   which reads as lag with no visible cause. */
-
 /* ============================================================================
-   PresetCurve — the launchpad preset explorer.
+   PresetCurve — the launch fee-decay curve, Option B treatment.
 
-   TOKENS ONLY. Not one literal colour in this file. `tokens.css` states both a
-   light and a dark value for every name via `light-dark()`, so a raw hex here
-   would be a colour that works in exactly one theme and is invisible in the
-   other — the failure is silent, which is why the rule is absolute rather than
-   a preference. Light mode is warm paper (`--void`), never white.
+   The panel, header, toggle, KPI row and provenance voice are COMPOSED from
+   ./primitives.module.css; this file states the chart and what is only
+   PresetCurve's.
 
-   ANIMATION IS DECORATION, NEVER A GATE. Every base rule below is the FINISHED
-   state. The keyframes animate TOWARD it, so a paused tab, a throttled frame
-   budget, a JS error or `prefers-reduced-motion` all leave the card fully
-   readable. Nothing here starts at `opacity: 0` outside a keyframe.
+   TOKENS ONLY. Every colour, radius, shadow, duration and type size comes from
+   src/styles/tokens.css; every SVG paint is a CSS property reading one.
+
+   MOTION.
+     · First view: the curve's stroke draws in and the area fades up
+       (`.lineHidden` / `.areaHidden` removed by useFirstView).
+     · Changing preset: the new curve draws in (`.lineRedraw` keyframe on the
+       freshly keyed SVG).
+     · The cursor follows the pointer or keys directly — no easing on direct
+       manipulation, which would read as lag.
+   Under `prefers-reduced-motion` useFirstView never arms, the redraw keyframe
+   is removed, and the curve renders complete on first paint.
    ========================================================================== */
 
+/* ---- the panel ---------------------------------------------------------- */
+
 .card {
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  background: var(--grad-card);
-  box-shadow: var(--shadow-1);
-  padding: var(--s5);
+  composes: panel from './primitives.module.css';
+  /* The container the facts row queries: a container cannot query itself. */
+  container-type: inline-size;
   display: grid;
-  gap: var(--s4);
-  /* A grid child defaults to min-content width, which lets a wide SVG or a long
-     unbroken address push the whole card past the viewport. */
-  min-width: 0;
+  gap: 22px;
 }
 
-/* ---- head ---------------------------------------------------------------- */
-
 .head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--s4);
-  min-width: 0;
+  composes: panelHead from './primitives.module.css';
 }
 
 .headText {
-  min-width: 0;
-  flex: 1 1 260px;
-}
-
-.eyebrow {
-  margin: 0 0 var(--s2);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 16px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--eyebrow-blue);
+  composes: panelHeadText from './primitives.module.css';
 }
 
 .title {
-  /* The house section heading: serif 400 at a clamp, matching .h2 in
-     landing.module.css. A 28px bold sans heading between two 42px serif ones
-     made these read as SUB-sections of their neighbours rather than as peers. */
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: clamp(28px, 3.2vw, 42px);
-  line-height: 1.15;
-  letter-spacing: -0.015em;
+  composes: panelTitle from './primitives.module.css';
 }
 
 .sub {
-  margin: var(--s2) 0 0;
-  font-size: 14.5px;
-  line-height: 1.65;
-  color: var(--muted-ink);
-  max-width: 54ch;
+  composes: panelCaption from './primitives.module.css';
 }
 
-.sub code {
-  font-size: 11px;
-  color: var(--sky-ink);
-}
-
-/* ---- selector ------------------------------------------------------------ */
+/* ---- selector (b.html `.toggle`) ----------------------------------------- */
 
 .selector {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s1);
-  padding: var(--s1);
-  border: 1px solid var(--switch-border);
-  border-radius: var(--r-pill);
-  background: var(--switch-ground);
-  min-width: 0;
-}
-
-.tab,
-.tabOn {
-  appearance: none;
-  border: 1px solid transparent;
-  border-radius: var(--r-pill);
-  padding: var(--s2) var(--s3);
-  font-family: var(--font-body);
-  font-size: 13px;
-  line-height: 16px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background 0.2s var(--ease),
-    color 0.2s var(--ease),
-    border-color 0.2s var(--ease);
+  composes: toggle from './primitives.module.css';
 }
 
 .tab {
-  background: transparent;
-  color: var(--muted-ink);
-}
-
-.tab:hover {
-  color: var(--ink);
-  border-color: var(--cta-border);
+  composes: toggleSeg from './primitives.module.css';
+  flex: 1 1 auto;
+  text-align: center;
 }
 
 .tabOn {
-  background: var(--active-nav);
-  border-color: var(--hairline-blue);
-  color: var(--sky-ink);
-  font-weight: 600;
+  composes: toggleSegOn from './primitives.module.css';
 }
 
 /* ---- chart --------------------------------------------------------------- */
 
-.chartWrap {
+/* Horizontal scroll lives here and only here (below 520px of panel). */
+.scroller {
+  /* Width independent of the chart inside: the chart is drawn at this box's
+     measured width, so letting the child size the box is a feedback loop
+     (see useMeasuredWidth in chartMotion.ts). */
+  contain: inline-size;
   min-width: 0;
-  border: 1px solid var(--hairline-soft);
-  border-radius: var(--r-card);
-  background: var(--panel-alt);
-  padding: var(--s2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cta-border) transparent;
+}
+
+.plot {
+  position: relative;
+  border-radius: var(--r-btn);
+}
+
+.plotScrub {
+  cursor: ew-resize;
+  /* Vertical drags still scroll the page; horizontal ones move the cursor. */
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.plotScrub:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 2px;
 }
 
 .svg {
   display: block;
-  width: 100%;
-  height: auto;
-  /* Vertical drags still scroll the page; horizontal ones scrub the curve. The
-     alternative, `touch-action: none`, traps a phone reader inside the chart. */
-  touch-action: pan-y;
 }
 
 .grid {
-  stroke: var(--hairline-soft);
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.baseline {
+  stroke: var(--cta-border);
   stroke-width: 1;
 }
 
 .axis {
   fill: var(--faint-ink);
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.02em;
+  font-size: var(--b-axis);
 }
 
+/* A sentence, not a tick: --muted-ink for 4.5:1. */
 .axisNote {
-  fill: var(--faint-ink);
+  fill: var(--muted-ink);
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: var(--b-axis);
 }
 
 .line {
   fill: none;
   stroke: var(--latch-blue);
-  stroke-width: 2.5;
+  stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
-  /* Finished state: fully drawn. `pathLength="1"` on the element normalises the
-     dash, so this one rule covers a 10-block window and an 18,000-block one. */
+  /* Finished state: fully drawn. `pathLength="1"` normalises the dash. */
   stroke-dasharray: 1;
   stroke-dashoffset: 0;
-  animation: draw 620ms var(--ease) both;
+  transition: stroke-dashoffset 1100ms var(--ease);
+}
+
+/* Instant hide; only the reveal transitions. */
+.lineHidden {
+  stroke-dashoffset: 1;
+  transition: none;
+}
+
+.lineRedraw {
+  animation: draw 700ms var(--ease) both;
 }
 
 .area {
   stroke: none;
-  animation: rise 420ms var(--ease) both;
+  opacity: 1;
+  transition: opacity var(--b-reveal) var(--ease) 300ms;
 }
 
-/* Gradient stops are styled rather than attributed so both theme values of the
-   token reach them. */
-.fillTop {
-  stop-color: var(--latch-blue);
-  stop-opacity: 0.22;
+.areaHidden {
+  opacity: 0;
+  transition: none;
 }
 
+/* A flat tint under the curve, not a fade: both stops carry one opacity. */
+.fillTop,
 .fillBottom {
   stop-color: var(--latch-blue);
-  stop-opacity: 0;
+  stop-opacity: 0.08;
 }
 
 .floorLine {
   stroke: var(--success);
-  stroke-width: 1.5;
+  stroke-width: 1;
   stroke-dasharray: 4 4;
-  opacity: 0.75;
 }
 
 .floorLabel {
   fill: var(--success);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--b-axis);
   font-weight: 600;
 }
 
@@ -221,29 +182,24 @@
 .openLabel {
   fill: var(--ink);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--b-axis);
   font-weight: 600;
 }
 
 .windowLine {
   stroke: var(--warning);
-  stroke-width: 1.5;
-  stroke-dasharray: 3 5;
-  opacity: 0.85;
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
 }
 
 .windowLabel {
   fill: var(--warning);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--b-axis);
   font-weight: 600;
 }
 
-.windowSub {
-  fill: var(--faint-ink);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-}
+/* ---- the cursor ---------------------------------------------------------- */
 
 .crosshair {
   stroke: var(--border-hover);
@@ -252,9 +208,34 @@
 }
 
 .crossDot {
-  fill: var(--deep-blue);
+  fill: var(--latch-blue);
   stroke: var(--panel);
-  stroke-width: 2;
+  stroke-width: 2.5;
+}
+
+/* The grab affordance on the baseline: a white tile with a blue rim. */
+.handle {
+  fill: var(--light-surface);
+  stroke: var(--latch-blue);
+  stroke-width: 1.5;
+}
+
+.plotScrub:focus-visible .handle {
+  fill: var(--accent-soft);
+}
+
+/* The fee at the cursor, read directly off the chart. The panel-coloured
+   stroke painted UNDER the glyphs keeps it legible across gridlines and the
+   curve in both themes. */
+.cursorLabel {
+  fill: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--panel);
+  stroke-width: 4px;
+  stroke-linejoin: round;
 }
 
 /* ---- readout ------------------------------------------------------------- */
@@ -264,64 +245,56 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s2) var(--s3);
-  min-height: var(--s6);
-  padding: var(--s2) var(--s3);
-  border: 1px solid var(--hairline-soft);
-  border-radius: var(--r-sm);
-  background: var(--deep-panel);
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-btn);
+  background: var(--panel-alt);
   min-width: 0;
 }
 
 .readFee {
   font-family: var(--font-mono);
-  font-size: 18px;
-  line-height: 24px;
+  font-size: var(--b-card-h);
+  line-height: 22px;
   font-weight: 600;
-  color: var(--ink-bright);
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
-.readMeta,
-.readIdle {
+.readMeta {
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: var(--b-label);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
   color: var(--muted-ink);
 }
 
-/* ---- facts --------------------------------------------------------------- */
+/* ---- facts (b.html `.kpis`) ---------------------------------------------- */
 
 .facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: var(--s3);
-  margin: 0;
-  min-width: 0;
+  composes: kpiRow from './primitives.module.css';
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .fact {
-  min-width: 0;
-  border: 1px solid var(--tile-border);
-  border-radius: var(--r-sm);
-  background: var(--tile-bg);
-  padding: var(--s3);
+  composes: kpiCell from './primitives.module.css';
 }
 
 .fact dt {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 16px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--label-ink);
+  font-size: var(--b-label);
+  font-weight: 560;
+  line-height: 1.4;
+  color: var(--muted-ink);
 }
 
 .fact dd {
-  margin: var(--s1) 0 0;
-  font-family: var(--font-mono);
-  font-size: 18px;
-  line-height: 24px;
+  margin: var(--s2) 0 0;
+  font-family: var(--font-body);
+  font-size: var(--b-mini);
+  line-height: 1.2;
   font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--ink-bright);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -330,95 +303,69 @@
 .factSub {
   display: block;
   margin-top: var(--s1);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: var(--b-label);
+  line-height: 1.45;
   font-weight: 400;
+  letter-spacing: 0;
   color: var(--muted-ink);
 }
 
-/* ---- the limitation -----------------------------------------------------
-   Given the visual weight of a warning callout on purpose. It is the sentence
-   that argues with the preset's own name, and the one a developer needs before
-   they choose. There is no collapsed variant of this rule to fall back to.
-   -------------------------------------------------------------------------- */
+/* ---- the limitation -------------------------------------------------------
+   Warning weight on purpose: the sentence that argues with the preset's name. */
 
 .limit {
   margin: 0;
   border: 1px solid var(--dapp-badge-warn-border);
-  border-left-width: 3px;
   border-radius: var(--r-sm);
   background: var(--dapp-badge-warn-bg);
   padding: var(--s3) var(--s4);
-  font-size: 14px;
-  line-height: 22px;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
   color: var(--ink);
   min-width: 0;
 }
 
 .limitTag {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-size: var(--b-micro);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   font-weight: 700;
   color: var(--warning);
 }
 
-/* ---- the maxBuyPerTx requirement ---------------------------------------- */
-
-.requireOn,
-.requireOff {
+.requireOn {
   margin: 0;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--dapp-badge-info-border);
   border-radius: var(--r-sm);
+  background: var(--dapp-badge-info-bg);
   padding: var(--s3) var(--s4);
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  color: var(--ink);
   min-width: 0;
 }
 
-.requireOn {
-  border-color: var(--dapp-badge-info-border);
-  background: var(--dapp-badge-info-bg);
+.requireOn strong {
+  font-weight: 640;
+}
+
+.requireOn code {
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
   color: var(--ink);
 }
 
-.requireOff {
-  background: var(--panel-alt);
-  color: var(--muted-ink);
+/* ---- provenance: one line ------------------------------------------------ */
+
+.provenance {
+  composes: provenance from './primitives.module.css';
+  padding-top: var(--s4);
+  border-top: 1px solid var(--hairline);
 }
 
-.requireOn code,
-.requireOff code {
-  font-size: 11px;
-  color: var(--sky-ink);
-}
-
-/* ---- footnotes ----------------------------------------------------------- */
-
-.foot {
-  display: grid;
-  gap: var(--s2);
-  border-top: 1px solid var(--hairline-soft);
-  padding-top: var(--s3);
-  min-width: 0;
-}
-
-.foot p {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-}
-
-.foot code {
-  font-size: 11px;
-  color: var(--sky-ink);
-}
-
-.foot a {
+.provenance a {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--b-axis);
   /* A 42-character address must wrap rather than widen the card. */
   overflow-wrap: anywhere;
 }
@@ -434,41 +381,27 @@
   }
 }
 
-@keyframes rise {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Pinned to the finished state, not merely shortened. `tokens.css` already
-   clamps every duration globally; this states the intent locally so the card
-   stays correct if that global rule is ever scoped. */
 @media (prefers-reduced-motion: reduce) {
   .line,
   .area {
-    animation: none;
-  }
-  .line {
-    stroke-dashoffset: 0;
-  }
-  .area {
-    opacity: 1;
-  }
-  .tab,
-  .tabOn {
     transition: none;
+  }
+  .lineRedraw {
+    animation: none;
   }
 }
 
-/* ---- narrow ------------------------------------------------------------- */
+/* ---- narrow -------------------------------------------------------------- */
+
+@container (max-width: 640px) {
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 
 @media (max-width: 560px) {
   .card {
-    padding: var(--s4);
-    gap: var(--s3);
+    gap: var(--s4);
   }
 
   .head {
@@ -476,23 +409,15 @@
     align-items: stretch;
   }
 
-  .selector {
-    /* Four pills do not fit one 400px row; wrapping beats a scroll trap. */
-    justify-content: flex-start;
+  /* panelHeadText's `flex: 1 1 280px` is a WIDTH basis in the row layout. In
+     this column it becomes a 280px HEIGHT and opens an empty band between the
+     caption and the preset selector. Two classes, because the composed
+     primitive has equal specificity and can load after this module. */
+  .head > .headText {
+    flex: 0 0 auto;
   }
 
-  .tab,
-  .tabOn {
-    flex: 1 1 auto;
-    text-align: center;
-  }
-
-  .title {
-    font-size: 19px;
-    line-height: 26px;
-  }
-
-  .facts {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  .fact dd {
+    font-size: var(--b-panel-h);
   }
 }

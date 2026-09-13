@@ -5,8 +5,13 @@
    the component, so the same rail can mount inside the landing surface's CSS
    modules and inside the dapp's global sheet without either owning it.
 
-   Every colour is a token from styles/tokens.css. No literal hexes: the design
-   system is the source of truth for green-up / red-down (--success / --error).
+   Every colour and type size is a token from styles/tokens.css. No literal
+   hexes: the design system is the source of truth for green-up / red-down
+   (--success / --error).
+
+   OPTION B: numbers stay mono (prices, changes, the timestamp), everything
+   that is a word — the rail caption, the badge, the loading / error copy —
+   is Inter. Sentence-case text uses --muted-ink, never the 3:1 label grey.
    ========================================================================== */
 
 .ltk {
@@ -16,7 +21,7 @@
   min-height: 32px;
   padding-block: 4px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(var(--b-label) * 0.92);
   line-height: 1.4;
   color: var(--mono-data-ink);
   /* Transparent on purpose: the rail sits inside a header that already paints
@@ -54,8 +59,10 @@
 }
 
 .ltk-label__text {
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--label-ink);
   white-space: nowrap;
@@ -63,10 +70,12 @@
 
 /* Said once, here, instead of on every row of a closed market. */
 .ltk-badge {
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  padding: 2px 6px;
-  border-radius: var(--r-micro);
+  font-family: var(--font-body);
+  font-size: calc(var(--b-axis) * 0.9);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
   white-space: nowrap;
   color: var(--signal-blue);
   background: var(--dapp-badge-info-bg);
@@ -81,6 +90,8 @@
 .ltk-msg {
   margin: 0;
   min-width: 0;
+  font-family: var(--font-body);
+  font-size: var(--b-label);
   color: var(--muted-ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -97,15 +108,22 @@
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  /* Quotes dissolve at the edges instead of being guillotined by the clip. */
+  /* Quotes dissolve at the edges instead of being guillotined by the clip. A
+     mask reads only alpha, so any opaque token serves as the "keep" stop. */
   -webkit-mask-image: linear-gradient(
     90deg,
     transparent,
-    #000 22px,
-    #000 calc(100% - 22px),
+    var(--ink) 22px,
+    var(--ink) calc(100% - 22px),
     transparent
   );
-  mask-image: linear-gradient(90deg, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    var(--ink) 22px,
+    var(--ink) calc(100% - 22px),
+    transparent
+  );
 }
 
 /* The focus ring belongs on the viewport, since focusing it is the documented
@@ -165,7 +183,7 @@
   flex: 0 0 auto;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: var(--r-pill);
   object-fit: contain;
   background: var(--panel-alt);
 }
@@ -175,9 +193,9 @@
 .ltk-logo--mono {
   display: inline-grid;
   place-items: center;
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-weight: 700;
-  font-size: 8.5px;
+  font-size: calc(var(--b-axis) * 0.8);
   letter-spacing: 0.02em;
   color: var(--sky-ink);
   background: var(--tile-bg);
@@ -185,7 +203,7 @@
 }
 
 .ltk-sym {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ink);
 }
 
@@ -197,7 +215,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 10.5px;
+  font-size: var(--b-axis);
 }
 
 .ltk-chg--up {
@@ -210,13 +228,15 @@
 
 /* "change n/a" — the provider gave no change, and that is stated, not zeroed. */
 .ltk-flat {
-  font-size: 10.5px;
-  color: var(--faint-ink);
+  font-family: var(--font-body);
+  font-size: var(--b-axis);
+  color: var(--muted-ink);
 }
 
 .ltk-note {
-  font-size: 10px;
-  color: var(--faint-ink);
+  font-family: var(--font-body);
+  font-size: var(--b-axis);
+  color: var(--muted-ink);
 }
 
 /* ---- freshness, pinned to the right so it never scrolls out of view ------- */
@@ -227,14 +247,17 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
+  font-size: var(--b-axis);
+  letter-spacing: 0.06em;
   color: var(--faint-ink);
   white-space: nowrap;
 }
 
 .ltk-src {
-  color: var(--label-ink);
+  font-family: var(--font-body);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--muted-ink);
   text-decoration: none;
 }
 
@@ -255,12 +278,9 @@
   border: 0;
 }
 
-/* ---- surface skins ------------------------------------------------------- */
-
-.ltk--landing {
-  padding-inline: 28px;
-  border-top-color: var(--header-border);
-}
+/* ---- surface skin ---------------------------------------------------------
+   The dapp header is the only mount. The landing skin (`.ltk--landing`) was
+   deleted with the landing header's rails; no component passes it. */
 
 /* `.dapp-header` already draws the rule above the first rail, so the dapp rails
    carry a bottom rule only — two stacked rails then read as three even lines
@@ -273,12 +293,6 @@
 
 /* ---- responsive ---------------------------------------------------------- */
 
-@media (max-width: 860px) {
-  .ltk--landing {
-    padding-inline: 20px;
-  }
-}
-
 @media (max-width: 720px) {
   /* The attribution link is the first thing to go; the timestamp is an honesty
      requirement and stays at every width. */
@@ -288,14 +302,13 @@
 }
 
 @media (max-width: 560px) {
-  .ltk--landing,
   .ltk--dapp {
-    padding-inline: 16px;
+    padding-inline: var(--s4);
   }
 
   .ltk {
     gap: 8px;
-    font-size: 11px;
+    font-size: calc(var(--b-label) * 0.88);
   }
 
   /* The rail keeps its accessible name from the section's aria-label, so the

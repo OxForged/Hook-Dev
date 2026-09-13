@@ -155,12 +155,12 @@ function OwnerAction({
   return (
     <div className="po-action">
       <p className="dapp-microlabel">{label}</p>
-      <p className="live-note" style={{ marginTop: 4 }}>
+      <p className="live-note dapp-mt-1">
         {describes}
       </p>
 
       {invalid !== null && (
-        <p className="dp-hint dp-hint--err" style={{ marginTop: 8 }}>
+        <p className="dp-hint dp-hint--err dapp-mt-2">
           {invalid}
         </p>
       )}
@@ -168,7 +168,7 @@ function OwnerAction({
       {invalid === null && (
         <>
           {!isConnected && (
-            <div className="dp-gate" style={{ marginTop: 10 }}>
+            <div className="dp-gate dapp-mt-3">
               <p className="dp-gate__title">Connect the owner wallet</p>
               <p className="dp-gate__body">
                 This call is owner-gated, so unlike the maintenance calls on this screen it cannot
@@ -180,7 +180,7 @@ function OwnerAction({
           )}
 
           {isConnected && !onChain && (
-            <div className="dp-gate dp-gate--warn" style={{ marginTop: 10 }}>
+            <div className="dp-gate dp-gate--warn dapp-mt-3">
               <p className="dp-gate__title">Not deployed on this chain</p>
               <p className="dp-gate__body">
                 RevShareHook is deployed on {CHAIN_NAME} and nowhere else — not because your wallet is on the wrong network, but because the hook has not been deployed to the chain you are on. Switching moves you to the only chain where these reads mean anything.
@@ -198,10 +198,9 @@ function OwnerAction({
 
           {canSimulate && (
             <p
-              className={
+              className={`dapp-mt-2 ${
                 sim.isFetching ? 'dapp-console__line is-shown' : ready ? 'dp-ok' : 'dp-hint dp-hint--err'
-              }
-              style={{ marginTop: 8 }}
+              }`}
               aria-live="polite"
             >
               {sim.isFetching
@@ -213,7 +212,7 @@ function OwnerAction({
           )}
 
           {canSimulate && !ready && simFailure?.name && (
-            <p className="dapp-microlabel" style={{ marginTop: 2 }}>
+            <p className="dapp-microlabel dapp-mt-1">
               REVERTED WITH {simFailure.name}
             </p>
           )}
@@ -223,10 +222,9 @@ function OwnerAction({
               type="button"
               className={
                 tone === 'danger'
-                  ? 'dapp-btn dapp-btn--sm po-btn--danger'
-                  : 'dapp-btn dapp-btn--primary dapp-btn--sm'
+                  ? 'dapp-btn dapp-btn--sm po-btn--danger dapp-mt-3'
+                  : 'dapp-btn dapp-btn--primary dapp-btn--sm dapp-mt-3'
               }
-              style={{ marginTop: 10 }}
               onClick={submit}
               disabled={!ready || awaitingSignature}
             >
@@ -235,13 +233,13 @@ function OwnerAction({
           )}
 
           {writeFailure && (
-            <p className="dp-hint dp-hint--err" style={{ marginTop: 8 }}>
+            <p className="dp-hint dp-hint--err dapp-mt-2">
               {writeFailure.message}
             </p>
           )}
 
           {txHash && (
-            <div className="dp-tx" style={{ marginTop: 10 }} aria-live="polite">
+            <div className="dp-tx dapp-mt-3" aria-live="polite">
               <p className="dp-tx__row">
                 <span
                   className={
@@ -429,7 +427,7 @@ function RosterEditor({
       </div>
 
       {rows.length === 0 && (
-        <p className="live-note" style={{ marginTop: 8 }}>
+        <p className="live-note dapp-mt-2">
           An empty roster is a valid call: it clears the roster entirely. Anything the pool accrues
           for beneficiaries afterwards waits in <code>pendingBeneficiary</code> —{' '}
           <code>settleBeneficiaries</code> returns quietly while total weight is zero — rather than
@@ -798,7 +796,7 @@ export function PoolOwnerActions({ o, onConfirmed }: { o: PoolOverview; onConfir
       <section className="dapp-card po-card">
         <div className="dapp-card__head">
           <h3 className="dapp-card__title">You have been nominated as this pool's owner</h3>
-          <span className="dapp-badge dapp-badge--primary">INCOMING OWNER</span>
+          <span className="dapp-badge dapp-badge--info">INCOMING OWNER</span>
         </div>
         <p className="live-note">
           <code>{o.config.owner}</code> nominated your address. Ownership does not move until you
@@ -820,7 +818,7 @@ export function PoolOwnerActions({ o, onConfirmed }: { o: PoolOverview; onConfir
     <section className="dapp-card po-card">
       <div className="dapp-card__head">
         <h3 className="dapp-card__title">Owner actions</h3>
-        <span className="dapp-badge dapp-badge--primary">YOU OWN THIS POOL</span>
+        <span className="dapp-badge dapp-badge--info">YOU OWN THIS POOL</span>
       </div>
 
       <p className="live-note">
@@ -830,7 +828,7 @@ export function PoolOwnerActions({ o, onConfirmed }: { o: PoolOverview; onConfir
       </p>
 
       {o.config.frozen ? (
-        <div className="dp-gate dp-gate--warn" style={{ marginTop: 12 }}>
+        <div className="dp-gate dp-gate--warn dapp-mt-3">
           <p className="dp-gate__title">This pool is frozen</p>
           <p className="dp-gate__body">
             <code>freezeConfig</code> has already been called. The fee, the split and the roster are

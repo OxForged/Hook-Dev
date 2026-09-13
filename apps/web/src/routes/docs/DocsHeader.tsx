@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { BrandLockup } from '../../components/BrandLockup'
 import { ThemeToggle } from '../../components/ThemeToggle'
 
 type Props = {
@@ -9,12 +10,12 @@ type Props = {
 }
 
 /**
- * Sticky docs header — SCREENS.md § B1: lockup + `DOCS` badge, then
- * Home · Quickstart (active) · Reference · Brand Kit · Launch App pill.
+ * Sticky docs header: lockup + `DOCS` badge, then
+ * Home · Quickstart (active) · Reference · Brand Kit · Launch App.
  *
- * Ground and blur follow the README ("Sticky translucent header
- * `rgba(4,6,12,.82)` + `blur(14px)`, bottom border `#131C2E`"); the reference
- * HTML uses .86 and the README wins.
+ * Option B's header: a translucent surface over a blur with one hairline
+ * underneath, and a flat primary button. The sheen that used to sweep the
+ * pill is gone — B has no decorative motion on actions.
  *
  * Below 1024px the four text links move into the rail drawer and a second
  * header row carries the drawer trigger, so the header never wraps and the
@@ -25,11 +26,9 @@ export default function DocsHeader({ activeLabel, railOpen, onToggleRail }: Prop
     <header className="dk-header">
       <div className="dk-header__row">
         <div className="dk-brand">
-          <img src="/brand/latch-mark-transparent.png" alt="" className="dk-brand__mark" />
-          <span className="dk-lockup">
-            <span className="dk-lockup__name">LATCH</span>
-            <span className="dk-lockup__sub">PROTOCOL</span>
-          </span>
+          {/* The shared lockup — same mark, theme swap and proportions as the
+              landing header and the dapp sidebar (components/BrandLockup). */}
+          <BrandLockup />
           <span className="dk-badge">DOCS</span>
         </div>
 
@@ -51,7 +50,6 @@ export default function DocsHeader({ activeLabel, railOpen, onToggleRail }: Prop
           </span>
           <Link to="/app" className="dk-pill">
             Launch App
-            <span className="dk-sheen" aria-hidden="true" />
           </Link>
         </nav>
       </div>

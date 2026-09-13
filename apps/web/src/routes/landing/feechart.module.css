@@ -1,0 +1,290 @@
+/* ============================================================================
+   FeeChart — Option B's flagship chart: b.html `.panel` + `.panel-h`, the
+   segmented `.toggle`, real axes (`.gl`, `.ax`) and the inverted `.tip`.
+
+   The panel, header, toggle, state card and provenance voice are COMPOSED from
+   ./primitives.module.css; the section box is landing.module.css `.section`,
+   applied in the TSX. This file states only the chart. TOKENS ONLY: every
+   SVG paint is a CSS property reading a token — no `fill` attribute carries
+   a colour.
+
+   MOTION. Three animated things, each between two fully painted states:
+     · first view: each column group grows from the baseline (`--b-reveal`),
+       staggered 60ms per column;
+     · toggle: the protocol segment scales between modes (`--dur`);
+     · hover/focus: non-active columns dim (`--b-dur`).
+   Under `prefers-reduced-motion` `useFirstView` never arms, so the columns
+   paint at full height, and every transition below is removed.
+   ========================================================================== */
+
+/* The section box is landing.module.css `.section`, applied in the TSX. NOT
+   composed from here: `composes: … from './landing.module.css'` makes Vite
+   inline that whole 2,300-line sheet into this module's CSS a second time. */
+
+.card {
+  composes: panel from './primitives.module.css';
+}
+
+.stateCard {
+  composes: stateCard from './primitives.module.css';
+}
+
+.state {
+  composes: stateText from './primitives.module.css';
+}
+
+.stateDot {
+  composes: stateDot from './primitives.module.css';
+}
+
+.raw {
+  composes: stateRaw from './primitives.module.css';
+}
+
+/* ---- header row --------------------------------------------------------- */
+
+.head {
+  composes: panelHead from './primitives.module.css';
+  margin-bottom: 22px;
+}
+
+.headText {
+  composes: panelHeadText from './primitives.module.css';
+}
+
+.title {
+  composes: panelTitle from './primitives.module.css';
+}
+
+.caption {
+  composes: panelCaption from './primitives.module.css';
+}
+
+.toggle {
+  composes: toggle from './primitives.module.css';
+}
+
+.tab {
+  composes: toggleSeg from './primitives.module.css';
+}
+
+.tabOn {
+  composes: toggleSegOn from './primitives.module.css';
+}
+
+/* ---- the chart ---------------------------------------------------------- */
+
+/* Horizontal scroll lives here and only here. */
+.scroller {
+  /* Width independent of the chart inside: the chart is drawn at this box's
+     measured width, so letting the child size the box is a feedback loop
+     (see useMeasuredWidth in chartMotion.ts). */
+  contain: inline-size;
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cta-border) transparent;
+}
+
+.plot {
+  position: relative;
+}
+
+.svg {
+  display: block;
+}
+
+.grid {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.baseline {
+  stroke: var(--cta-border);
+  stroke-width: 1;
+}
+
+/* Axis ticks: mono, --faint-ink. Numbers and percent signs only — the
+   non-prose use tokens.css permits at this contrast. */
+.axis,
+.axisTitle {
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  fill: var(--faint-ink);
+}
+
+/* An uppercase tracked label, so the micro-label voice. */
+.axisTitle {
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bars {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scaleY(1);
+  transition:
+    transform var(--b-reveal) var(--ease) var(--stagger, 0ms),
+    opacity var(--b-dur);
+}
+
+.barsHidden {
+  transform: scaleY(0);
+  /* Hiding is instant; only the reveal transitions. Otherwise arming the
+     hidden state before first paint can play a visible collapse first. */
+  transition: none;
+}
+
+.plot[data-active] .bars:not(.barsOn) {
+  opacity: 0.45;
+}
+
+/* b.html's secondary series (#9db0d8), as a token. 3.09:1 against the
+   protocol blue in light and 3.07:1 in dark, so the two segments separate
+   without relying on hue. */
+.lp {
+  fill: var(--chart-lp);
+}
+
+.protocol {
+  fill: var(--latch-blue);
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transition: transform var(--dur) var(--ease);
+}
+
+/* ---- hit targets: real buttons over each column ------------------------ */
+
+.hits {
+  position: absolute;
+  inset: 0;
+}
+
+.hit {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--r-btn);
+}
+
+/* Inset: the hit area is flush with the scroller, which would clip an
+   outside ring. */
+.hit:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: -2px;
+}
+
+/* ---- tooltip (b.html `.tip`) --------------------------------------------
+   The --tip-* tokens invert the theme: a dark chip on paper, a light chip on
+   the dark ground. */
+
+.tip {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 2px;
+  padding: 9px 11px;
+  background: var(--tip-bg);
+  color: var(--tip-ink);
+  border-radius: var(--r-btn);
+  box-shadow: var(--shadow-2);
+  font-size: var(--b-label);
+  line-height: 1.45;
+  pointer-events: none;
+  animation: tipIn var(--b-dur) var(--ease);
+}
+
+.tipHead {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.tipRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s3);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tipMut,
+.tipFoot {
+  font-family: var(--font-body);
+  color: var(--tip-mut);
+}
+
+.tipFoot {
+  margin-top: 2px;
+  font-size: var(--b-axis);
+}
+
+@keyframes tipIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- foot ---------------------------------------------------------------- */
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2) var(--s5);
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--hairline);
+}
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+  white-space: nowrap;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-micro);
+}
+
+.swatchLp {
+  background: var(--chart-lp);
+}
+
+.swatchProtocol {
+  margin-left: var(--s2);
+  background: var(--latch-blue);
+}
+
+.provenance {
+  composes: provenance from './primitives.module.css';
+  flex: 1 1 320px;
+  max-width: 72ch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bars,
+  .protocol {
+    transition: none;
+  }
+  .tip {
+    animation: none;
+  }
+}

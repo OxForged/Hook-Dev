@@ -1,35 +1,39 @@
-/* ThemeToggle — Light / System / Dark segmented control.
-   Tokens only, no hardcoded colour: it is meant to look correct in both
-   themes purely because the values it reads (`--switch-ground`,
-   `--switch-border`, `--panel`, `--latch-blue`, `--ink`, `--muted-ink`) swap
-   under `[data-theme="dark"]` / `prefers-color-scheme: dark` without this
-   file changing. See styles/tokens.css for those definitions. */
+/* ThemeToggle — Light / System / Dark segmented control, in Option B's
+   `.toggle` language: a sunken track on the alternate surface, a hairline, and
+   the chosen option raised onto a white chip with the resting shadow.
+
+   Shared by landing, docs and the dapp. Tokens only, no hardcoded colour: it
+   looks correct in both themes purely because the values it reads swap under
+   `[data-theme="dark"]` / `prefers-color-scheme: dark` without this file
+   changing. The raised chip is --light-surface rather than --panel because in
+   the dark theme --panel is DARKER than the track, which would sink the
+   selected option instead of lifting it. */
 
 .theme-toggle {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--switch-border);
-  border-radius: var(--r-pill);
-  background: var(--switch-ground);
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-toggle);
+  background: var(--panel-alt);
 }
 
 .theme-toggle__btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 9px;
+  padding: 6px 8px;
   border: none;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-toggle-seg);
   background: transparent;
   color: var(--muted-ink);
   cursor: pointer;
   line-height: 1;
   transition:
-    background-color var(--dur, 320ms) var(--ease, ease),
-    color var(--dur, 320ms) var(--ease, ease),
-    box-shadow var(--dur, 320ms) var(--ease, ease);
+    background-color var(--b-dur),
+    color var(--b-dur),
+    box-shadow var(--b-dur);
 }
 
 .theme-toggle__btn svg {
@@ -42,15 +46,15 @@
 }
 
 .theme-toggle__btn.is-active {
-  background: var(--panel);
-  color: var(--latch-blue);
+  background: var(--light-surface);
+  color: var(--ink);
   box-shadow: var(--shadow-1);
 }
 
 .theme-toggle__label {
   font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--b-label);
+  font-weight: 600;
   white-space: nowrap;
 }
 

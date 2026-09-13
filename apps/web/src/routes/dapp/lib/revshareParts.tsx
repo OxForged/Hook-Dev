@@ -9,7 +9,11 @@
      <Reading>       a read is in flight. Names what is being read.
      <Unreachable>   the RPC did not answer. Says so, offers a retry, and
                      shows NO numbers at all.
-     <NotDeployed>   there is no RevShareHook address to read from.
+     <NotDeployed>   NOT CONFIGURED: there is no RevShareHook address to read
+                     from. `dapp-state--unconfigured`, never the empty box.
+     <Unconfigured>  NOT CONFIGURED: a pool, distributor or type this screen
+                     cannot read because it was never set up, or this build
+                     does not recognise it.
      <Empty>         the read succeeded and the answer is nothing.
 
    `<Money>` is the other rule: an amount is always printed with its token
@@ -110,13 +114,34 @@ export function Empty({ title, children }: { title: string; children: React.Reac
 }
 
 /**
+ * NOT CONFIGURED: the thing this screen would read has not been set up, or
+ * this build cannot read it — a pool with no revenue-share configuration, a
+ * pool that routes to no distributor, a distributor whose `kind()` this build
+ * does not recognise. Distinct from `<Empty>`, which is "the chain answered and
+ * the answer is nothing" (no epochs closed, no pools owned).
+ */
+export function Unconfigured({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="dapp-card dapp-state--unconfigured" role="status">
+      <p className="dapp-state__title">{title}</p>
+      <div className="live-note">{children}</div>
+    </section>
+  )
+}
+
+/**
  * No hook address anywhere. The honest default today — the protocol's own
  * contracts are deployed on this chain, a RevShareHook on top of them is not.
+ *
+ * NOT-CONFIGURED, NOT EMPTY. Nothing was read, because this build has nothing
+ * to read from. It wore the dashed `an-empty` box for a while, which is the
+ * shape of "the chain answered and the answer is nothing" — a claim about the
+ * chain this card cannot make. It uses the shared not-configured well instead.
  */
 export function NotDeployed({ malformed }: { malformed: boolean }) {
   return (
-    <section className="dapp-card an-empty">
-      <p className="an-empty__title">No RevShareHook to read</p>
+    <section className="dapp-card dapp-state--unconfigured" role="status">
+      <p className="dapp-state__title">No RevShareHook to read</p>
       <p className="live-note">
         {malformed
           ? 'The ?hook= parameter in this URL is not a 20-byte address, so it was ignored.'

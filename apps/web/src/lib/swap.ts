@@ -129,6 +129,7 @@ import {
   scanWindows,
   type DeployedChainId,
 } from './chain'
+import { proposalStatus, readPendingConfig, type DecodedPendingConfig } from './pendingConfig'
 import { priceFromSqrtX96 } from './prices'
 import { clQuoterAbi } from './abi/clQuoter'
 import { permit2Abi } from './abi/permit2'
@@ -243,7 +244,12 @@ const ERC20_ABI = parseAbi([
  */
 const REV_SHARE_READ_ABI = parseAbi([
   'function getConfig(bytes32 poolId) view returns ((address owner, uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, bool enabled, bool frozen))',
-  'function getPendingConfig(bytes32 poolId) view returns ((uint48 effectiveBlock, (uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, address distributor, bool enabled) params))',
+  /* `getPendingConfig` is NOT typed here. This entry used to be the 7-word
+     legacy shape, which is right on 0x23CE…E446 and SILENTLY WRONG on the
+     current 8-word hook: `expiryBlock` decoded as `feePips` and every field
+     after it shifted by one, so a trader would have been shown a block number
+     as a proposed fee. It is read raw and decoded by length — see
+     `lib/pendingConfig.ts`. */
   'function paused() view returns (bool)',
   'function CONFIG_DELAY_BLOCKS() view returns (uint256)',
 ])
@@ -314,7 +320,12 @@ export interface HookTake {
   lpDonateBps: number
   beneficiaryBps: number
   distributorBps: number
-  /** Null when `effectiveBlock == 0`, which is the hook's "no proposal" value. */
+  /**
+   * Null when there is nothing that can still land: `effectiveBlock == 0` (no
+   * proposal), or — on the current 8-word hook only — a proposal past its
+   * `expiryBlock`, which `applyPendingConfig` refuses. A legacy 7-word hook's
+   * matured proposal never expires and is never null here.
+   */
   pending: {
     effectiveBlock: bigint
     feePips: number
@@ -505,18 +516,31 @@ export async function readHookTake(
     configDelayBlocks: null,
   }
 
-  const [config, pending, paused, delay] = await Promise.all([
+  /* The pending read keeps its failure as a value rather than collapsing it to
+     null. Null used to mean BOTH "the hook has no proposal" and "the read
+     failed", so a transport blip — or the shape mismatch described above
+     REV_SHARE_READ_ABI — rendered a pool with an armed proposal as a pool with
+     none. That is the one disclosure a trader cannot get anywhere else. */
+  const [config, pendingRead, paused, delay] = await Promise.all([
     c
       .readContract({ address: hook, abi: REV_SHARE_READ_ABI, functionName: 'getConfig', args: [poolId] })
       .catch(() => null),
-    c
-      .readContract({ address: hook, abi: REV_SHARE_READ_ABI, functionName: 'getPendingConfig', args: [poolId] })
-      .catch(() => null),
+    readPendingConfig(c, hook, poolId).then(
+      (p): { ok: true; p: DecodedPendingConfig } => ({ ok: true, p }),
+      (): { ok: false } => ({ ok: false }),
+    ),
     c.readContract({ address: hook, abi: REV_SHARE_READ_ABI, functionName: 'paused' }).catch(() => null),
     c.readContract({ address: hook, abi: REV_SHARE_READ_ABI, functionName: 'CONFIG_DELAY_BLOCKS' }).catch(() => null),
   ])
 
   if (config === null) return blank
+
+  /* The hook answered `getConfig` but its pending proposal could not be read
+     or decoded. Stating the live cut while unable to say whether a larger one
+     is armed behind it would be a half-truth, so the cut is reported as
+     unreadable — `readable: false` — rather than shown without its warning. */
+  if (!pendingRead.ok) return blank
+  const pending = pendingRead.p
 
   /* `getConfig` is a plain mapping read: an unclaimed pool returns a ZEROED
      struct rather than reverting, and a zeroed struct renders as "0% fee,
@@ -525,8 +549,15 @@ export async function readHookTake(
      can never write zero. */
   const configured = config.owner !== ZERO
 
-  const effectiveBlock = pending ? BigInt(pending.effectiveBlock) : 0n
-  const hasPending = effectiveBlock !== 0n
+  /* Four states, not two. `expired` exists only on the current 8-word hook:
+     past `expiryBlock`, `applyPendingConfig` reverts `PendingConfigExpired`, so
+     the proposal can never land as-is and a re-proposal restarts the full
+     delay — there is nothing armed to warn about. The legacy 7-word hook has
+     no expiry, so a matured proposal there is `armed` for as long as it
+     stands, however old. */
+  const status = proposalStatus(pending, atBlock)
+  const effectiveBlock = pending.effectiveBlock
+  const hasPending = status === 'queued' || status === 'armed'
 
   return {
     hook,
@@ -540,16 +571,16 @@ export async function readHookTake(
     beneficiaryBps: Number(config.beneficiaryBps),
     distributorBps: Number(config.distributorBps),
     pending:
-      hasPending && pending
+      hasPending
         ? {
             effectiveBlock,
-            feePips: Number(pending.params.feePips),
-            lpDonateBps: Number(pending.params.lpDonateBps),
-            beneficiaryBps: Number(pending.params.beneficiaryBps),
-            distributorBps: Number(pending.params.distributorBps),
+            feePips: pending.params.feePips,
+            lpDonateBps: pending.params.lpDonateBps,
+            beneficiaryBps: pending.params.beneficiaryBps,
+            distributorBps: pending.params.distributorBps,
             enabled: pending.params.enabled,
-            applicable: atBlock >= effectiveBlock,
-            blocksRemaining: atBlock >= effectiveBlock ? 0n : effectiveBlock - atBlock,
+            applicable: status === 'armed',
+            blocksRemaining: status === 'armed' ? 0n : effectiveBlock - atBlock,
           }
         : null,
     configDelayBlocks: delay === null ? null : BigInt(delay),

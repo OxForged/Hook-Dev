@@ -1,0 +1,95 @@
+/* ============================================================================
+   BrandLockup — the one mark and lockup. See BrandLockup.tsx.
+
+   Sizes are LOGO PROPORTIONS, not type roles: the PROTOCOL line is a fixed
+   fraction of the LATCH line so the lockup scales as one object. Every value
+   that is a colour or a type size reads a token.
+   ========================================================================== */
+
+.brand-lockup,
+.brand-markpair {
+  --lockup-mark: 26px;
+  --lockup-name: var(--b-card-h);
+}
+
+.brand-lockup[data-size='lg'],
+.brand-markpair[data-size='lg'] {
+  --lockup-mark: 32px;
+  --lockup-name: var(--b-panel-h);
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.brand-lockup[data-size='lg'] {
+  gap: var(--s3);
+}
+
+.brand-markpair {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+.brand-mark {
+  display: block;
+  height: var(--lockup-mark);
+  width: auto;
+}
+
+/* The on-light file is a padded square, so it takes a little more height (and
+   gives back a little inline margin) to sit at the same optical size as the
+   tight transparent mark. */
+.brand-mark--onlight {
+  height: calc(var(--lockup-mark) + 6px);
+  margin-inline: -3px;
+}
+
+/* Light is the default; the dark mark shows only in the dark theme. */
+.brand-mark--ondark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .brand-mark--onlight {
+    display: none;
+  }
+  :root:not([data-theme='light']) .brand-mark--ondark {
+    display: block;
+  }
+}
+
+:root[data-theme='dark'] .brand-mark--onlight {
+  display: none;
+}
+
+:root[data-theme='dark'] .brand-mark--ondark {
+  display: block;
+}
+
+.brand-lockup__words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1;
+}
+
+.brand-lockup__name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--lockup-name);
+  letter-spacing: 0.14em;
+  color: var(--ink-bright);
+}
+
+.brand-lockup__sub {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: calc(var(--lockup-name) * 0.6);
+  letter-spacing: 0.3em;
+  color: var(--latch-blue);
+}

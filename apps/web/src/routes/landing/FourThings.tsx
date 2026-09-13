@@ -77,14 +77,14 @@ const PIECES: readonly Piece[] = [
   {
     tag: 'LaunchpadKit',
     title: 'One-call launches',
-    body: 'Creates the pool, configures the guard, seeds liquidity and lists the hook — atomically.',
+    body: 'Creates the pool, configures the guard, seeds liquidity and lists the Latch — atomically.',
     /* Genuinely `null` on Sepolia today, which is why the null path below is a
        rendered state and not a defensive branch nobody will ever hit. */
     contracts: [{ name: 'LaunchpadKit', address: CHAIN.launchpadKit }],
   },
   {
     tag: 'Registry',
-    title: 'Hook marketplace',
+    title: 'Latch Marketplace',
     body: 'Every Latch listed with the permission bitmap it declares, checkable before you route a user through it.',
     contracts: [{ name: 'LatchRegistry', address: CHAIN.registry }],
   },
@@ -175,7 +175,15 @@ export function FourThings() {
       <div className={styles['grid']}>
         {PIECES.map((p) => (
           <article key={p.tag} className={styles['card']}>
-            <p className={styles['tag']}>{p.tag}</p>
+            <div className={styles['top']}>
+              {/* Option B's icon chip. The letter is the tag's own first
+                  character — nothing new — and hidden from assistive tech
+                  because the tag beside it already says the word. */}
+              <span className={styles['ic']} aria-hidden="true">
+                {p.tag.charAt(0)}
+              </span>
+              <p className={styles['tag']}>{p.tag}</p>
+            </div>
             <h3 className={styles['title']}>{p.title}</h3>
             <p className={styles['body']}>{p.body}</p>
             <div className={styles['refs']}>

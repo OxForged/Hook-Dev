@@ -137,7 +137,7 @@ function LiveCard({
       </div>
 
       {state.k === 'loading' && (
-        <p className="live-note" role="status">
+        <p className="live-note dapp-state--loading" role="status">
           Reading contracts&hellip;
         </p>
       )}
@@ -251,7 +251,7 @@ export function ChainStatusCard({ state }: { state: State }) {
               )
             }
           />
-          <dl className="lc-stats" style={{ marginTop: 12 }}>
+          <dl className="lc-stats dapp-mt-3">
             <Stat label="BLOCK" value={<span className="tabular">{d.status.blockNumber.toString()}</span>} />
             <Stat
               label="POOL MANAGERS"
@@ -458,7 +458,7 @@ function SwapFeeSplit({ s }: { s: SwapRecord }) {
           },
         ]}
       />
-      <p className="live-note" style={{ marginTop: 8 }}>
+      <p className="live-note dapp-mt-2">
         Newest swap, block {s.blockNumber.toString()}: {s.feePips} pips of the input amount.
       </p>
       <Methodology label="Why the LP bar is not the LP rate">

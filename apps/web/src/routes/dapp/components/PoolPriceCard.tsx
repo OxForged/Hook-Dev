@@ -160,7 +160,7 @@ function PoolCard({ pools, crypto }: { pools: PoolPriceState; crypto: MarketFeed
           <p className="dapp-kpi__value" aria-hidden="true">
             ·
           </p>
-          <p className="live-note" role="status">
+          <p className="live-note dapp-state--loading" role="status">
             Reading slot0 on {d.name}&hellip;
           </p>
         </>
@@ -178,7 +178,7 @@ function PoolCard({ pools, crypto }: { pools: PoolPriceState; crypto: MarketFeed
       )}
 
       {pools.k === 'ready' && pools.pools.length === 0 && (
-        <p className="live-note" role="status">
+        <p className="live-note dapp-state--empty" role="status">
           No initialized CL pools on this deployment. Shown empty rather than with an example.
         </p>
       )}
@@ -280,7 +280,7 @@ function ReferenceBlock({ pool, crypto }: { pool: PoolPrice; crypto: MarketFeedS
     return (
       <>
         {heading}
-        <p className="live-note" role="status">
+        <p className="live-note dapp-state--loading" role="status">
           Reference quote loading&hellip;
         </p>
       </>
@@ -302,7 +302,7 @@ function ReferenceBlock({ pool, crypto }: { pool: PoolPrice; crypto: MarketFeedS
     return (
       <>
         {heading}
-        <p className="live-note" role="status">
+        <p className="live-note dapp-state--unconfigured" role="status">
           Reference feed not configured &mdash; {crypto.reason}
         </p>
       </>
@@ -398,13 +398,13 @@ function FeedBlock({
       </h3>
 
       {shown.k === 'loading' && (
-        <p className="live-note" role="status">
+        <p className="live-note dapp-state--loading" role="status">
           Fetching {provider.source}&hellip;
         </p>
       )}
 
       {shown.k === 'unconfigured' && (
-        <p className="live-note" role="status">
+        <p className="live-note dapp-state--unconfigured" role="status">
           Not configured &mdash; {shown.reason} No quotes are shown for this market.
         </p>
       )}

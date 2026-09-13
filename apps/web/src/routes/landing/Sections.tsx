@@ -292,29 +292,31 @@ export function Team() {
   )
 }
 
-/** A11. CTA panel — radial glow from the top, two buttons. */
+/**
+ * A11. The closing band — ONE line: a serif ask on the left, two actions on the
+ * right, stacking centred on a phone. Minimal cut, 2026-09-13; the paragraph
+ * that sat under the heading is gone, and the band carries no glow.
+ *
+ * The secondary action opens the contract book: `#contracts` is what mounts it
+ * on demand (see ./index.tsx), so this is a real destination, not a dead anchor.
+ */
 export function CtaPanel() {
   return (
-    <section id="launch" className={cx(styles['ctaSection'], styles['reveal'])}>
+    <section
+      id="launch"
+      className={cx(styles['ctaSection'], styles['reveal'])}
+      aria-labelledby="launch-title"
+    >
       <div className={styles['ctaPanel']}>
-        <div className={styles['ctaGlow']} aria-hidden="true" />
-        {/* Copy from the approved Option C prototype. "Ship your first Latch
-            this week" asked for a week and named a thing the reader has not
-            heard of yet; this names the actual first action and the actual
-            cost. The second button points at the contract book on this page
-            rather than at GitHub — the reader's next question is "what am I
-            pointing at", and the answer is a section away, not a repo away. */}
-        <h2 className={styles['ctaTitle']}>Integrate in an afternoon.</h2>
-        <p className={styles['ctaBody']}>
-          Install the SDK, paste the integration prompt into your coding agent, and point it at the
-          addresses that are already live.
-        </p>
+        <h2 id="launch-title" className={styles['ctaTitle']}>
+          Integrate in an <em className={styles['accent']}>afternoon.</em>
+        </h2>
         <div className={styles['ctaActions']}>
-          <Link to={LINKS.docs} className={cx(styles['btnPrimary'], styles['btnWide'])}>
+          <Link to={LINKS.docs} className={styles['btnPrimary']}>
             Start integrating
           </Link>
-          <a href="#contracts" className={cx(styles['btnSecondary'], styles['btnWide'])}>
-            View the contracts
+          <a href={LINKS.contracts} className={styles['btnSecondary']}>
+            All deployed contracts<span aria-hidden="true"> →</span>
           </a>
         </div>
       </div>

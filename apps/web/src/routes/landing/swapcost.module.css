@@ -1,226 +1,149 @@
-/* Transition durations are literal seconds scaled by control size, matching the
-   rest of the page: 0.15s tabs, 0.2-0.22s small controls and chips, 0.25s
-   buttons, 0.3s cards. `var(--dur)` is 320ms and is used ZERO times in
-   landing.module.css — adopting it here made every control in these panels take
-   roughly twice as long to respond as the identical control one section away,
-   which reads as lag with no visible cause. */
-
-/* THE SECTION BOX IS NOT THIS FILE'S JOB.
-
-   It comes from `.section` in landing.module.css, applied alongside these
-   classes in the TSX. Every top-level section on the page has to share one
-   max-width, one gutter and one top rhythm, and a component that declares its
-   own inevitably picks slightly different numbers — this file did, and so did
-   its three siblings, giving the page content edges at 238px, 263px and 278px
-   and four section boundaries with literally zero space between them.
-
-   So: layout INSIDE the section belongs here; the box AROUND it does not. */
-
 /* ============================================================================
-   Swap cost simulator.
+   Swap cost calculator — FeeChart's companion, in Option B's language.
 
-   Every colour, radius, shadow, duration and spacing step is a token from
-   src/styles/tokens.css. There is no literal colour in this file, which is what
-   makes both themes work without a second palette here: `light-dark()` is
-   resolved by the token, not by this surface. Light mode is the warm paper
-   ground (`--void`) with white panels on top of it — not white on white.
+   The section box is landing.module.css `.section` (applied in the TSX), and
+   the panel, header, state
+   card, provenance voice and hidden-text helper are COMPOSED from
+   ./primitives.module.css. What is left here is the calculator input and the
+   table, which nothing else on the page has.
 
-   MOTION IS DECORATION ON TOP OF A COMPLETE READING. The only animated
-   properties are `width` on the two bar segments and `transform` on the tier
-   buttons. Both interpolate between two states that are each fully painted, so
-   with JS paused, the tab throttled or transitions disabled the panel still
-   shows every number and the bar still shows the correct proportion. Nothing
-   here is revealed BY an animation — no opacity-from-zero, no
-   IntersectionObserver gate, no `visibility` that motion has to undo.
+   ONE RHYTHM. This section takes the page's `--b-section-pad` like every other
+   module; a tighter gap under FeeChart was a second mechanism.
 
-   The global `prefers-reduced-motion` block in tokens.css already collapses
-   every transition to 0.01ms with `!important`. The block at the foot of this
-   file restates it locally anyway: this surface's motion is proportional to a
-   value the reader is dragging, so it is worth being explicit about where it
-   stops rather than relying on a rule two files away.
+   MOTION: the per-row bars grow from the left on first view (`--b-reveal`,
+   60ms stagger). Nothing else animates. Under reduced motion `useFirstView`
+   never arms, so they paint at full length.
    ========================================================================== */
 
-.section {
-  width: 100%;
-  min-width: 0;
-}
+/* The section box is landing.module.css `.section`, applied in the TSX. NOT
+   composed from here: `composes: … from './landing.module.css'` makes Vite
+   inline that whole 2,300-line sheet into this module's CSS a second time. */
 
 .card {
+  composes: panel from './primitives.module.css';
+  /* Anchors the visually-hidden live region to this panel. */
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--s5);
-  min-width: 0;
-  padding: var(--s6);
-  background: var(--grad-card);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  box-shadow: var(--shadow-1);
+  gap: 22px;
 }
 
-/* ---------------------------------------------------------------- header -- */
+/* Restates the state card's gap: `.card` above is later in the cascade than
+   the composed primitive and would otherwise win with its 22px. */
+.stateCard {
+  composes: stateCard from './primitives.module.css';
+  gap: var(--s2);
+}
+
+.state {
+  composes: stateText from './primitives.module.css';
+}
+
+.stateDot {
+  composes: stateDot from './primitives.module.css';
+}
+
+.raw {
+  composes: stateRaw from './primitives.module.css';
+}
+
+/* ---- header row: title left, the calculator input right ----------------- */
 
 .head {
-  display: flex;
-  min-width: 0;
-  gap: var(--s5);
+  composes: panelHead from './primitives.module.css';
 }
 
 .headText {
-  min-width: 0;
-}
-
-.eyebrow {
-  margin: 0 0 var(--s2);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 16px;
-  /* 0.22em and --eyebrow-blue: the house eyebrow, matching .eyebrow in
-     landing.module.css. --label-ink was close enough to be invisible on the
-     paper theme (both resolve to #858b9b) and visibly wrong in dark, where this
-     eyebrow came out a lighter grey than every other one on the page. */
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--eyebrow-blue);
+  composes: panelHeadText from './primitives.module.css';
 }
 
 .title {
-  margin: 0;
-  /* The house section heading: serif 400 at a clamp, matching .h2 in
-     landing.module.css. A 28px bold sans heading between two 42px serif ones
-     made these read as SUB-sections of their neighbours rather than as peers. */
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: clamp(28px, 3.2vw, 42px);
-  line-height: 1.15;
-  letter-spacing: -0.015em;
-  color: var(--ink-bright);
+  composes: panelTitle from './primitives.module.css';
 }
 
-.accent {
-  color: var(--latch-blue);
+.caption {
+  composes: panelCaption from './primitives.module.css';
 }
 
-.lead {
-  margin: var(--s3) 0 0;
-  max-width: 62ch;
-  font-size: 14.5px;
-  line-height: 1.65;
-  color: var(--muted-ink);
-}
+/* ---- the calculator input ------------------------------------------------ */
 
-/* ---------------------------------------------------------------- notice --
-   Deliberately warn-toned rather than error-toned. A controller that is
-   deployed and not yet wired is a state of the rollout, not a fault, and
-   painting it red would teach a reader to distrust a correct panel. */
-
-.notice {
-  margin: 0;
-  padding: var(--s3) var(--s4);
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-  background: var(--dapp-badge-warn-bg);
-  border: 1px solid var(--dapp-badge-warn-border);
+.input {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  flex: 1 1 300px;
+  max-width: 420px;
+  min-width: 0;
+  padding: 14px var(--s4);
+  background: var(--panel-alt);
+  border: 1px solid var(--hairline);
   border-radius: var(--r-sm);
 }
 
-.notice strong {
-  color: var(--ink);
-}
-
-/* -------------------------------------------------------------- controls -- */
-
-.controls {
-  display: grid;
-  /* `minmax(0, …)` on both tracks: grid items default to min-content width, and
-     one long mono figure is enough to push the whole card past the viewport. */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--s5);
-  min-width: 0;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-  min-width: 0;
-  padding: var(--s4);
-  background: var(--panel-alt);
-  border: 1px solid var(--hairline-soft);
-  border-radius: var(--r-card);
-}
-
-.fieldHead {
+.inputHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s2);
-  min-width: 0;
 }
 
 .label {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 16px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--eyebrow-blue);
+  font-size: var(--b-label);
+  font-weight: 600;
+  color: var(--ink);
 }
 
-/* ---- provenance chips ----
-   Two chips, two claims, visually distinct on purpose: the rates are a
-   measurement and the size is not. A reader must never have to guess which
-   half of this panel came from a contract. */
-
+/* Provenance chip: the size is the reader's, and says so before any figure.
+   Uppercase and tracked, so the micro-label voice. */
 .chip {
   flex: none;
-  padding: 2px var(--s2);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  line-height: 16px;
-  letter-spacing: 0.1em;
+  padding: 3px 9px;
+  font-size: var(--b-micro);
+  font-weight: 640;
+  line-height: 14px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  border-radius: var(--r-chip);
-  border: 1px solid var(--hairline);
-}
-
-.chipChain {
-  color: var(--badge-live-ink);
-  background: var(--badge-live-bg);
-  border-color: var(--badge-live-border);
-}
-
-.chipInput {
   color: var(--muted-ink);
-  background: var(--badge-target-bg);
-  border-color: var(--badge-target-border);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
 }
 
-/* ---- size ---- */
-
-.sizeOut {
+.fieldRow {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--s2);
   min-width: 0;
 }
 
-.sizeValue {
-  font-family: var(--font-mono);
-  font-size: 30px;
-  line-height: 40px;
+.field {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding: var(--s2) var(--s3);
+  font-family: var(--font-body);
+  font-size: var(--b-panel-h);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--ink-bright);
-  /* Six orders of magnitude pass through this element; a proportional figure
-     would jitter the unit beside it on every drag frame. */
-  letter-spacing: -0.02em;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--b-dur);
 }
 
-.sizeUnit {
-  font-family: var(--font-mono);
-  font-size: 13.5px;
-  line-height: 1.6;
+.field:hover {
+  border-color: var(--border-hover);
+}
+
+.field[aria-invalid='true'] {
+  border-color: var(--error);
+}
+
+.unit {
+  flex: none;
+  font-size: var(--b-caption);
   color: var(--muted-ink);
 }
 
@@ -235,429 +158,194 @@
 
 .hint {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--b-label);
+  line-height: 1.45;
   color: var(--muted-ink);
 }
 
-.hint code,
-.compose code,
-.foot code {
-  padding: 1px 4px;
-  font-size: 11px;
-  color: var(--sky-ink);
-  background: var(--code-ground);
-  border-radius: var(--r-micro);
+.hintBad {
+  color: var(--error);
 }
 
-/* ---- tiers ---- */
+/* ---- notice --------------------------------------------------------------
+   Warn, not error: deployed-but-unwired is a rollout state, not a fault. */
 
-.tiers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2);
+.notice {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+  background: var(--dapp-badge-warn-bg);
+  border: 1px solid var(--dapp-badge-warn-border);
+  border-radius: var(--r-sm);
+}
+
+.notice strong {
+  color: var(--ink);
+  font-weight: 640;
+}
+
+/* ---- the table ------------------------------------------------------------
+   Its own scroller: at 400px the five columns scroll inside this box and the
+   page never does. */
+
+.scroller {
+  contain: inline-size;
+  width: 100%;
   min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+}
+
+.table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+/* The house table header (same as dapp.css `.dapp-table thead th`). */
+.table thead th {
+  padding: 10px var(--s4);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint-ink);
+  background: var(--panel-alt);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+.table tbody tr + tr {
+  border-top: 1px solid var(--hairline);
+}
+
+.table tbody th,
+.table tbody td {
+  padding: var(--s3) var(--s4);
+  vertical-align: middle;
 }
 
 .tier {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: var(--s2) var(--s3);
-  text-align: left;
-  cursor: pointer;
-  background: var(--panel);
-  border: 1px solid var(--cta-border);
-  border-radius: var(--r-btn);
-  transition: transform 0.22s var(--ease), border-color 0.22s var(--ease),
-    background-color 0.22s var(--ease);
-}
-
-.tier:hover {
-  border-color: var(--border-hover);
-  transform: translateY(-2px);
-}
-
-.tierOn {
-  color: var(--sky-ink);
-  background: var(--accent-soft);
-  border-color: var(--latch-blue);
-}
-
-.tierPct {
   font-family: var(--font-mono);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--b-caption);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: inherit;
-}
-
-.tierPips {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 16px;
-  color: var(--label-ink);
-}
-
-/* ------------------------------------------------------------- breakdown -- */
-
-.breakdown {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  /* The 1px gap over a hairline ground draws every divider once, instead of
-     per-cell borders that double at the seams. */
-  gap: 1px;
-  min-width: 0;
-  background: var(--hairline);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card);
-  overflow: hidden;
-}
-
-.cell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  padding: var(--s4);
-  background: var(--panel);
-}
-
-.cellStrong {
-  background: var(--deep-panel);
-}
-
-.cellName {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 16px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--label-ink);
-}
-
-.cellRate {
-  font-family: var(--font-mono);
-  font-size: 22px;
-  line-height: 32px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-bright);
-}
-
-.cellAmount {
-  font-family: var(--font-mono);
-  font-size: 13.5px;
-  line-height: 1.6;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted-ink);
-  /* Long amounts wrap rather than widening the grid track. */
-  overflow-wrap: anywhere;
-}
-
-/* --muted-ink, not --label-ink. tokens.css states the rule: --label-ink is
-   3.4:1 on --panel and is valid ONLY for uppercase tracked micro-labels, where
-   the letterforms carry part of the separation. Sentence-case prose at 12px
-   needs --muted-ink (8.3:1). */
-.cellWho {
-  margin-top: var(--s1);
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--muted-ink);
-}
-
-.compose {
-  margin: 0;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-}
-
-.compose strong {
   color: var(--ink);
+  white-space: nowrap;
 }
 
-/* --------------------------------------------------------- where it goes -- */
+.tierSub,
+.numSub {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  font-weight: 400;
+  color: var(--muted-ink);
+}
 
-.where {
+.colBar {
+  width: 38%;
+}
+
+.barCell {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: var(--s3);
   min-width: 0;
 }
 
-.whereHead {
-  display: flex;
-  min-width: 0;
+.barTrack {
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 10px;
 }
 
 .bar {
   display: flex;
-  width: 100%;
-  min-width: 0;
-  height: var(--s5);
-  background: var(--track);
-  border-radius: var(--r-pill);
-  overflow: hidden;
-}
-
-/* The one animated property. Width is interpolated between two complete
-   states; the segment is already at its correct size on first paint. */
-.seg {
-  display: block;
   height: 100%;
-  min-width: 0;
-  transition: width 0.22s var(--ease);
+  min-width: 2px;
+  gap: 1px;
+  border-radius: var(--r-micro);
+  overflow: hidden;
+  transform-origin: 0 50%;
+  transform: scaleX(1);
+  transition: transform var(--b-reveal) var(--ease) var(--stagger, 0ms);
 }
 
+.barHidden {
+  transform: scaleX(0);
+  /* Hiding is instant; only the reveal transitions. */
+  transition: none;
+}
+
+/* The same two series FeeChart draws. */
 .segLp {
-  background: var(--share-lp);
+  flex: none;
+  height: 100%;
+  background: var(--chart-lp);
 }
 
 .segProtocol {
+  flex: 1 1 auto;
+  height: 100%;
   background: var(--latch-blue);
 }
 
-.legend {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s2) var(--s5);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-}
-
-.legend li {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--s2);
-  min-width: 0;
-}
-
-.swatch {
-  align-self: center;
+.total {
   flex: none;
-  width: var(--s3);
-  height: var(--s3);
-  border-radius: var(--r-micro);
-}
-
-.swatchLp {
-  background: var(--share-lp);
-}
-
-.swatchProtocol {
-  background: var(--latch-blue);
-}
-
-.legendName {
-  font-size: 13.5px;
-  line-height: 1.6;
+  min-width: 7ch;
+  font-family: var(--font-mono);
+  font-size: var(--b-caption);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
   color: var(--ink);
 }
 
-.legendPct {
+.num {
   font-family: var(--font-mono);
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: var(--b-caption);
   font-variant-numeric: tabular-nums;
-  color: var(--ink-bright);
-}
-
-.legendAmt {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.6;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted-ink);
-  overflow-wrap: anywhere;
-}
-
-/* ------------------------------------------------------------- comparison -- */
-
-.compare {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card);
-  overflow: hidden;
-}
-
-.compareRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: baseline;
-  gap: var(--s3);
-  min-width: 0;
-  padding: var(--s3) var(--s4);
-  background: var(--panel);
-}
-
-.compareRowAlt {
-  background: var(--panel-alt);
-  border-top: 1px solid var(--hairline-soft);
-}
-
-.compareName {
-  min-width: 0;
-  font-size: 13.5px;
-  line-height: 1.6;
+  text-align: right;
   color: var(--ink);
-  overflow-wrap: anywhere;
-}
-
-.compareRate,
-.compareAmt {
-  font-family: var(--font-mono);
-  font-size: 13.5px;
-  line-height: 1.6;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.compareRate {
-  color: var(--ink-bright);
+.table thead th.num {
+  text-align: right;
 }
 
-.compareAmt {
-  color: var(--muted-ink);
+.better {
+  color: var(--success);
 }
 
-.delta {
-  margin: 0;
-  padding: var(--s3) var(--s4);
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-  background: var(--accent-soft);
-  border-top: 1px solid var(--hairline-soft);
+/* ---- provenance ---------------------------------------------------------- */
+
+.provenance {
+  composes: provenance from './primitives.module.css';
+  max-width: 88ch;
 }
 
-.delta strong {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--sky-ink);
-}
-
-/* ------------------------------------------------------------ states/foot -- */
-
-.note {
-  margin: 0;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-}
-
-.raw {
-  display: inline-block;
-  margin-top: var(--s2);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--error);
-  overflow-wrap: anywhere;
-}
-
-/* --muted-ink, not --label-ink. tokens.css states the rule: --label-ink is
-   3.4:1 on --panel and is valid ONLY for uppercase tracked micro-labels, where
-   the letterforms carry part of the separation. Sentence-case prose at 12px
-   needs --muted-ink (8.3:1). */
-.foot {
-  margin: 0;
-  padding-top: var(--s3);
-  border-top: 1px solid var(--hairline-soft);
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-}
-
-.foot strong {
-  color: var(--muted-ink);
-}
-
-/* The live region. Removed from view, never from the accessibility tree —
-   `display: none` and `visibility: hidden` would both silence it. */
 .sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-
-/* ------------------------------------------------------------ responsive --
-   One stacking breakpoint, then a tightening pass for the narrowest phones.
-   The rule everything obeys: no fixed width anywhere, `minmax(0, …)` on every
-   grid track and `min-width: 0` on every flex child, so nothing in this card
-   can push the page into a horizontal scroll at 400px. */
-
-/* 1138 == 900 + the 238px rail — the same fix as .flowGrid and .audGrid in
-   landing.module.css. Between 901 and 1138px of viewport the column is only
-   663-900px, and the 30px size value collides with its label. */
-@media (max-width: 1138px) {
-  .controls {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .breakdown {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  composes: sr from './primitives.module.css';
 }
 
 @media (max-width: 560px) {
   .card {
-    padding: var(--s4);
     gap: var(--s4);
   }
-
-  .title {
-    font-size: 22px;
-    line-height: 28px;
-  }
-
-  .sizeValue {
-    font-size: 24px;
-    line-height: 32px;
-  }
-
-  .legend {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  /* The rate and the amount stop competing with the name for one line. */
-  .compareRow {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .compareAmt {
-    grid-column: 1 / -1;
-  }
-
-  /* A range input is the one control here that must not shrink: at 400px the
-     card padding is already at its minimum and the track takes what is left. */
-  .range {
-    height: var(--s6);
+  .input {
+    max-width: none;
   }
 }
 
-/* Restated locally — see the file header for why. */
 @media (prefers-reduced-motion: reduce) {
-  .seg,
-  .tier {
+  .bar,
+  .field {
     transition: none;
-  }
-
-  .tier:hover {
-    transform: none;
   }
 }

@@ -389,8 +389,8 @@ export default function DocsPage() {
                       <th scope="row" className="dk-table__name">
                         {s.route}
                       </th>
-                      <td className="dk-table__bit">{s.wallet}</td>
-                      <td className="dk-table__ret">{s.reads}</td>
+                      <td className="dk-table__bit dk-table__prose">{s.wallet}</td>
+                      <td className="dk-table__ret dk-table__prose">{s.reads}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -561,7 +561,7 @@ export default function DocsPage() {
                         {r.name}
                       </th>
                       <td className="dk-table__bit">{r.returns}</td>
-                      <td className="dk-table__ret">{r.note}</td>
+                      <td className="dk-table__ret dk-table__prose">{r.note}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -745,7 +745,7 @@ export default function DocsPage() {
                         {j.call}
                       </th>
                       <td className="dk-table__bit">{j.gas}</td>
-                      <td className="dk-table__ret">{j.without}</td>
+                      <td className="dk-table__ret dk-table__prose">{j.without}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -953,7 +953,6 @@ export default function DocsPage() {
           {/* --------------------------------------------- B10. Next panel */}
           <section id="next" className="dk-section dk-reveal" style={vars({ '--d': '0.22s' })}>
             <div className="dk-next">
-              <span className="dk-next__glow" aria-hidden="true" />
               <h2 className="dk-next__title">Next: initialize a pool</h2>
               <p className="dk-next__body">
                 A pool opts into your Latch by naming it in the pool key. Use the{' '}

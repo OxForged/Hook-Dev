@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 
+import { BrandMark } from '../../components/BrandLockup'
 import { GITHUB_URL } from '../landing/socials'
 
 /**
@@ -13,7 +14,7 @@ export default function DocsFooter() {
   return (
     <footer className="dk-footer">
       <div className="dk-footer__brand">
-        <img src="/brand/latch-mark-transparent.png" alt="" className="dk-footer__mark" />
+        <BrandMark />
         <span className="dk-footer__copy">© 2026 LATCH PROTOCOL</span>
       </div>
       <nav className="dk-footer__links" aria-label="Footer">

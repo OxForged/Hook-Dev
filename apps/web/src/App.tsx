@@ -38,7 +38,7 @@ function NotFound() {
           fontSize: 11,
           letterSpacing: '.22em',
           textTransform: 'uppercase',
-          color: 'var(--eyebrow-blue)',
+          color: 'var(--label-ink)',
           margin: '0 0 12px',
         }}
       >

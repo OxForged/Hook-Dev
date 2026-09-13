@@ -1,123 +1,131 @@
-/* THE SECTION BOX IS NOT THIS FILE'S JOB.
+/* ============================================================================
+   Four things you do not have to build — Option B ("Institutional Clarity")
+   treatment: b.html's "What you skip" `.cards` / `.card` / `.ic`.
 
-   It comes from `.section` in landing.module.css, applied alongside these
-   classes in the TSX. Four panels each declared their own box and the page
-   ended up with content edges at 238px, 263px and 278px; this file does not
-   repeat that. Layout INSIDE the section belongs here, the box around it does
-   not.
+   THE SECTION BOX AND HEADING ARE NOT THIS FILE'S JOB. They come from
+   `.section`, `.eyebrow`, `.h2` and `.sectionLead` in landing.module.css.
+   Layout INSIDE the section belongs here.
 
-   Every value below is a token from src/styles/tokens.css — no raw hex, no
-   off-scale px — and every type value matches the house roles established in
-   landing.module.css: 10.5px/0.16em micro-labels, 13.5px small body, cards at
-   --r-card-lg with a -4px hover lift over 0.3s.
+   B PRIMITIVES DUPLICATED LOCALLY (consolidate once landing.module.css carries
+   them): `.grid` is b.html's `.cards`, `.card` its `.card`, `.ic` its `.ic`.
+   Ecosystem's `.card` is the same primitive.
 
-   Durations are written in literal seconds. `--dur` is 320ms and the house
-   uses it in zero places; matching the house beats matching the token. */
+   TOKENS ONLY — every colour, radius, shadow and type size is a token from
+   src/styles/tokens.css, so both themes resolve through `light-dark()`.
+   ========================================================================== */
 
-/* ---- the four cards ------------------------------------------------------
-
-   THE RAIL TRAP, AND WHY THIS GRID HAS NO MEDIA QUERY. Above 861px `.page` is
-   `grid-template-columns: 238px minmax(0, 1fr)` and this section lives in the
-   second track, so any query written against the VIEWPORT fires 238px late —
-   the reason landing.module.css carries 1138px queries where 900px was meant.
-   `auto-fit` sidesteps the whole problem: the track count answers to the
-   CONTAINER, which is the thing that actually got narrower, so the section
-   reflows correctly whether or not the rail is there and there is no number to
-   keep in sync with the shell.
-
-   `min(255px, 100%)` rather than a bare 255px: below 255px of container an
-   ordinary minmax track refuses to shrink and puts a horizontal scrollbar on
-   the whole page. At 400px the container is comfortably wider than that today,
-   which is precisely why the bare version would survive review and then break
-   the day the gutter or the rail changes. */
-
+/* `auto-fit` answers to the CONTAINER, so the grid reflows correctly whatever
+   shell chrome sits beside it and there is no viewport number to keep in
+   sync. `min(262px, 100%)` keeps a narrow container from forcing a
+   horizontal scroll on the page. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(255px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(262px, 100%), 1fr));
   gap: var(--s4);
-  margin-top: var(--s7);
+  margin-top: 30px;
 }
 
 .card {
   display: flex;
   flex-direction: column;
-  /* Grid items default to min-content, not zero, so an unbroken token in the
-     body — or a contract name beside an address — can push a column past its
-     track and scroll the page sideways. */
+  /* Grid items default to min-content; an address in the footer would
+     otherwise push a column past its track. */
   min-width: 0;
-  padding: var(--s5);
+  padding: 22px;
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  background: var(--grad-card);
+  border-radius: var(--r-card);
+  background: var(--panel);
   box-shadow: var(--shadow-1);
   transition:
-    border-color 0.3s,
-    box-shadow 0.3s,
-    transform 0.3s var(--ease);
+    box-shadow var(--b-dur),
+    transform var(--b-dur) var(--ease);
 }
 
 .card:hover {
-  border-color: var(--border-hover);
-  transform: translateY(-4px);
-  box-shadow: var(--sh-card-hover);
+  transform: var(--b-card-lift);
+  box-shadow: var(--shadow-2);
 }
 
-/* The prototype tinted this label blue. Here it takes --label-ink, the house
-   role for a mono micro-label: on this page blue already means "link", and the
-   card now carries real links in its footer that need to win that contrast. */
+/* ---- top row: the icon chip and the contract-family label ---------------- */
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+  margin-bottom: 13px;
+}
+
+/* b.html `.ic`: a 34px soft-blue tile carrying one mono letter. The letter is
+   the first character of the card's own tag, so nothing is invented for it,
+   and it is `aria-hidden` because the tag beside it already says the word. */
+.ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-btn);
+  background: var(--accent-soft);
+  color: var(--latch-blue);
+  font-family: var(--font-mono);
+  font-size: var(--b-caption);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Uppercase and tracked — the condition tokens.css puts on --faint-ink at
+   this size, where the letterforms carry the separation. */
 .tag {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.16em;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  line-height: 16px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--label-ink);
+  color: var(--faint-ink);
 }
 
 .title {
-  margin: var(--s3) 0 0;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 20px;
-  line-height: 1.25;
+  margin: 0 0 6px;
+  font-family: var(--font-body);
+  font-size: var(--b-card-h);
+  font-weight: 640;
+  line-height: 1.35;
   letter-spacing: -0.01em;
-  color: var(--ink-bright);
+  color: var(--ink);
 }
 
 .body {
-  /* `flex: 1` is what puts the four contract footers on one baseline when the
-     bodies run to different lengths — the copy absorbs the difference instead
-     of the links floating up mid-card. */
+  /* `flex: 1` puts the four contract footers on one baseline when the bodies
+     run to different lengths. */
   flex: 1;
-  margin: var(--s3) 0 0;
-  font-size: 13.5px;
-  line-height: 1.6;
+  margin: 0;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
   text-wrap: pretty;
 }
 
 /* ---- the contract footer -------------------------------------------------
-
-   The half the static prototype could not have. A hairline separates it from
-   the copy for the same reason the audience cards do it: the claim above is
-   marketing and the line below is a fact you can go and check, and the two
-   should not read as one paragraph. */
+   The claim above is copy; the line below is a fact you can check. A hairline
+   keeps them from reading as one paragraph. */
 
 .refs {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
-  margin-top: var(--s5);
-  padding-top: var(--s4);
+  margin-top: 18px;
+  padding-top: 14px;
   border-top: 1px solid var(--hairline);
 }
 
 .ref {
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.02em;
-  /* An address is one long token; without this a narrow card scrolls the page
-     rather than wrapping the pair. */
+  font-size: var(--b-label);
+  line-height: var(--b-body-lh);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -125,37 +133,35 @@
 .refLink {
   color: var(--signal-blue);
   text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition:
-    color 0.2s,
-    border-color 0.2s;
+  transition: color var(--b-dur);
 }
 
 .refLink:hover,
 .refLink:focus-visible {
-  color: var(--latch-blue);
-  border-bottom-color: var(--latch-blue);
+  color: var(--deep-blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-/* Not deployed on this chain. Deliberately quiet and deliberately present:
-   dropping the row entirely would leave a card claiming a contract the reader
-   cannot find, and rendering a link to the zero address would be worse still. */
+/* Not deployed on this chain. Quiet and present — --muted-ink rather than
+   --faint-ink because it is sentence-case and must clear 4.5:1. */
 .refAbsent {
-  color: var(--label-ink);
+  color: var(--muted-ink);
+}
+
+/* The house card's narrow padding (landing.module.css `.card`). */
+@media (max-width: 560px) {
+  .card {
+    padding: var(--s5) var(--s4);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* tokens.css collapses animation durations globally, but not transitions —
-     the hover lift is a transition, so it is pinned here. Nothing in this
-     section is revealed by motion, so switching it off changes how the cards
-     move and nothing about what they say. */
-  .card {
+  .card,
+  .refLink {
     transition: none;
   }
   .card:hover {
     transform: none;
-  }
-  .refLink {
-    transition: none;
   }
 }

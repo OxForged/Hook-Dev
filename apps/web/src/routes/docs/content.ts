@@ -299,24 +299,36 @@ export const FEE_LATCH_BITMAP = 0x0040
 
 /* Two chains now, and the mainnet is listed first. A developer copying from
    here will paste whichever CL_POOL_MANAGER they see, so the one they see first
-   should be the one they most likely want. */
+   should be the one they most likely want.
+
+   EVERY ADDRESS BELOW IS READ FROM THE SDK ADDRESS BOOK (`LATCH_DEPLOYMENTS` in
+   packages/sdk/src/deployments/index.ts, re-exported as `DEPLOYMENTS` by
+   src/lib/chain.ts) — the same object the Marketplace and /verify read. This
+   block used to spell them out by hand, and after the 2026-09-12 Robinhood
+   redeploy it went on printing the RETIRED LatchRegistry (0xE4395085…) and
+   RETIRED RevShareHook (0x23CE34E8…) as current. A retired registry still
+   answers and looks like an empty marketplace, so a developer pasting it would
+   register into a contract nothing reads. Interpolated, it cannot drift. */
+const RH = DEPLOYMENTS[4663]
+const SEP = DEPLOYMENTS[11155111]
+
 export const DEPLOY_SHELL = `[[com:# Robinhood Chain · 4663 · MAINNET]]
-[[com:#   Vault           0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c]]
-[[com:#   CLPoolManager   0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66]]
-[[com:#   BinPoolManager  0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979]]
-[[com:#   LatchRegistry   0xE4395085De89365440A6Ee25cE24BE2bAD66AC86]]
-[[com:#   RevShareHook    0x23CE34E8199927DD270dddd8579c947542bDE446]]
-[[com:#   Create3Factory  0x6ffdf9a3df7e9dd55bad2e60c7405cd181005633]]
+[[com:#   Vault           ${RH.vault}]]
+[[com:#   CLPoolManager   ${RH.clPoolManager}]]
+[[com:#   BinPoolManager  ${RH.binPoolManager}]]
+[[com:#   LatchRegistry   ${RH.registry}]]
+[[com:#   RevShareHook    ${RH.revShareHook}]]
+[[com:#   Create3Factory  ${RH.create3Factory}]]
 
 [[com:# Ethereum Sepolia · 11155111 · testnet]]
-[[com:#   Vault           0xCe3d133eb486b448A53437A5073619FbE424d01B]]
-[[com:#   CLPoolManager   0xb7C8a11E0B359616eD06256783aF57114841F738]]
-[[com:#   BinPoolManager  0xdBA93F91BA5B8535AE2b38be6a3A6CdcfDE6f6f3]]
-[[com:#   Create3Factory  0x76473D174Aa17C23FBE49CAb50aAc4ED4d8c678F]]
+[[com:#   Vault           ${SEP.vault}]]
+[[com:#   CLPoolManager   ${SEP.clPoolManager}]]
+[[com:#   BinPoolManager  ${SEP.binPoolManager}]]
+[[com:#   Create3Factory  ${SEP.create3Factory}]]
 
 [[com:# the two the generated script actually reads — mainnet shown]]
 [[cmd:export]] PRIVATE_KEY=0x...
-[[cmd:export]] CL_POOL_MANAGER=0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66
+[[cmd:export]] CL_POOL_MANAGER=${RH.clPoolManager}
 
 [[cmd:forge]] test
 [[cmd:forge]] script script/DeployFeeLatch.s.sol --rpc-url $ROBINHOOD_RPC_URL --broadcast`
@@ -329,12 +341,14 @@ export const DEPLOY_SHELL = `[[com:# Robinhood Chain · 4663 · MAINNET]]
  * these and `/app/deploy` writes to it. Spelled out so a reader can paste an
  * address into a block explorer without opening the app.
  *
- * Sepolia's was redeployed 2026-09-10; the previous
- * 0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE still answers but is retired — it
- * holds the original listing and nothing reads it.
+ * Read from the SDK address book, not written here. Both chains have retired
+ * registries that still answer: Sepolia's 0x665e7e5C419d004420C6Cb8c924E1E5Ca31F43DE
+ * (redeployed 2026-09-10) and Robinhood's 0xE4395085De89365440A6Ee25cE24BE2bAD66AC86
+ * (redeployed 2026-09-12). This constant printed the second one as current
+ * until it was switched to the address book.
  */
-export const REGISTRY_ADDRESS_ROBINHOOD = '0xE4395085De89365440A6Ee25cE24BE2bAD66AC86'
-export const REGISTRY_ADDRESS_SEPOLIA = '0xB504da43C6ED342a511f3e5849f53035F2C807d1'
+export const REGISTRY_ADDRESS_ROBINHOOD = DEPLOYMENTS[4663].registry
+export const REGISTRY_ADDRESS_SEPOLIA = DEPLOYMENTS[11155111].registry
 
 /**
  * The same `register` call `/app/deploy` sends, from a shell. The struct is

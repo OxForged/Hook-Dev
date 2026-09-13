@@ -1,21 +1,41 @@
 /* ============================================================================
-   Latch Protocol — landing page
-   Layout, type and motion transcribed from "latch design/README.md" (§ Design
-   tokens, § Screens 1, § Interactions & behavior) and
-   design-references/Latch Landing.dc.html. Every colour, radius and shadow is
-   a token from src/styles/tokens.css — no literal values live here.
+   Latch Protocol — landing page · OPTION B, "INSTITUTIONAL CLARITY"
+
+   Design of record: C:\Users\Admin\Desktop\latch-design-options\b.html
+   (2026-09-13). Option C, which this file previously transcribed, was rejected.
+
+   THE RULES THIS FILE KEEPS
+     · Every colour, radius, shadow and type size is a token from
+       src/styles/tokens.css. No hex, no rgba, no raw font-size. Spacing uses
+       the --s scale or B's own layout tokens (--b-wrap, --b-gutter,
+       --b-section-pad).
+     · Both themes come from the tokens. Nothing here is defined only inside a
+       media query or a [data-theme] block — `light-dark()` in tokens.css does
+       the switching.
+     · Serif (`--font-serif`, a SYSTEM stack) is for the H1 and section
+       headings only, weight 500. Mono is for numbers, addresses and code only.
+     · No glow, no decorative gradient, no dark slab on the light ground.
+       Elevation is --shadow-1 at rest and a 1-3px lift on hover.
+     · `--label-ink` / `--faint-ink` clear 3:1, not 4.5:1, so they are used ONLY
+       on uppercase, letter-spaced micro-labels. Anything read as prose, and any
+       label that is the sole carrier of a state, uses `--muted-ink`.
+
+   SHARED WITH OTHER SURFACES — do not rename. `page`, `eyebrow`, `h1`, `h2`,
+   `h2Small`, `accent`, `reveal`, `section`, `sectionLead` and
+   `sectionLeadStart` are imported by FourThings, Ecosystem, SwapCost,
+   PresetCurve, ContractBook (landing), LegalShell and the verify route.
    ============================================================================ */
 
 .page {
   background: var(--void);
   color: var(--ink);
+  font-size: var(--b-body);
   /* `clip`, not `hidden`: `hidden` would turn .page into a scroll container,
      and the sticky header inside it would stop sticking to the viewport. */
   overflow-x: clip;
-  /* The reference leaves UI chrome — buttons, pills, labels, card titles — at
-     the font's natural line-height and sets a line-height only on running
-     copy. tokens.css ships a 1.6 body default for long-form surfaces, so the
-     landing opts back out and every block below states its own. */
+  /* UI chrome — buttons, pills, labels — sits at the font's natural
+     line-height; running copy states its own (B's 1.6) block by block below.
+     Setting 1.6 here would re-space every sibling module on this page. */
   line-height: normal;
 }
 
@@ -43,257 +63,374 @@
 .toneAmber {
   --tone: var(--amber);
 }
-
-/* ------------------------------------------------------------------ motion */
-
-@keyframes reveal {
-  from {
-    opacity: 0;
-    transform: translateY(26px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+/* A network we have not deployed to is a fact, not a fault: neither green nor
+   red. */
+.toneMuted {
+  --tone: var(--label-ink);
 }
 
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-14px);
-  }
-}
+/* ===========================================================================
+   B PRIMITIVES
+   The shared vocabulary. Section components compose these rather than
+   restating a box, a heading or a button.
+   =========================================================================== */
 
-@keyframes draw {
-  from {
-    stroke-dashoffset: 2400;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
+/* ---- reveal ---------------------------------------------------------------
+   CONTENT IS VISIBLE BY DEFAULT. An element is hidden only while it carries
+   `data-reveal-pending`, which `useRevealOnScroll` (./ui.ts) sets at the moment
+   it starts observing that element and removes when it intersects — or for
+   everything after a 1.5s hard stop if the observer never fires. JS off, a
+   crawler, reduced motion, or a section mounted later: nothing is marked, and
+   the page is simply there. */
 
-@keyframes rise {
-  from {
-    transform: scaleY(0.06);
-  }
-  to {
-    transform: scaleY(1);
-  }
-}
-
-@keyframes dotIn {
-  from {
-    opacity: 0;
-    transform: scale(0.4);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes sheen {
-  0% {
-    transform: translateX(-140%);
-  }
-  60%,
-  100% {
-    transform: translateX(260%);
-  }
-}
-
-/* README § Interactions: status dots 0.3 -> 1 -> 0.3, 1.6-2.4s infinite. */
-@keyframes statusPulse {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* Section reveal — a CSS animation, so content is never hidden if JS fails. */
 .reveal {
-  animation: reveal 0.85s var(--ease) both;
+  transition:
+    opacity var(--b-reveal) ease,
+    transform var(--b-reveal) var(--ease);
 }
+
+.reveal[data-reveal-pending] {
+  opacity: 0;
+  transform: translateY(var(--s4));
+}
+
 .delay1 {
-  animation-delay: 0.1s;
+  transition-delay: 60ms;
 }
 .delay2 {
-  animation-delay: 0.15s;
+  transition-delay: 120ms;
 }
 .delay3 {
-  animation-delay: 0.2s;
+  transition-delay: 180ms;
 }
 
-/* ------------------------------------------------------------------ header */
+/* ---- the section box ------------------------------------------------------
+   One column for the whole page: `--b-wrap` wide, `--b-gutter` each side,
+   `--b-section-pad` above. Border-box, because sibling modules add
+   `width: 100%` to this element and a content-box section would then be
+   wider than its parent by both gutters.
+
+   TOP PADDING ONLY. b.html pads sections both ends, which between two
+   neighbours is 128px; across the twelve sections on this page that reads as
+   a page that forgot to load. One `--b-section-pad` between sections is B's
+   own step, and the footer supplies the last one. */
+
+.section {
+  box-sizing: border-box;
+  width: 100%;
+  /* A long address or a measured chart must never widen its parent. */
+  min-width: 0;
+  max-width: var(--b-wrap);
+  margin-inline: auto;
+  padding: var(--b-section-pad) var(--b-gutter) 0;
+}
+
+/* Heading row with an action on the right (Activity). */
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s5);
+}
+
+/* ---- section heading: eyebrow, serif H2, muted subtitle -------------------
+   b.html has no eyebrow; the page's sections carry one, so it is kept as B's
+   quietest label voice (the sidebar group label in b.html's app preview):
+   sans, uppercase, tracked, 640. Uppercase + tracking is what licenses the
+   3:1 `--label-ink` here. */
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+}
+
+/* B `.sec-h`. One size for every section heading: B has one, and a page whose
+   section titles step between three sizes reads as three documents. */
+.h2 {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: var(--b-sec-h);
+  line-height: 1.2;
+  letter-spacing: var(--b-sec-h-track);
+  color: var(--ink-bright);
+}
+
+/* Kept as aliases so callers need no change. Size no longer varies. */
+.h2Large,
+.h2Small {
+  font-size: var(--b-sec-h);
+}
+
+.h2Spaced {
+  margin-bottom: var(--s6);
+}
+
+.h2SpacedLarge {
+  margin-bottom: var(--s6);
+}
+
+/* B `.sec-s`: muted, left-aligned, 64ch. Was centred in `--label-ink`, which
+   is a 3:1 grey on sentence-case prose. */
+.sectionLead {
+  max-width: 64ch;
+  margin: var(--s3) 0 0;
+  font-size: var(--b-sec-s);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+  text-align: left;
+  text-wrap: pretty;
+}
+
+/* Left-aligned is now the default; kept so existing callers need no change. */
+.sectionLeadStart {
+  margin-left: 0;
+  margin-right: 0;
+  text-align: left;
+}
+
+/* B `h1 em`: the one italic clause of a serif heading, in the action blue. */
+.accent {
+  font-style: italic;
+  color: var(--latch-blue);
+}
+
+/* ---- buttons (B `.btn`, `.btn--p`) ----------------------------------------
+   Flat. The primary fill is `--grad-primary`, which is a FLAT blue in both
+   themes and is darkened in the dark theme so white text stays above 4.5:1.
+
+   The primary hover darkens to `--btn-primary-hover`, b.html's --blue-2. Not
+   `--deep-blue`: that token is a LIGHT blue in the dark theme, and white on it
+   fails contrast. */
+
+.btnPrimary,
+.btnSecondary,
+.launchPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s1);
+  padding: 10px var(--s4);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  font: var(--b-btn);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition:
+    background-color var(--b-dur),
+    box-shadow var(--b-dur),
+    transform var(--b-dur) var(--ease),
+    border-color var(--b-dur);
+}
+
+.btnSecondary {
+  background: var(--panel);
+  color: var(--btn2-ink);
+}
+
+.btnSecondary:hover,
+.btnSecondary:focus-visible {
+  color: var(--btn2-ink);
+  border-color: var(--btn2-border-hover);
+}
+
+.btnPrimary,
+.launchPill {
+  border-color: transparent;
+  background: var(--grad-primary);
+  color: var(--on-accent);
+}
+
+/* No `color` on hover: the global `a:hover` would otherwise repaint white
+   button text in `--deep-blue`, on a blue fill. */
+.btnPrimary:hover,
+.btnPrimary:focus-visible,
+.launchPill:hover,
+.launchPill:focus-visible {
+  color: var(--on-accent);
+}
+
+.btnPrimary:hover,
+.launchPill:hover {
+  background: var(--btn-primary-hover);
+}
+
+.btnPrimary:hover,
+.btnSecondary:hover,
+.launchPill:hover {
+  box-shadow: var(--shadow-2);
+  transform: var(--b-btn-lift);
+}
+
+.btnWide {
+  padding-inline: var(--s5);
+}
+
+/* ---- card (B `.card`) and panel (B `.panel`) ------------------------------ */
+
+.card {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+}
+
+/* The quiet, uppercase title a card opens with. Muted rather than label-ink:
+   on these cards it is the only thing saying what the figures beneath are. */
+.microLabel {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-ink);
+}
+
+/* ---- the four states, kept visually distinct ------------------------------
+   `placeholderNote` is the base; exactly one modifier says which state.
+     loading        quiet muted text, nothing boxed
+     error          error ink with an error rule, never a figure
+     empty          B's `.empty`: a dashed box — the answer came back and was
+                    empty, which is a result, not a fault
+   Not-configured lives in the components that can detect it (the fee gauge
+   caption, LiveStrip) and is deliberately not red. */
+
+.placeholderNote {
+  margin: var(--s4) 0 0;
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+
+.noteLoading {
+  color: var(--muted-ink);
+}
+
+.noteError {
+  padding-left: var(--s3);
+  border-left: 2px solid var(--error);
+  color: var(--error);
+}
+
+.noteEmpty {
+  padding: var(--s5);
+  border: 1px dashed var(--cta-border);
+  border-radius: var(--r-sm);
+  background: var(--panel-alt);
+  text-align: center;
+  color: var(--muted-ink);
+}
+
+/* Visually hidden, still announced. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ===========================================================================
+   HEADER — B `header.top`: sticky, translucent, 64px, hairline under.
+   =========================================================================== */
 
 .header {
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: var(--z-sticky);
   background: var(--header-bg);
   backdrop-filter: blur(var(--header-blur));
   -webkit-backdrop-filter: blur(var(--header-blur));
   border-bottom: 1px solid var(--header-border);
 }
 
-/* The bar itself. Separate from .header so the disclosure panel can hang off
-   the header's box without changing its height, and so the bar can sit above
-   the scrim in the same stacking context. */
+/* The bar. Separate from .header so the disclosure panel can hang off the
+   header's box without changing its height, and so the bar sits above the
+   scrim in the same stacking context. */
 .headerBar {
   position: relative;
   z-index: 3;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 14px 28px;
+  gap: var(--s6);
+  max-width: var(--b-wrap);
+  height: var(--s8);
+  margin-inline: auto;
+  padding-inline: var(--b-gutter);
 }
 
-.lockup {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  text-decoration: none;
-}
-
-.lockupMark {
-  height: 30px;
-  width: auto;
-}
-
-.lockupWords {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  line-height: 1;
-}
-
-.lockupName {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 19px;
-  letter-spacing: 0.14em;
-  color: var(--ink-bright);
-}
-
-.lockupSub {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 9.5px;
-  letter-spacing: 0.3em;
-  color: var(--latch-blue);
-}
-
-.lockupLarge .lockupMark {
-  height: 38px;
-}
-.lockupLarge {
-  gap: 13px;
-}
-.lockupLarge .lockupWords {
-  gap: 3px;
-}
-.lockupLarge .lockupName {
-  font-size: 22px;
-}
-.lockupLarge .lockupSub {
-  font-size: 11px;
-}
-
-/* Nav, accounts, CTA — three groups, not one undifferentiated run of items, so
-   the eye can tell "places to go" from "the thing to click". */
-/* The bar is now two groups rather than lockup-then-everything-else: the links
-   sit with the mark on the left, the actions stay on the right. `space-between`
-   on .headerBar does the separating, so neither group needs a margin hack. */
 .headerLeft {
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: var(--s6);
   min-width: 0;
 }
 
 .headerRight {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: var(--s3);
   flex: 0 0 auto;
 }
 
 .nav {
   display: flex;
   align-items: center;
-  gap: 18px;
-  font-size: 14px;
 }
 
 .navList {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: var(--s5);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* Decorative glyph + label; the glyph inherits currentColor from the link. */
 .navLink {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--s2);
   color: var(--nav-ink);
+  font-size: var(--b-card-p);
+  font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
-  transition: color 0.2s;
-}
-
-.navLink svg {
-  opacity: 0.7;
-  transition: opacity 0.15s;
+  transition: color var(--b-dur);
 }
 
 .navLink:hover,
 .navLink:focus-visible {
-  color: var(--sky-ink);
-}
-
-.navLink:hover svg,
-.navLink:focus-visible svg,
-.navLinkActive svg {
-  opacity: 1;
+  color: var(--ink);
 }
 
 .navLinkActive {
-  color: var(--signal-blue);
-  font-weight: 500;
+  color: var(--ink-bright);
+  font-weight: 600;
 }
 
-/* Account cluster. A hairline, not a gap, separates it from the links: it is a
-   different kind of thing, and 26px of empty space would have read as one more
-   nav item that had simply lost its label. */
-.headerSocials {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin: 0;
-  padding: 0 0 0 14px;
-  list-style: none;
-  border-left: 1px solid var(--header-border);
-}
-
-.socialLinkSm {
-  width: 28px;
-  height: 28px;
-}
-
-/* Same cluster as .headerSocials, one item: hidden at the same breakpoint,
-   reachable from the collapsed menu instead (see .menuFoot in the JSX). */
+/* The desktop theme control. Hidden with the links below 860px and reachable
+   from the collapsed menu instead (see .menuFoot). */
 .themeToggleSlot {
   display: flex;
   align-items: center;
@@ -307,23 +444,20 @@
   width: 40px;
   height: 40px;
   padding: 0;
-  border: 1px solid var(--hairline-blue);
-  border-radius: var(--r-chip);
-  background: var(--panel-alt);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  background: var(--panel);
   color: var(--ink);
+  box-shadow: var(--shadow-1);
   cursor: pointer;
-  transition:
-    border-color 0.2s,
-    color 0.2s;
+  transition: border-color var(--b-dur);
 }
 
 .menuBtn:hover {
   border-color: var(--border-hover);
-  color: var(--sky-ink);
 }
 
-/* Covers the page, never the bar: the bar is z-index 3 in this same context, so
-   the lockup and the CTA stay legible while the menu is open. */
+/* Covers the page, never the bar: the bar is z-index 3 in this same context. */
 .menuScrim {
   position: fixed;
   inset: 0;
@@ -339,13 +473,13 @@
   z-index: 2;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--s4);
   max-height: min(72vh, 560px);
   overflow-y: auto;
-  padding: 16px 20px 20px;
+  padding: var(--s4) var(--b-gutter) var(--s5);
   background: var(--panel);
   border-bottom: 1px solid var(--header-border);
-  box-shadow: var(--sh-card-hover);
+  box-shadow: var(--shadow-2);
 }
 
 /* .menuPanel sets display:flex, which would beat the UA's [hidden] rule. */
@@ -365,228 +499,161 @@
 .menuLink {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 12px;
-  border-radius: var(--r-chip);
+  gap: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--r-btn);
   color: var(--ink);
-  font-size: 15px;
+  font-size: var(--b-body);
+  font-weight: 500;
   text-decoration: none;
-  transition:
-    background 0.2s,
-    color 0.2s;
+  transition: background var(--b-dur);
 }
 
 .menuLink svg {
-  color: var(--signal-blue);
-  opacity: 0.85;
+  color: var(--muted-ink);
 }
 
 .menuLink:hover,
 .menuLink:focus-visible {
-  background: var(--active-nav);
+  background: var(--panel-alt);
   color: var(--ink-bright);
 }
 
 .menuFoot {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--hairline-soft);
+  gap: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--hairline);
 }
 
 .menuLabel {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.16em;
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--label-ink);
 }
 
-/* .menuLabel's sibling for the desktop LEFT RAIL — same idea, quieter, and
-   hidden by default.
+/* ---- lockup ---------------------------------------------------------------
+   The link around components/BrandLockup, which owns the mark, its theme swap
+   and the LATCH / PROTOCOL proportions for every surface. The words are the
+   brand mark and are not re-cased to b.html's "Latch Protocol". */
 
-   `display: none` here rather than only being switched on in the >= 861px
-   block, because the same markup renders the phone top bar: without this the
-   word "Follow" would appear in the bar beside the burger at 375px. The rail
-   block at the end of this file turns it back on, and that is the only place
-   it is ever visible. Sizing and colour are set there too, next to the rows it
-   labels. */
-.railLabel {
-  display: none;
-}
-
-.launchPill {
-  padding: 9px 20px;
-  border-radius: var(--r-pill);
-  background: var(--grad-primary);
-  color: var(--on-accent);
-  font-weight: 600;
-  font-size: 13px;
-  text-decoration: none;
-  box-shadow: var(--sh-nav-pill);
-  transition:
-    transform 0.22s var(--ease),
-    box-shadow 0.22s;
-}
-
-.launchPill:hover {
-  /* No `color` here. It used to reassert --ink-bright, which on the paper theme
-     is #12151a — so hovering put the contrast straight back under 4.5:1 on the
-     same fixed blue gradient. The base ink is already correct in both themes;
-     hover only needs to move and to lift. */
-  transform: translateY(-2px);
-  box-shadow: var(--sh-btn-hover);
-}
-
-/* ----------------------------------------------------------------- buttons */
-
-.btnPrimary,
-.btnSecondary {
-  display: inline-flex;
+.lockup {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 15px;
   text-decoration: none;
-  cursor: pointer;
+  border-radius: var(--r-micro);
 }
 
-.btnPrimary {
-  position: relative;
-  overflow: hidden;
-  padding: var(--s4) var(--s5);
-  border: none;
-  border-radius: var(--r-pill);
-  background: var(--grad-primary);
-  color: var(--on-accent);
-  box-shadow: var(--sh-btn);
-  transition:
-    transform 0.25s var(--ease),
-    box-shadow 0.25s;
+/* ===========================================================================
+   HERO — B `.hero`: centred, pill → serif H1 → one-sentence lede → CTA pair.
+   =========================================================================== */
+
+/* ---- page composition (index.tsx) ---------------------------------------- */
+
+/* The live KPI row directly under the hero: the column box only. LiveStrip
+   owns the cells, their hairlines and their four states, and must NOT add a
+   `.section` of its own or the gutter doubles. */
+.kpiBand {
+  box-sizing: border-box;
+  max-width: var(--b-wrap);
+  margin-inline: auto;
+  padding: 0 var(--b-gutter);
 }
 
-.btnPrimary:hover {
-  /* See .launchPill:hover — the same reset, the same bug. */
-  transform: translateY(-2px);
-  box-shadow: var(--sh-btn-hover);
+/* THE PAGE RHYTHM IS ONE MECHANISM: every block below the KPI band is a
+   `.section` (or composes it) with `--b-section-pad` above and nothing below,
+   and the footer's margin supplies the last step. There is deliberately no
+   wrapper grid or row-gap adding space on top of that padding. */
+
+/* A block that only exists to carry an id (e.g. `#presets`). No box. */
+.anchor {
+  min-width: 0;
 }
 
-.sheen {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 38%;
-  height: 100%;
-  background: var(--grad-sheen);
-  animation: sheen 3.6s ease-in-out infinite;
-  pointer-events: none;
-}
-
-.btnSecondary {
-  padding: var(--s4) var(--s5);
-  border: 1px solid var(--hairline-blue-2);
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--btn2-ink);
-  transition:
-    border-color 0.25s,
-    transform 0.25s var(--ease);
-}
-
-.btnSecondary:hover {
-  color: var(--btn2-ink);
-  border-color: var(--btn2-border-hover);
-  transform: translateY(-2px);
-}
-
-.btnWide {
-  padding: var(--s4) var(--s6);
-}
-
-/* -------------------------------------------------------------------- hero */
-
-/* The reference sets no box-sizing reset, so its `max-width: 1280px` is the
-   *content* column and the 40px gutters sit outside it (1360px outer). This
-   repo resets to border-box globally, so the page containers opt back out to
-   reproduce the reference measure exactly. README § Spacing: "Page gutters:
-   40px ... Max content width: 1280 (landing)". */
 .hero {
-  /* Centred, per the Option C prototype. Was a two-column grid holding the copy
-     and a node graph; the graph is gone (see Hero.tsx) and a one-column centred
-     hero is the shape the prototype uses. */
-  position: relative;
-  box-sizing: content-box;
-  max-width: var(--max-landing);
-  margin: 0 auto;
-  padding: var(--s9) var(--gutter-landing) var(--s8);
+  box-sizing: border-box;
+  max-width: var(--b-wrap);
+  margin-inline: auto;
+  padding: var(--b-section-pad) var(--b-gutter) var(--s8);
   text-align: center;
 }
 
-.heroGlow {
-  position: absolute;
-  inset: 0;
-  background: var(--glow-hero);
-  pointer-events: none;
-}
-
 .heroCopy {
-  position: relative;
-  /* Above the glow, which is absolutely positioned behind it. */
-  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-.eyebrowPill {
-  display: inline-block;
+/* B `.pill`: a STATE, so green rather than the blue reserved for actions. */
+.heroPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   margin: 0;
-  padding: var(--s2) var(--s4);
-  border: 1px solid var(--pill-border);
+  padding: 5px 11px;
   border-radius: var(--r-pill);
-  background: var(--pill-bg);
-  color: var(--pill-ink);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.16em;
+  background: var(--badge-live-bg);
+  color: var(--badge-live-ink);
+  font-size: var(--b-label);
+  font-weight: 600;
+  line-height: 1.4;
 }
 
-/* CANVAS HEADLINE VOICE.
+.heroPillDot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--r-pill);
+  background: var(--success);
+  /* Rests opaque, so a paused or disabled animation leaves a visible dot. */
+  opacity: 1;
+  animation: heroPulse 2.4s ease-in-out infinite;
+}
 
-   The whole headline is Instrument Serif at weight 400 — not Inter with a
-   serif word dropped in. That was the mistake worth avoiding: a single serif
-   clause inside a bold sans headline reads as a typo, where a serif headline
-   with one italic clause reads as emphasis. Option B sets every section
-   heading this way (`.display`), so the landing does too.
+@keyframes heroPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
 
-   Weight 400, because Instrument Serif has one weight and faking bold on a
-   display serif is what synthetic bolding looks like. Size carries the
-   hierarchy instead. */
+/* B `h1`: the WHOLE heading serif at 500, one clause italic via `.accent`.
+   Also the legal pages' title, where the auto margins centre a 17ch block as
+   they did before this pass. */
 .h1 {
-  /* Prototype: serif 500, clamp(38px, 5.6vw, 62px), lh 1.05, ls -0.024em,
-     max-width 16ch. The measure is what makes it break into the two lines the
-     design is composed around. */
-  max-width: 16ch;
-  margin: var(--s5) auto var(--s5);
+  max-width: 17ch;
+  margin: 20px auto;
   font-family: var(--font-serif);
   font-weight: 500;
-  font-size: clamp(38px, 5.6vw, 62px);
-  line-height: 1.05;
-  letter-spacing: -0.024em;
+  font-size: var(--b-h1);
+  line-height: var(--b-h1-lh);
+  letter-spacing: var(--b-h1-track);
+  color: var(--ink-bright);
 }
 
-/* The emphasised clause: italic, and the deeper blue rather than the action
-   blue — this is prose, and it must not read as something you can click. */
-.accent {
-  font-style: italic;
-  color: var(--deep-blue);
+/* The hero sets its two clauses as blocks (see Hero.tsx), so the break never
+   depends on a `ch` measure that changes with the fallback serif. */
+.h1Hero {
+  max-width: none;
 }
 
-.lead {
-  max-width: 520px;
-  margin: var(--s5) 0 0;
-  font-size: 17px;
-  line-height: 28px;
-  color: var(--muted-ink-2);
+.h1Clause {
+  display: block;
+}
+
+.heroLede {
+  max-width: 60ch;
+  margin: 0 auto 30px;
+  font-size: var(--b-lede);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
   text-wrap: pretty;
 }
 
@@ -597,771 +664,627 @@
   flex-wrap: wrap;
 }
 
-/* hero node graph */
-
-.graph {
-  position: relative;
-  height: 520px;
-}
-
-.graphCore {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 200px;
-  height: 200px;
-}
-
-.graphCoreTile {
-  width: 100%;
-  height: 100%;
-  border: 1px solid var(--node-rim);
-  border-radius: 26px;
-  background: var(--grad-node-core);
-  box-shadow: var(--glow-ring);
-  display: grid;
-  place-items: center;
-  animation: float 7s ease-in-out infinite;
-}
-
-.graphCoreMark {
-  width: 104px;
-}
-
-.graphNode {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  animation: float 6.5s ease-in-out infinite;
-}
-
-.graphNodeTile {
-  width: 52px;
-  height: 52px;
-  border: 1px solid var(--tile-border);
-  border-radius: var(--r-sm);
-  background: var(--grad-node-tile);
-  display: grid;
-  place-items: center;
-  box-shadow: var(--sh-node);
-}
-
-/* Replaced the `.diamond` placeholder, which drew one rotated square for all
-   six categories. The glyphs are strokes on `currentColor`, so the tile sets
-   the colour once here rather than each icon carrying its own. */
-.graphNodeTile svg {
-  color: var(--signal-blue);
-  opacity: 0.92;
-}
-
-.graphNodeLabel {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--node-label-ink);
-}
-
-/* ------------------------------------------------------------ stats strip */
+/* ===========================================================================
+   STATS (StatsStrip — UNMOUNTED from the landing in the minimal cut; kept so
+   it remounts styled) — B `.kpis`: a hairline-gap grid. The 1px gap over a hairline ground
+   IS the divider, so no cell needs a border or a :last-child reset.
+   =========================================================================== */
 
 .statsStrip {
-  border-top: 1px solid var(--hairline-dark);
-  border-bottom: 1px solid var(--hairline-dark);
-  background: var(--stats-ground);
+  box-sizing: border-box;
+  max-width: var(--b-wrap);
+  margin-inline: auto;
+  padding: 0 var(--b-gutter);
 }
 
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  max-width: var(--max-landing);
-  margin: 0 auto;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  overflow: hidden;
 }
 
 .statCell {
-  padding: var(--s6) var(--s6);
-  border-right: 1px solid var(--hairline-dark);
+  min-width: 0;
+  padding: 22px 22px 20px;
+  background: var(--panel);
+}
+
+/* Uppercase in the data, so tracked — but the label is what says what the
+   figure IS, so it takes the AA muted ink, not the 3:1 label grey. */
+.statLabel {
+  font-size: var(--b-label);
+  font-weight: 560;
+  letter-spacing: 0.04em;
+  color: var(--muted-ink);
 }
 
 .statValue {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 34px;
+  margin-top: var(--s2);
+  font-family: var(--font-body);
+  font-size: var(--b-kpi);
+  font-weight: 600;
+  letter-spacing: -0.026em;
+  line-height: 1.15;
   color: var(--ink-bright);
   font-variant-numeric: tabular-nums;
 }
 
-/* Required by the brief: nothing on this page may read as a live protocol
-   metric. Kept small and faint so the strip still reads as the reference. */
+/* B `.v.zero`: a value that could not be read is dimmed, so an em dash never
+   passes for a figure. */
+.statCell[data-state='unread'] .statValue,
+.statCell[data-state='loading'] .statValue {
+  color: var(--label-ink);
+  font-weight: 500;
+}
+
+.statCell[data-state='error'] .statValue,
+.statCell[data-state='error'] .statLabel {
+  color: var(--error);
+}
+
 .statsNote {
-  box-sizing: content-box;
-  max-width: var(--max-landing);
-  margin: 0 auto;
-  padding: 0 var(--s6) var(--s5);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  color: var(--faint-ink);
-}
-
-.statLabel {
-  margin-top: var(--s2);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: var(--stat-label-ink);
-}
-
-/* --------------------------------------------------------------- sections */
-
-.section {
-  box-sizing: content-box;
-  max-width: var(--max-landing);
-  margin: 0 auto;
-  padding: var(--s9) var(--gutter-landing) 0;
-}
-
-.eyebrow {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  color: var(--eyebrow-blue);
-}
-
-/* Same voice as .h1 — see the note there. A serif hero above sans section
-   headings would read as two different websites. */
-.h2 {
-  margin: var(--s4) 0 0;
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: clamp(28px, 3.2vw, 42px);
-  line-height: 1.15;
-  letter-spacing: -0.015em;
-}
-
-.h2Large {
-  font-size: clamp(30px, 3.4vw, 44px);
-}
-
-.h2Small {
-  font-size: clamp(28px, 3.2vw, 40px);
-}
-
-/* Was 30/34px — off the 4px scale, and the two stops were close enough to be
-   indistinguishable. Both now land on it. */
-.h2Spaced {
-  margin-bottom: var(--s6);
-}
-
-.h2SpacedLarge {
-  margin-bottom: var(--s7);
-}
-
-.sectionHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--s5);
-}
-
-/* --------------------------------------------------------------- activity */
-
-.rangeSwitcher {
-  display: flex;
-  gap: var(--s2);
-  padding: var(--s1);
-  border: 1px solid var(--switch-border);
-  border-radius: var(--r-chip);
-  background: var(--switch-ground);
-}
-
-.rangeBtn {
-  padding: var(--s2) var(--s4);
-  border: none;
-  border-radius: var(--r-micro);
-  background: transparent;
-  color: var(--mono-data-dim);
-  font-family: var(--font-mono);
-  font-size: 11px;
+  margin: var(--s3) 0 0;
+  font-size: var(--b-micro);
+  font-weight: 600;
   letter-spacing: 0.08em;
-  cursor: pointer;
-  transition:
-    background 0.22s,
-    color 0.22s;
+  line-height: 1.5;
+  color: var(--muted-ink);
 }
 
-.rangeBtnActive {
-  background: var(--active-nav);
-  color: var(--sky-ink);
+.statsNote[data-state='error'] {
+  color: var(--error);
 }
+
+/* ===========================================================================
+   ACTIVITY (UNMOUNTED in the minimal cut; kept so it remounts styled) —
+   cards on B's grid, rows divided by hairlines.
+   =========================================================================== */
 
 .activityGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
   gap: var(--s4);
-  margin-top: var(--s6);
-  /* Cards size to their content. A grid row defaults to `stretch`, so the
-     shorter card grew to match the taller one and carried hundreds of pixels
-     of dead space under its last line — the gap reported here. Matching
-     heights only reads as tidy when the two have comparable content; when one
-     is a chart and the other is three lines, it reads as a rendering fault.
-     `.flowGrid` already made this choice one section up. */
+  margin-top: 30px;
+  /* Cards size to their content: a chart beside three lines must not stretch
+     the shorter card into dead space. */
   align-items: start;
-}
-
-.chartCard {
-  padding: var(--s5) var(--s5) var(--s4);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  background: var(--grad-panel-deep);
-  box-shadow: var(--shadow-1);
-}
-
-.chartHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s4);
-}
-
-.chartHeadline {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 32px;
-  color: var(--ink-bright);
-}
-
-.chartDelta {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--success);
-}
-
-.chartCaption {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.16em;
-  --tone: var(--label-ink);
-}
-
-.areaChart {
-  display: block;
-  width: 100%;
-  height: 240px;
-  margin-top: var(--s5);
-  overflow: visible;
-}
-
-.gridLine {
-  stroke: var(--hairline-soft);
-  stroke-width: 1;
-}
-
-.areaLine {
-  fill: none;
-  stroke: var(--latch-blue);
-  stroke-width: 2.5;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  stroke-dasharray: 2400;
-  animation: draw 1.5s var(--ease) forwards;
-}
-
-.areaDot {
-  fill: var(--void);
-  stroke: var(--latch-blue);
-  stroke-width: 2;
-  opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: dotIn 0.4s var(--ease) forwards;
-}
-
-.axisRow {
-  display: flex;
-  justify-content: space-between;
-  margin-top: var(--s3);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--faint-ink);
 }
 
 .sideColumn {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
-}
-
-.card {
-  padding: var(--s5);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  background: var(--panel);
-  box-shadow: var(--shadow-1);
-}
-
-.microLabel {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-weight: 400;
-  font-size: 10.5px;
-  letter-spacing: 0.16em;
-  /* `color`, not `--tone` — inert here, and this class is used on an <h3>,
-     which otherwise inherits the h1..h4 headline ink from tokens.css. */
-  color: var(--label-ink);
-}
-
-.barList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s4);
-  margin-top: var(--s5);
-}
-
-.barHead {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--s3);
-  font-size: 13px;
-  color: var(--mono-data-ink);
-}
-
-.barValue {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--mono-data-dim);
-}
-
-.barTrack {
-  margin-top: var(--s2);
-  height: 6px;
-  border-radius: 99px;
-  background: var(--track);
-  overflow: hidden;
-}
-
-.barFill {
-  height: 100%;
-  border-radius: 99px;
-  background: linear-gradient(90deg, var(--tone), var(--bar-fade));
-  transition: width 1s var(--ease);
-}
-
-.columns {
-  display: flex;
-  align-items: flex-end;
-  margin-top: var(--s5);
-}
-
-.gasColumns {
-  gap: var(--s2);
-  height: 118px;
-}
-
-.gasColumn {
-  flex: 1;
-  min-width: 4px;
-  border-radius: 3px 3px 1px 1px;
-  background: var(--gas-col-dim);
-  transform-origin: bottom;
-  animation: rise 0.7s var(--ease) both;
-}
-
-.gasColumnPeak {
-  background: var(--latch-blue);
-}
-
-.deployColumns {
-  gap: var(--s1);
-  height: 104px;
-}
-
-.deployColumn {
-  flex: 1;
-  min-width: 3px;
-  border-radius: 2px 2px 0 0;
-  background: var(--grad-bar);
-  transform-origin: bottom;
-  animation: rise 0.8s var(--ease) both;
-}
-
-.captionRow {
-  display: flex;
-  justify-content: space-between;
-  margin: var(--s3) 0 0;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--faint-ink);
-}
-
-.deployCaption {
-  margin: var(--s3) 0 0;
-  font-size: 13px;
-  color: var(--muted-ink);
+  min-width: 0;
 }
 
 .activityRow {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(262px, 1fr));
   gap: var(--s4);
   margin-top: var(--s4);
-}
-
-.donutCard {
-  display: flex;
-  align-items: center;
-  gap: var(--s5);
-  padding: var(--s5);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  background: var(--panel);
-  box-shadow: var(--shadow-1);
-}
-
-.donut {
-  width: 104px;
-  height: 104px;
-  flex: 0 0 auto;
-}
-
-.donutTrack {
-  fill: none;
-  stroke: var(--track);
-  stroke-width: 14;
-}
-
-.donutSeg {
-  fill: none;
-  stroke: var(--tone);
-  stroke-width: 14;
-  stroke-linecap: butt;
-}
-
-.donutBody {
-  min-width: 0;
-}
-
-.legend {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-  margin-top: var(--s4);
-}
-
-.legendRow {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  font-size: 13px;
-  color: var(--mono-data-ink);
-}
-
-.swatch {
-  width: 9px;
-  height: 9px;
-  border-radius: 3px;
-  background: var(--tone);
-  flex: 0 0 auto;
-}
-
-.legendPct {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--mono-data-dim);
 }
 
 .healthList {
   display: flex;
   flex-direction: column;
-  gap: var(--s4);
-  margin-top: var(--s5);
+  margin-top: var(--s3);
 }
 
 .healthRow {
   display: flex;
   align-items: center;
   gap: var(--s3);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
 }
 
+.healthRow:last-child {
+  border-bottom: none;
+}
+
+/* A calm status mark: no glow, no pulse. It is a label's colour key, not an
+   alarm, and "Third-party audit: None" should not blink. */
 .statusDot {
   width: 8px;
   height: 8px;
   flex: 0 0 auto;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--tone);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--tone) 80%, transparent);
-  animation: statusPulse 2s ease-in-out infinite;
 }
 
 .healthName {
-  font-size: 13.5px;
-  color: var(--mono-data-ink);
+  font-size: var(--b-caption);
+  line-height: 1.4;
+  color: var(--ink);
 }
 
 .healthValue {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--b-label);
   color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.placeholderNote {
-  margin: var(--s4) 0 0;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  color: var(--faint-ink);
+.deployCaption {
+  margin: var(--s3) 0 0;
+  font-size: var(--b-caption);
+  line-height: 1.55;
+  color: var(--muted-ink);
 }
 
-/* ---------------------------------------------- charts hosted on this surface
-
-   Two of the Activity panels render primitives that were built for other
-   surfaces: the dapp's `BarList` (.dapp-bars*, styled in routes/dapp/dapp.css)
-   and the chart kit's plot (.viz-*, styled in charts/viz.css). Both are mounted
-   here rather than reimplemented, so this block only supplies what the host
-   surface owes them — vertical rhythm, and the one custom property that is
-   scoped to the `.dapp` shell they are no longer inside.
-   -------------------------------------------------------------------------- */
+/* ---- charts hosted on this surface ----------------------------------------
+   `BarList`, `SeriesChart`, `StackedBar`, `Gauge` and `GasCompareChart` are the
+   dapp's primitives, mounted here rather than reimplemented. This file only
+   supplies what the `.dapp` shell would have: the easing custom property that
+   dapp.css scopes to `.dapp`, and this page's vertical rhythm. */
 
 .hostedBars {
-  /* dapp.css scopes --dapp-ease to `.dapp`; outside it the bar transitions
-     would compute to `unset` and snap. Same curve, from the global token. */
   --dapp-ease: var(--ease);
 }
 
-/* `SeriesChart` and `StackedBar`, mounted on this surface for the same reason
-   as the bar list: they already draw exactly what is wanted, and a second
-   implementation is a second place for the two to disagree. Each host supplies
-   only what the `.dapp` shell would have — the easing custom property, and this
-   page's vertical rhythm instead of the dapp's 12px. */
 .hostedSeries,
 .hostedStack {
   --dapp-ease: var(--ease);
   margin-top: var(--s4);
 }
 
-.chartHost {
-  margin-top: var(--s4);
-}
-
-/* ------------------------------------------------------------- the fee gauge
-
-   The one figure in LIVE PROTOCOL STATE that is a ratio rather than a standalone
-   scalar: what the protocol takes, against the ceiling the contract enforces.
-
-   This used to be a hand-rolled `.feeMeter` — a track, a fill and a two-ended
-   scale, roughly 30 lines — fed by two constants typed into Activity.tsx. Both
-   halves are gone: the numbers are now read off the deployed fee controller,
-   and the drawing is `Gauge` from series-charts.tsx, which already states its
-   ceiling in the middle of the ring. A local reimplementation of a primitive
-   this app already owns is one more place for the two to drift apart.
-   -------------------------------------------------------------------------- */
-
 .hostedGauge {
   --dapp-ease: var(--ease);
   margin-top: var(--s5);
 }
 
-/* Visually hidden, still announced. */
-.srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
+.chartHost {
+  margin-top: var(--s4);
 }
 
-/* -------------------------------------------------------------- use cases */
+/* ===========================================================================
+   AUDIENCES (UNMOUNTED in the minimal cut) — two B cards, identical in
+   weight on purpose.
+   =========================================================================== */
 
-.cardGrid {
+.audGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s4);
-  margin-top: var(--s6);
+  margin-top: 30px;
 }
 
-/* UseCases renders four markets (DEX/AMM, launchpads, stock pairs, revenue
-   share); a narrower minmax than .cardGrid keeps all four on one row above
-   ~1040px while still stacking cleanly at phone width. This class was
-   referenced by Sections.tsx but never defined, so the grid rendered
-   unstyled — fixed as part of bringing UseCases onto Canvas. */
-/* Explicitly four, not `auto-fit`. With `repeat(auto-fit, minmax(220px, 1fr))`
-   the container fits FIVE 220px tracks, so with four cards the fifth collapsed
-   to 0px — and the gap before a zero-width track still renders, leaving a
-   phantom 16px on the right and holding the cards at 288px instead of letting
-   them fill the row. `auto-fit` is for an unknown number of items; this grid
-   is named for its count. */
-.cardGrid4 {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--s4);
-  margin-top: var(--s6);
-}
-
-@media (max-width: 1024px) {
-  .cardGrid4 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 560px) {
-  .cardGrid4 {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.useCase {
-  position: relative;
-  padding: var(--s5) var(--s5) var(--s6);
+.audCard {
+  display: flex;
+  flex-direction: column;
+  /* A long word in a claim must not push the column past its track. */
+  min-width: 0;
+  padding: var(--s6) 26px 26px;
   border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  background: var(--grad-card);
-  box-shadow: var(--shadow-1);
-  transition:
-    transform 0.3s var(--ease),
-    border-color 0.3s,
-    box-shadow 0.3s;
-}
-
-.useCase:hover {
-  border-color: var(--border-hover);
-  transform: translateY(-4px);
-  box-shadow: var(--sh-card-hover);
-}
-
-.iconTile {
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--tile-border);
-  border-radius: var(--r-btn);
-  display: grid;
-  place-items: center;
-  background: var(--tile-bg-strong);
-}
-
-.iconDiamond {
-  width: 14px;
-  height: 14px;
-  border: 1.5px solid var(--signal-blue);
-  border-radius: 3px;
-  transform: rotate(45deg);
-}
-
-.useCaseName {
-  margin-top: var(--s5);
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 20px;
-  color: var(--ink-bright);
-}
-
-.useCaseBody {
-  margin: var(--s3) 0 0;
-  font-size: 14.5px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-  text-wrap: pretty;
-}
-
-.useCaseTag {
-  margin: var(--s4) 0 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--signal-blue);
-}
-
-/* ----------------------------------------------------------- how it works */
-
-.stepGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: var(--s4);
-}
-
-.stepCard {
-  padding: var(--s5);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
+  border-radius: var(--r-card);
   background: var(--panel);
   box-shadow: var(--shadow-1);
+  transition:
+    box-shadow var(--b-dur),
+    transform var(--b-dur);
 }
 
-.stepNum {
+.audCard:hover {
+  box-shadow: var(--shadow-2);
+  transform: var(--b-card-lift);
+}
+
+.audWho {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--latch-blue);
 }
 
-.stepName {
-  margin-top: var(--s4);
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 19px;
+/* B's panel title voice: sans 640. Serif is reserved for page and section
+   headings, and a serif card title would make each card a third heading level
+   in the same face. */
+.audTitle {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-body);
+  font-weight: 640;
+  font-size: var(--b-mini);
+  line-height: 1.25;
+  letter-spacing: -0.018em;
   color: var(--ink-bright);
 }
 
-.stepDesc {
+.audBody {
   margin: var(--s3) 0 0;
-  font-size: 14.5px;
-  line-height: 1.6;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
   color: var(--muted-ink);
+  text-wrap: pretty;
 }
 
-.splitGrid {
+.audList {
+  /* `flex: 1` keeps both CTAs on one baseline when the copy is unequal. */
+  flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  gap: var(--s6);
-  align-items: start;
-  margin-top: var(--s5);
+  align-content: start;
+  gap: var(--s4);
+  margin: var(--s5) 0 0;
+  padding: var(--s5) 0 0;
+  border-top: 1px solid var(--hairline);
+  list-style: none;
 }
 
-.interfaceCard {
-  padding: var(--s6);
+.audItem {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: start;
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+  text-wrap: pretty;
+}
+
+/* A drawn tick on B's blue-soft tile — not the ✓ glyph, which changes weight
+   and baseline with every fallback font. */
+.audTick {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+}
+
+.audTick::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--latch-blue);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+
+.audLead {
+  font-weight: 600;
+  color: var(--ink-bright);
+}
+
+.audCta {
+  align-self: flex-start;
+  margin-top: var(--s5);
+  font-size: var(--b-card-p);
+  font-weight: 600;
+  color: var(--latch-blue);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition:
+    color var(--b-dur),
+    border-color var(--b-dur);
+}
+
+.audCta:hover,
+.audCta:focus-visible {
+  color: var(--deep-blue);
+  border-bottom-color: currentColor;
+}
+
+/* ===========================================================================
+   LIQUIDITY FLOW (UNMOUNTED in the minimal cut) — a model over the contract's constants, in two B panels.
+   Every edge, node and slider row carries a tone class; the rules read
+   var(--tone). All motion is CSS and collapses under reduced motion, where
+   the diagram still reads completely.
+   =========================================================================== */
+
+.flowSection {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--b-wrap);
+  margin-inline: auto;
+  padding: var(--b-section-pad) var(--b-gutter) 0;
+}
+
+.flowHead {
+  max-width: 64ch;
+  margin-bottom: 30px;
+}
+
+.flowGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
+  gap: var(--s4);
+  align-items: start;
+}
+
+.flowCanvas,
+.flowControls {
+  display: grid;
+  min-width: 0;
+  padding: clamp(var(--s4), 2.2vw, 26px);
   border: 1px solid var(--hairline);
   border-radius: var(--r-card-lg);
   background: var(--panel);
   box-shadow: var(--shadow-1);
 }
 
-.interfaceTitle {
-  font-family: var(--font-display);
+.flowCanvas {
+  gap: var(--s4);
+}
+
+.flowControls {
+  gap: var(--s5);
+}
+
+.flowSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* ---- edges ---- */
+
+.flowEdge {
+  color: var(--tone);
+  transition: opacity 220ms ease;
+}
+
+.flowEdge[data-dim='true'] {
+  opacity: 0.18;
+}
+
+.flowEdgeBase {
+  fill: none;
+  stroke: var(--tone);
+  stroke-opacity: 0.18;
+  stroke-linecap: round;
+}
+
+/* The travelling dash. pathLength=100 on the element normalises the pattern so
+   a short edge and a long one move at the same visual cadence. */
+.flowEdgeFlow {
+  fill: none;
+  stroke: var(--tone);
+  stroke-opacity: 0.9;
+  stroke-linecap: round;
+  stroke-dasharray: 6 94;
+  animation: flowDash 2.6s linear infinite;
+}
+
+.flowEdge[data-on='true'] .flowEdgeFlow {
+  animation-duration: 1.4s;
+}
+
+.flowEdge[data-on='true'] .flowEdgeBase {
+  stroke-opacity: 0.34;
+}
+
+@keyframes flowDash {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ---- nodes ---- */
+
+.flowNode {
+  color: var(--tone);
+}
+
+.flowNodeBox,
+.flowNodeBoxOn {
+  fill: var(--panel);
+  stroke: var(--tone);
+  stroke-opacity: 0.45;
+}
+
+.flowNodeBoxOn {
+  fill: var(--panel-alt);
+  stroke-opacity: 0.95;
+  stroke-width: 1.5;
+}
+
+.flowNodeLabel {
+  fill: var(--tone);
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+}
+
+.flowNodeValue {
+  fill: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
   font-weight: 600;
-  font-size: 21px;
-  color: var(--ink-bright);
 }
 
-.interfaceBody {
-  margin: var(--s3) 0 0;
-  font-size: 14.5px;
-  line-height: 1.65;
-  color: var(--muted-ink);
-  text-wrap: pretty;
-}
+/* ---- key ---- */
 
-.factList {
+.flowKey {
   display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-  margin: var(--s5) 0 0;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: 0;
   padding: 0;
   list-style: none;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: var(--nav-ink);
 }
 
+.flowKeyBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px var(--s3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  color: var(--muted-ink);
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    border-color var(--b-dur),
+    color var(--b-dur);
+}
+
+.flowKeyBtn:hover,
+.flowKeyBtn:focus-visible {
+  border-color: var(--tone);
+  color: var(--ink);
+}
+
+.flowKeyBtn strong {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.flowKeySwatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--tone);
+  flex: none;
+}
+
+/* ---- controls ---- */
+
+.flowField {
+  display: grid;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.flowLabel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  color: var(--muted-ink);
+}
+
+.flowLabel strong {
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+
+.flowPresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.flowPreset {
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  color: var(--muted-ink);
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition:
+    border-color var(--b-dur),
+    color var(--b-dur);
+}
+
+.flowPreset:hover {
+  border-color: var(--border-hover);
+  color: var(--ink);
+}
+
+.flowPresetOn {
+  border-color: var(--latch-blue);
+  background: var(--accent-soft);
+  color: var(--sky-ink);
+}
+
+.flowRange {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--tone, var(--latch-blue));
+  cursor: pointer;
+}
+
+.flowHint {
+  margin: 0;
+  font-size: var(--b-label);
+  line-height: 1.55;
+  color: var(--muted-ink);
+}
+
+.flowHint code {
+  font-size: var(--b-axis);
+}
+
+.flowSplit {
+  display: grid;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.flowSplitRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  gap: var(--s1) 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.flowSplitRow .flowRange {
+  grid-column: 1 / -1;
+}
+
+.flowSplitName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--b-caption);
+  color: var(--ink);
+}
+
+.flowSplitOut {
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  color: var(--ink);
+  text-align: right;
+}
+
+/* Provenance is the difference between a model and a measurement, so it is
+   set in readable ink rather than tidied into a faint footnote. */
+.flowProvenance {
+  margin: 0;
+  padding-top: var(--s4);
+  border-top: 1px solid var(--hairline);
+  font-size: var(--b-label);
+  line-height: 1.6;
+  color: var(--muted-ink);
+}
+
+/* ===========================================================================
+   CODE PANEL (only ever mounted inside the unmounted HowItWorks) — B's panel with the app-preview chrome bar.
+   =========================================================================== */
+
 .codePanel {
+  min-width: 0;
   border: 1px solid var(--hairline);
   border-radius: var(--r-card-lg);
   background: var(--code-ground);
@@ -1375,20 +1298,21 @@
   gap: var(--s2);
   padding: var(--s3) var(--s4);
   border-bottom: 1px solid var(--hairline);
-  background: var(--panel);
+  background: var(--panel-alt);
 }
 
 .codeDot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--latch-blue);
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  background: var(--cta-border);
 }
 
 .codeFile {
+  margin-left: var(--s2);
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--code-comment);
+  font-size: var(--b-axis);
+  color: var(--muted-ink);
 }
 
 .codeScroll {
@@ -1397,13 +1321,13 @@
 
 .code {
   margin: 0;
-  padding: var(--s5);
+  padding: 22px;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--b-code);
   line-height: 1.85;
   color: var(--code-ink);
   white-space: pre;
-  /* README § Code block rule: indentation is 18px per level. */
+  /* Indentation is 18px per level. */
   tab-size: 18px;
 }
 
@@ -1411,428 +1335,97 @@
   color: var(--code-keyword);
 }
 .cType {
-  color: var(--amber);
+  color: var(--code-type);
 }
 .cFn {
-  color: var(--signal-blue);
+  color: var(--code-fn);
 }
-.cString,
+.cString {
+  color: var(--code-string);
+}
 .cNum {
-  color: var(--success);
+  color: var(--code-number);
 }
 .cComment {
   color: var(--code-comment);
 }
 
-/* ---------------------------------------------------------------- features */
-
-.featureGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: var(--s5);
-}
-
-.featureTile {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--r-chip);
-  border: 1px solid var(--tile-border);
-  background: var(--tile-bg);
-  display: grid;
-  place-items: center;
-}
-
-.featureGlyph {
-  width: 12px;
-  height: 12px;
-  border: 1.5px solid var(--signal-blue);
-  border-radius: 3px;
-}
-
-.featureName {
-  margin-top: var(--s4);
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 18px;
-  color: var(--ink-bright);
-}
-
-.featureDesc {
-  margin: var(--s2) 0 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-}
-
-/* ------------------------------------------------------------------ chains */
-
-.chainLede {
-  max-width: 70ch;
-  margin: var(--s4) 0 0;
-  font-size: 15px;
-  line-height: 1.7;
-  color: var(--muted-ink-2);
-}
-
-/* Mainnet / Testnet group heading — a micro-label, not a second H2. */
-.chainGroup {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  margin: var(--s6) 0 var(--s3);
-  font-family: var(--font-mono);
-  font-weight: 500;
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  --tone: var(--label-ink);
-}
-
-.chainGroupCount {
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-pill);
-  color: var(--mono-data-dim);
-  letter-spacing: 0.04em;
-}
-
-.chainGrid {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: var(--s3);
-}
-
-.chainTile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--s2);
-  padding: var(--s5) var(--s3) var(--s4);
-  text-align: center;
-  border: 1px solid var(--hairline-soft);
-  border-radius: var(--r-sm);
-  background: var(--panel);
-  transition:
-    transform 0.28s var(--ease),
-    border-color 0.28s;
-}
-
-.chainTile:hover {
-  border-color: var(--border-hover);
-  transform: translateY(-3px);
-}
-
-/* The one chain Latch is actually deployed on reads differently at a glance. */
-.chainTileLive {
-  border-color: var(--badge-live-border);
-  background: var(--panel-alt);
-}
-
-.chainMark {
-  flex: none;
-  width: 40px;
-  height: 40px;
-}
-
-/* An official mark keeps its own aspect ratio and its own colour: contain, never
-   cover, and no filter of any kind. */
-img.chainMark {
-  object-fit: contain;
-}
-
-/* Typographic monogram — the honest fallback where no official mark exists. */
-span.chainMark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--tile-border);
-  border-radius: 50%;
-  background: var(--tile-bg);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 0.06em;
-  color: var(--sky-ink);
-}
-
-.chainName {
-  font-size: 13.5px;
-  line-height: 1.35;
-  color: var(--ink);
-}
-
-.chainId {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  --tone: var(--label-ink);
-}
-
-.chainBadge {
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--badge-target-border);
-  border-radius: var(--r-badge);
-  background: var(--badge-target-bg);
-  color: var(--badge-target-ink);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
-}
-
-.chainBadgeLive {
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--badge-live-border);
-  border-radius: var(--r-badge);
-  background: var(--badge-live-bg);
-  color: var(--badge-live-ink);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
-}
-
-/* The Sepolia deployment, stated once with links to the verified contracts. */
-.deployPanel {
-  margin-top: var(--s6);
-  padding: var(--s5) var(--s5);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  background: var(--grad-panel-deep);
-  box-shadow: var(--shadow-1);
-}
-
-.deployHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s3) var(--s3);
-}
-
-.deployTitle {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.deployNote {
-  flex: 1 1 100%;
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--muted-ink);
-}
-
-.deployList {
-  margin: var(--s4) 0 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: var(--s2);
-}
-
-.deployRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s1) var(--s4);
-  padding: var(--s2) var(--s3);
-  border: 1px solid var(--hairline-soft);
-  border-radius: var(--r-chip);
-  background: var(--panel-alt);
-}
-
-.deployName {
-  flex: 0 0 auto;
-  font-size: 12.5px;
-  color: var(--ink);
-}
-
-/* Addresses are 42 characters; at 360px they wrap rather than push the page. */
-.deployAddr {
-  display: inline-flex;
-  align-items: center;
-  flex: 1 1 220px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  overflow-wrap: anywhere;
-}
-
-/* ----------------------------------------------------------------- roadmap */
-
-.roadmapGrid {
-  padding: 0;
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0;
-  margin-top: 30px;
-}
-
-.roadmapItem {
-  position: relative;
-  padding: 26px 24px 30px;
-  border-right: 1px solid var(--hairline-soft);
-  /* Per item, not per row, so the rule survives wrapping. */
-  border-top: 1px solid var(--roadmap-rule);
-}
-
-.roadmapDot {
-  position: absolute;
-  top: -5px;
-  left: 24px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--latch-blue);
-  box-shadow: var(--glow-dot);
-}
-
-.roadmapWhen {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.14em;
-  color: var(--signal-blue);
-}
-
-.roadmapName {
-  margin-top: 12px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 18px;
-  color: var(--ink-bright);
-}
-
-.roadmapDesc {
-  margin: 8px 0 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-}
-
-/* -------------------------------------------------------------------- team */
-
-.teamGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 18px;
-}
-
-.teamCard {
-  border: 1px solid var(--hairline-soft);
-  border-radius: var(--r-card);
-  background: var(--panel);
-  overflow: hidden;
-}
-
-.teamPhoto {
-  height: 150px;
-  background: var(--stripes);
-  display: grid;
-  place-items: center;
-}
-
-.teamPhoto img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.teamPhotoNote {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  color: var(--faint-ink);
-  white-space: nowrap;
-}
-
-.teamBody {
-  padding: 18px;
-}
-
-.teamName {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 16px;
-  color: var(--ink-bright);
-}
-
-.teamRole {
-  margin: var(--s1) 0 0;
-  font-size: 13px;
-  color: var(--mono-data-dim);
-}
-
-/* --------------------------------------------------------------- cta panel */
+/* ===========================================================================
+   CTA — the closing band. ONE line: serif ask left, actions right; it stacks
+   centred on a narrow screen. A B panel, no glow — `.ctaGlow` and `.ctaBody`
+   are kept only so an old caller renders nothing loud.
+   =========================================================================== */
 
 .ctaSection {
-  box-sizing: content-box;
-  max-width: var(--max-landing);
-  margin: var(--s9) auto 0;
-  padding: 0 var(--gutter-landing);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--b-wrap);
+  margin-inline: auto;
+  padding: var(--b-section-pad) var(--b-gutter) 0;
 }
 
 .ctaPanel {
-  position: relative;
-  overflow: hidden;
-  padding: var(--s8) var(--s7);
-  border: 1px solid var(--cta-border);
-  border-radius: var(--r-hero);
-  background: var(--grad-cta);
-  box-shadow: var(--shadow-2);
-  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4) var(--s6);
+  padding: 26px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
 }
 
 .ctaGlow {
-  position: absolute;
-  left: 50%;
-  top: -40%;
-  width: 620px;
-  height: 620px;
-  max-width: 160%;
-  transform: translateX(-50%);
-  background: var(--glow-cta);
-  pointer-events: none;
+  display: none;
 }
 
 .ctaTitle {
-  position: relative;
   margin: 0;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(28px, 3.4vw, 44px);
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: var(--b-sec-h);
+  line-height: 1.2;
+  letter-spacing: var(--b-sec-h-track);
+  color: var(--ink-bright);
 }
 
 .ctaBody {
-  position: relative;
-  max-width: 560px;
-  margin: var(--s4) auto 0;
-  font-size: 16px;
-  line-height: 1.6;
-  color: var(--muted-ink-2);
+  max-width: 56ch;
+  margin: var(--s3) 0 0;
+  font-size: var(--b-sec-s);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
 }
 
 .ctaActions {
-  position: relative;
   display: flex;
-  justify-content: center;
   flex-wrap: wrap;
-  gap: var(--s4);
-  margin-top: var(--s6);
+  gap: var(--s3);
 }
 
-/* ------------------------------------------------------------------ footer */
+/* ===========================================================================
+   FOOTER — B `footer`: a white band under a hairline, content in the column.
+   =========================================================================== */
 
 .footer {
-  box-sizing: content-box;
-  max-width: var(--max-landing);
-  margin: 0 auto;
-  padding: var(--s8) var(--gutter-landing) var(--s8);
+  margin-top: var(--b-section-pad);
+  border-top: 1px solid var(--hairline);
+  background: var(--panel);
+}
+
+.footerInner {
+  box-sizing: border-box;
+  max-width: var(--b-wrap);
+  margin-inline: auto;
+  padding: var(--s6) var(--b-gutter) var(--s5);
 }
 
 .footerTop {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr);
-  gap: var(--s7);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+  gap: var(--s6);
   align-items: start;
 }
 
@@ -1846,26 +1439,26 @@ span.chainMark {
 .footerGroups {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--s6) var(--s5);
+  gap: var(--s5) var(--s5);
 }
 
 .footerGroupTitle {
-  margin: 0 0 var(--s4);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 400;
-  letter-spacing: 0.16em;
+  margin: 0 0 var(--s3);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--label-ink);
 }
 
 .footerList {
   display: flex;
   flex-direction: column;
-  gap: var(--s3);
+  gap: var(--s2);
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 13.5px;
+  font-size: var(--b-caption);
 }
 
 .footerBottom {
@@ -1873,37 +1466,51 @@ span.chainMark {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--s4);
-  margin-top: var(--s7);
-  padding-top: var(--s5);
-  border-top: 1px solid var(--hairline-soft);
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s6);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--hairline);
+}
+
+.footerMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin: 0;
+}
+
+/* The licensing facts moved here from the hero. Mono, as the hero set them;
+   muted ink, because this is a line people are meant to read. */
+.footerLicense {
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  color: var(--muted-ink);
 }
 
 .footerLink {
-  color: var(--mono-data-dim);
+  color: var(--muted-ink);
   text-decoration: none;
-  transition: color 0.2s;
+  transition: color var(--b-dur);
 }
 
 .footerLink:hover,
 .footerLink:focus-visible {
-  color: var(--sky-ink);
+  color: var(--ink);
 }
 
 .footerLink:focus-visible,
 .socialLink:focus-visible {
   outline: 2px solid var(--latch-blue);
-  outline-offset: 3px;
+  outline-offset: 2px;
   border-radius: var(--r-micro);
 }
 
-/* Social icon row. Icons are drawn with `fill: currentColor`, so the same
-   colour transition the text links use recolours the glyph — no second set of
-   hover rules and no per-brand colour anywhere. */
+/* Icons are `fill: currentColor`, so the colour transition the text links use
+   recolours the glyph — no per-brand colour anywhere. */
 .socials {
   display: flex;
   align-items: center;
-  gap: var(--s2);
+  gap: var(--s1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1915,52 +1522,682 @@ span.chainMark {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: var(--r-micro);
-  color: var(--mono-data-dim);
+  border-radius: var(--r-btn);
+  color: var(--muted-ink);
   transition:
-    color 0.2s,
-    background 0.2s;
+    color var(--b-dur),
+    background var(--b-dur);
 }
 
 .socialLink:hover,
 .socialLink:focus-visible {
-  color: var(--sky-ink);
-  background: var(--active-nav);
+  color: var(--ink);
+  background: var(--panel-alt);
+}
+
+.socialLinkSm {
+  width: 28px;
+  height: 28px;
 }
 
 .copyright {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--faint-ink);
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+}
+
+/* ===========================================================================
+   UNMOUNTED SECTIONS (Sections.tsx: UseCases, RevenueShare, HowItWorks,
+   Features, Chains, Roadmap, Team, Oracles). Each goes back on the page in
+   one line, so each is kept in B's language rather than left to rot in C's.
+   =========================================================================== */
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(262px, 1fr));
+  gap: var(--s4);
+  margin-top: 30px;
+}
+
+/* Explicitly four, not `auto-fit`: with four cards auto-fit leaves a phantom
+   zero-width fifth track and its gap. This grid is named for its count. */
+.cardGrid4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s4);
+  margin-top: 30px;
+}
+
+/* B `.card` with hover lift. */
+.useCase {
+  position: relative;
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  transition:
+    box-shadow var(--b-dur),
+    transform var(--b-dur) var(--ease);
+}
+
+.useCase:hover {
+  box-shadow: var(--shadow-2);
+  transform: var(--b-card-lift);
+}
+
+/* B `.card .ic`. */
+.iconTile {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-btn);
+  background: var(--accent-soft);
+}
+
+.iconDiamond {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--latch-blue);
+  border-radius: 3px;
+  transform: rotate(45deg);
+}
+
+.useCaseName {
+  margin-top: 13px;
+  font-family: var(--font-body);
+  font-weight: 640;
+  font-size: var(--b-card-h);
+  line-height: 1.35;
+  color: var(--ink-bright);
+}
+
+.useCaseBody {
+  margin: 6px 0 0;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+  text-wrap: pretty;
+}
+
+.useCaseTag {
+  margin: var(--s3) 0 0;
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--latch-blue);
+}
+
+/* Live versus in-development reads differently at a glance, and the label
+   always says which — colour is never the only carrier. */
+.useCaseStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  font-size: var(--b-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-/* --------------------------------------------------------------- responsive
-   The reference is desktop-first. Multi-column grids stack, nothing scrolls
-   the page horizontally at 360px, wide blocks scroll in their own container. */
+.useCaseStatus::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
 
-/* 1278px, not 1040px. The original intent was "stack once the section's
-   content measure drops below about 960px", and while the page owned the
-   viewport those were the same number. With the 238px rail the content column
-   is `100vw - 238px`, so the same measure is reached at 1278px of viewport.
-   Between 1041 and 1278 — an ordinary laptop — the hero was holding two
-   columns with a 460-520px fixed-height .graph in a ~445px track, and
-   .activityGrid was holding two in a 780px measure. Everything below 861px is
-   already inside this range, so widening the block is the whole fix. */
-@media (max-width: 1278px) {
-  .hero {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 40px;
-    padding-top: 56px;
-    padding-bottom: 72px;
-  }
+.useCaseStatusLive {
+  color: var(--badge-live-ink);
+  background: var(--badge-live-bg);
+}
 
-  .graph {
-    height: 460px;
-  }
+.useCaseStatusSoon {
+  color: var(--muted-ink);
+  background: var(--panel-alt);
+  border: 1px solid var(--hairline);
+}
 
+.stepGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(262px, 1fr));
+  gap: var(--s4);
+}
+
+.stepCard {
+  padding: 22px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+}
+
+.stepNum {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  color: var(--latch-blue);
+}
+
+.stepName {
+  margin-top: var(--s3);
+  font-family: var(--font-body);
+  font-weight: 640;
+  font-size: var(--b-card-h);
+  color: var(--ink-bright);
+}
+
+.stepDesc {
+  margin: 6px 0 0;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+}
+
+.splitGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: var(--s4);
+  align-items: start;
+  margin-top: var(--s4);
+}
+
+.interfaceCard {
+  padding: 26px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+}
+
+.interfaceTitle {
+  font-family: var(--font-body);
+  font-weight: 640;
+  font-size: var(--b-panel-h);
+  color: var(--ink-bright);
+}
+
+.interfaceBody {
+  margin: var(--s2) 0 0;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+  text-wrap: pretty;
+}
+
+/* Identifiers, so mono. */
+.factList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin: var(--s5) 0 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+}
+
+.featureGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: var(--s5);
+}
+
+.featureTile {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-btn);
+  background: var(--accent-soft);
+}
+
+.featureGlyph {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--latch-blue);
+  border-radius: 3px;
+}
+
+.featureName {
+  margin-top: var(--s3);
+  font-family: var(--font-body);
+  font-weight: 640;
+  font-size: var(--b-card-h);
+  color: var(--ink-bright);
+}
+
+.featureDesc {
+  margin: 6px 0 0;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+}
+
+.chainLede {
+  max-width: 64ch;
+  margin: var(--s3) 0 0;
+  font-size: var(--b-sec-s);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+}
+
+/* Mainnet / Testnet group heading — a micro-label, not a second H2. */
+.chainGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin: var(--s6) 0 var(--s3);
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  color: var(--label-ink);
+}
+
+.chainGroupCount {
+  padding: 2px var(--s2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  font-family: var(--font-mono);
+  color: var(--muted-ink);
+  letter-spacing: 0;
+}
+
+.chainGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chainTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s5) var(--s3) var(--s4);
+  text-align: center;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  transition:
+    box-shadow var(--b-dur),
+    transform var(--b-dur);
+}
+
+.chainTile:hover {
+  box-shadow: var(--shadow-2);
+  transform: var(--b-card-lift);
+}
+
+/* The chain Latch is actually deployed on reads differently at a glance. */
+.chainTileLive {
+  border-color: var(--badge-live-border);
+}
+
+.chainMark {
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+
+/* An official mark keeps its own aspect ratio and colour: contain, no filter. */
+img.chainMark {
+  object-fit: contain;
+}
+
+/* Typographic monogram — the honest fallback where no official mark exists. */
+span.chainMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--panel-alt);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--b-label);
+  letter-spacing: 0.06em;
+  color: var(--sky-ink);
+}
+
+.chainName {
+  font-size: var(--b-caption);
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.chainId {
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  color: var(--muted-ink);
+}
+
+.chainBadge,
+.chainBadgeLive {
+  padding: 2px var(--s2);
+  border: 1px solid var(--badge-target-border);
+  border-radius: var(--r-badge);
+  background: var(--badge-target-bg);
+  color: var(--badge-target-ink);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+}
+
+.chainBadgeLive {
+  border-color: var(--badge-live-border);
+  background: var(--badge-live-bg);
+  color: var(--badge-live-ink);
+}
+
+.deployPanel {
+  margin-top: var(--s6);
+  padding: 26px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+}
+
+.deployHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.deployTitle {
+  font-size: var(--b-panel-h);
+  font-weight: 640;
+}
+
+.deployNote {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: var(--b-caption);
+  color: var(--muted-ink);
+}
+
+.deployList {
+  display: grid;
+  gap: var(--s2);
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deployRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s4);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-btn);
+  background: var(--panel-alt);
+}
+
+.deployName {
+  flex: 0 0 auto;
+  font-size: var(--b-label);
+  color: var(--ink);
+}
+
+/* Addresses are 42 characters; at 360px they wrap rather than push the page. */
+.deployAddr {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 220px;
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  overflow-wrap: anywhere;
+}
+
+.roadmapGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0;
+  margin-top: 30px;
+  padding: 0;
+  list-style: none;
+}
+
+.roadmapItem {
+  position: relative;
+  padding: 26px 22px 30px;
+  border-right: 1px solid var(--hairline);
+  /* Per item, not per row, so the rule survives wrapping. */
+  border-top: 1px solid var(--roadmap-rule);
+}
+
+.roadmapDot {
+  position: absolute;
+  top: -5px;
+  left: 22px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--latch-blue);
+}
+
+.roadmapWhen {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  color: var(--latch-blue);
+}
+
+.roadmapName {
+  margin-top: var(--s3);
+  font-family: var(--font-body);
+  font-weight: 640;
+  font-size: var(--b-card-h);
+  color: var(--ink-bright);
+}
+
+.roadmapDesc {
+  margin: 6px 0 0;
+  font-size: var(--b-card-p);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+}
+
+.teamGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--s4);
+}
+
+.teamCard {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.teamPhoto {
+  display: grid;
+  place-items: center;
+  height: 150px;
+  background: var(--panel-alt);
+}
+
+.teamPhoto img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.teamPhotoNote {
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  color: var(--label-ink);
+  white-space: nowrap;
+}
+
+.teamBody {
+  padding: 18px;
+}
+
+.teamName {
+  font-family: var(--font-body);
+  font-weight: 640;
+  font-size: var(--b-card-h);
+  color: var(--ink-bright);
+}
+
+.teamRole {
+  margin: var(--s1) 0 0;
+  font-size: var(--b-caption);
+  color: var(--muted-ink);
+}
+
+/* The trust line is the axis a reader compares the two oracle cards on, so it
+   is findable by scanning rather than by reading. */
+.oracleTrust {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 10px 0 var(--s3);
+  padding: var(--s2) 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-btn);
+  background: var(--panel-alt);
+}
+
+.oracleTrustLabel {
+  flex: none;
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+}
+
+.oracleTrustValue {
+  font-size: var(--b-caption);
+  color: var(--ink);
+}
+
+.oracleStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+}
+
+.oracleStatus code {
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  color: var(--muted-ink);
+}
+
+/* Tickers are typographic, not logos: AAPL and TSLA publish no kit for this
+   use, and a ticker in the mono face claims nothing. */
+.marketGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--s4);
+  margin-top: var(--s6);
+}
+
+.marketCard {
+  padding: 22px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+}
+
+.marketLabel {
+  margin: 0 0 var(--s3);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+}
+
+.tickerRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: 0 0 var(--s3);
+  padding: 0;
+  list-style: none;
+}
+
+/* No entry stagger. `backwards` plus a per-item delay is the "invisible until
+   the animation runs" shape this page does not use. */
+.tickerTile {
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-btn);
+  background: var(--panel-alt);
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  color: var(--ink);
+  transition: border-color var(--b-dur);
+}
+
+.tickerTile:hover {
+  border-color: var(--latch-blue);
+}
+
+.marketNote {
+  margin: 0;
+  font-size: var(--b-label);
+  line-height: 1.55;
+  color: var(--muted-ink);
+}
+
+/* ===========================================================================
+   RESPONSIVE
+   The house breakpoint set, shared by every surface (tokens.css, BREAKPOINTS):
+   1180 · 1024 · 860 · 720 · 560. The page owns the viewport (no left rail), so
+   these are plain viewport widths; the rail-era 1278 / 1138 / 1098 are gone.
+   =========================================================================== */
+
+@media (max-width: 1023.98px) {
   .activityGrid,
   .splitGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cardGrid4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .headerLeft {
+    gap: var(--s5);
+  }
+
+  .navList {
+    gap: var(--s4);
+  }
+}
+
+@media (max-width: 860px) {
+  .flowGrid,
+  .audGrid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -1969,14 +2206,21 @@ span.chainMark {
    it is what closes a menu that is left open while the window is widened. */
 @media (max-width: 860px) {
   .headerBar {
-    gap: 12px;
-    padding: 12px 20px;
+    gap: var(--s3);
   }
 
-  /* display:none, not visibility or opacity: these links must leave the tab
-     order entirely while the menu owns them. */
+  .ctaPanel {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .ctaActions {
+    justify-content: center;
+  }
+
+  /* display:none, not visibility or opacity: these must leave the tab order
+     entirely while the menu owns them. */
   .navList,
-  .headerSocials,
   .themeToggleSlot {
     display: none;
   }
@@ -1989,106 +2233,59 @@ span.chainMark {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s6);
   }
-
-  .section,
-  .feeChartSection,
-  .flowSection,
-  .ctaSection,
-  .footer {
-    padding-left: var(--s5);
-    padding-right: var(--s5);
-  }
-
-  .hero {
-    padding-left: 24px;
-    padding-right: 24px;
-  }
-
-  .statCell {
-    padding: var(--s5) var(--s5);
-  }
-
-  .section {
-    padding-top: var(--s8);
-  }
-
-  .ctaSection {
-    margin-top: var(--s8);
-  }
-
-  .ctaPanel {
-    padding: var(--s7) var(--s5);
-  }
 }
 
 @media (max-width: 560px) {
-  .section,
-  .feeChartSection,
-  .flowSection,
-  .ctaSection,
-  .footer {
-    padding-left: var(--s5);
-    padding-right: var(--s5);
+  /* B's 28px gutter narrows to 20px, still well clear of the 16px floor. */
+  .page {
+    --b-gutter: 20px;
+    --b-section-pad: var(--s7);
   }
 
-  .hero {
-    padding-left: 20px;
-    padding-right: 20px;
-  }
-
-  /* "Possibilities." is 375px wide at the specced 38px floor and would be
-     clipped in a 320px column, so the floor drops below 560px. The reference
-     is desktop-only; README § Typography's clamp is kept above this width. */
-  .h1 {
-    font-size: clamp(28px, 8vw, 38px);
-  }
-
-  /* 320px is the floor: lockup + pill + trigger have to fit one row. */
   .headerBar {
-    gap: 10px;
-    padding: 10px 16px;
+    gap: var(--s2);
   }
 
   .launchPill {
-    padding: 9px 16px;
+    padding-inline: var(--s3);
   }
 
-  .menuBtn {
-    width: 38px;
-    height: 38px;
+  .hero {
+    padding-bottom: var(--s6);
+  }
+
+  .heroLede {
+    font-size: var(--b-body);
+  }
+
+  .cardGrid4 {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .footerGroups {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .graph {
-    height: 400px;
-  }
-
-  .graphCore {
-    width: 168px;
-    height: 168px;
-  }
-
-  .graphCoreMark {
-    width: 86px;
-  }
-
-  .chartCard {
-    padding: var(--s5) var(--s4) var(--s4);
+  .interfaceCard,
+  .deployPanel,
+  .ctaPanel {
+    padding: var(--s4);
   }
 
   .card,
-  .donutCard,
-  .interfaceCard,
-  .stepCard {
-    padding: var(--s5);
+  .audCard,
+  .useCase,
+  .stepCard,
+  .marketCard {
+    padding: var(--s5) var(--s4);
   }
 
-  .donutCard {
-    flex-wrap: wrap;
-    gap: var(--s4);
+  .statCell {
+    padding: var(--s4);
+  }
+
+  .statValue {
+    font-size: var(--b-mini);
   }
 
   .roadmapItem {
@@ -2105,1110 +2302,58 @@ span.chainMark {
   }
 }
 
-/* README § Interactions: reduced motion collapses every animation. The global
-   block in tokens.css zeroes durations; delays and infinite loops need this. */
+/* ===========================================================================
+   REDUCED MOTION
+   tokens.css collapses durations globally; this block pins every animated or
+   revealed element to its finished state outright, so nothing depends on an
+   animation or a transition having run.
+   =========================================================================== */
+
 @media (prefers-reduced-motion: reduce) {
-  /* Nothing here relies on an animation ever running: every animated element
-     is pinned to its finished state outright. tokens.css collapses durations
-     globally; delays, infinite loops and JS-driven motion need this block. */
   .reveal,
-  .delay1,
-  .delay2,
-  .delay3 {
-    animation: none !important;
+  .reveal[data-reveal-pending] {
     opacity: 1 !important;
     transform: none !important;
+    transition: none !important;
   }
 
-  .sheen {
+  .heroPillDot {
     animation: none !important;
-    display: none !important;
+    opacity: 1 !important;
   }
 
-  /* The global duration collapse in tokens.css is not enough here. With no
-     fill-mode the element reverts to `stroke-dashoffset: 0` while KEEPING
-     `stroke-dasharray: 6 94`, so every edge renders as a 6% stub with a 94%
-     gap and only the 16%-opacity base stroke remains. The section's own
-     comment claims the diagram "still reads completely" without motion; that
-     is only true once the dash pattern goes too. */
+  /* With no fill-mode the dash would revert to a 6% stub with a 94% gap, so
+     the pattern goes too — the diagram must read completely without motion. */
   .flowEdgeFlow {
     animation: none !important;
     stroke-dasharray: none !important;
     stroke-opacity: 0.55 !important;
   }
 
-  /* `backwards` plus a per-item delay is the "invisible until the animation
-     runs" shape. Unmounted today, pinned anyway so it cannot come back as a
-     regression when its section is remounted. */
-  .tickerTile {
-    animation: none !important;
-    opacity: 1 !important;
-    transform: none !important;
-  }
-
-  .statusDot,
-  .graphCoreTile,
-  .graphNode {
-    animation: none !important;
-    transform: none !important;
-    opacity: 1 !important;
-  }
-
-  .areaLine {
-    animation: none !important;
-    stroke-dasharray: none !important;
-    stroke-dashoffset: 0 !important;
-  }
-
-  .areaDot {
-    animation: none !important;
-    opacity: 1 !important;
-    transform: none !important;
-  }
-
-  .gasColumn,
-  .deployColumn {
-    animation: none !important;
-    transform: none !important;
-  }
-
-  .barFill,
+  .btnPrimary,
+  .btnSecondary,
+  .launchPill,
+  .audCard,
   .useCase,
-  .chainTile,
+  .chainTile {
+    transform: none !important;
+  }
+
   .btnPrimary,
   .btnSecondary,
   .launchPill,
   .navLink,
-  .navLink svg,
   .menuBtn,
   .menuLink,
-  .rangeBtn,
   .footerLink,
-  .socialLink {
+  .socialLink,
+  .audCard,
+  .audCta,
+  .useCase,
+  .chainTile,
+  .tickerTile,
+  .flowKeyBtn,
+  .flowPreset {
     transition: none !important;
-  }
-}
-
-/* Use-case status badge.
-
-   The use-case cards double as a roadmap: two of the four markets are contracts
-   under active development. Live and in-development read differently at a glance
-   — green filled versus a muted outline — because a visitor scanning the grid
-   should not have to read the word to know which is which. Colour is not the only
-   carrier: the label itself always says which state it is in. */
-.useCaseStatus {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  margin-top: var(--s3);
-  padding: var(--s1) var(--s2);
-  border-radius: 999px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.useCaseStatus::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.useCaseStatusLive {
-  color: var(--success);
-  background: var(--dapp-badge-ok-bg);
-  border: 1px solid var(--dapp-badge-ok-border);
-}
-.useCaseStatusSoon {
-  --tone: var(--label-ink);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--label-ink) 32%, transparent);
-}
-
-/* Lead paragraph under a section heading, above its card grid. */
-.sectionLead {
-  max-width: 62ch;
-  margin: var(--s4) auto 0;
-  /* `color`, not `--tone`. Nothing in this subtree reads --tone, so the
-     declaration was inert and the lead rendered at full --ink — darker than
-     the body copy it introduces. */
-  color: var(--label-ink);
-  font-size: 14.5px;
-  line-height: 1.65;
-  text-align: center;
-}
-
-/* Neutral tone for a fact that is neither good news nor a warning — a network we
-   have not deployed to yet is simply a fact, and colouring it red would overstate
-   it as much as colouring it green would flatter it. */
-.toneMuted {
-  --tone: var(--label-ink);
-}
-
-/* ---- Oracles ---------------------------------------------------------------
-   The trust line is set apart from the body copy on purpose: it is the axis a
-   reader is comparing the two cards on, so it should be findable by scanning
-   rather than by reading. */
-.oracleTrust {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 10px 0 12px;
-  padding: 8px 10px;
-  border: 1px solid var(--hairline-blue);
-  border-radius: 8px;
-  background: var(--code-ground);
-}
-.oracleTrustLabel {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--faint-ink);
-  flex: none;
-}
-.oracleTrustValue {
-  font-size: 13px;
-  color: var(--ink);
-}
-.oracleStatus {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  margin: 14px 0 0;
-  font-size: 11.5px;
-  color: var(--label-ink);
-}
-.oracleStatus code {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--eyebrow-blue);
-}
-
-/* ---- Market kinds ---------------------------------------------------------
-   Tickers are typographic, not logos. Chain marks on this site come from each
-   network's own brand kit; AAPL and TSLA publish no equivalent, and borrowing a
-   trademark to market an unrelated protocol is not a sourcing problem we can
-   solve with a better CDN. A ticker in the mono face claims nothing. */
-.marketGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 18px;
-  margin-top: 28px;
-}
-.marketCard {
-  padding: 20px;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
-  background: var(--deep-panel);
-}
-.marketLabel {
-  margin: 0 0 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--eyebrow-blue);
-}
-.tickerRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 14px;
-  padding: 0;
-  list-style: none;
-}
-.tickerTile {
-  padding: 7px 11px;
-  border: 1px solid var(--hairline-blue);
-  border-radius: 8px;
-  background: var(--dapp-tile-bg, var(--code-ground));
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: var(--mono-data-ink);
-  /* Entry stagger. `--i` is set per tile; the whole thing is collapsed by the
-     global prefers-reduced-motion block, so no JS guard is needed. */
-  animation: tickerIn 0.34s var(--ease, ease) backwards;
-  animation-delay: calc(var(--i, 0) * 0.045s);
-  transition: border-color 0.18s var(--ease, ease), color 0.18s var(--ease, ease);
-}
-.tickerTile:hover {
-  border-color: var(--latch-blue);
-  color: var(--ink-bright);
-}
-@keyframes tickerIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
-}
-.marketNote {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--label-ink);
-}
-
-/* ===========================================================================
-   A4 · Liquidity flow
-
-   The page's centrepiece: a Sankey-ish diagram of where a swap's value goes,
-   driven by sliders bounded by the contract's real constants.
-
-   Colour never appears here as a literal. Each edge, node and slider row
-   carries a tone class (.tonePrimary etc, top of this file) which sets --tone,
-   and everything below reads var(--tone). That is what lets one set of rules
-   serve six differently-coloured paths.
-
-   All motion is a CSS animation, so the global prefers-reduced-motion block
-   collapses it. With motion off the diagram still reads completely: the edges
-   keep their proportional widths and every number is printed as text.
-   =========================================================================== */
-
-.flowSection {
-  /* Top only, matching .section. This was the one surviving block padding
-     BOTH ends — its 104px bottom met the next section's 96px top and produced
-     the 200px trough that read as a broken page rather than a generous one. */
-  padding: clamp(32px, 4vw, 56px) var(--gutter-landing) 0;
-  border-top: 1px solid var(--hairline);
-
-  /* THE MEASURE, which this section never had. Every other block on the page
-     — .hero, .statsGrid, .statsNote, .section, .ctaSection, .footer — is
-     content-box against var(--max-landing). This one was `padding: … 0` and
-     nothing else, so it ran the full width of the column while its neighbours
-     sat at 1120px centred. On a 1920 screen that is a 560px difference between
-     one section's edges and the next's.
-
-     It also produced height, which is the part that reads as a gap: .flowSvg
-     is `width: 100%; height: auto` over a 760x340 viewBox, so a wider canvas
-     is a taller canvas, and the .flowControls column beside it ran out of
-     content hundreds of pixels before the drawing ran out of height. */
-  box-sizing: content-box;
-  max-width: var(--max-landing);
-  margin-inline: auto;
-}
-
-.flowHead {
-  max-width: 62ch;
-  margin-bottom: clamp(28px, 4vw, 44px);
-}
-
-.flowGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
-  gap: clamp(20px, 3vw, 40px);
-  align-items: start;
-}
-
-.flowCanvas {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-  padding: clamp(14px, 2vw, 22px);
-  border: 1px solid var(--hairline);
-  border-radius: 18px;
-  background: var(--panel);
-}
-
-.flowSvg {
-  display: block;
-  width: 100%;
-  height: auto;
-  overflow: visible;
-}
-
-/* ------------------------------------------------------------------ edges */
-
-.flowEdge {
-  color: var(--tone);
-  transition: opacity 220ms ease;
-}
-.flowEdge[data-dim='true'] { opacity: 0.18; }
-
-.flowEdgeBase {
-  fill: none;
-  stroke: var(--tone);
-  stroke-opacity: 0.16;
-  stroke-linecap: round;
-}
-
-/* The travelling dash. pathLength=100 on the element normalises the pattern so
-   a short edge and a long one animate at the same visual cadence. */
-.flowEdgeFlow {
-  fill: none;
-  stroke: var(--tone);
-  stroke-opacity: 0.9;
-  stroke-linecap: round;
-  stroke-dasharray: 6 94;
-  animation: flowDash 2.6s linear infinite;
-}
-.flowEdge[data-on='true'] .flowEdgeFlow { animation-duration: 1.4s; }
-.flowEdge[data-on='true'] .flowEdgeBase { stroke-opacity: 0.34; }
-
-@keyframes flowDash {
-  from { stroke-dashoffset: 100; }
-  to   { stroke-dashoffset: 0; }
-}
-
-/* ------------------------------------------------------------------ nodes */
-
-.flowNode { color: var(--tone); }
-
-.flowNodeBox,
-.flowNodeBoxOn {
-  fill: var(--panel-alt);
-  stroke: var(--tone);
-  stroke-opacity: 0.5;
-}
-.flowNodeBoxOn {
-  stroke-opacity: 0.95;
-  stroke-width: 1.5;
-}
-
-.flowNodeLabel {
-  fill: var(--tone);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-}
-
-.flowNodeValue {
-  fill: var(--ink);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* -------------------------------------------------------------------- key */
-
-.flowKey {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.flowKeyBtn {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  padding: 7px 12px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted-ink);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  cursor: pointer;
-  transition: border-color 180ms ease, color 180ms ease;
-}
-.flowKeyBtn:hover,
-.flowKeyBtn:focus-visible {
-  border-color: var(--tone);
-  color: var(--ink);
-}
-.flowKeyBtn strong { color: var(--tone); }
-
-.flowKeySwatch {
-  width: 9px;
-  height: 9px;
-  border-radius: 3px;
-  background: var(--tone);
-  flex: none;
-}
-
-/* --------------------------------------------------------------- controls */
-
-.flowControls {
-  display: grid;
-  gap: 20px;
-  min-width: 0;
-  padding: clamp(16px, 2vw, 24px);
-  border: 1px solid var(--hairline);
-  border-radius: 18px;
-  background: var(--panel);
-}
-
-.flowField { display: grid; gap: 9px; min-width: 0; }
-
-.flowLabel {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: baseline;
-  justify-content: space-between;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.16em;
-  color: var(--eyebrow-blue);
-}
-.flowLabel strong {
-  letter-spacing: 0;
-  font-size: 12px;
-  color: var(--ink);
-}
-
-.flowPresets { display: flex; flex-wrap: wrap; gap: 7px; }
-
-.flowPreset {
-  padding: 7px 14px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted-ink);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  cursor: pointer;
-  transition: border-color 180ms ease, color 180ms ease;
-}
-.flowPreset:hover { border-color: var(--latch-blue); color: var(--ink); }
-.flowPresetOn {
-  border-color: var(--latch-blue);
-  background: color-mix(in srgb, var(--latch-blue) 14%, transparent);
-  color: var(--ink);
-}
-
-.flowRange {
-  width: 100%;
-  min-width: 0;
-  accent-color: var(--tone, var(--latch-blue));
-  cursor: pointer;
-}
-
-.flowHint {
-  margin: 0;
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: var(--faint-ink);
-}
-.flowHint code { font-size: 11px; }
-
-.flowSplit { display: grid; gap: 12px; min-width: 0; }
-
-.flowSplitRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 64px;
-  gap: 4px 10px;
-  align-items: center;
-  min-width: 0;
-}
-.flowSplitRow .flowRange { grid-column: 1 / -1; }
-
-.flowSplitName {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 12.5px;
-  color: var(--muted-ink);
-}
-
-.flowSplitOut {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--tone);
-  text-align: right;
-}
-
-.flowProvenance {
-  margin: 0;
-  padding-top: 14px;
-  border-top: 1px solid var(--hairline);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 1.7;
-  letter-spacing: 0.04em;
-  color: var(--faint-ink);
-}
-
-/* 1138 == 900 + the 238px rail. Above 861px `.page` is
-   `grid-template-columns: 238px minmax(0, 1fr)` and this element lives in the
-   second track, so a query against the VIEWPORT fires 238px late — the flow
-   diagram was still two columns at 1070px, rendering its 10px labels at ~5px.
-   Same trap the file already documents at the 1278px note. */
-@media (max-width: 1138px) {
-  .flowGrid { grid-template-columns: minmax(0, 1fr); }
-}
-
-/* ===========================================================================
-   LEFT SIDEBAR (desktop only, > 860px)
-
-   The landing used a sticky top bar; the dapp uses a 238px left rail. Two
-   shells for one product means the nav moves the moment a visitor clicks
-   through, and the thing that moves is the thing they were using to navigate.
-   This matches the dapp exactly: same width, same column, same order.
-
-   Written as a min-width block appended at the end rather than by rewriting
-   the base rules, for two reasons. The existing < 860px behaviour — top bar,
-   burger, disclosure panel — is correct on a phone and should stay the
-   default; a sidebar at 380px is just a top bar that stole half the screen.
-   And an additive block is one deletion away from being undone.
-   =========================================================================== */
-
-@media (min-width: 861px) {
-  .page {
-    display: grid;
-    grid-template-columns: 238px minmax(0, 1fr);
-
-    /* THE MEASURE HAS TO COME DOWN, and this is why the rail looked broken.
-       Every section is `box-sizing: content-box` with `max-width:
-       var(--max-landing)` plus a gutter each side, so at the defaults it
-       occupies 1200 + 48 + 48 = 1296px of OUTER width. That was correct when
-       the page owned the viewport. It is not correct inside a column: a
-       1440px screen minus the 238px rail leaves 1202px, so every one of the
-       six sections using the full measure overflowed, and the overflow guard
-       on the content column silently clipped it rather than scrolling.
-
-       Overriding the two tokens here fixes all six at once, which is the
-       reason they are tokens.
-
-       FLUID, NOT A SMALLER FIXED NUMBER. A fixed 1040px still clips at a
-       1280px viewport (1042px column against 1120px of section), and 1280 is
-       an ordinary laptop rather than an edge case. `min()` caps the measure at
-       1040 on a wide screen and otherwise yields the column minus its gutters,
-       so the section total is never wider than the space it has. The 100% here
-       resolves against the containing block, which is the content column. */
-    --max-landing: min(1040px, calc(100% - 80px));
-    --gutter-landing: 40px;
-    /* `clip` on the base rule would make .page a scroll container and break
-       the sticky rail, so the overflow guard moves to the content column. */
-    overflow-x: visible;
-  }
-
-  .header {
-    grid-column: 1;
-    grid-row: 1 / -1;
-    position: sticky;
-    top: 0;
-    align-self: start;
-    height: 100vh;
-    border-bottom: none;
-    border-right: 1px solid var(--header-border);
-  }
-
-  .page > main,
-  .page > footer {
-    grid-column: 2;
-    min-width: 0;
-    overflow-x: clip;
-  }
-
-  /* The bar becomes the rail: lockup at the top, links beneath it, actions
-     pinned to the bottom by the auto margin on .headerRight. */
-  .headerBar {
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
-    height: 100%;
-    gap: 26px;
-    padding: 22px 16px;
-  }
-
-  .headerLeft {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 26px;
-  }
-
-  .headerRight {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 14px;
-    margin-top: auto;
-  }
-
-  .nav,
-  .navList {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 2px;
-  }
-
-  /* A rail row is a full-width target, not a word. Deliberately kept in step
-     with `.dapp-nav__row` in dapp.css — same min-height, same padding, same
-     11px icon gap, same radius token — because the whole point of the rail is
-     that the navigation does not change shape when a visitor clicks into the
-     app. If one of the two moves, move the other.
-
-     WHAT WAS NOT COPIED FROM THE REFERENCE. The reference rail is dark. This
-     site is theme-aware and its default is the paper ground, so the rail takes
-     the reference's structure — grouping, room, line icons, left accent bar —
-     and none of its palette. Every colour below is a token that already knows
-     what to be in both themes. */
-  .navLink {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    min-height: 42px;
-    padding: 10px 12px;
-    border-radius: var(--r-sm);
-    font-size: 14px;
-  }
-
-  /* The active accent bar, as a pseudo-element rather than a span.
-
-     The dapp sidebar renders a real `.dapp-nav__bar` element because its rows
-     are built for that one job. This link component is also the phone top bar
-     and the collapsed menu, and adding a decorative span to it would put an
-     empty node into two layouts that have no use for it. A ::before costs
-     those nothing and is invisible to assistive technology either way. */
-  .navLink::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 50%;
-    width: 3px;
-    height: 18px;
-    margin-top: -9px;
-    border-radius: var(--r-pill);
-    background: transparent;
-    transition: background 0.22s;
-  }
-
-  .navLink:hover {
-    background: var(--panel-alt);
-  }
-
-  /* Brighter label plus the bar, matching `.dapp-nav__row.is-active`. The base
-     rule paints the active link `--signal-blue` at weight 500, which reads as
-     a link that happens to be blue when it is one row in a horizontal bar; in
-     a column it has to read as the row you are standing on. */
-  .navLinkActive {
-    background: var(--active-nav);
-    color: var(--sky-ink);
-    font-weight: 600;
-  }
-  .navLinkActive::before {
-    background: var(--latch-blue);
-  }
-
-  .railLabel {
-    display: block;
-    /* Negative bottom margin pulls the label onto its list. .headerRight's
-       14px gap is the right distance between three unrelated controls and far
-       too much between a label and the thing it labels; a label floating
-       equidistant from the icons above and below it labels neither. */
-    margin: 0 0 -7px;
-    padding-inline: 12px;
-    font-family: var(--font-mono);
-    font-size: 9.5px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--faint-ink);
-  }
-
-  /* The account cluster is the rail's one labelled block, so the divider that
-     set it apart in the horizontal bar is now doing the job twice — and doing
-     it wrong, since a left border in a column is a stripe down the side of the
-     icons rather than a separator before them. The label separates; the border
-     goes. */
-  .headerSocials {
-    /* Left, not centred. The label above it starts at 12px and the nav rows
-       above that start at 12px; centring the icons under a left-aligned label
-       breaks the one vertical edge the whole rail is built on. 6px because a
-       28px icon button carries about 6px of its own inset, so the glyph — not
-       the button box — lands on the same line as the text. */
-    justify-content: flex-start;
-    padding-left: 6px;
-    border-left: none;
-  }
-  .launchPill { text-align: center; }
-}
-
-/* ---------------------------------------------------------------------------
-   Fee chart — the commercial argument, drawn.
-
-   Palette is tokens only: this has to hold in both themes, and light mode here
-   is warm paper (#f4f3ef) rather than white, which is exactly where a
-   hand-picked grey stops working.
-   --------------------------------------------------------------------------- */
-.feeChartCard {
-  margin-top: var(--s7);
-  padding: var(--s6);
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: 16px;
-}
-
-.feeChartHead {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--s5);
-  flex-wrap: wrap;
-  margin-bottom: var(--s5);
-}
-.feeChartTitle {
-  margin: 0 0 4px;
-  font-size: 18px;
-  font-weight: 640;
-  letter-spacing: -0.012em;
-}
-.feeChartSub {
-  margin: 0;
-  color: var(--muted-ink);
-  font-size: 13.5px;
-  max-width: 54ch;
-}
-
-.feeChartToggle {
-  display: flex;
-  gap: 3px;
-  padding: 3px;
-  background: var(--void);
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-}
-.feeChartTab,
-.feeChartTabOn {
-  border: 0;
-  background: transparent;
-  font: 600 12.5px/1 var(--font-body);
-  color: var(--muted-ink);
-  padding: 8px 13px;
-  border-radius: 7px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
-}
-.feeChartTab:hover { color: var(--ink); }
-.feeChartTabOn {
-  background: var(--panel-alt);
-  color: var(--ink);
-}
-.feeChartTab:focus-visible,
-.feeChartTabOn:focus-visible {
-  outline: 2px solid var(--latch-blue);
-  outline-offset: 2px;
-}
-
-.feeChartWrap { position: relative; }
-.feeChartSvg { width: 100%; height: 250px; display: block; }
-.feeChartGrid { stroke: var(--hairline); stroke-width: 1; }
-.feeChartAxis {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  fill: var(--muted-ink);
-}
-.feeChartCol { cursor: default; }
-.feeChartCol:hover .feeChartProtocol { opacity: 0.86; }
-
-/* The LP share is deliberately quieter than the protocol share: the chart is
-   about what LATCH takes, and the LP bar is the context that makes it legible. */
-.feeChartLp { fill: color-mix(in srgb, var(--latch-blue) 30%, var(--panel)); }
-.feeChartProtocol { fill: var(--latch-blue); transition: opacity 0.15s; }
-
-.feeChartTip {
-  position: absolute;
-  top: 8px;
-  transform: translateX(-50%);
-  display: grid;
-  gap: 2px;
-  padding: 9px 11px;
-  background: var(--panel-alt);
-  border: 1px solid var(--hairline-blue-2);
-  border-radius: 9px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--muted-ink);
-  white-space: nowrap;
-  pointer-events: none;
-}
-.feeChartTip strong { color: var(--ink); font-weight: 600; }
-
-.feeChartFoot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--s4);
-  flex-wrap: wrap;
-  margin-top: var(--s4);
-  padding-top: var(--s4);
-  border-top: 1px solid var(--hairline);
-  font-size: 12.5px;
-  color: var(--muted-ink);
-}
-.feeChartFoot b { color: var(--ink); font-family: var(--font-mono); }
-.feeChartLegend {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-}
-.feeChartSwatchLp,
-.feeChartSwatchProtocol {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-}
-/* A DATA colour, not a border colour. --hairline-blue-2 measured 1.45:1 on the
-   paper card, so the LP bar — the taller of the two stacked bars, and the whole
-   context the protocol share is read against — was invisible in light mode, and
-   the legend read as a label with no swatch. */
-.feeChartSwatchLp { background: color-mix(in srgb, var(--latch-blue) 30%, var(--panel)); }
-.feeChartSwatchProtocol { background: var(--latch-blue); margin-left: 9px; }
-
-.feeChartNote {
-  margin: var(--s4) 0 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-}
-.feeChartRaw {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted-ink);
-  word-break: break-word;
-}
-
-/* A tighter top for a section that is a STRIP rather than a section — one band
-   of figures with no heading of its own. `--s9` above it reads as a gap the
-   page forgot to fill, because there is no title to give the space a job. Used
-   by LiveStrip, which sits directly under the hero's own bottom padding. */
-.sectionTight {
-  padding-top: var(--s7);
-}
-
-/* The fee chart's own section box.
-
-   `FeeChart` renders `<section id="fees">` and that wrapper carried NO layout
-   class at all, so the card sat flush against both screen edges while every
-   neighbouring section was inset — and on a wide screen it ran ~250px wider
-   than the section above it. This is the same box `.section` gives everything
-   else; it is separate only because the chart wants no top padding of its own. */
-.feeChartSection {
-  box-sizing: content-box;
-  max-width: var(--max-landing);
-  margin: 0 auto;
-  padding: var(--s9) var(--gutter-landing) 0;
-}
-
-/* `.sectionLead` centres itself, which is right under a centred heading and
-   wrong under a left-aligned one — the eye reads the two as belonging to
-   different sections. This modifier left-aligns it and drops the auto margins;
-   the max-width stays, because a 62ch measure is what makes the line readable
-   and has nothing to do with where it sits. */
-.sectionLeadStart {
-  margin-left: 0;
-  margin-right: 0;
-  text-align: left;
-}
-
-/* ------------------------------------------------------- audiences (build)
-
-   Two cards, and the pair is the point: they are deliberately identical in
-   weight so neither audience reads as the primary one and the other as an
-   afterthought. Hence `1fr 1fr` rather than `auto-fit` — auto-fit would let a
-   long column win on a mid-width viewport, which is exactly the asymmetry the
-   section exists to avoid.
-
-   At 900px they stack rather than squeeze. A four-item claim list with a bold
-   lead per item stops being scannable well before the column gets narrow
-   enough to wrap mid-word, so the breakpoint is set by the list, not the text. */
-
-.audGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--s5);
-  margin-top: var(--s7);
-}
-
-/* 1138 == 900 + the 238px rail — see the note on .flowGrid. */
-@media (max-width: 1138px) {
-  .audGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.audCard {
-  display: flex;
-  flex-direction: column;
-  /* Without this a long word in a claim can push the column past its track and
-     put a horizontal scrollbar on the whole page — grid items default to
-     min-content, not zero. */
-  min-width: 0;
-  padding: var(--s6) var(--s5) var(--s5);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-card-lg);
-  background: var(--grad-card);
-  box-shadow: var(--shadow-1);
-  transition:
-    border-color 0.3s,
-    box-shadow 0.3s,
-    transform 0.3s var(--ease);
-}
-
-.audCard:hover {
-  border-color: var(--border-hover);
-  transform: translateY(-4px);
-  box-shadow: var(--sh-card-hover);
-}
-
-.audWho {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--signal-blue);
-}
-
-.audTitle {
-  margin: var(--s3) 0 0;
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: clamp(21px, 2vw, 26px);
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  color: var(--ink-bright);
-}
-
-.audBody {
-  margin: var(--s3) 0 0;
-  font-size: 14.5px;
-  line-height: 1.65;
-  color: var(--muted-ink);
-  text-wrap: pretty;
-}
-
-.audList {
-  /* `flex: 1` is what keeps the two CTAs on one baseline when the columns have
-     unequal copy — the list absorbs the difference instead of the button
-     floating up mid-card. */
-  flex: 1;
-  margin: var(--s5) 0 0;
-  padding: var(--s5) 0 0;
-  border-top: 1px solid var(--hairline);
-  list-style: none;
-  display: grid;
-  gap: var(--s4);
-}
-
-.audItem {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  gap: var(--s3);
-  align-items: start;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-  text-wrap: pretty;
-}
-
-/* A drawn tick, not the character. A ✓ glyph renders at a different weight in
-   every fallback font and sits on the text baseline rather than the cap line,
-   which reads as misaligned beside a bold lead. */
-.audTick {
-  width: 16px;
-  height: 16px;
-  margin-top: 3px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--signal-blue) 14%, transparent);
-  position: relative;
-}
-
-.audTick::after {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 4px;
-  width: 4px;
-  height: 7px;
-  border: solid var(--signal-blue);
-  border-width: 0 1.6px 1.6px 0;
-  transform: rotate(45deg);
-}
-
-.audLead {
-  font-weight: 600;
-  color: var(--ink-bright);
-}
-
-.audCta {
-  margin-top: var(--s5);
-  align-self: flex-start;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: var(--latch-blue);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition:
-    color 0.2s,
-    border-color 0.2s;
-}
-
-.audCta:hover {
-  color: var(--ink-bright);
-  border-bottom-color: var(--border-hover);
-}
-
-
-/* ---- hero, Option C ------------------------------------------------------ */
-
-/* The status pill above the headline. Success-tinted rather than brand-blue:
-   it is a state ("this is live"), not an action, and the blue is reserved for
-   things you can click. */
-.heroPill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  margin: 0;
-  padding: 6px 13px;
-  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--good);
-}
-
-.heroPillDot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--r-pill);
-  background: var(--success);
-  /* Rests fully opaque, so a paused or disabled animation leaves a visible dot
-     rather than an invisible one. */
-  opacity: 1;
-  animation: heroPulse 2.4s ease-out infinite;
-}
-
-@keyframes heroPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.heroLede {
-  max-width: 60ch;
-  margin: 0 auto var(--s6);
-  font-size: 17.5px;
-  line-height: 1.6;
-  color: var(--muted-ink);
-  text-wrap: pretty;
-}
-
-.heroTrust {
-  margin: var(--s6) 0 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--faint-ink);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .heroPillDot {
-    animation: none !important;
-    opacity: 1 !important;
   }
 }

@@ -143,7 +143,7 @@ function NotConnected() {
         Connect a wallet to see its positions
       </h3>
       <p className="dapp-note">This screen shows, for the connected address:</p>
-      <ul className="live-list" style={{ marginTop: 10 }}>
+      <ul className="live-list dapp-mt-3">
         <li>
           <span>Concentrated-liquidity positions</span>
           <span className="live-fee">ERC-721s minted by the CL position manager</span>
@@ -173,7 +173,7 @@ function NotConnected() {
         </li>
       </ul>
       <p className="dapp-note">Nothing is signed. The address is only used to look up what it holds.</p>
-      <div style={{ marginTop: 16 }}>
+      <div className="dapp-mt-4">
         <LatchConnectButton variant="inline" label="Connect wallet" />
       </div>
     </section>
@@ -210,7 +210,7 @@ function WrongNetwork({
         Your wallet is on chain {chainId ?? '—'}; everything below is read from{' '}
         {browsingChainName} regardless. Switch to {d.name} only to send a transaction.
       </p>
-      <div className="dapp-toolbar" style={{ marginTop: 16 }}>
+      <div className="dapp-toolbar dapp-mt-4">
         <button
           type="button"
           className="dapp-btn dapp-btn--primary dapp-btn--sm"
@@ -512,7 +512,7 @@ function SplitCard({
       </div>
       <p className="live-note">{note}</p>
       {groups.map((g) => (
-        <div key={g.token.address} style={{ marginTop: 14 }}>
+        <div key={g.token.address} className="dapp-mt-4">
           <p className="dapp-microlabel dapp-microlabel--tight">
             {g.token.symbol} · {fmtAmount(g.total, g.token.decimals)} total
           </p>
@@ -580,7 +580,7 @@ function HooksCard({ p }: { p: PortfolioData }) {
           None. A Latch listed in LatchRegistry with your address as submitter appears here.
         </p>
       ) : (
-        <ul className="live-list" style={{ marginTop: 12 }}>
+        <ul className="live-list dapp-mt-3">
           {p.submittedHooks.map((h) => (
             <li key={h.address}>
               <span>
@@ -639,7 +639,7 @@ export default function Portfolio() {
     return (
       <>
         <Header chainName={chainName} />
-        <p className="dapp-empty hx-state" role="status">
+        <p className="dapp-empty hx-state dapp-state--loading" role="status">
           Restoring wallet session&hellip;
         </p>
       </>
@@ -697,14 +697,14 @@ export default function Portfolio() {
       </section>
 
       {state.k === 'loading' && (
-        <p className="dapp-empty hx-state" role="status">
+        <p className="dapp-empty hx-state dapp-state--loading" role="status">
           Reading positions for {short(address)} on {chainName}&hellip; This scans transfer logs
           from the deployment block, so it can take a few seconds.
         </p>
       )}
 
       {state.k === 'error' && (
-        <section className="dapp-card" role="alert">
+        <section className="dapp-card hx-state--err" role="alert">
           <div className="dapp-card__head">
             <h3 className="dapp-card__title">Could not read {chainName}</h3>
             <span className="dapp-badge dapp-badge--warn">UNREACHABLE</span>
@@ -713,7 +713,7 @@ export default function Portfolio() {
           <p className="dapp-note">
             No figures are shown rather than stale or invented ones. Retrying usually works.
           </p>
-          <div style={{ marginTop: 14 }}>
+          <div className="dapp-mt-4">
             <button type="button" className="dapp-btn dapp-btn--primary dapp-btn--sm" onClick={reload}>
               Retry
             </button>

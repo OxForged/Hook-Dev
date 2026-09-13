@@ -79,9 +79,17 @@ export default function Dashboard() {
             </article>
           ))
         ) : (
-          <article className="dapp-card dapp-card--kpi">
+          <article
+            className={
+              metrics.k === 'error' ? 'dapp-card dapp-card--kpi hx-state--err' : 'dapp-card dapp-card--kpi'
+            }
+          >
             <div className="dapp-card__head">
-              <h2 className="dapp-microlabel">
+              <h2
+                className={
+                  metrics.k === 'error' ? 'dapp-microlabel' : 'dapp-microlabel dapp-state--loading'
+                }
+              >
                 {metrics.k === 'error' ? 'CHAIN UNREACHABLE' : 'READING CHAIN…'}
               </h2>
             </div>

@@ -1,0 +1,351 @@
+/* ============================================================================
+   /app/ecosystem — directory-specific layout. Imported by screens/Ecosystem.tsx.
+
+   STRUCTURE from Ink's app directory: a search field with a `/` shortcut, a
+   row of category tabs that scrolls on its own when it overflows, two filter
+   menus and "Submit app" on the right, then the card grid. VISUALS are
+   Option B tokens.
+
+   Not here: the card, the buttons and the modal (components/ecosystemCard.css,
+   shared with the landing page), and the head card, count line, legend and
+   empty-state chrome, which are dapp.css classes this screen reuses unchanged.
+
+   TOKENS ONLY. Every colour, radius, shadow, type size and space is a token
+   from src/styles/tokens.css, so both themes resolve through `light-dark()`.
+   ============================================================================ */
+
+.eco2-dir {
+  display: grid;
+  min-width: 0;
+}
+
+/* ---- toolbar ---------------------------------------------------------------- */
+
+.eco2-dir__toolbar {
+  display: grid;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+/* b.html's input: white field, hairline, small shadow, blue ring on focus. */
+.eco2-dir__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+  padding: 0 var(--s3) 0 var(--s4);
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--b-dur);
+}
+
+.eco2-dir__search:hover {
+  border-color: var(--border-hover);
+}
+
+.eco2-dir__search:focus-within {
+  border-color: var(--latch-blue);
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 1px;
+}
+
+.eco2-dir__search-ring {
+  flex: none;
+  width: var(--s3);
+  height: var(--s3);
+  border: 2px solid var(--muted-ink);
+  border-radius: var(--r-pill);
+}
+
+.eco2-dir__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: calc(var(--s7) - var(--s2));
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--b-card-p);
+}
+
+.eco2-dir__search-input::placeholder {
+  color: var(--muted-ink);
+}
+
+.eco2-dir__search-input:focus-visible {
+  outline: none;
+}
+
+.eco2-dir__kbd {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: var(--s5);
+  height: var(--s5);
+  padding: 0 var(--s1);
+  border: 1px solid var(--hairline-blue);
+  border-radius: var(--r-micro);
+  background: var(--panel-alt);
+  color: var(--muted-ink);
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  line-height: 1;
+}
+
+/* The hint is for finding the field; once you are in it, it is noise. */
+.eco2-dir__search:focus-within .eco2-dir__kbd {
+  visibility: hidden;
+}
+
+.eco2-dir__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  min-width: 0;
+}
+
+/* The tabs take the free width and scroll INSIDE their own row when they do
+   not fit, so the menus and the submit button never get pushed off screen. */
+.eco2-dir__tabs {
+  flex: 1 1 calc(var(--s10) * 2);
+  display: flex;
+  gap: var(--s1);
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cta-border) transparent;
+  /* Room for the focus ring, which a scroll container would clip. */
+  padding: var(--s1);
+  margin: calc(var(--s1) * -1);
+}
+
+.eco2-dir__tab {
+  flex: none;
+  padding: var(--s2) var(--s4);
+  border: 1px solid transparent;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--muted-ink);
+  font-family: var(--font-body);
+  font-size: var(--b-card-p);
+  font-weight: 560;
+  line-height: var(--s4);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--b-dur),
+    color var(--b-dur),
+    border-color var(--b-dur);
+}
+
+.eco2-dir__tab:hover {
+  color: var(--ink);
+  background: var(--panel-alt);
+}
+
+.eco2-dir__tab[aria-pressed="true"] {
+  border-color: var(--dapp-badge-info-border);
+  background: var(--active-nav);
+  color: var(--sky-ink);
+  font-weight: 640;
+}
+
+.eco2-dir__menus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin-left: auto;
+}
+
+/* ---- filter menu (button + listbox) ---------------------------------------- */
+
+.eco2-menu {
+  position: relative;
+}
+
+.eco2-menu__button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: calc(var(--s10) + var(--s8) + var(--s6));
+  min-height: calc(var(--s6) + var(--s1));
+  padding: var(--s2) var(--s3) var(--s2) var(--s4);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--b-card-p);
+  font-weight: 560;
+  line-height: var(--s4);
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition:
+    border-color var(--b-dur),
+    box-shadow var(--b-dur);
+}
+
+.eco2-menu__button:hover {
+  border-color: var(--border-hover);
+}
+
+.eco2-menu__button[data-active="true"] {
+  border-color: var(--dapp-badge-info-border);
+  background: var(--active-nav);
+  color: var(--sky-ink);
+}
+
+.eco2-menu__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco2-menu__text .chain-tag {
+  color: inherit;
+  font-size: var(--b-card-p);
+}
+
+.eco2-menu__caret {
+  flex: none;
+  color: var(--muted-ink);
+  font-size: var(--b-axis);
+  transition: transform var(--b-dur) var(--ease);
+}
+
+.eco2-menu__button[aria-expanded="true"] .eco2-menu__caret {
+  transform: rotate(180deg);
+}
+
+.eco2-menu__list {
+  position: absolute;
+  top: calc(100% + var(--s1));
+  left: 0;
+  z-index: var(--z-dropdown);
+  display: grid;
+  gap: calc(var(--s1) / 2);
+  min-width: max(100%, calc(var(--s10) + var(--s8) + var(--s5)));
+  max-width: calc(100vw - var(--s6));
+  max-height: calc(var(--s10) * 3);
+  margin: 0;
+  padding: var(--s1);
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-2);
+}
+
+.eco2-menu__list[data-align="end"] {
+  left: auto;
+  right: 0;
+}
+
+.eco2-menu__list:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 2px;
+}
+
+.eco2-menu__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-btn);
+  color: var(--ink);
+  font-size: var(--b-caption);
+  line-height: var(--s4);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.eco2-menu__option[data-focused="true"] {
+  background: var(--panel-alt);
+  box-shadow: inset 0 0 0 1px var(--hairline-blue);
+}
+
+.eco2-menu__option[aria-selected="true"] {
+  color: var(--sky-ink);
+  font-weight: 640;
+}
+
+.eco2-menu__option .chain-tag {
+  color: inherit;
+  font-size: var(--b-caption);
+}
+
+.eco2-menu__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+/* A tick, not a colour alone, marks the selected option. */
+.eco2-menu__tick {
+  display: inline-block;
+  width: var(--s3);
+  color: var(--sky-ink);
+}
+
+.eco2-menu__count {
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  font-weight: 400;
+  color: var(--muted-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- grid ------------------------------------------------------------------ */
+
+ul.eco2-dir__grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(var(--s10) * 2 + var(--s6))), 1fr));
+}
+
+/* ---- the explanatory panels, below the grid -------------------------------- */
+
+.eco2-dir__notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--s10) * 2 + var(--s7))), 1fr));
+  align-items: start;
+  gap: var(--s4);
+  margin-top: var(--s7);
+}
+
+.eco2-dir__notes .live-grid {
+  margin: 0;
+}
+
+.eco2-dir__notes .live-grid a {
+  color: var(--signal-blue);
+}
+
+@media (max-width: 560px) {
+  .eco2-dir__menus {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .eco2-dir__menus > .eco2-btn {
+    margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eco2-dir__search,
+  .eco2-dir__tab,
+  .eco2-menu__button,
+  .eco2-menu__caret {
+    transition: none;
+  }
+}

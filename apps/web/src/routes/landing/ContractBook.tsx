@@ -495,10 +495,10 @@ export function ContractBook() {
       aria-labelledby={headingId}
     >
       <header className={styles['head']}>
-        <h2 id={headingId} className={styles['title']}>
+        <h2 id={headingId} className={cx(page['h2'], styles['title'])}>
           Read them before you route a swap through them
         </h2>
-        <p className={styles['lede']}>
+        <p className={cx(page['sectionLead'], styles['lede'])}>
           Every address {CHAIN.name} has in the address book this app ships, with a live{' '}
           <code>eth_getCode</code> against each one. Nothing below is typed out — the addresses,
           the explorer links and the row list all come from{' '}

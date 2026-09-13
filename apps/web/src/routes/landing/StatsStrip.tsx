@@ -7,14 +7,21 @@ import type { ProtocolMetrics } from '../../lib/chain'
 /** The chain this build serves. Never a spelled-out name: see landing/data.ts. */
 const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
+/**
+ * One KPI in Option B's hairline-gap row: label above, figure below.
+ *
+ * `data-state` is what keeps the states VISUALLY distinct rather than only
+ * textually — a value that could not be read (`unread`) renders dimmed, so an
+ * em dash never sits at full weight beside real counts looking like a figure.
+ */
 function StatCell({ value, label }: { value: string; label: string }) {
   const { ref, display } = useCountUp<HTMLDivElement>(value)
   return (
-    <div className={styles['statCell']}>
+    <div className={styles['statCell']} data-state={value === '—' ? 'unread' : 'ready'}>
+      <div className={styles['statLabel']}>{label}</div>
       <div ref={ref} className={styles['statValue']}>
         {display}
       </div>
-      <div className={styles['statLabel']}>{label}</div>
     </div>
   )
 }
@@ -73,15 +80,15 @@ export function StatsStrip() {
         {s.k === 'ready' ? (
           cells(s.m).map((c) => <StatCell key={c.label} value={c.value} label={c.label} />)
         ) : (
-          <div className={styles['statCell']}>
-            <div className={styles['statValue']}>{s.k === 'error' ? '—' : '·'}</div>
+          <div className={styles['statCell']} data-state={s.k}>
             <div className={styles['statLabel']}>
               {s.k === 'error' ? 'CHAIN UNREACHABLE' : 'READING CHAIN…'}
             </div>
+            <div className={styles['statValue']}>{s.k === 'error' ? '—' : '·'}</div>
           </div>
         )}
       </div>
-      <p className={styles['statsNote']}>
+      <p className={styles['statsNote']} data-state={s.k}>
         {s.k === 'ready'
           /* The block moved to LiveStrip, which POLLS it. A height read once at
              mount and captioned "live" goes stale the moment it paints, and on

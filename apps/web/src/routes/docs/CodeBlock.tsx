@@ -13,9 +13,8 @@ type Props = {
 }
 
 /**
- * Code panel: 1px hairline border, --r-sm radius, panel-coloured window bar
- * over a code-ground interior, 12.5px / 1.9 mono (README: "Code: 12–12.5 /
- * line-height 1.85–1.9").
+ * Code panel: 1px hairline border, --r-sm radius, a panel-coloured bar over a
+ * --code-ground interior, coloured by the --code-* syntax tokens.
  *
  * The <pre> keeps `white-space: pre` and scrolls in its own container rather
  * than wrapping, so a narrow viewport never breaks a Solidity token across
@@ -61,7 +60,7 @@ export default function CodeBlock({ filename, dot, source, copyLabel }: Props) {
         <span className={`dk-code__dot dk-code__dot--${dot}`} aria-hidden="true" />
         <span className="dk-code__name">{filename}</span>
         <button type="button" className="dk-code__copy" onClick={copy} aria-label={copyLabel}>
-          {copied ? 'COPIED' : 'COPY'}
+          {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
       <pre className="dk-code__pre" tabIndex={0}>

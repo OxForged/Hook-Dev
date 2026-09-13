@@ -5,13 +5,11 @@ import { isCurrentPage, linkKind, resolveHref } from './links'
 import styles from './landing.module.css'
 import { Lockup } from './Lockup'
 import { SocialIconLink } from './SocialIcons'
-import { HEADER_SOCIALS, SOCIALS } from './socials'
+import { SOCIALS } from './socials'
 import { cx } from './ui'
 import { useFocusTrap, useMediaQuery } from './useDisclosure'
 import { NavIcon } from '../../components/NavIcon'
 import { ThemeToggle } from '../../components/ThemeToggle'
-import { TickerStrip } from '../../components/TickerStrip'
-import { coinGeckoCrypto, finnhubStocks, stocksConfigured, useMarketFeed } from '../../lib/prices'
 
 /** Matches the `.headerBar` collapse point in landing.module.css. Both must move together. */
 const COMPACT = '(max-width: 860px)'
@@ -36,14 +34,16 @@ function NavItemLink({
   item: NavItem
   pathname: string
   className: string
-  iconSize: number
+  /** Omit for a text-only link. Option B's bar is words only; the collapsed
+   *  menu keeps its icons, where each row is a full-width target. */
+  iconSize?: number
   onNavigate?: () => void
 }) {
   const current = isCurrentPage(item.href, pathname)
   const cls = cx(className, current && styles['navLinkActive'])
   const body = (
     <>
-      {item.icon && <NavIcon name={item.icon} size={iconSize} />}
+      {item.icon && iconSize !== undefined && <NavIcon name={item.icon} size={iconSize} />}
       {item.label}
     </>
   )
@@ -72,42 +72,25 @@ function NavItemLink({
  * A1. Sticky translucent header, shared by the landing page, the legal pages
  * and the verify page.
  *
- * HIERARCHY. Four links, then the accounts, then the one thing we want clicked.
- * See NAV in ./data.ts for what was cut and why. The Launch App pill is the
- * only filled element in the bar, so the primary action is unambiguous at a
- * glance — everything else is quiet text.
+ * OPTION B, MINIMAL CUT (2026-09-13): a 64px bar inside the content column —
+ * lockup, four text-only links, the theme control, and Launch App as the only
+ * filled element. Nothing else competes with the primary action.
  *
- * BELOW 860px the links and the icon cluster collapse into a disclosure menu.
- * The lockup and the Launch App pill stay in the bar at every width: the way
- * home and the way into the app are never more than one tap away. The panel is
- * always in the DOM so `aria-controls` always resolves; `hidden` keeps its
- * links out of the tab order while closed, which is also why there is no
- * JS-driven "is this a phone" gate on the markup — CSS decides what shows, and
- * the media query below only closes a menu left open when a window is widened.
+ * WHAT LEFT THE BAR, AND WHERE IT WENT
+ *   · The desktop left rail (238px, matching the dapp). B is a top bar.
+ *   · The X / GitHub icon cluster. Both accounts are in the collapsed menu and
+ *     the footer.
+ *   · The CoinGecko / Finnhub reference-price rails. External market prices
+ *     are not protocol data and the owner's brief is a minimal page; the
+ *     dapp header still carries both rails. `TickerStrip` is untouched.
  *
- * TICKER RAILS hang below the bar, full-bleed, inside the same sticky box. They
- * are not in the nav row: the row's hierarchy is four links, the accounts, and
- * one filled pill, and threading live numbers through that would cost the
- * primary action its only unambiguous position.
- *
- *   · Crypto ALWAYS. CoinGecko is keyless, so the rail is real on every
- *     deployment of this site with nothing to configure.
- *   · US equities ONLY when a Finnhub key is present. The rail can render an
- *     honest "not configured" line — the dapp header does exactly that — but
- *     this is a public marketing page, and a visitor is not the audience for
- *     our missing build variable. Absent key, absent rail; never fake tickers.
- *
- * Both carry the source and the quote time on screen: these are external
- * reference markets, not Latch pool prices.
+ * BELOW 860px the links and theme control collapse into a disclosure menu.
+ * The lockup and Launch App stay in the bar at every width. The panel is always
+ * in the DOM so `aria-controls` always resolves; `hidden` keeps its links out
+ * of the tab order while closed.
  */
 export function SiteHeader() {
   const { pathname } = useLocation()
-  const crypto = useMarketFeed(coinGeckoCrypto)
-  // Subscribed unconditionally to keep hook order stable. With no key the
-  // provider resolves to `unconfigured` on its first tick and stops polling
-  // outright, so an unrendered rail costs one no-op call and no network.
-  const stocks = useMarketFeed(finnhubStocks)
-  const showStocks = stocksConfigured()
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const close = useCallback(() => setOpen(false), [])
@@ -129,13 +112,6 @@ export function SiteHeader() {
   return (
     <header className={styles['header']}>
       <div className={styles['headerBar']}>
-        {/* LEFT GROUP. The primary links used to live inside the same
-            right-aligned <nav> as the socials, the theme toggle and the CTA,
-            so they read as one cluster of controls pinned to the far edge.
-            Navigation and actions are different things: the links say where
-            you can go, the CTA says what to do. Grouping the links with the
-            lockup puts them where a reader's eye already is after the mark,
-            and leaves the right edge to the one button that matters. */}
         <div className={styles['headerLeft']}>
           <Lockup />
 
@@ -147,7 +123,6 @@ export function SiteHeader() {
                     item={item}
                     pathname={pathname}
                     className={styles['navLink'] ?? ''}
-                    iconSize={15}
                   />
                 </li>
               ))}
@@ -156,29 +131,6 @@ export function SiteHeader() {
         </div>
 
         <div className={styles['headerRight']}>
-          {/* RAIL ONLY (>= 861px), and `display: none` in the base rule so it
-              cannot leak into the top bar on a phone.
-
-              The rail borrows the dapp sidebar's rhythm: quiet mono micro-label
-              over a block of related things. Four nav destinations are too few
-              to carve into groups — a heading over all four would label the
-              whole nav, which is not a label — so the one labelled block here
-              is the account cluster, which is a genuinely different kind of
-              thing from a link to a section of this page. "FOLLOW" is the
-              collapsed menu's own word for it (see .menuFoot below), not a new
-              one invented for the rail.
-
-              aria-hidden: the <ul> beneath already carries the real accessible
-              name. Two labels for one list makes a screen reader say it twice. */}
-          <p className={styles['railLabel']} aria-hidden="true">
-            Follow
-          </p>
-          <ul className={styles['headerSocials']} aria-label="Latch Protocol accounts">
-            {HEADER_SOCIALS.map((social) => (
-              <SocialIconLink key={social.id} social={social} size="sm" />
-            ))}
-          </ul>
-
           <span className={styles['themeToggleSlot']}>
             <ThemeToggle />
           </span>
@@ -217,11 +169,6 @@ export function SiteHeader() {
           </button>
         </div>
       </div>
-
-      <TickerStrip provider={coinGeckoCrypto} state={crypto} className="ltk--landing" />
-      {showStocks && (
-        <TickerStrip provider={finnhubStocks} state={stocks} configured className="ltk--landing" />
-      )}
 
       {open && <div className={styles['menuScrim']} onClick={close} aria-hidden="true" />}
 

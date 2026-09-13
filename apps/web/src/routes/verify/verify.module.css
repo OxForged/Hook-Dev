@@ -1,24 +1,33 @@
 /* ============================================================================
-   Latch Protocol — /verify/:hookAddress
+   Latch Protocol — /verify/:hookAddress — OPTION B
 
-   Public chrome (SiteHeader / SiteFooter / .page / .eyebrow / .h1) is reused
-   from landing.module.css; only what this page genuinely adds lives here. It is
-   a document, not a dashboard, so it borrows the legal pages' measure and rhythm
-   rather than the dapp's card grid.
+   Public chrome (SiteHeader / SiteFooter / .page / .eyebrow) is reused from
+   landing.module.css; only what this page genuinely adds lives here. It is a
+   document, not a dashboard, so it keeps the legal pages' 760px measure and
+   B's card language: white panels on a hairline with a resting shadow, serif
+   titles at weight 500, uppercase tracked kickers, mono only for addresses and
+   the bitmap.
 
    TONE IS A VARIABLE, NEVER A LITERAL. Every panel reads --tone / --tone-bg /
    --tone-border, and exactly one place — the .tone-* classes — decides what
    those are. A component cannot pick "red" on its own, so a warning cannot be
    quietly downgraded to a neutral card by a later edit.
 
-   No literal colours. Every value is a token from src/styles/tokens.css.
+   THE FOUR STATES STAY VISUALLY DISTINCT:
+     loading          mute tone, pulsing title, aria-busy
+     unreachable      warn tone, error detail block, retry button
+     not registered   dashed, unfilled, no shadow, no badge grid (B's `.empty`)
+     registered       solid tinted verdict with a tone rule, then the record
+
+   No literal colours, radii, shadows or type sizes. Every value is a token
+   from src/styles/tokens.css.
    ============================================================================ */
 
 .wrap {
   box-sizing: content-box;
   max-width: 760px;
   margin: 0 auto;
-  padding: 72px var(--gutter-landing) 24px;
+  padding: var(--s9) var(--b-gutter) var(--s5);
 }
 
 /* --------------------------------------------------------------------- tone */
@@ -35,8 +44,10 @@
   --tone-border: var(--dapp-badge-info-border);
 }
 
+/* Mute text uses --muted-ink, not --label-ink: a verdict value such as
+   "Unverified" is read, not skimmed, and --label-ink only clears 3:1. */
 .tone-mute {
-  --tone: var(--label-ink);
+  --tone: var(--muted-ink);
   --tone-bg: var(--dapp-badge-mute-bg);
   --tone-border: var(--dapp-badge-mute-border);
 }
@@ -58,70 +69,75 @@
    rule carries the tone so the verdict is readable before a word is read. */
 
 .verdict {
-  margin: 24px 0 0;
-  padding: 26px 26px 24px;
+  margin: var(--s4) 0 0;
+  padding: var(--s5) var(--s5) 22px;
   border: 1px solid var(--tone-border, var(--hairline));
   border-left: 3px solid var(--tone, var(--label-ink));
-  border-radius: var(--r-sm);
+  border-radius: var(--r-card-lg);
   background: var(--panel);
+  box-shadow: var(--shadow-1);
 }
 
 /* NOT REGISTERED is deliberately built from different parts, not a re-tinted
-   verified panel: dashed, unfilled, no badge grid anywhere near it. A reader
+   verified panel: dashed, unfilled, unshadowed, no badge grid anywhere near
+   it. It is B's `.empty` treatment, which is exactly what it is. A reader
    scrolling past at speed must never mistake it for a record. */
 .verdictNone {
-  border: 1px dashed var(--hairline);
+  border: 1px dashed var(--dashed-rule);
   border-left: 3px dashed var(--label-ink);
   background: transparent;
+  box-shadow: none;
 }
 
 .verdictKicker {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.22em;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--tone, var(--label-ink));
+  color: var(--tone, var(--muted-ink));
 }
 
 .verdictTitle {
-  margin: 12px 0 0;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(24px, 3.2vw, 34px);
-  line-height: 1.12;
-  letter-spacing: -0.01em;
+  margin: var(--s3) 0 0;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: clamp(calc(var(--b-sec-h) * 0.8), 3.4vw, calc(var(--b-sec-h) * 1.2));
+  line-height: 1.15;
+  letter-spacing: var(--b-sec-h-track);
   color: var(--ink-bright);
   text-wrap: balance;
 }
 
 .verdictBody {
-  margin: 16px 0 0;
-  font-size: 15px;
-  line-height: 1.68;
+  margin: var(--s4) 0 0;
+  font-size: var(--b-body);
+  line-height: 1.7;
   color: var(--muted-ink-2);
   text-wrap: pretty;
 }
 
 .verdictBody strong {
   color: var(--ink);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .errDetail {
-  margin: 14px 0 0;
-  padding: 10px 14px;
-  border-radius: var(--r-micro);
+  margin: var(--s3) 0 0;
+  padding: 10px var(--s3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-btn);
   background: var(--code-ground);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--b-label);
   line-height: 1.5;
-  color: var(--mono-data-dim);
+  color: var(--muted-ink);
   overflow-wrap: anywhere;
 }
 
 .pulse {
-  animation: verifyPulse 1.4s var(--ease) infinite;
+  animation: verifyPulse 1.6s ease-in-out infinite;
 }
 
 @keyframes verifyPulse {
@@ -140,23 +156,28 @@
   }
 }
 
+/* B's secondary button. */
 .retry {
   margin: 0;
-  padding: 9px 16px;
-  border: 1px solid var(--hairline);
+  padding: 10px var(--s4);
+  border: 1px solid var(--cta-border);
   border-radius: var(--r-btn);
-  background: var(--panel-alt);
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: var(--ink);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  font: var(--b-btn);
+  color: var(--btn2-ink);
   cursor: pointer;
-  transition: border-color 0.2s, color 0.2s;
+  transition:
+    border-color var(--b-dur),
+    box-shadow var(--b-dur),
+    transform var(--b-dur) var(--ease);
 }
 
 .retry:hover,
 .retry:focus-visible {
-  border-color: var(--latch-blue);
-  color: var(--sky-ink);
+  border-color: var(--btn2-border-hover);
+  box-shadow: var(--shadow-2);
+  transform: var(--b-btn-lift);
 }
 
 /* --------------------------------------------------------------- address row
@@ -167,18 +188,19 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 14px;
+  gap: 10px var(--s3);
   margin: 20px 0 0;
-  padding: 12px 14px;
+  padding: var(--s3) 14px;
   border: 1px solid var(--hairline);
   border-radius: var(--r-sm);
   background: var(--code-ground);
 }
 
 .addrLabel {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.16em;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint-ink);
 }
@@ -186,43 +208,51 @@
 .addrValue {
   flex: 1 1 260px;
   font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--mono-data-ink);
+  font-size: var(--b-caption);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
 .addrActions {
   display: flex;
-  gap: 8px;
+  gap: var(--s2);
 }
 
 .addrBtn {
-  padding: 6px 12px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-chip);
-  background: var(--panel-alt);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--mono-data-dim);
+  display: inline-flex;
+  align-items: center;
+  padding: 6px var(--s3);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  box-shadow: var(--shadow-1);
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--btn2-ink);
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
-  transition: border-color 0.2s, color 0.2s;
+  transition:
+    border-color var(--b-dur) ease,
+    box-shadow var(--b-dur) ease;
 }
 
 .addrBtn:hover,
 .addrBtn:focus-visible {
-  border-color: var(--latch-blue);
-  color: var(--sky-ink);
+  border-color: var(--btn2-border-hover);
+  box-shadow: var(--shadow-2);
+  color: var(--btn2-ink);
 }
 
 /* ------------------------------------------------------------------- alerts */
 
 .alert {
   display: flex;
-  gap: 14px;
-  margin: 18px 0 0;
-  padding: 16px 18px;
+  gap: var(--s3);
+  margin: var(--s4) 0 0;
+  padding: var(--s4) 18px;
   border: 1px solid var(--tone-border, var(--hairline));
   border-radius: var(--r-sm);
   background: var(--tone-bg, var(--panel));
@@ -232,8 +262,8 @@
   flex: none;
   width: 8px;
   height: 8px;
-  margin-top: 7px;
-  border-radius: 999px;
+  margin-top: 6px;
+  border-radius: var(--r-pill);
   background: var(--tone, var(--label-ink));
 }
 
@@ -244,16 +274,17 @@
 .alertTitle {
   display: block;
   margin-bottom: 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.16em;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--tone, var(--label-ink));
+  color: var(--tone, var(--muted-ink));
 }
 
 .alertText {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--b-card-p);
   line-height: 1.65;
   color: var(--ink);
   text-wrap: pretty;
@@ -261,27 +292,29 @@
 
 .alertText strong {
   color: var(--ink-bright);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .alertText code {
   font-family: var(--font-mono);
-  font-size: 0.92em;
+  font-size: 0.9em;
   color: var(--sky-ink);
   overflow-wrap: anywhere;
 }
 
-/* ------------------------------------------------------------------ badges */
+/* ------------------------------------------------------------------ badges
+   B's KPI strip: tone-tinted cells, each its own small card so the tone of one
+   signal can never bleed into its neighbour's. */
 
 .badges {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   gap: 10px;
-  margin: 18px 0 0;
+  margin: var(--s4) 0 0;
 }
 
 .badge {
-  padding: 12px 14px;
+  padding: 14px var(--s4);
   border: 1px solid var(--tone-border, var(--hairline));
   border-radius: var(--r-sm);
   background: var(--tone-bg, var(--panel));
@@ -289,29 +322,35 @@
 
 .badgeLabel {
   display: block;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.16em;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--faint-ink);
+  color: var(--muted-ink);
 }
 
+/* Verdict words in the body face; the bitmap badge's value is hex, and reads
+   fine in Inter's tabular figures. */
 .badgeValue {
   display: block;
   margin-top: 6px;
-  font-family: var(--font-mono);
-  font-size: 13.5px;
+  font-family: var(--font-body);
+  font-size: var(--b-card-h);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--tone, var(--ink));
 }
 
 /* ------------------------------------------------------------------ panels */
 
 .panel {
-  margin: 22px 0 0;
-  padding: 22px 22px 20px;
+  margin: 20px 0 0;
+  padding: var(--s5) var(--s5) 22px;
   border: 1px solid var(--hairline);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-card-lg);
   background: var(--panel);
+  box-shadow: var(--shadow-1);
 }
 
 .panelDanger {
@@ -320,44 +359,50 @@
 
 .panelKicker {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.2em;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--label-ink);
 }
 
 .panelKicker:not(:first-child) {
-  margin-top: 20px;
+  margin-top: var(--s5);
 }
 
 .panelTitle {
-  margin: 10px 0 0;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 20px;
+  margin: var(--s2) 0 0;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: var(--b-mini);
   line-height: 1.2;
+  letter-spacing: var(--b-sec-h-track);
   color: var(--ink-bright);
 }
 
 .panelNote {
-  margin: 12px 0 0;
-  font-size: 14px;
-  line-height: 1.66;
+  margin: var(--s3) 0 0;
+  font-size: var(--b-card-p);
+  line-height: 1.65;
   color: var(--muted-ink-2);
   text-wrap: pretty;
 }
 
 .panelNote strong {
   color: var(--ink);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .panelNote code,
 .verdictBody code {
+  padding: 1px 5px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-micro);
+  background: var(--code-ground);
   font-family: var(--font-mono);
-  font-size: 0.92em;
-  color: var(--sky-ink);
+  font-size: 0.86em;
+  color: var(--code-ink);
   overflow-wrap: anywhere;
 }
 
@@ -366,16 +411,16 @@
    disclosure — this is the line a reader needs before they route funds. */
 
 .claims {
-  margin: 16px 0 0;
+  margin: var(--s4) 0 0;
   padding: 0;
   list-style: none;
 }
 
 .claims li {
   position: relative;
-  padding: 9px 0 9px 22px;
+  padding: 10px 0 10px 22px;
   border-bottom: 1px solid var(--hairline-soft);
-  font-size: 15px;
+  font-size: var(--b-body);
   line-height: 1.55;
   color: var(--ink);
 }
@@ -388,11 +433,11 @@
 .claims li::before {
   content: '';
   position: absolute;
-  top: 17px;
+  top: 18px;
   left: 4px;
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--latch-blue);
 }
 
@@ -402,20 +447,14 @@
 
 /* ---------------------------------------------------------- the bitmap grid
 
-   `.tags` / `.tag` lived here: a flat row of chips naming the callbacks that
-   were set, and nothing at all about the ones that were not. They were deleted
-   rather than left dark, because the replacement is strictly more informative
-   — `BitGrid` from routes/dapp/components/series-charts.tsx draws all fourteen
-   bits, lit and unlit, each one focusable and carrying what running at that
-   point in the lifecycle would let the contract do.
-
-   The grid's own styling is global, from dapp.css. This host supplies only what
-   the `.dapp` shell would have: the easing custom property that file scopes to
-   its own root, and this page's spacing. */
+   `BitGrid` from routes/dapp/components/series-charts.tsx draws all fourteen
+   bits, lit and unlit. The grid's own styling is global, from dapp.css. This
+   host supplies only what the `.dapp` shell would have: the easing custom
+   property that file scopes to its own root, and this page's spacing. */
 
 .hostedBits {
   --dapp-ease: var(--ease);
-  margin-bottom: 4px;
+  margin: var(--s3) 0 4px;
 }
 
 /* ------------------------------------------------------- methodology, folded
@@ -425,8 +464,8 @@
    paragraph; this is where the first kind goes. */
 
 .more {
-  margin: 12px 0 0;
-  font-size: 13.5px;
+  margin: var(--s3) 0 0;
+  font-size: var(--b-caption);
   line-height: 1.6;
   color: var(--muted-ink-2);
 }
@@ -437,12 +476,11 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--label-ink);
-  transition: color 0.18s ease;
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  font-weight: 600;
+  color: var(--signal-blue);
+  transition: color var(--b-dur) ease;
 }
 
 .more > summary::-webkit-details-marker {
@@ -451,7 +489,7 @@
 
 .more > summary::before {
   content: '+';
-  font-size: 13px;
+  font-size: var(--b-card-p);
   line-height: 1;
   color: var(--latch-blue);
 }
@@ -461,31 +499,31 @@
 }
 
 .more > summary:hover {
-  color: var(--ink);
+  color: var(--deep-blue);
 }
 
 .more > summary:focus-visible {
   outline: 2px solid var(--latch-blue);
   outline-offset: 3px;
-  border-radius: 4px;
+  border-radius: var(--r-micro);
 }
 
 .more > p {
-  margin: 8px 0 0;
+  margin: var(--s2) 0 0;
   text-wrap: pretty;
 }
 
 /* -------------------------------------------------------- submitter strings */
 
 .meta {
-  margin: 18px 0 0;
+  margin: var(--s4) 0 0;
 }
 
 .metaRow {
   display: grid;
   grid-template-columns: 118px 1fr;
-  gap: 12px;
-  padding: 12px 0;
+  gap: var(--s3);
+  padding: var(--s3) 0;
   border-bottom: 1px solid var(--hairline-soft);
 }
 
@@ -495,18 +533,19 @@
 }
 
 .metaRow dt {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.16em;
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint-ink);
-  padding-top: 3px;
+  padding-top: 4px;
 }
 
 .metaRow dd {
   margin: 0;
   min-width: 0;
-  font-size: 14.5px;
+  font-size: var(--b-body);
   line-height: 1.6;
   color: var(--ink);
   overflow-wrap: anywhere;
@@ -518,31 +557,33 @@
   color: var(--ink);
 }
 
+/* "none supplied" is a value a reader must be able to read, so it takes
+   --muted-ink (AA) and relies on the italic, not a faint grey, to look absent. */
 .absent {
-  color: var(--faint-ink);
+  color: var(--muted-ink);
   font-style: italic;
 }
 
 .raw {
   font-family: var(--font-mono);
-  font-size: 0.92em;
+  font-size: 0.9em;
   font-style: normal;
-  color: var(--mono-data-dim);
+  color: var(--muted-ink);
   overflow-wrap: anywhere;
 }
 
 /* -------------------------------------------------------------------- misc */
 
 .plainList {
-  margin: 14px 0 0;
+  margin: var(--s3) 0 0;
   padding-left: 20px;
-  font-size: 14.5px;
-  line-height: 1.68;
+  font-size: var(--b-body);
+  line-height: 1.7;
   color: var(--muted-ink-2);
 }
 
 .plainList li {
-  margin-bottom: 8px;
+  margin-bottom: var(--s2);
 }
 
 .plainList li:last-child {
@@ -555,43 +596,52 @@
 
 .inlineLink {
   color: var(--signal-blue);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--hairline-blue-2);
   overflow-wrap: anywhere;
-  transition: border-color 0.2s;
+  transition:
+    color var(--b-dur) ease,
+    text-decoration-color var(--b-dur) ease;
 }
 
 .inlineLink:hover,
 .inlineLink:focus-visible {
-  border-bottom-color: var(--signal-blue);
+  color: var(--deep-blue);
+  text-decoration-color: currentColor;
 }
 
+/* The provenance line is the page's receipt: which contract, which chain,
+   which block. Body-sized and AA-legible, not a faint footnote. */
 .provenance {
-  margin: 40px 0 0;
-  padding-top: 22px;
+  margin: var(--s7) 0 0;
+  padding-top: 20px;
   border-top: 1px solid var(--hairline);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--b-caption);
   line-height: 1.7;
-  color: var(--faint-ink);
+  color: var(--muted-ink);
 }
 
 .provenance a {
-  color: var(--mono-data-dim);
-  text-decoration: none;
-  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 0.94em;
+  color: var(--signal-blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--hairline-blue-2);
 }
 
 .provenance a:hover,
 .provenance a:focus-visible {
-  color: var(--sky-ink);
+  color: var(--deep-blue);
+  text-decoration-color: currentColor;
 }
 
 /* -------------------------------------------------------------- responsive */
 
 @media (max-width: 720px) {
   .wrap {
-    padding-top: 44px;
+    padding-top: var(--s7);
   }
 
   .verdict {
@@ -599,7 +649,7 @@
   }
 
   .panel {
-    padding: 18px 16px 16px;
+    padding: 18px var(--s4) var(--s4);
   }
 
   .metaRow {
@@ -609,5 +659,12 @@
 
   .addrActions {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .retry:hover,
+  .retry:focus-visible {
+    transform: none;
   }
 }

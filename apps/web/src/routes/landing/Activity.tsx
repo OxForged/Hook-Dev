@@ -105,7 +105,12 @@ function FeeGauge() {
 
   if (state.k !== 'ready') {
     return (
-      <p className={styles['placeholderNote']}>
+      <p
+        className={cx(
+          styles['placeholderNote'],
+          state.k === 'loading' ? styles['noteLoading'] : styles['noteError'],
+        )}
+      >
         {state.k === 'loading' ? 'READING THE FEE CONTROLLER…' : 'FEE CONTROLLER UNREACHABLE'}
       </p>
     )
@@ -164,9 +169,11 @@ function LiveState() {
         LIVE PROTOCOL STATE · {CHAIN.name.toUpperCase()}
       </h3>
 
-      {s.k === 'loading' && <p className={styles['placeholderNote']}>READING CHAIN&hellip;</p>}
+      {s.k === 'loading' && (
+        <p className={cx(styles['placeholderNote'], styles['noteLoading'])}>READING CHAIN&hellip;</p>
+      )}
       {s.k === 'error' && (
-        <p className={styles['placeholderNote']}>
+        <p className={cx(styles['placeholderNote'], styles['noteError'])}>
           COULD NOT REACH THE CHAIN — NO FIGURES SHOWN RATHER THAN STALE ONES
         </p>
       )}
@@ -291,11 +298,16 @@ function EventMix() {
       <h3 className={styles['microLabel']}>PROTOCOL EVENTS BY TYPE</h3>
 
       {state.k !== 'ready' ? (
-        <p className={styles['placeholderNote']}>
+        <p
+          className={cx(
+            styles['placeholderNote'],
+            state.k === 'loading' ? styles['noteLoading'] : styles['noteError'],
+          )}
+        >
           {state.k === 'loading' ? 'READING CONTRACT LOGS…' : 'CHAIN UNREACHABLE'}
         </p>
       ) : bars.length === 0 ? (
-        <p className={styles['placeholderNote']}>NO EVENTS RECORDED YET</p>
+        <p className={cx(styles['placeholderNote'], styles['noteEmpty'])}>NO EVENTS RECORDED YET</p>
       ) : (
         <>
           <BarList

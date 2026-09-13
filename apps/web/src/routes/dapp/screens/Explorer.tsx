@@ -531,7 +531,7 @@ export default function Explorer() {
         </p>
 
         {state.k === 'loading' && (
-          <p className="dapp-empty hx-state" role="status">
+          <p className="dapp-empty hx-state dapp-state--loading" role="status">
             Reading the Latch registry on {d.name}&hellip;
           </p>
         )}
@@ -544,7 +544,7 @@ export default function Explorer() {
         )}
 
         {state.k === 'ready' && hooks.length === 0 && (
-          <p className="dapp-empty hx-state">
+          <p className="dapp-empty hx-state dapp-state--empty">
             No Latches are listed yet. The registry is deployed at{' '}
             <a
               href={explorerAddress(ACTIVE_CHAIN_ID, d.registry)}
@@ -596,7 +596,7 @@ export default function Explorer() {
         )}
 
         {state.k === 'ready' && listable.length > 0 && visible.length === 0 && (
-          <p className="dapp-empty hx-state">
+          <p className="dapp-empty hx-state dapp-state--empty">
             No Latch matches that {filtersOn ? 'search and filter' : 'view'}.{' '}
             <button
               type="button"
