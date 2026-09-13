@@ -98,6 +98,15 @@
   --muted-ink: light-dark(#4a5163, #a8aebb); /* body */
   --muted-ink-2: light-dark(#4a5163, #b2b8c4); /* long-form paragraphs */
   --label-ink: light-dark(#858b9b, #8b93a1); /* mono micro-labels */
+  /* Ink for anything sitting on --grad-primary or another saturated brand fill.
+     NOT theme-switched, and that is the point: the gradient beneath it is the
+     same colour in both themes, so ink that flips with the theme is ink that is
+     wrong in one of them. --ink-bright was being used here, which resolves to
+     #12151a on paper and measured 3.53:1 at the gradient's top stop and 2.46:1
+     at the bottom — under the 4.5:1 these sizes need, on "Get Started",
+     "Launch App" and "Read the Docs". Every primary action on the site, for
+     every visitor on the default theme. */
+  --on-accent: #ffffff;
   --faint-ink: light-dark(#858b9b, #8b93a1); /* table headers, axis labels */
 
   /* CONTRAST. Checked against the two grounds these actually sit on:

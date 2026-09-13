@@ -311,7 +311,10 @@ export function LiquidityFlow() {
 
         {/* ------------------------------------------------------ CONTROLS */}
         <div className={styles['flowControls']}>
-          <div className={styles['flowField']}>
+          {/* role/aria-label: the visible "SWAP SIZE" is a sibling <span>, not a
+              <label>, so without this the three buttons are an unlabelled run
+              of numbers to anyone not seeing the layout. */}
+          <div className={styles['flowField']} role="group" aria-label="Swap size">
             <span className={styles['flowLabel']}>SWAP SIZE</span>
             <div className={styles['flowPresets']}>
               {SWAP_PRESETS.map((p) => (
@@ -342,9 +345,18 @@ export function LiquidityFlow() {
               step={100}
               value={feePips}
               className={styles['flowRange']}
+              /* An explicit name, because this <label> wraps the hint paragraph
+                 as well as the input — so the computed name was the label's
+                 whole text content, ~200 characters ending mid-word, re-read on
+                 every drag. aria-label wins over wrapped label text. The hint
+                 still reaches assistive tech, as a description rather than as
+                 part of the control's name. */
+              aria-label="Latch fee in pips"
+              aria-describedby="flow-fee-hint"
+              aria-valuetext={`${feePips} pips, ${pct(feePips, PIPS_DENOMINATOR)}`}
               onChange={(e) => setFeePips(Number(e.target.value))}
             />
-            <span className={styles['flowHint']}>
+            <span id="flow-fee-hint" className={styles['flowHint']}>
               Ceiling is <code>MAX_FEE_PIPS</code> = {MAX_FEE_PIPS.toLocaleString('en-US')} pips, a
               hard 10% constant. Raising a live pool&rsquo;s fee waits 3,600 blocks; lowering it is
               immediate.
@@ -473,6 +485,12 @@ function SplitSlider({
         step={100}
         value={value}
         className={styles['flowRange']}
+        /* The <output> is inside the label, so the computed name repeated the
+           percentage the value already carries — "Back to LPs 20%", announced
+           as "Back to LPs 20%, 20%". Naming the input explicitly leaves the
+           output as the value it is. */
+        aria-label={label}
+        aria-valuetext={pct(value, SPLIT_DENOMINATOR)}
         onChange={(e) => onChange(Number(e.target.value))}
       />
       <output className={styles['flowSplitOut']}>{pct(value, SPLIT_DENOMINATOR)}</output>

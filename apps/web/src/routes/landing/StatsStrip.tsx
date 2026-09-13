@@ -64,7 +64,12 @@ export function StatsStrip() {
       className={styles['statsStrip']}
       aria-label={`Live protocol metrics from ${CHAIN.name}`}
     >
-      <div className={styles['statsGrid']}>
+      {/* Polite, and aria-busy while the read is in flight. Every figure here
+          arrives from a promise: without this a screen-reader user who reaches
+          the strip mid-load is told "READING CHAIN…" and is never told
+          anything else. Polite rather than assertive — these are figures, not
+          alerts, and they must not interrupt. */}
+      <div className={styles['statsGrid']} aria-live="polite" aria-busy={s.k === 'loading'}>
         {s.k === 'ready' ? (
           cells(s.m).map((c) => <StatCell key={c.label} value={c.value} label={c.label} />)
         ) : (

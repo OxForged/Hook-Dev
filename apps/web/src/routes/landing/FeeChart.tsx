@@ -79,7 +79,16 @@ type State =
  */
 export function FeeChart() {
   return (
-    <section id="fees" aria-label="What a swap costs">
+    <section
+      id="fees"
+      className={styles['feeChartSection']}
+      /* aria-label, NOT aria-labelledby. The heading lives on the ready branch
+         only, so labelledby would point at an id that does not exist while the
+         controller read is in flight or after it fails — the same bug as the
+         anchor this wrapper was created to fix. A static label is correct in
+         all three states. */
+      aria-label="What a swap costs"
+    >
       <FeeChartBody />
     </section>
   )
@@ -150,7 +159,14 @@ function FeeChartBody() {
     <div className={styles['feeChartCard']}>
       <div className={styles['feeChartHead']}>
         <div>
-          <h3 className={styles['feeChartTitle']}>What a swap costs, by pool tier</h3>
+          {/* h2, not h3. This is a top-level section and its title was the
+              first heading after the page's h1 — a level skip, which is a
+              real navigation defect for anyone moving by heading. Visually
+              inert: .feeChartTitle sets its own size and weight, and
+              tokens.css styles h1..h4 identically. */}
+          <h2 className={styles['feeChartTitle']}>
+            What a swap costs, by pool tier
+          </h2>
           <p className={styles['feeChartSub']}>
             The protocol takes {(s.splitRatio / 10_000).toFixed(0)}% of the total swap fee. Read
             from the controller on {CHAIN.name}.

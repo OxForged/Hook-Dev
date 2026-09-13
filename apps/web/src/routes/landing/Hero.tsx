@@ -31,7 +31,8 @@ export function Hero() {
         </p>
         <div className={styles['heroActions']}>
           <Link to={LINKS.app} className={styles['btnPrimary']}>
-            Get Started →<span className={styles['sheen']} aria-hidden="true" />
+            Get Started<span aria-hidden="true"> →</span>
+            <span className={styles['sheen']} aria-hidden="true" />
           </Link>
           <Link to={LINKS.docs} className={styles['btnSecondary']}>
             Read Docs

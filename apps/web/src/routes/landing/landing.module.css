@@ -420,7 +420,7 @@
   padding: 9px 20px;
   border-radius: var(--r-pill);
   background: var(--grad-primary);
-  color: var(--ink-bright);
+  color: var(--on-accent);
   font-weight: 600;
   font-size: 13px;
   text-decoration: none;
@@ -431,7 +431,10 @@
 }
 
 .launchPill:hover {
-  color: var(--ink-bright);
+  /* No `color` here. It used to reassert --ink-bright, which on the paper theme
+     is #12151a — so hovering put the contrast straight back under 4.5:1 on the
+     same fixed blue gradient. The base ink is already correct in both themes;
+     hover only needs to move and to lift. */
   transform: translateY(-2px);
   box-shadow: var(--sh-btn-hover);
 }
@@ -457,7 +460,7 @@
   border: none;
   border-radius: var(--r-pill);
   background: var(--grad-primary);
-  color: var(--ink-bright);
+  color: var(--on-accent);
   box-shadow: var(--sh-btn);
   transition:
     transform 0.25s var(--ease),
@@ -465,7 +468,7 @@
 }
 
 .btnPrimary:hover {
-  color: var(--ink-bright);
+  /* See .launchPill:hover — the same reset, the same bug. */
   transform: translateY(-2px);
   box-shadow: var(--sh-btn-hover);
 }
@@ -904,7 +907,9 @@
   font-weight: 400;
   font-size: 10.5px;
   letter-spacing: 0.16em;
-  --tone: var(--label-ink);
+  /* `color`, not `--tone` — inert here, and this class is used on an <h3>,
+     which otherwise inherits the h1..h4 headline ink from tokens.css. */
+  color: var(--label-ink);
 }
 
 .barList {
@@ -1983,6 +1988,8 @@ span.chainMark {
   }
 
   .section,
+  .feeChartSection,
+  .flowSection,
   .ctaSection,
   .footer {
     padding-left: var(--s5);
@@ -2013,6 +2020,8 @@ span.chainMark {
 
 @media (max-width: 560px) {
   .section,
+  .feeChartSection,
+  .flowSection,
   .ctaSection,
   .footer {
     padding-left: var(--s5);
@@ -2113,6 +2122,27 @@ span.chainMark {
     display: none !important;
   }
 
+  /* The global duration collapse in tokens.css is not enough here. With no
+     fill-mode the element reverts to `stroke-dashoffset: 0` while KEEPING
+     `stroke-dasharray: 6 94`, so every edge renders as a 6% stub with a 94%
+     gap and only the 16%-opacity base stroke remains. The section's own
+     comment claims the diagram "still reads completely" without motion; that
+     is only true once the dash pattern goes too. */
+  .flowEdgeFlow {
+    animation: none !important;
+    stroke-dasharray: none !important;
+    stroke-opacity: 0.55 !important;
+  }
+
+  /* `backwards` plus a per-item delay is the "invisible until the animation
+     runs" shape. Unmounted today, pinned anyway so it cannot come back as a
+     regression when its section is remounted. */
+  .tickerTile {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
   .statusDot,
   .graphCoreTile,
   .graphNode {
@@ -2198,7 +2228,10 @@ span.chainMark {
 .sectionLead {
   max-width: 62ch;
   margin: var(--s4) auto 0;
-  --tone: var(--label-ink);
+  /* `color`, not `--tone`. Nothing in this subtree reads --tone, so the
+     declaration was inert and the lead rendered at full --ink — darker than
+     the body copy it introduces. */
+  color: var(--label-ink);
   font-size: 14.5px;
   line-height: 1.65;
   text-align: center;
@@ -2588,7 +2621,12 @@ span.chainMark {
   color: var(--faint-ink);
 }
 
-@media (max-width: 900px) {
+/* 1138 == 900 + the 238px rail. Above 861px `.page` is
+   `grid-template-columns: 238px minmax(0, 1fr)` and this element lives in the
+   second track, so a query against the VIEWPORT fires 238px late — the flow
+   diagram was still two columns at 1070px, rendering its 10px labels at ~5px.
+   Same trap the file already documents at the 1278px note. */
+@media (max-width: 1138px) {
   .flowGrid { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -2858,7 +2896,7 @@ span.chainMark {
 
 /* The LP share is deliberately quieter than the protocol share: the chart is
    about what LATCH takes, and the LP bar is the context that makes it legible. */
-.feeChartLp { fill: var(--hairline-blue-2); }
+.feeChartLp { fill: color-mix(in srgb, var(--latch-blue) 30%, var(--panel)); }
 .feeChartProtocol { fill: var(--latch-blue); transition: opacity 0.15s; }
 
 .feeChartTip {
@@ -2906,7 +2944,11 @@ span.chainMark {
   height: 9px;
   border-radius: 2px;
 }
-.feeChartSwatchLp { background: var(--hairline-blue-2); }
+/* A DATA colour, not a border colour. --hairline-blue-2 measured 1.45:1 on the
+   paper card, so the LP bar — the taller of the two stacked bars, and the whole
+   context the protocol share is read against — was invisible in light mode, and
+   the legend read as a label with no swatch. */
+.feeChartSwatchLp { background: color-mix(in srgb, var(--latch-blue) 30%, var(--panel)); }
 .feeChartSwatchProtocol { background: var(--latch-blue); margin-left: 9px; }
 
 .feeChartNote {
@@ -2920,6 +2962,20 @@ span.chainMark {
   font-size: 11px;
   color: var(--muted-ink);
   word-break: break-word;
+}
+
+/* The fee chart's own section box.
+
+   `FeeChart` renders `<section id="fees">` and that wrapper carried NO layout
+   class at all, so the card sat flush against both screen edges while every
+   neighbouring section was inset — and on a wide screen it ran ~250px wider
+   than the section above it. This is the same box `.section` gives everything
+   else; it is separate only because the chart wants no top padding of its own. */
+.feeChartSection {
+  box-sizing: content-box;
+  max-width: var(--max-landing);
+  margin: 0 auto;
+  padding: var(--s9) var(--gutter-landing) 0;
 }
 
 /* `.sectionLead` centres itself, which is right under a centred heading and
@@ -2952,7 +3008,8 @@ span.chainMark {
   margin-top: var(--s7);
 }
 
-@media (max-width: 900px) {
+/* 1138 == 900 + the 238px rail — see the note on .flowGrid. */
+@media (max-width: 1138px) {
   .audGrid {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -155,7 +155,11 @@ function LiveState() {
   const s = useProtocolMetrics()
 
   return (
-    <div className={styles['card']}>
+    <div className={styles['card']} aria-live="polite" aria-busy={s.k === 'loading'}>
+      {/* Polite live region: this card swaps "READING…" for real figures when a
+          promise resolves. Without it that swap is silent and a screen-reader
+          user is left on the loading string. Polite, never assertive — figures
+          are not alerts. */}
       <h3 className={styles['microLabel']}>
         LIVE PROTOCOL STATE · {CHAIN.name.toUpperCase()}
       </h3>
@@ -279,7 +283,11 @@ function EventMix() {
   const firstBlock = series[0]?.label
 
   return (
-    <div className={styles['card']}>
+    <div className={styles['card']} aria-live="polite" aria-busy={state.k === 'loading'}>
+      {/* Polite live region: this card swaps "READING…" for real figures when a
+          promise resolves. Without it that swap is silent and a screen-reader
+          user is left on the loading string. Polite, never assertive — figures
+          are not alerts. */}
       <h3 className={styles['microLabel']}>PROTOCOL EVENTS BY TYPE</h3>
 
       {state.k !== 'ready' ? (
