@@ -1,6 +1,7 @@
 import { Activity } from './Activity'
 import { Audiences } from './Audiences'
 import { ContractBook } from './ContractBook'
+import { Ecosystem } from './Ecosystem'
 import { FeeChart } from './FeeChart'
 import { Hero } from './Hero'
 import { LiveStrip } from './LiveStrip'
@@ -114,6 +115,13 @@ export default function LandingPage() {
             route a swap through them" is only a real invitation if reading
             them is easy. */}
         <ContractBook />
+        {/* Social proof immediately before the ask, and the submission route
+            beside it. This lived only at /app/ecosystem, which is the one place
+            a visitor evaluating the protocol will not look — reaching it means
+            launching an app you have not decided to trust yet. A directory
+            nobody sees cannot recruit, and the "list your project" link is
+            worthless to the people most likely to use it. */}
+        <Ecosystem />
         <CtaPanel />
       </main>
       <SiteFooter />
