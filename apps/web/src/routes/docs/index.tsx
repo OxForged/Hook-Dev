@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import CodeBlock from './CodeBlock'
+import ContractBook from './ContractBook'
 import DocsFooter from './DocsFooter'
 import DocsHeader from './DocsHeader'
 import LeftRail from './LeftRail'
@@ -39,7 +40,7 @@ import {
   SURFACES,
   TOC,
 } from './content'
-import { useMediaQuery, useScrollSpy } from './hooks'
+import { useHashScroll, useMediaQuery, useScrollSpy } from './hooks'
 import './docs.css'
 
 /**
@@ -105,7 +106,14 @@ const ENDPOINT_CEILING = CHAIN_COUNTS.chains * CHAIN_COUNTS.target
 export default function DocsPage() {
   const [railOpen, setRailOpen] = useState(false)
   const isDrawer = useMediaQuery('(max-width: 1023.98px)')
-  const activeId = useScrollSpy(SECTION_IDS)
+  /* The reading line has to sit below where a section lands after a jump, or
+     the section you just jumped to is not yet "reached". docs.css lands a
+     section at its `scroll-margin-top`: 88px on desktop, 128px once the header
+     grows the drawer-trigger row. 110 cleared the first and missed the second. */
+  const activeId = useScrollSpy(SECTION_IDS, isDrawer ? 150 : 110)
+  /* `/docs#contracts` (and any other section hash) on a cold load or a
+     client-side <Link> from another page. See hooks.ts. */
+  useHashScroll()
 
   const closeRail = useCallback(() => setRailOpen(false), [])
   const toggleRail = useCallback(() => setRailOpen((v) => !v), [])
@@ -253,7 +261,9 @@ export default function DocsPage() {
               script reads <code className="dk-icode">PRIVATE_KEY</code> and{' '}
               <code className="dk-icode">CL_POOL_MANAGER</code> from your environment, and prints
               the <code className="dk-icode">parameters</code> word to use in your{' '}
-              <code className="dk-icode">PoolKey</code>.
+              <code className="dk-icode">PoolKey</code>. Every other address &mdash; the Vault,
+              both pool managers, the registry and the rest of the book &mdash; is listed, with a
+              live code check, under <a href="#contracts">Deployed contracts</a>.
             </p>
             <CodeBlock
               filename="shell"
@@ -404,6 +414,14 @@ export default function DocsPage() {
               asks you to connect.
             </p>
           </section>
+
+          {/* ------------------------------------------- Deployed contracts
+
+              The one canonical contract list, moved here from the landing
+              page 2026-09-13. Every address-book key for this build's chain,
+              read from the SDK, with a paced live eth_getCode per address.
+              `/#contracts` on the landing redirects to this anchor. */}
+          <ContractBook style={vars({ '--d': '0.115s' })} />
 
           {/* -------------------------------------------- B7. Callback ref */}
           <section id="interface" className="dk-section dk-reveal" style={vars({ '--d': '0.12s' })}>

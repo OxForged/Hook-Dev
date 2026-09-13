@@ -79,6 +79,55 @@ export default defineConfig({
       '@rainbow-me/rainbowkit',
     ],
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        // VENDOR CHUNKS — for caching, not for first-load size.
+        //
+        // Without these, every deploy re-downloads nearly everything: react-dom
+        // sits in the entry, the entry's preload map names every route chunk,
+        // and a hash change anywhere cascades through each importer. Measured
+        // on this app with a one-line change to a dapp screen, a returning
+        // landing visitor re-downloaded ~200 kB gzip of ~219 kB; with the groups
+        // below, ~3 kB. A change to lib/chain.ts: ~200 kB -> ~49 kB. First-load
+        // cost of the extra requests: under 1 kB gzip on the landing route.
+        //
+        // `entriesAware` on viem and the wallet stack is load-bearing. Without
+        // it a group is ONE chunk that every route touching any of its modules
+        // must download whole — the landing reads chain data through viem, so a
+        // plain viem group would hand it the wallet-only parts of viem too, and
+        // a wallet group shared with anything public would undo route splitting.
+        // Grouped by importer set instead, the landing only ever loads the viem
+        // modules it uses, and wagmi/RainbowKit stay behind /app/*.
+        //
+        // An `entriesAware` subgroup is named after every chunk that imports it
+        // (`viem~index~Terms~Privacy~…~ccip`), which runs past 100 characters.
+        // The group name alone is enough; the content hash keeps files distinct.
+        chunkFileNames: (chunk) => `assets/${chunk.name.split('~')[0]}-[hash].js`,
+        codeSplitting: {
+          groups: [
+            {
+              name: 'react',
+              test: /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/,
+              priority: 30,
+            },
+            {
+              name: 'viem',
+              test: /[\\/]node_modules[\\/](viem|ox|abitype|@noble|@scure|@adraffy)[\\/]/,
+              priority: 20,
+              entriesAware: true,
+            },
+            {
+              name: 'wallet',
+              test: /[\\/]node_modules[\\/](wagmi|@wagmi|@rainbow-me|@tanstack|@vanilla-extract|zustand|use-sync-external-store|eventemitter3|mipd|ua-parser-js|qr|cuer|react-remove-scroll|react-remove-scroll-bar|react-style-singleton|use-callback-ref|use-sidecar|tslib|get-nonce|detect-node-es)[\\/]/,
+              priority: 10,
+              entriesAware: true,
+            },
+          ],
+        },
+      },
+    },
+  },
   server: {
     watch: {
       // public/brand is DERIVED by scripts/sync-brand.mjs from the design handoff

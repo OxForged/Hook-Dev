@@ -73,7 +73,8 @@ function NavItemLink({
  * and the verify page.
  *
  * OPTION B, MINIMAL CUT (2026-09-13): a 64px bar inside the content column —
- * lockup, four text-only links, the theme control, and Launch App as the only
+ * lockup, three text-only links (Contracts left for the docs, 2026-09-13; see
+ * NAV in ./data.ts), the theme control, and Launch App as the only
  * filled element. Nothing else competes with the primary action.
  *
  * WHAT LEFT THE BAR, AND WHERE IT WENT

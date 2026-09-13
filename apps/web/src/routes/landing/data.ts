@@ -96,18 +96,21 @@ export interface NavItem {
  * recorded here the first time still applies: a section anchor is a dependency
  * on a component being MOUNTED, which no compiler checks.
  *
- * Every href below resolves on `/`:
+ * Every section href below resolves on `/`:
  *   `#fees`       FeeChart's section wrapper, rendered on every branch
  *   `#presets`    the wrapper index.tsx puts around PresetCurve
- *   `#contracts`  ContractBook — mounted ON DEMAND by index.tsx when the hash
- *                 is `#contracts`, so this link is what opens it
  *   `#ecosystem`  Ecosystem's section, mounted again after FourThings
  *                 (2026-09-13, owner request). Used by MENU_NAV and the footer.
+ *
+ * "Contracts" LEFT THE BAR, 2026-09-13. The contract book moved to the docs
+ * (owner: "contracts need to be on docs not on landing"), and Docs is already
+ * the next item, so a second link to a section of the same page would be
+ * chrome for its own sake. The book is `LINKS.contracts` below; the footer and
+ * the CTA band carry it.
  */
 export const NAV: readonly NavItem[] = [
   { label: 'Fees', href: '#fees', icon: 'revenue' },
   { label: 'Presets', href: '#presets', icon: 'launch' },
-  { label: 'Contracts', href: '#contracts', icon: 'explorer' },
   { label: 'Docs', href: '/docs', icon: 'docs' },
 ]
 
@@ -144,7 +147,10 @@ export const LINKS = {
   promptLaunchpad: `${GITHUB_URL}/latch-sdk/blob/main/prompts/launchpad-integration.md`,
   analytics: '/app/analytics',
   ecosystem: '/app/ecosystem',
-  contracts: '#contracts',
+  /* The docs' "Deployed contracts" section. A route with a hash, so the chrome
+     renders it as a client-side <Link>; docs/hooks.ts `useHashScroll` does the
+     scrolling react-router will not. `/#contracts` redirects here. */
+  contracts: '/docs#contracts',
   privacy: '/privacy',
   terms: '/terms',
 } as const
@@ -485,8 +491,8 @@ export const FOOTER_GROUPS: readonly FooterGroup[] = [
   {
     title: 'Protocol',
     /* What the minimal landing renders, plus the two places the unmounted
-       sections' live figures now live. `#contracts` opens the contract book on
-       demand (see NAV). */
+       sections' live figures now live. "Deployed contracts" is the docs
+       section at /docs#contracts (see LINKS). */
     links: [
       { label: 'What a swap costs', href: '#fees' },
       { label: 'Launch presets', href: '#presets' },

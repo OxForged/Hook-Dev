@@ -1,11 +1,7 @@
-import { Routes, Route, Link, Navigate } from 'react-router-dom'
-import Landing from './routes/landing'
-import Docs from './routes/docs'
-import Dapp from './routes/dapp'
-import Brand from './routes/brand'
-import Privacy from './routes/legal/Privacy'
-import Terms from './routes/legal/Terms'
-import Verify from './routes/verify'
+import { Suspense } from 'react'
+import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
+import { RouteErrorBoundary, RouteLoading } from './components/RouteBoundary'
+import { ROUTES } from './routes/table'
 
 /**
  * Route shell for the Latch Protocol web surfaces.
@@ -56,20 +52,24 @@ function NotFound() {
 }
 
 export default function App() {
+  const { pathname } = useLocation()
   return (
-    <Routes>
-      <Route path="/" element={<Landing />} />
-      <Route path="/docs" element={<Docs />} />
-      <Route path="/app/*" element={<Dapp />} />
-      <Route path="/brand" element={<Brand />} />
-      <Route path="/privacy" element={<Privacy />} />
-      <Route path="/terms" element={<Terms />} />
-      <Route path="/verify/:hookAddress" element={<Verify />} />
-      {/* Bare /verify has no address to verify. It used to 404, which is technically
-          true and practically useless — somebody who trimmed the address off a shared
-          link deserves the marketplace, not a dead end. */}
-      <Route path="/verify" element={<Navigate to="/app/marketplace" replace />} />
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+    // Every surface is a lazily-loaded chunk (see routes/table.ts). The boundary
+    // turns a chunk that fails to download — typically a tab left open across a
+    // deploy — into a real error with a reload action instead of a blank page.
+    <RouteErrorBoundary resetKey={pathname}>
+      <Suspense fallback={<RouteLoading />}>
+        <Routes>
+          {ROUTES.map(({ path, Component }) => (
+            <Route key={path} path={path} element={<Component />} />
+          ))}
+          {/* Bare /verify has no address to verify. It used to 404, which is technically
+              true and practically useless — somebody who trimmed the address off a shared
+              link deserves the marketplace, not a dead end. */}
+          <Route path="/verify" element={<Navigate to="/app/marketplace" replace />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+    </RouteErrorBoundary>
   )
 }

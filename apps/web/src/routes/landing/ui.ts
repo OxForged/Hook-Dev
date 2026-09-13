@@ -53,8 +53,8 @@ const PENDING = 'data-reveal-pending'
  * something the hook is committed to showing. Consequences, all deliberate:
  *   · JS off, a crawler, a failed hydration, reduced motion, or no
  *     IntersectionObserver: nothing is ever marked, the page is just there.
- *   · An element that mounts AFTER the hook ran (a section behind a hash gate,
- *     a branch that resolves later) is never marked, so it is visible. A
+ *   · An element that mounts AFTER the hook ran (a section mounted
+ *     conditionally, a branch that resolves later) is never marked, so it is visible. A
  *     page-level "hide every .reveal" switch would hide those forever.
  *   · If the observer has not fired within 1.5s, everything is shown.
  *

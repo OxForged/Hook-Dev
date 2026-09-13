@@ -4,7 +4,8 @@
    Built to "latch design/README.md" § 3. Dapp and SCREENS.md § C. The README
    is authoritative where the reference HTML disagrees with it.
 
-   Mounted by src/App.tsx at /app/*; this module owns everything beneath that:
+   Mounted at /app/* by ./DappRoute.tsx, inside the wallet provider, which
+   App.tsx lazy-loads; this module owns everything beneath that:
 
      /app                        Dashboard
      /app/swap                   Swap — quote and trade through a live pool

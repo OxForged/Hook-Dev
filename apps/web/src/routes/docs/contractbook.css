@@ -1,0 +1,423 @@
+/* ============================================================================
+   Deployed contracts (./ContractBook.tsx) — the docs treatment.
+
+   Moved from the landing page on 2026-09-13 and restyled to the docs surface.
+   The section box, heading, prose, inline code chips, table wrapper, table,
+   ghost button and callout are docs.css's own (`.dk-section`, `.dk-h2`,
+   `.dk-body`, `.dk-icode`, `.dk-tablewrap`, `.dk-table`, `.dk-btn--ghost`,
+   `.dk-callout`). This file adds only what the book has and no other docs
+   section does: the filter field, the segmented chips, the per-row copy and
+   explorer buttons, the tags, and the five check states.
+
+   TOKENS ONLY. Every colour, radius, shadow and type size is a token from
+   src/styles/tokens.css, so both themes resolve through `light-dark()`.
+
+   THE STATES ARE VISUALLY DISTINCT, NOT JUST TEXTUALLY. `data-state` drives
+   `--tone` and every state paints its own dot and text colour. Colour is never
+   the only carrier — each state's wording says what it is. That matters most
+   for the pair this component exists to keep apart: "no code" and "could not
+   check" are different words as well as different colours.
+   ========================================================================== */
+
+/* Anchors the absolutely-positioned `.dk-cb__sr` elements to the section. */
+.dk-cb {
+  position: relative;
+  min-width: 0;
+}
+
+/* ---- controls ------------------------------------------------------------- */
+
+.dk-cb__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.dk-cb__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.dk-cb__chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Sentence-case label copy, so --muted-ink (4.5:1) rather than --faint-ink. */
+.dk-cb__label {
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  font-weight: 560;
+  line-height: 16px;
+  color: var(--muted-ink);
+}
+
+.dk-cb__input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px var(--s3);
+  font-family: var(--font-body);
+  font-size: var(--b-card-p);
+  line-height: 20px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--b-dur);
+}
+
+/* Placeholder text is an example, not content; --muted-ink keeps it legible. */
+.dk-cb__input::placeholder {
+  color: var(--muted-ink);
+}
+
+.dk-cb__input:hover {
+  border-color: var(--border-hover);
+}
+
+.dk-cb__input:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 2px;
+}
+
+/* The house segmented toggle: --panel-alt track, 3px pad, pressed segment
+   raised on --light-surface (never --panel, which sinks on the dark track). */
+.dk-cb__toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-toggle);
+  background: var(--panel-alt);
+}
+
+.dk-cb__seg {
+  appearance: none;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: var(--r-toggle-seg);
+  background: transparent;
+  font: 600 var(--b-label) / 1 var(--font-body);
+  color: var(--muted-ink);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--b-dur),
+    color var(--b-dur),
+    box-shadow var(--b-dur);
+}
+
+.dk-cb__seg:hover {
+  color: var(--ink);
+}
+
+/* The pressed state is the accessible state: `aria-pressed` is the selector. */
+.dk-cb__seg[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--light-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.dk-cb__tally {
+  max-width: 80ch;
+  margin: var(--s4) 0;
+  font-size: var(--b-label);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the not-configured banner -------------------------------------------- */
+
+.dk-cb__banner {
+  max-width: 80ch;
+  margin: 0 0 var(--s4);
+  padding: var(--s3) var(--s4);
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  border-radius: var(--r-sm);
+  color: var(--error);
+  background: var(--dapp-badge-danger-bg);
+  border: 1px solid var(--dapp-badge-danger-border);
+}
+
+/* ---- the table ------------------------------------------------------------
+   `.dk-table` sizes itself for code-reference tables (680px floor). The book's
+   three columns are built to fit at 400px, so the floor comes down; the
+   wrapper still scrolls if a long endpoint error ever pushes past it. */
+
+.dk-table.dk-cb__table {
+  min-width: 320px;
+}
+
+.dk-cb__c1 {
+  width: 34%;
+}
+
+.dk-cb__c2 {
+  width: 40%;
+}
+
+.dk-cb__c3 {
+  width: 26%;
+}
+
+.dk-cb__row {
+  transition: background-color var(--b-dur);
+}
+
+.dk-cb__row:hover {
+  background: var(--panel-alt);
+}
+
+.dk-cb__key .dk-table__name {
+  display: block;
+}
+
+.dk-cb__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  margin-top: var(--s1);
+}
+
+.dk-cb__tag {
+  font-family: var(--font-body);
+  font-size: var(--b-axis);
+  font-weight: 600;
+  line-height: 18px;
+  padding: 0 var(--s2);
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+
+/* Amber, not red: a redeployable contract is not a fault. */
+.dk-cb__tag[data-tag='redeployable'] {
+  color: var(--warning);
+  background: var(--dapp-badge-warn-bg);
+}
+
+.dk-cb__tag[data-tag='token'] {
+  color: var(--muted-ink);
+  background: var(--panel-alt);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+/* ---- address column ------------------------------------------------------- */
+
+.dk-cb__addrrow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.dk-cb__addr {
+  color: var(--code-ink);
+  overflow-wrap: anywhere;
+}
+
+.dk-cb__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+/* The docs' small button — the same shape as the code block's copy control
+   (`.dk-code__copy`), in flow rather than pinned to a bar. */
+.dk-cb__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px var(--s3);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  font: 600 var(--b-label) / 1 var(--font-body);
+  color: var(--btn2-ink);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--b-dur) ease,
+    border-color var(--b-dur) ease,
+    box-shadow var(--b-dur) ease;
+}
+
+.dk-cb__btn:hover {
+  color: var(--ink);
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-1);
+}
+
+.dk-cb__btn--explorer,
+.dk-cb__btn--explorer:hover {
+  color: var(--signal-blue);
+}
+
+/* The copy button's three results. `Copy failed` is a real, visible state. */
+.dk-cb__btn[data-result='ok'] {
+  color: var(--success);
+  border-color: var(--dapp-badge-ok-border);
+  background: var(--dapp-badge-ok-bg);
+}
+
+.dk-cb__btn[data-result='fail'] {
+  color: var(--error);
+  border-color: var(--dapp-badge-danger-border);
+  background: var(--dapp-badge-danger-bg);
+}
+
+/* ---- the check column, and the five states -------------------------------- */
+
+.dk-table tbody .dk-cb__status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s2);
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  line-height: var(--b-body-lh);
+  color: var(--tone, var(--muted-ink));
+  overflow-wrap: anywhere;
+}
+
+/* loading — queued or checking. Quiet, and never a tick. The text stays
+   --muted-ink (it is sentence case); only the dot goes faint. */
+.dk-cb__status[data-state='loading'] {
+  --tone: var(--muted-ink);
+  --dot-tone: var(--faint-ink);
+}
+
+/* ok — the chain answered and there are bytes there. */
+.dk-cb__status[data-state='ok'] {
+  --tone: var(--success);
+  --dot-tone: var(--success);
+}
+
+/* empty — the chain answered and the address is EMPTY. A measurement, and a
+   damning one, so amber. Not red: red is reserved for the state below. */
+.dk-cb__status[data-state='empty'] {
+  --tone: var(--warning);
+  --dot-tone: var(--warning);
+}
+
+/* error — nobody answered. Says nothing about the contract. */
+.dk-cb__status[data-state='error'] {
+  --tone: var(--error);
+  --dot-tone: var(--error);
+}
+
+/* not-configured — the book records no address. The quietest, told apart
+   from loading by italics and by having no dot. */
+.dk-cb__status[data-state='unconfigured'] {
+  --tone: var(--muted-ink);
+  --dot-tone: var(--faint-ink);
+  font-style: italic;
+}
+
+.dk-cb__dot {
+  flex: none;
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--dot-tone, var(--faint-ink));
+  opacity: 1;
+}
+
+.dk-cb__status[data-state='loading'] .dk-cb__dot {
+  animation: dk-cb-pulse 1600ms ease-in-out infinite;
+}
+
+@keyframes dk-cb-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* ---- empty filter result -------------------------------------------------- */
+
+.dk-table tbody .dk-cb__empty {
+  padding: var(--s6) var(--s4);
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: var(--b-caption);
+  color: var(--muted-ink);
+}
+
+/* ---- after the table ------------------------------------------------------ */
+
+.dk-cb__note {
+  max-width: 80ch;
+  margin: var(--s4) 0 0;
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+}
+
+.dk-cb__note strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.dk-cb__recheck {
+  margin-top: var(--s3);
+}
+
+/* ---- screen-reader-only --------------------------------------------------- */
+
+.dk-cb__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- responsive -----------------------------------------------------------
+   The table keeps its three columns and tightens; the wrapper absorbs any
+   overflow, so nothing here can push the PAGE sideways. */
+
+@media (max-width: 560px) {
+  .dk-cb .dk-table th,
+  .dk-cb .dk-table td {
+    padding: var(--s3) var(--s2);
+  }
+  .dk-cb__actions {
+    gap: var(--s1);
+  }
+  /* docs.css stretches every `.dk-btn` full-width here; the re-check keeps
+     that, as a primary-width action under the table. */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dk-cb__status[data-state='loading'] .dk-cb__dot {
+    animation: none;
+    opacity: 1;
+  }
+  .dk-cb__input,
+  .dk-cb__row,
+  .dk-cb__seg,
+  .dk-cb__btn {
+    transition: none;
+  }
+}

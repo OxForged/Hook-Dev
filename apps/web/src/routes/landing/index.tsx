@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
-import { ContractBook } from './ContractBook'
+import { LINKS } from './data'
 import { Ecosystem } from './Ecosystem'
 import { FeeChart } from './FeeChart'
 import { FourThings } from './FourThings'
@@ -15,27 +16,18 @@ import { SiteHeader } from './SiteHeader'
 import styles from './landing.module.css'
 import { useRevealOnScroll } from './ui'
 
-/** The hash that opens the contract book. Nav, footer and the CTA band link here. */
-const CONTRACTS_HASH = '#contracts'
-
 /**
- * `location.hash`, kept current.
+ * The retired landing anchor for the contract book.
  *
- * Read from `window` and `hashchange` rather than the router: a plain
- * `<a href="#contracts">` on `/` is an in-document fragment jump, and whether a
- * router re-renders on one is an implementation detail this should not rest on.
+ * The book lived here behind `/#contracts` until 2026-09-13, when it moved to
+ * the docs (owner: "contracts need to be on docs not on landing"). Links to
+ * `/#contracts` are already out in the world — shared URLs, bookmarks, older
+ * READMEs — so this page forwards them to `LINKS.contracts` (`/docs#contracts`)
+ * rather than dropping the reader at the top of a page that no longer has the
+ * table. `replace`, not push: the dead URL should not sit in history for Back
+ * to bounce the reader into the redirect again.
  */
-function useHash(): string {
-  const [hash, setHash] = useState(() =>
-    typeof window === 'undefined' ? '' : window.location.hash,
-  )
-  useEffect(() => {
-    const onChange = () => setHash(window.location.hash)
-    window.addEventListener('hashchange', onChange)
-    return () => window.removeEventListener('hashchange', onChange)
-  }, [])
-  return hash
-}
+const RETIRED_CONTRACTS_HASH = '#contracts'
 
 /**
  * Latch Protocol landing page — THE MINIMAL CUT, 2026-09-13.
@@ -44,7 +36,7 @@ function useHash(): string {
  * interactive". Design language is Option B (latch-design-options/b.html).
  *
  * ORDER
- *   1. SiteHeader        brand, four links, theme, Launch App
+ *   1. SiteHeader        brand, three links, theme, Launch App
  *   2. Hero              pill, serif H1, one-sentence lede, two actions
  *   3. LiveStrip         the live KPI row, read from chain
  *   4. FeeChart          b.html's flagship: what a swap costs, by pool tier
@@ -53,9 +45,12 @@ function useHash(): string {
  *      PermissionBitmap  which callbacks a Latch asks for, from core's flags
  *   5. FourThings        what you do not have to deploy
  *   6. Ecosystem         who is building on it, and "List your project"
- *   ·  ContractBook      ONLY when the URL hash is #contracts (see below)
  *   7. CtaPanel          one-line closing band
  *   8. SiteFooter        minimal, and the map to everything that left the page
+ *
+ * NO CONTRACT ADDRESSES ARE RENDERED ON THIS PAGE. The address book and its
+ * live code check are the docs' "Deployed contracts" section at
+ * `/docs#contracts`; FourThings, the footer and the CTA band link there.
  *
  * UNMOUNTED, NOT DELETED — and where each one's content is reachable now:
  *   · Audiences     its two integration prompts are in the footer's Build
@@ -65,30 +60,21 @@ function useHash(): string {
  *                   test-count and audit-status card has no other home yet.
  *   · LiquidityFlow the interactive revenue-share MODEL has no other home. The
  *                   docs' #revshare section covers the contract reads.
- *   · ContractBook  one click away at /#contracts — header nav, footer, and
- *                   the CTA band all link there, and the book mounts on demand.
  *   · CodePanel     was only ever mounted inside HowItWorks (Sections.tsx).
  * Each goes back in one import and one line.
- *
- * WHY THE CONTRACT BOOK IS BEHIND A HASH, not a route: no page other than this
- * one presents every deployed address (the docs name the registry only), and
- * adding a route is a change to App.tsx. A hash-gated section keeps the book
- * one click from every page — `/#contracts` from anywhere — without putting its
- * live `getCode` sweep on every landing visit.
  */
 export default function LandingPage() {
   const pageRef = useRef<HTMLDivElement>(null)
   useRevealOnScroll(pageRef)
 
-  const hash = useHash()
-  const showContracts = hash === CONTRACTS_HASH
-
-  /* The browser's own fragment scroll ran before the book existed, so it found
-     nothing. Scroll once the book has mounted. */
+  /* `useLocation` rather than `window.location`: it updates on a native
+     fragment jump as well (that fires `popstate`), so a stale in-page
+     `#contracts` link on `/` is forwarded too, not just a cold load. */
+  const { hash } = useLocation()
+  const navigate = useNavigate()
   useEffect(() => {
-    if (!showContracts) return
-    document.getElementById(CONTRACTS_HASH.slice(1))?.scrollIntoView({ block: 'start' })
-  }, [showContracts])
+    if (hash === RETIRED_CONTRACTS_HASH) navigate(LINKS.contracts, { replace: true })
+  }, [hash, navigate])
 
   return (
     <div ref={pageRef} className={styles['page']}>
@@ -118,8 +104,6 @@ export default function LandingPage() {
         {/* Directly after the inventory of what is deployed: who is building
             on it, and how to be listed. */}
         <Ecosystem />
-
-        {showContracts ? <ContractBook /> : null}
 
         <CtaPanel />
       </main>

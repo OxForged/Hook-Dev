@@ -90,6 +90,7 @@ export const SECTION_IDS = [
   'deploy',
   'register',
   'verify',
+  'contracts',
   'interface',
   'lifecycle',
   'errors',
@@ -144,6 +145,10 @@ export const RAIL_GROUPS: RailGroup[] = [
     title: 'REFERENCE',
     icon: 'docs',
     items: [
+      /* The address book and its live code check, moved here from the landing
+         page 2026-09-13. First in REFERENCE: it is the thing the steps above
+         need (a CL_POOL_MANAGER, a registry) and the tables below assume. */
+      { label: 'Deployed contracts', href: '#contracts', spy: true },
       { label: 'Callbacks', href: '#interface', spy: true },
       { label: 'Execution order', href: '#lifecycle', spy: true },
       { label: 'Errors', href: '#errors', spy: true },
@@ -165,9 +170,11 @@ export const RAIL_GROUPS: RailGroup[] = [
     icon: 'settings',
     items: [
       { label: 'Local devnet', href: '#install', spy: false },
-      /* Was "Sepolia deployment", which named one of the two chains #deploy
-         actually lists. The section is plural now; so is the row. */
-      { label: 'Deployments', href: '#deploy', spy: false },
+      /* Was "Sepolia deployment", then a pointer at #deploy's address comments.
+         Those comments were folded into #contracts, the one canonical list, so
+         the row points there. `spy: false` so it does not light alongside
+         REFERENCE's "Deployed contracts" row for the same section. */
+      { label: 'Deployments', href: '#contracts', spy: false },
       { label: 'Keeper', href: '#keeper', spy: true },
       { label: 'Target chains', href: '#chains', spy: true },
       { label: 'Audits', href: '#verify', spy: false },
@@ -184,6 +191,7 @@ export const TOC: TocItem[] = [
   { label: '3 · Encode and deploy', href: '#deploy' },
   { label: '4 · Register the Latch', href: '#register' },
   { label: 'Verification permalink', href: '#verify' },
+  { label: 'Deployed contracts', href: '#contracts' },
   { label: 'Callback reference', href: '#interface' },
   { label: 'Execution order', href: '#lifecycle' },
   { label: 'Common errors', href: '#errors' },
@@ -308,23 +316,20 @@ export const FEE_LATCH_BITMAP = 0x0040
    redeploy it went on printing the RETIRED LatchRegistry (0xE4395085…) and
    RETIRED RevShareHook (0x23CE34E8…) as current. A retired registry still
    answers and looks like an empty marketplace, so a developer pasting it would
-   register into a contract nothing reads. Interpolated, it cannot drift. */
+   register into a contract nothing reads. Interpolated, it cannot drift.
+
+   MERGED INTO #contracts, 2026-09-13. This block used to carry a second,
+   partial address list in shell comments (six Robinhood contracts, four
+   Sepolia). The docs now have ONE canonical contract list — the Deployed
+   contracts section (./ContractBook.tsx), every key in the book with a live
+   code check — so the shell keeps only the one value the generated script
+   reads, CL_POOL_MANAGER, per chain. */
 const RH = DEPLOYMENTS[4663]
 const SEP = DEPLOYMENTS[11155111]
 
-export const DEPLOY_SHELL = `[[com:# Robinhood Chain · 4663 · MAINNET]]
-[[com:#   Vault           ${RH.vault}]]
-[[com:#   CLPoolManager   ${RH.clPoolManager}]]
-[[com:#   BinPoolManager  ${RH.binPoolManager}]]
-[[com:#   LatchRegistry   ${RH.registry}]]
-[[com:#   RevShareHook    ${RH.revShareHook}]]
-[[com:#   Create3Factory  ${RH.create3Factory}]]
-
-[[com:# Ethereum Sepolia · 11155111 · testnet]]
-[[com:#   Vault           ${SEP.vault}]]
-[[com:#   CLPoolManager   ${SEP.clPoolManager}]]
-[[com:#   BinPoolManager  ${SEP.binPoolManager}]]
-[[com:#   Create3Factory  ${SEP.create3Factory}]]
+export const DEPLOY_SHELL = `[[com:# CL_POOL_MANAGER per chain · every other address: Deployed contracts]]
+[[com:#   Robinhood Chain · 4663 · mainnet     ${RH.clPoolManager}]]
+[[com:#   Ethereum Sepolia · 11155111 · testnet ${SEP.clPoolManager}]]
 
 [[com:# the two the generated script actually reads — mainnet shown]]
 [[cmd:export]] PRIVATE_KEY=0x...

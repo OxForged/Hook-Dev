@@ -160,6 +160,11 @@ function ChainTile({ chain }: { chain: ChainRow }) {
  * TSTORE probe against the live network. The grid is derived from
  * packages/sdk/src/chains/endpoints.ts, so it cannot drift from what the SDK
  * will actually connect to.
+ *
+ * UNMOUNTED, and must stay off the landing page in this form: its per-chain
+ * deploy panels render full contract addresses, and since 2026-09-13 every
+ * address belongs in the docs (`/docs#contracts`), not here. Remounting it
+ * means dropping those panels first.
  */
 export function Chains() {
   return (
@@ -297,8 +302,10 @@ export function Team() {
  * right, stacking centred on a phone. Minimal cut, 2026-09-13; the paragraph
  * that sat under the heading is gone, and the band carries no glow.
  *
- * The secondary action opens the contract book: `#contracts` is what mounts it
- * on demand (see ./index.tsx), so this is a real destination, not a dead anchor.
+ * The secondary action is the docs' "Deployed contracts" section. Not "Read the
+ * docs": the primary already goes to /docs, and two buttons to one page is one
+ * button. "Deployed contracts" is the other thing an integrator needs before
+ * an afternoon of work — the addresses — and it lives in the docs now.
  */
 export function CtaPanel() {
   return (
@@ -315,9 +322,9 @@ export function CtaPanel() {
           <Link to={LINKS.docs} className={styles['btnPrimary']}>
             Start integrating
           </Link>
-          <a href={LINKS.contracts} className={styles['btnSecondary']}>
-            All deployed contracts<span aria-hidden="true"> →</span>
-          </a>
+          <Link to={LINKS.contracts} className={styles['btnSecondary']}>
+            Deployed contracts<span aria-hidden="true"> →</span>
+          </Link>
         </div>
       </div>
     </section>
