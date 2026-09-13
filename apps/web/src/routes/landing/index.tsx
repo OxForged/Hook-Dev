@@ -2,6 +2,7 @@ import { Activity } from './Activity'
 import { Audiences } from './Audiences'
 import { FeeChart } from './FeeChart'
 import { Hero } from './Hero'
+import { LiveStrip } from './LiveStrip'
 import { LiquidityFlow } from './LiquidityFlow'
 import { CtaPanel } from './Sections'
 import { SiteFooter } from './SiteFooter'
@@ -68,6 +69,13 @@ export default function LandingPage() {
           again, that is where they are. */}
       <main>
         <Hero />
+        {/* Four O(1) reads that always answer, immediately under the hero: the
+            chain, the head, the fee and the contract count. It sits ABOVE
+            StatsStrip because StatsStrip's two headline counters need a
+            full-history eth_getLogs that the public endpoints refuse, so they
+            render em dashes — and a page whose first figures are dashes reads
+            as broken rather than as honest. This strip answers first. */}
+        <LiveStrip />
         <StatsStrip />
         {/* Directly under the stats: a reader who has just seen "what is live"
             is exactly the one asking "what does it cost". Before the mechanics

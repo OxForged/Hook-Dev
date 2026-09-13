@@ -102,12 +102,16 @@ export const externalLinks: readonly ExternalLink[] = [
   { label: 'Launchpad', href: 'https://peddles.xyz', note: 'peddles.xyz', icon: 'launch' },
   { label: 'PeddleSwap', href: 'https://peddleswap.xyz', note: 'peddleswap.xyz', icon: 'swap' },
   { label: 'PeddleQuest', href: 'https://peddlequest.xyz', note: 'peddlequest.xyz', icon: 'quest' },
-  /* http, not https, as supplied. A page served over https that links to http
-     is a downgrade: some browsers warn, some strip the referrer, and a few
-     block it outright. Left exactly as given rather than silently "corrected"
-     to https, because a guessed scheme that 404s is worse than an honest
-     downgrade — but it is worth fixing at the source. */
-  { label: 'Terminal', href: 'http://peddlex.xyz', note: 'peddlex.xyz', icon: 'terminal' },
+  /* PULLED 2026-09-13: Terminal, `http://peddlex.xyz`.
+     The domain does not resolve — NXDOMAIN on both schemes, so this was never
+     the http-vs-https downgrade the previous comment worried about. It rendered
+     in a wallet-connected sidebar, which is the worst place to hand somebody a
+     link that goes nowhere.
+
+     Restore the line the day the domain answers; the other three all return
+     200, so the group still works without it:
+       { label: 'Terminal', href: 'https://peddlex.xyz', note: 'peddlex.xyz',
+         icon: 'terminal' }, */
 ]
 
 /**

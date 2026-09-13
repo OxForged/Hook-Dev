@@ -48,7 +48,11 @@ function cells(m: ProtocolMetrics): { value: string; label: string }[] {
     { value: m.poolCount === null ? unread : String(m.poolCount), label: 'POOLS INITIALIZED' },
     { value: m.swapCount === null ? unread : String(m.swapCount), label: 'SWAPS EXECUTED' },
     { value: tvlText, label: `${tvl0?.symbol ?? 'TOKEN'} HELD BY THE VAULT` },
-    { value: '1', label: `NETWORK LIVE · ${CHAIN.name.toUpperCase()}` },
+    /* REMOVED, 2026-09-13: `{ value: '1', label: 'NETWORK LIVE · <chain>' }`.
+       A "1" that means "yes" is not a measurement, and it sat in a row of
+       measurements borrowing their authority — the same category error as a
+       placeholder, wearing a number instead of a name. LiveStrip now states
+       the chain as a chain, directly above this. */
   ]
 }
 
@@ -74,7 +78,12 @@ export function StatsStrip() {
       </div>
       <p className={styles['statsNote']}>
         {s.k === 'ready'
-          ? `LIVE FROM ${CHAIN.name.toUpperCase()} · BLOCK ${s.m.latestBlock.toString()}${
+          /* The block moved to LiveStrip, which POLLS it. A height read once at
+             mount and captioned "live" goes stale the moment it paints, and on
+             a chain producing ten blocks a second it is wrong before the
+             animation finishes. This strip counts history; the one above
+             carries what is true now. */
+          ? `SUMMED FROM LOGS ON ${CHAIN.name.toUpperCase()}${
               IS_TESTNET_BUILD ? ' · TESTNET' : ''
             }`
           : s.k === 'error'

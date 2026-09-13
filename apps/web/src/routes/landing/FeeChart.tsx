@@ -62,7 +62,30 @@ type State =
   | { k: 'error'; message: string }
   | { k: 'ready'; tiers: FeeTier[]; splitRatio: number }
 
+/**
+ * The anchor, hoisted out of the component.
+ *
+ * `id="fees"` used to live on the ready-state card, which meant the nav link
+ * pointing at it did nothing during the controller read — every page load has
+ * that window — and never worked at all if the read failed. That is the same
+ * bug as an anchor on an unmounted section, in a form no rule about mounting
+ * would catch: the element is right there in the file, on a branch that may
+ * never execute.
+ *
+ * So the id goes on a wrapper that all three returns share. The rule this
+ * generalises to, worth stating because the next one will look different
+ * again: an anchor target must be on EVERY return of its component, not merely
+ * somewhere in it.
+ */
 export function FeeChart() {
+  return (
+    <section id="fees" aria-label="What a swap costs">
+      <FeeChartBody />
+    </section>
+  )
+}
+
+function FeeChartBody() {
   const [s, setS] = useState<State>({ k: 'loading' })
   const [mode, setMode] = useState<'latch' | 'pancake'>('latch')
   const [hover, setHover] = useState<number | null>(null)
@@ -124,7 +147,7 @@ export function FeeChart() {
   const standard = s.tiers.find((t) => t.lpFee === 3000)
 
   return (
-    <div id="fees" className={styles['feeChartCard']}>
+    <div className={styles['feeChartCard']}>
       <div className={styles['feeChartHead']}>
         <div>
           <h3 className={styles['feeChartTitle']}>What a swap costs, by pool tier</h3>

@@ -1,0 +1,199 @@
+/* ============================================================================
+   Live strip — four cells that prove the protocol is running.
+
+   Every colour, radius, shadow, duration and spacing step is a token from
+   src/styles/tokens.css. There is no literal value in this file, which is the
+   same rule landing.module.css states at its head and the reason both themes
+   work without a second palette here: `light-dark()` is resolved by the token,
+   not by this surface.
+
+   THE FOUR STATES ARE VISUALLY DISTINCT, not just textually. `data-state` on
+   the cell drives `--tone`, and the tone paints the value, the note and the
+   rule beneath the label. A reader glancing at the strip can see that a cell
+   failed without reading a word of it — which matters, because the failure copy
+   is the part people skip.
+   ========================================================================== */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  /* Never wider than the page gutter allows, and never a source of horizontal
+     scroll: the grid below is built from `minmax(0, 1fr)` tracks for the same
+     reason. */
+  width: 100%;
+  min-width: 0;
+}
+
+/* The 1px gap over a hairline ground is the divider — one rule instead of
+   per-cell borders that double up at the seams and need a :last-child reset. */
+.strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-1);
+  /* Clips the cell corners to the card radius. Nothing here scrolls or is
+     positioned outside the box, so `hidden` costs nothing. */
+  overflow: hidden;
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  /* Grid items default to min-content width, which lets one long value push the
+     whole strip wider than the viewport. This is the fix, and it must stay. */
+  min-width: 0;
+  padding: var(--s4) var(--s4) var(--s3);
+  background: var(--panel);
+  /* Default tone: a healthy, readable cell. Every state below only reassigns
+     this one variable. */
+  --tone: var(--ink);
+  --tone-note: var(--muted-ink);
+}
+
+/* ---- the four states, plus ready -----------------------------------------
+   `loading` is dimmed and quiet; the three failures are progressively louder.
+   `unconfigured` is deliberately NOT red: a contract that is deployed and not
+   wired is a fact about the deployment, not a fault. */
+
+.cell[data-state="loading"] {
+  --tone: var(--label-ink);
+  --tone-note: var(--muted-ink);
+}
+
+.cell[data-state="empty"] {
+  --tone: var(--label-ink);
+  --tone-note: var(--muted-ink);
+}
+
+.cell[data-state="unconfigured"] {
+  --tone: var(--warning);
+  --tone-note: var(--muted-ink);
+}
+
+.cell[data-state="error"] {
+  --tone: var(--error);
+  --tone-note: var(--error);
+}
+
+/* ---- contents ------------------------------------------------------------ */
+
+/* Micro-label. Uppercase and tracked, which is the condition tokens.css puts on
+   using --label-ink at this size — the letterforms carry the separation the
+   contrast ratio does not. */
+.label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+}
+
+.valueRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 500;
+  /* Tabular figures: the block height changes every poll and the digits must
+     not reflow the cell while it does. */
+  font-variant-numeric: tabular-nums;
+  color: var(--tone);
+  /* A chain name is a word and may need to break; a number never will. */
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* Provenance or reason, one line of prose per cell. Prose reads at
+   --muted-ink, never --label-ink — see the contrast note in tokens.css. */
+.note {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--tone-note);
+  overflow-wrap: anywhere;
+}
+
+/* ---- the live indicator ---------------------------------------------------
+   Decoration only. It is `aria-hidden` in the markup and it never gates the
+   height's visibility: the number is painted by the same render whether or not
+   this element animates, and whether or not JS is running at all. A section of
+   this page was once hidden by a throttled background tab because content
+   waited on an animation; nothing here waits on anything. */
+.pulse {
+  flex: none;
+  width: var(--s2);
+  height: var(--s2);
+  border-radius: var(--r-pill);
+  background: var(--success);
+  box-shadow: var(--dapp-glow-success);
+  /* The resting state is fully opaque, so a paused, blocked or disabled
+     animation leaves a visible dot rather than an invisible one. */
+  opacity: 1;
+  animation: livePulse 2400ms var(--ease) infinite;
+}
+
+@keyframes livePulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.72);
+  }
+}
+
+/* ---- provenance line ------------------------------------------------------ */
+
+.provenance {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted-ink);
+  max-width: 68ch;
+}
+
+/* ---- responsive -----------------------------------------------------------
+   Two columns from tablet down. The tracks stay `minmax(0, 1fr)` at every
+   width, so a long value wraps inside its cell instead of widening the page. */
+
+@media (max-width: 860px) {
+  .strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .cell {
+    padding: var(--s3);
+  }
+  .value {
+    font-size: 17px;
+    line-height: 24px;
+  }
+}
+
+/* ---- reduced motion -------------------------------------------------------
+   tokens.css already collapses every animation globally, but that block works
+   by shortening the duration — which lands on whichever keyframe happens to be
+   last. Pinning the finished state explicitly means this dot is defined rather
+   than incidental. */
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
