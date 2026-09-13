@@ -47,8 +47,19 @@ export const ROBINHOOD = chainConfig[ROBINHOOD_CHAIN_KEY]!;
 
 export const ROBINHOOD_CHAIN_ID = 4663;
 
-/** LatchProtocolFeeController; wired to both pool managers on 2026-09-12. See header. */
-export const ROBINHOOD_PROTOCOL_FEE_CONTROLLER = "0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c";
+/**
+ * `LatchProtocolFeeControllerV2`, wired to both pool managers on 2026-09-13.
+ *
+ * Replaced V1 (`0x2a03E6E6…154c`), which priced pools correctly and had no function that could
+ * call `collectProtocolFees` — so anything it charged was unreachable. Its stored defaultFee was
+ * (0, 0) throughout, so nothing was.
+ *
+ * V2 takes 25% of the total swap fee: 999 pips on a 0.30% pool. IT CHANGES NOTHING FOR THE
+ * ADAPTER, which reads `protocolFee` off each `Swap` event and never asks the controller — see
+ * the FEE MODEL note in dexs/latch.ts. Recorded here because the harness reports which controller
+ * is in force, and an address that silently goes stale is how a report starts lying.
+ */
+export const ROBINHOOD_PROTOCOL_FEE_CONTROLLER = "0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB";
 
 /** Measured with eth_getCode; see header. */
 export const ROBINHOOD_DEPLOY_BLOCKS = {

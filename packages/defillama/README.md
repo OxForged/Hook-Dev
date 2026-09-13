@@ -82,7 +82,8 @@ never leak into a submitted adapter.
 | Vault | `0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c` | 60122218 |
 | CLPoolManager | `0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66` | **60124455** (`fromBlock`) |
 | BinPoolManager | `0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979` | 60124601 |
-| LatchProtocolFeeController | `0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c` | wired to both managers 2026-09-12 |
+| LatchProtocolFeeControllerV2 | `0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB` | wired to both managers 2026-09-13; takes 25% of the total swap fee |
+| ~~LatchProtocolFeeController~~ (V1) | `0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c` | RETIRED — could not call `collectProtocolFees`; charged nothing (defaultFee was 0,0) |
 | RevShareHook (retired) | `0x23CE34E8199927DD270dddd8579c947542bDE446` | holds the only pool |
 | RevShareHook (current) | `0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2` | no pools yet |
 

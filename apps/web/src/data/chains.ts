@@ -146,7 +146,7 @@ export const ROBINHOOD_CONTRACTS: readonly DeployedContract[] = [
   { name: 'BinPoolManager', address: '0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979' },
   { name: 'CLPoolManagerOwner', address: '0x5D7111d6c624e9a08aE63d342E4baE5878989a67' },
   { name: 'BinPoolManagerOwner', address: '0x98920e33313257Ffd942f94379A7ced216462665' },
-  { name: 'LatchProtocolFeeController', address: '0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c' },
+  { name: 'LatchProtocolFeeControllerV2', address: '0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB' },
   { name: 'LatchRegistry', address: '0xb2c8BB7473A09b0906f192D69e30D7362fA988CC' },
   { name: 'RevShareHook', address: '0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2' },
   { name: 'LatchTimelock · custody 48h', address: '0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119' },
