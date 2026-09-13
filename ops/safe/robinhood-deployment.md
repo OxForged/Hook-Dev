@@ -175,3 +175,60 @@ problem and reads nothing like one; the first diagnosis was wrong twice.
 **`--compilation-profile default` is required** to verify anything in
 `packages/launchpad`, exactly as it already was for periphery. Without it
 Sourcify submission fails with "Ambiguous compilation profiles found in cache".
+
+---
+
+## 2026-09-13 — protocol fee controller V2, and the fee switched on
+
+`LatchProtocolFeeControllerV2` **0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB**
+deploy tx `0x396ff0231364c0ce463e746bfbd6b3302af89f9697adf3a5a75a146fdff5eec4`
+Sourcify: match. Read back on chain after deployment:
+
+| | |
+|---|---|
+| `owner()` | `0x715a6176…3432` (the Safe — constructor argument, never transferred) |
+| `treasury()` | `0x715a6176…3432` |
+| `guardian()` | `0x304b0cc0…c9a9` (disable-only; cannot collect) |
+| `protocolFeeSplitRatio` | `250000` — 25% of the total swap fee |
+| `DYNAMIC_FEE_PIPS` | `999` — every launchpad pool |
+| `feeForLpFee(3000)` | `999` — 0.0999% on the standard tier |
+
+Installed on both managers by Safe batch
+`ops/safe/robinhood-install-fee-controller-v2.json`, verified afterwards:
+`protocolFeeController()` reads `0x9c2c09EF…54aB` on both
+`0xf4A28fA4…2F66` and `0x1bB57b3A…6979`.
+
+**Every pool created from this point pays.** Core stamps the protocol fee into a pool at
+`initialize` and never re-reads the controller, so pools that existed before this — the
+LTT1/LTT2 pool — remain at zero until `syncPoolToPolicy` is called for them individually.
+
+### V1 is retired and must never be pointed at again
+
+`0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c` priced pools correctly and had **no function that
+could call `collectProtocolFees`** — twelve external functions, no collect, no fallback, no
+delegatecall, confirmed against its live bytecode being byte-for-byte identical to its source.
+Anything it charged would have accrued where nobody could withdraw it.
+
+Nothing was lost by it: `collectProtocolFees` evaluates its caller check at COLLECTION time, so
+V2 can sweep any balance that accrued while V1 was installed. Its stored `defaultFee` was
+`(0, 0)` throughout, so in practice nothing did.
+
+### The fee, and where it goes
+
+25% of the total swap fee, against Pancake Infinity's 33% (`ProtocolFeeController.sol:32`):
+
+| LP fee | protocol pips | protocol % | trader pays |
+|---|---|---|---|
+| 0.01% | 33 | 0.0033% | 0.0133% |
+| 0.05% | 166 | 0.0166% | 0.0666% |
+| 0.25% | 832 | 0.0832% | 0.3330% |
+| 0.30% | 999 | 0.0999% | 0.3997% |
+| 1.00% | 3322 | 0.3322% | 1.3289% |
+
+Fees accrue per currency in `protocolFeesAccrued` on the manager; the TOKENS stay in the Vault
+until collected. Two routes out, both landing at the Safe:
+
+- `sweep(poolManager, currency)` — permissionless, pays the stored `treasury`, reverts
+  `NothingToCollect` when empty. This is what the keeper calls.
+- `collect(poolManager, currency, amount, recipient)` — `onlyOwner`, names its own recipient.
+  The manual escape hatch. Never automate it.

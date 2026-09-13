@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "chainId": "4663",
+  "createdAt": 1789264470618,
+  "meta": {
+    "name": "Latch — install protocol fee controller V2 (collectable, 25% split)",
+    "description": "Points both pool managers at LatchProtocolFeeControllerV2 (0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB), replacing V1 (0x2a03E6E6900b9cF93CcC27e3A75a5a95FB4a154c). V1 prices pools correctly and CANNOT WITHDRAW: ProtocolFees.collectProtocolFees admits only the installed controller, and V1 has no function that calls it — confirmed against its live bytecode, which is byte-for-byte identical to its source. Every pip charged under V1 accrues where nobody can reach it. Nothing is lost: the caller check runs at collection time, so V2 can sweep balances banked under V1. V2 also replaces V1's flat pip fee with a 25% share of the total swap fee (Pancake Infinity ships 33%), which is 999 pips on a 0.30% pool — 0.0999%, all-in cost 0.3997% — and scales proportionately to every tier instead of falling through to a flat default. Owner is this Safe, set in V2's constructor and never transferred. Verify after executing: protocolFeeController() on both managers must return 0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB, and feeForLpFee(3000) on V2 must return 999.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+    "checksum": ""
+  },
+  "transactions": [
+    {
+      "to": "0x5D7111d6c624e9a08aE63d342E4baE5878989a67",
+      "value": "0",
+      "data": "0x2d7713890000000000000000000000009c2c09efbdb1726d3563b3f92f9912c9134f54ab",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "CLPoolManagerOwner.setProtocolFeeController(0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB)"
+    },
+    {
+      "to": "0x98920e33313257Ffd942f94379A7ced216462665",
+      "value": "0",
+      "data": "0x2d7713890000000000000000000000009c2c09efbdb1726d3563b3f92f9912c9134f54ab",
+      "contractMethod": null,
+      "contractInputsValues": null,
+      "_comment": "BinPoolManagerOwner.setProtocolFeeController(0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB)"
+    }
+  ]
+}

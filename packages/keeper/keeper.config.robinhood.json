@@ -1,7 +1,9 @@
 {
   "chainId": 4663,
   "notes": "Robinhood Chain mainnet. ONE target: the LTT1/LTT2 pool, bound forever to the RETIRED RevShareHook 0x23CE34E8 (poolKey.hooks is part of the pool id, so it cannot move). The CURRENT hook 0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2 has no pools yet and therefore no target; add one target per pool as pools are configured on it. distributor is null because no epoch distributor is deployed on this chain - the close-epoch job cross-checks that against distributorOf() every tick. rpc.mainnet.chain.robinhood.com, rpc.ordofi.network and the blockscout RPC cap the gas estimator and rate-limit to ~1 req/10s; do not add them as fallbacks.",
-  "rpcUrls": ["https://rpc-robinhood.blockmachine.io"],
+  "rpcUrls": [
+    "https://rpc-robinhood.blockmachine.io"
+  ],
   "maxGas": "2000000",
   "disabledJobs": [],
   "targets": [
@@ -23,5 +25,42 @@
         "parameters": "0x00000000000000000000000000000000000000000000000000000000003c0881"
       }
     }
-  ]
+  ],
+  "feeSweep": {
+    "_comment": "Protocol fee sweeps to the controller's stored treasury (the governance Safe) every 12 hours. `sweep` is PERMISSIONLESS and takes no recipient argument, so this adds NO privilege to the keeper: the worst a stolen keeper key achieves here is paying gas to move Latch's revenue into Latch's own Safe. Never point this at the owner-only `collect`. One entry per (manager, currency) \u2014 fees accrue per currency, and a currency not listed simply accumulates until it is.",
+    "controller": "0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB",
+    "intervalSeconds": 43200,
+    "targets": [
+      {
+        "label": "CL / WETH",
+        "poolManager": "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
+        "currency": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"
+      },
+      {
+        "label": "CL / USDG",
+        "poolManager": "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
+        "currency": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
+      },
+      {
+        "label": "CL / LTT1",
+        "poolManager": "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
+        "currency": "0x2A21c0826848f2D597B7C87A4B931dE1407958A6"
+      },
+      {
+        "label": "CL / LTT2",
+        "poolManager": "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
+        "currency": "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4"
+      },
+      {
+        "label": "BIN / WETH",
+        "poolManager": "0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979",
+        "currency": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"
+      },
+      {
+        "label": "BIN / USDG",
+        "poolManager": "0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979",
+        "currency": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
+      }
+    ]
+  }
 }

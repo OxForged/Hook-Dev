@@ -97,9 +97,22 @@ const SWEEP = {
   ],
 }
 
-test('feeSweep is absent by default — the job is not registered at all', () => {
+test('the tracked Robinhood feeSweep is the live one: V2, 12 hours, every currency', () => {
   const cfg = loadConfig(ROBINHOOD)
-  assert.equal(cfg.feeSweep, undefined)
+  assert.equal(cfg.feeSweep.controller, '0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB')
+  assert.equal(cfg.feeSweep.intervalSeconds, 43200, 'twice a day')
+  // One entry per (manager, currency): a currency not listed accrues invisibly.
+  assert.equal(cfg.feeSweep.targets.length, 6)
+  const managers = new Set(cfg.feeSweep.targets.map((t) => t.poolManager.toLowerCase()))
+  assert.equal(managers.size, 2, 'both pool managers must be swept')
+  for (const t of cfg.feeSweep.targets) {
+    assert.notEqual(t.currency.toLowerCase(), t.poolManager.toLowerCase())
+  }
+})
+
+test('an absent feeSweep means the job is not registered at all', () => {
+  const p = withConfig((c) => { delete c.feeSweep })
+  assert.equal(loadConfig(p).feeSweep, undefined)
 })
 
 test('a valid feeSweep block parses, and the interval defaults later, not here', () => {
