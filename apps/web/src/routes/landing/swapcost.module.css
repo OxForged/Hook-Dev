@@ -1,0 +1,630 @@
+/* ============================================================================
+   Swap cost simulator.
+
+   Every colour, radius, shadow, duration and spacing step is a token from
+   src/styles/tokens.css. There is no literal colour in this file, which is what
+   makes both themes work without a second palette here: `light-dark()` is
+   resolved by the token, not by this surface. Light mode is the warm paper
+   ground (`--void`) with white panels on top of it — not white on white.
+
+   MOTION IS DECORATION ON TOP OF A COMPLETE READING. The only animated
+   properties are `width` on the two bar segments and `transform` on the tier
+   buttons. Both interpolate between two states that are each fully painted, so
+   with JS paused, the tab throttled or transitions disabled the panel still
+   shows every number and the bar still shows the correct proportion. Nothing
+   here is revealed BY an animation — no opacity-from-zero, no
+   IntersectionObserver gate, no `visibility` that motion has to undo.
+
+   The global `prefers-reduced-motion` block in tokens.css already collapses
+   every transition to 0.01ms with `!important`. The block at the foot of this
+   file restates it locally anyway: this surface's motion is proportional to a
+   value the reader is dragging, so it is worth being explicit about where it
+   stops rather than relying on a rule two files away.
+   ========================================================================== */
+
+.section {
+  width: 100%;
+  min-width: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  min-width: 0;
+  padding: var(--s6);
+  background: var(--grad-card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card-lg);
+  box-shadow: var(--shadow-1);
+}
+
+/* ---------------------------------------------------------------- header -- */
+
+.head {
+  display: flex;
+  min-width: 0;
+  gap: var(--s5);
+}
+
+.headText {
+  min-width: 0;
+}
+
+.eyebrow {
+  margin: 0 0 var(--s2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.12em;
+  /* Uppercase and tracked, which is the condition tokens.css attaches to
+     --label-ink: it clears 3:1 but not 4.5:1, so the letterforms have to carry
+     part of the separation. */
+  text-transform: uppercase;
+  color: var(--label-ink);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink-bright);
+}
+
+.accent {
+  color: var(--latch-blue);
+}
+
+.lead {
+  margin: var(--s3) 0 0;
+  max-width: 62ch;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--muted-ink);
+}
+
+/* ---------------------------------------------------------------- notice --
+   Deliberately warn-toned rather than error-toned. A controller that is
+   deployed and not yet wired is a state of the rollout, not a fault, and
+   painting it red would teach a reader to distrust a correct panel. */
+
+.notice {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted-ink);
+  background: var(--dapp-badge-warn-bg);
+  border: 1px solid var(--dapp-badge-warn-border);
+  border-radius: var(--r-sm);
+}
+
+.notice strong {
+  color: var(--ink);
+}
+
+/* -------------------------------------------------------------- controls -- */
+
+.controls {
+  display: grid;
+  /* `minmax(0, …)` on both tracks: grid items default to min-content width, and
+     one long mono figure is enough to push the whole card past the viewport. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s5);
+  min-width: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+  padding: var(--s4);
+  background: var(--panel-alt);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--r-card);
+}
+
+.fieldHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+}
+
+/* ---- provenance chips ----
+   Two chips, two claims, visually distinct on purpose: the rates are a
+   measurement and the size is not. A reader must never have to guess which
+   half of this panel came from a contract. */
+
+.chip {
+  flex: none;
+  padding: 2px var(--s2);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 16px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--hairline);
+}
+
+.chipChain {
+  color: var(--badge-live-ink);
+  background: var(--badge-live-bg);
+  border-color: var(--badge-live-border);
+}
+
+.chipInput {
+  color: var(--muted-ink);
+  background: var(--badge-target-bg);
+  border-color: var(--badge-target-border);
+}
+
+/* ---- size ---- */
+
+.sizeOut {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.sizeValue {
+  font-family: var(--font-mono);
+  font-size: 30px;
+  line-height: 40px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-bright);
+  /* Six orders of magnitude pass through this element; a proportional figure
+     would jitter the unit beside it on every drag frame. */
+  letter-spacing: -0.02em;
+}
+
+.sizeUnit {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted-ink);
+}
+
+.range {
+  width: 100%;
+  min-width: 0;
+  height: var(--s5);
+  margin: 0;
+  accent-color: var(--latch-blue);
+  cursor: pointer;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--muted-ink);
+}
+
+.hint code,
+.compose code,
+.foot code {
+  padding: 1px 4px;
+  font-size: 11px;
+  color: var(--sky-ink);
+  background: var(--code-ground);
+  border-radius: var(--r-micro);
+}
+
+/* ---- tiers ---- */
+
+.tiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.tier {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--s2) var(--s3);
+  text-align: left;
+  cursor: pointer;
+  background: var(--panel);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+
+.tier:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+
+.tierOn {
+  color: var(--sky-ink);
+  background: var(--accent-soft);
+  border-color: var(--latch-blue);
+}
+
+.tierPct {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}
+
+.tierPips {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--label-ink);
+}
+
+/* ------------------------------------------------------------- breakdown -- */
+
+.breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* The 1px gap over a hairline ground draws every divider once, instead of
+     per-cell borders that double at the seams. */
+  gap: 1px;
+  min-width: 0;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  overflow: hidden;
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--s4);
+  background: var(--panel);
+}
+
+.cellStrong {
+  background: var(--deep-panel);
+}
+
+.cellName {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+}
+
+.cellRate {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  line-height: 32px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-bright);
+}
+
+.cellAmount {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-ink);
+  /* Long amounts wrap rather than widening the grid track. */
+  overflow-wrap: anywhere;
+}
+
+.cellWho {
+  margin-top: var(--s1);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--label-ink);
+}
+
+.compose {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted-ink);
+}
+
+.compose strong {
+  color: var(--ink);
+}
+
+/* --------------------------------------------------------- where it goes -- */
+
+.where {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.whereHead {
+  display: flex;
+  min-width: 0;
+}
+
+.bar {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: var(--s5);
+  background: var(--track);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+
+/* The one animated property. Width is interpolated between two complete
+   states; the segment is already at its correct size on first paint. */
+.seg {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  transition: width var(--dur) var(--ease);
+}
+
+.segLp {
+  background: var(--share-lp);
+}
+
+.segProtocol {
+  background: var(--latch-blue);
+}
+
+.legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2) var(--s5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.legend li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.swatch {
+  align-self: center;
+  flex: none;
+  width: var(--s3);
+  height: var(--s3);
+  border-radius: var(--r-micro);
+}
+
+.swatchLp {
+  background: var(--share-lp);
+}
+
+.swatchProtocol {
+  background: var(--latch-blue);
+}
+
+.legendName {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+}
+
+.legendPct {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-bright);
+}
+
+.legendAmt {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-ink);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------- comparison -- */
+
+.compare {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  overflow: hidden;
+}
+
+.compareRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: var(--s3);
+  min-width: 0;
+  padding: var(--s3) var(--s4);
+  background: var(--panel);
+}
+
+.compareRowAlt {
+  background: var(--panel-alt);
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.compareName {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.compareRate,
+.compareAmt {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.compareRate {
+  color: var(--ink-bright);
+}
+
+.compareAmt {
+  color: var(--muted-ink);
+}
+
+.delta {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted-ink);
+  background: var(--accent-soft);
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.delta strong {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--sky-ink);
+}
+
+/* ------------------------------------------------------------ states/foot -- */
+
+.note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted-ink);
+}
+
+.raw {
+  display: inline-block;
+  margin-top: var(--s2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--error);
+  overflow-wrap: anywhere;
+}
+
+.foot {
+  margin: 0;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--hairline-soft);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--label-ink);
+}
+
+.foot strong {
+  color: var(--muted-ink);
+}
+
+/* The live region. Removed from view, never from the accessibility tree —
+   `display: none` and `visibility: hidden` would both silence it. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------------------ responsive --
+   One stacking breakpoint, then a tightening pass for the narrowest phones.
+   The rule everything obeys: no fixed width anywhere, `minmax(0, …)` on every
+   grid track and `min-width: 0` on every flex child, so nothing in this card
+   can push the page into a horizontal scroll at 400px. */
+
+@media (max-width: 900px) {
+  .controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .breakdown {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .card {
+    padding: var(--s4);
+    gap: var(--s4);
+  }
+
+  .title {
+    font-size: 22px;
+    line-height: 28px;
+  }
+
+  .sizeValue {
+    font-size: 24px;
+    line-height: 32px;
+  }
+
+  .legend {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The rate and the amount stop competing with the name for one line. */
+  .compareRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .compareAmt {
+    grid-column: 1 / -1;
+  }
+
+  /* A range input is the one control here that must not shrink: at 400px the
+     card padding is already at its minimum and the track takes what is left. */
+  .range {
+    height: var(--s6);
+  }
+}
+
+/* Restated locally — see the file header for why. */
+@media (prefers-reduced-motion: reduce) {
+  .seg,
+  .tier {
+    transition: none;
+  }
+
+  .tier:hover {
+    transform: none;
+  }
+}

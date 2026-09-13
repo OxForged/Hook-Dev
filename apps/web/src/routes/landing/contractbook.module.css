@@ -1,0 +1,579 @@
+/* ============================================================================
+   Contract book — the address table, and the four states a row can be in.
+
+   NO LITERAL COLOUR IN THIS FILE. Every colour, radius, shadow, duration and
+   spacing step is a token from src/styles/tokens.css, which is what makes both
+   themes work without a second palette here: `light-dark()` is resolved by the
+   token, not by this surface. Light mode is the warm paper ground (`--void`)
+   with white panels, never a flat white.
+
+   THE STATES ARE VISUALLY DISTINCT, NOT JUST TEXTUALLY. `data-state` drives
+   `--tone` and every state paints its own dot and text colour. Colour is never
+   the only carrier though — each state's wording says what it is, so the table
+   survives greyscale, a printout and colour-vision deficiency intact. That
+   matters most for the pair this component exists to keep apart: "no code" and
+   "could not check" are different words as well as different colours.
+
+   ANIMATION IS DECORATION AND NOTHING WAITS ON IT. The only animated thing is
+   the small dot beside a pending check. It rests fully opaque, so a paused
+   tab, a throttled timer or a disabled animation leaves it visible rather than
+   invisible, and no row's text is ever gated on it. There is no
+   IntersectionObserver and no reveal-on-scroll anywhere in this component: the
+   table is painted by the same render whether or not anything animates.
+   ========================================================================== */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  width: 100%;
+  /* Anchors the absolutely-positioned `.sr` elements to this component rather
+     than to the page, so a visually-hidden live region can never park itself
+     somewhere that grows the document. */
+  position: relative;
+  /* Flex and grid children default to min-content width, which is how one long
+     address ends up widening the page. This is the fix and it must stay. */
+  min-width: 0;
+}
+
+/* ---- header --------------------------------------------------------------- */
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.title {
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 600;
+}
+
+.lede {
+  margin: 0;
+  max-width: 74ch;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--muted-ink);
+}
+
+.lede code,
+.note code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--sky-ink);
+  background: var(--code-ground);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--r-micro);
+  padding: 0 var(--s1);
+  /* An address-book key is one token and must never be split across lines. */
+  white-space: nowrap;
+}
+
+/* ---- controls ------------------------------------------------------------- */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  /* Grows to fill, shrinks below its content, never forces the row wider. */
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+/* Micro-label. Uppercase and tracked, which is the condition tokens.css puts
+   on using --label-ink at this size: the letterforms carry the separation that
+   the contrast ratio does not. */
+.fieldLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--label-ink);
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  padding: var(--s2) var(--s3);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 24px;
+  color: var(--ink);
+  background: var(--panel-alt);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-btn);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.input::placeholder {
+  color: var(--label-ink);
+}
+
+.input:hover {
+  border-color: var(--border-hover);
+}
+
+.input:focus-visible {
+  border-color: var(--latch-blue);
+  box-shadow: var(--glow-ring);
+}
+
+.chips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.chip {
+  padding: var(--s1) var(--s3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 20px;
+  letter-spacing: 0.04em;
+  color: var(--pill-ink);
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-border);
+  border-radius: var(--r-chip);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.chip:hover {
+  border-color: var(--border-hover);
+  color: var(--ink);
+}
+
+/* The pressed state is the accessible state: `aria-pressed` is the selector,
+   so the styling cannot drift out of step with what a screen reader announces. */
+.chip[aria-pressed="true"] {
+  color: var(--sky-ink);
+  background: var(--active-nav);
+  border-color: var(--hairline-blue);
+}
+
+.tally {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted-ink);
+  font-variant-numeric: tabular-nums;
+  max-width: 74ch;
+}
+
+/* ---- the not-configured banner -------------------------------------------- */
+
+.banner {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  font-size: 13px;
+  line-height: 20px;
+  border-radius: var(--r-card);
+  color: var(--error);
+  background: var(--dapp-badge-danger-bg);
+  border: 1px solid var(--dapp-badge-danger-border);
+}
+
+/* ---- the table ------------------------------------------------------------
+   The scroller is the insurance policy. At 400px the three columns fit inside
+   it, but if a long endpoint error ever pushes the code column past the
+   viewport it is THIS box that scrolls sideways, never the page. */
+
+.scroller {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-1);
+}
+
+.table {
+  width: 100%;
+  /* Small enough to fit a 400px viewport once the page gutter is taken off. */
+  min-width: 320px;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--s3) var(--s4);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--faint-ink);
+  background: var(--panel-alt);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+.colKey {
+  width: 34%;
+}
+
+.colAddr {
+  width: 40%;
+}
+
+.colCode {
+  width: 26%;
+}
+
+.row {
+  border-bottom: 1px solid var(--hairline-soft);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row:hover {
+  background: var(--panel-alt);
+}
+
+.keyCell,
+.addrCell,
+.codeCell {
+  padding: var(--s3) var(--s4);
+  vertical-align: top;
+  font-weight: 400;
+}
+
+/* ---- key column ----------------------------------------------------------- */
+
+.keyName {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+  /* A key is one identifier; break it anywhere rather than widen the column. */
+  overflow-wrap: anywhere;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  margin-top: var(--s1);
+}
+
+.tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.06em;
+  padding: 0 var(--s2);
+  border-radius: var(--r-badge);
+  white-space: nowrap;
+}
+
+/* Amber, not red: a redeployable contract is not a fault, it is a fact about
+   how the address must be consumed. */
+.tag[data-tag="redeployable"] {
+  color: var(--warning);
+  background: var(--dapp-badge-warn-bg);
+  border: 1px solid var(--dapp-badge-warn-border);
+}
+
+.tag[data-tag="token"] {
+  color: var(--muted-ink);
+  background: var(--dapp-badge-mute-bg);
+  border: 1px solid var(--dapp-badge-mute-border);
+}
+
+/* ---- address column ------------------------------------------------------- */
+
+.addrRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.addr {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--mono-data-ink);
+  overflow-wrap: anywhere;
+}
+
+.addrActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.copy,
+.explorer {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 20px;
+  letter-spacing: 0.04em;
+  padding: 0 var(--s2);
+  border-radius: var(--r-badge);
+  border: 1px solid var(--cta-border);
+  background: var(--panel-alt);
+  color: var(--muted-ink);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.copy:hover,
+.explorer:hover {
+  color: var(--ink);
+  border-color: var(--border-hover);
+}
+
+/* The copy button's three results. `Copy failed` is a real, visible state:
+   navigator.clipboard is undefined outside a secure context and writeText can
+   be rejected, and a tick that appears either way would be a lie about where
+   the address went. */
+.copy[data-result="ok"] {
+  color: var(--success);
+  border-color: var(--dapp-badge-ok-border);
+  background: var(--dapp-badge-ok-bg);
+}
+
+.copy[data-result="fail"] {
+  color: var(--error);
+  border-color: var(--dapp-badge-danger-border);
+  background: var(--dapp-badge-danger-bg);
+}
+
+.explorer {
+  color: var(--signal-blue);
+}
+
+.explorer:hover {
+  color: var(--deep-blue);
+}
+
+/* ---- the check column, and the four states -------------------------------- */
+
+.statusText {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s2);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--tone, var(--muted-ink));
+  overflow-wrap: anywhere;
+}
+
+/* loading — a check that has not answered yet. Quiet, and never a tick. */
+.statusText[data-state="loading"] {
+  --tone: var(--label-ink);
+  --dot-tone: var(--label-ink);
+}
+
+/* ready — the chain answered and there are bytes there. */
+.statusText[data-state="ok"] {
+  --tone: var(--success);
+  --dot-tone: var(--success);
+}
+
+/* empty — the chain answered and the address is EMPTY. A measurement, and a
+   damning one for an address in our own book, so it is amber rather than
+   grey. It is not red: red is reserved for the state below, which is the one
+   people misread. */
+.statusText[data-state="empty"] {
+  --tone: var(--warning);
+  --dot-tone: var(--warning);
+}
+
+/* error — nobody answered. Says nothing about the contract, and is kept
+   visibly apart from `empty` above precisely so the two cannot be confused at
+   a glance. */
+.statusText[data-state="error"] {
+  --tone: var(--error);
+  --dot-tone: var(--error);
+}
+
+/* not-configured — the book records no address, so there was nothing to ask
+   about. Deliberately the quietest of the four: an absent contract is a fact
+   about the deployment, not a fault in it. */
+.statusText[data-state="unconfigured"] {
+  --tone: var(--label-ink);
+  --dot-tone: var(--label-ink);
+  font-style: italic;
+}
+
+.dot {
+  flex: none;
+  align-self: center;
+  width: var(--s2);
+  height: var(--s2);
+  border-radius: var(--r-pill);
+  background: var(--dot-tone, var(--label-ink));
+  /* Resting state is fully opaque, so a paused or disabled animation leaves a
+     visible dot rather than an invisible one. */
+  opacity: 1;
+}
+
+/* Only the pending state animates, and only the dot. */
+.statusText[data-state="loading"] .dot {
+  animation: checkPulse 1600ms var(--ease) infinite;
+}
+
+@keyframes checkPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* ---- empty table ---------------------------------------------------------- */
+
+.emptyCell {
+  padding: var(--s6) var(--s4);
+  text-align: center;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--muted-ink);
+}
+
+/* ---- footer --------------------------------------------------------------- */
+
+.foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.note {
+  margin: 0;
+  max-width: 82ch;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--muted-ink);
+}
+
+.note strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.recheck {
+  padding: var(--s2) var(--s4);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 20px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--panel-alt);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease);
+}
+
+.recheck:hover {
+  border-color: var(--border-hover);
+}
+
+/* ---- screen-reader-only ---------------------------------------------------
+   Carries the FULL address next to its truncated form, so assistive tech reads
+   every character while the eye gets the short version. Never `display: none`,
+   which removes it from the accessibility tree along with the pixels. */
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- responsive -----------------------------------------------------------
+   Down to 400px the table keeps its three columns and simply tightens: the
+   address is already truncated, the key breaks anywhere, and the code column's
+   text wraps. Nothing here can push the PAGE sideways — the scroller above
+   absorbs any overflow. */
+
+@media (max-width: 720px) {
+  .title {
+    font-size: 22px;
+    line-height: 28px;
+  }
+  .colKey,
+  .colAddr,
+  .colCode {
+    width: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .keyCell,
+  .addrCell,
+  .codeCell,
+  .table thead th {
+    padding: var(--s3) var(--s2);
+  }
+  .keyName,
+  .addr {
+    font-size: 12px;
+  }
+  /* The action buttons stack rather than squeezing below a comfortable target;
+     tokens.css already floors them at 44px on coarse pointers. */
+  .addrActions {
+    gap: var(--s1);
+  }
+}
+
+/* ---- reduced motion -------------------------------------------------------
+   tokens.css collapses every animation globally, but it does so by shortening
+   the duration, which lands on whichever keyframe happens to be last. Pinning
+   the finished state here means the dot is defined rather than incidental. */
+
+@media (prefers-reduced-motion: reduce) {
+  .statusText[data-state="loading"] .dot {
+    animation: none;
+    opacity: 1;
+  }
+  .input,
+  .chip,
+  .copy,
+  .explorer,
+  .recheck {
+    transition: none;
+  }
+}

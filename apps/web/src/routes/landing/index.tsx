@@ -1,8 +1,11 @@
 import { Activity } from './Activity'
 import { Audiences } from './Audiences'
+import { ContractBook } from './ContractBook'
 import { FeeChart } from './FeeChart'
 import { Hero } from './Hero'
 import { LiveStrip } from './LiveStrip'
+import { PresetCurve } from './PresetCurve'
+import { SwapCost } from './SwapCost'
 import { LiquidityFlow } from './LiquidityFlow'
 import { CtaPanel } from './Sections'
 import { SiteFooter } from './SiteFooter'
@@ -82,13 +85,35 @@ export default function LandingPage() {
             in LiquidityFlow, because price is the question that decides whether
             they read the mechanics at all. */}
         <FeeChart />
-        <LiquidityFlow />
+        {/* Immediately after the rate chart, because it answers the question
+            that chart leaves open. FeeChart gives the rate per tier; this
+            applies a rate to an amount the reader chooses. Same subject, one
+            step more concrete. */}
+        <SwapCost />
         {/* After the mechanics, before the evidence. A reader who now knows
-            what a swap costs and how the split works is the one asking "so
-            what would I build with it" — and Activity, which is the proof, is
-            more persuasive once they have a reason to want the answer. */}
+            what a swap costs is the one asking "so what would I build with
+            it" — and Activity, which is the proof, is more persuasive once
+            they have a reason to want the answer. */}
         <Audiences />
+        {/* Directly under the launchpad column, which promises presets that
+            admit their limits. This is that promise, drawn: the decay curve
+            from the hook's own formula, with the limitation always on screen. */}
+        <PresetCurve />
+        {/* LiquidityFlow sits HERE rather than beside SwapCost on purpose.
+            Both take a swap size, and two size sliders in adjacent sections
+            reads as one control duplicated rather than two questions. Two
+            sections apart, they are plainly about different layers: SwapCost
+            is core (pool fee plus protocol fee, every rate read from chain),
+            this is the hook layer (a Latch's cut, split three ways, modelled
+            from constants and labelled a model). */}
+        <LiquidityFlow />
         <Activity />
+        {/* Last before the ask, because it is the page's strongest argument
+            and the one a sceptic wants: every address, each independently
+            checkable, with the code check run live. "Read them before you
+            route a swap through them" is only a real invitation if reading
+            them is easy. */}
+        <ContractBook />
         <CtaPanel />
       </main>
       <SiteFooter />
