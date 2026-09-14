@@ -425,6 +425,22 @@ sits on privilege reduction); nothing is retroactive — a launch's split and ta
 creation. A USD-denominated launch fee needs an oracle and is out of scope: the Safe sets wei and
 re-prices by hand.
 
+**Kit v2 decisions, owner, 2026-09-14 ("yes to all"):**
+1. `LaunchpadKit` v2 gains an owner = **Safe**, whose ONLY power is the flat launch fee inside an
+   immutable cap (increases behind a public notice delay, decreases immediate, never retroactive).
+   v1 had no owner; this is a deliberate change, recorded in the Ownership table.
+2. Core protocol fee on kit launch pools: **zeroed per pool by a Safe transaction** on
+   `LatchProtocolFeeControllerV2` (`setPoolFee` before a pool exists, `setPoolProtocolFee` after) until a
+   V3 controller that asks the kit "is this a locked launch?" is built and installed — a 48 h Custody
+   operation. Every kit pool is born dynamic-fee and pays 999 pips unless someone acts: the runbook
+   must zero it in the launch session.
+3. **CL launches ship locked first** (`LatchLPLocker`, CL only). Bin shaped launches follow once a Bin
+   locker exists (Bin shares have no receiver callback; Bin fees compound into reserves) — design in
+   `packages/launchpad/docs/kit-v2-integration.md`.
+4. The redeployed `LaunchGuardHook` **reserves pool ids for the registered kit**, closing the grief
+   where a front-runner claims a predictable launch pool first.
+5. `LatchLPLocker.skim` surplus (tokens sent to the locker by mistake) credits the **protocol**.
+
 **Second revenue line: a hosted API tier.** Indexer, charts, quotes and DexScreener-format token
 metadata served from Latch infrastructure, with a rate-limited free tier and paid API keys. Code
 can be forked; a maintained, indexed data service cannot be copied in an afternoon.
@@ -1062,7 +1078,9 @@ the next person to read these contracts finds no owner, assumes an oversight, an
 | Contract | Role | Assign to | Why |
 |---|---|---|---|
 | `LaunchGuardHook` | *none exists* | **n/a — do not add one** | Extends `BaseCLHook`; the only access control is `onlyPoolManager` on the callbacks. Its one authority is the per-pool `launchOwner`: first-claim, non-transferable, and powerless from `startBlock` onward. A compromised governance key reaches nothing here. Adding an owner to make it look governed would create the risk it does not currently have. |
-| `LaunchpadKit` | *none exists* | **n/a — do not add one** | Not `Ownable`, not `AccessControl`. Every constructor argument is immutable; no withdrawal, no pause, no upgrade, and it custodies nothing between transactions. The trade is real and accepted: no admin key also means no recovery, which is why the deploy scripts assert every argument instead of relying on a fix later. Native sent to it directly is unrecoverable. |
+| `LaunchpadKit` v2 | `owner` | **Safe** | Launch fee ONLY, inside an immutable cap; increases behind notice, decreases immediate. Owner decision 2026-09-14. v1 (`0x2a4C`) has none. |
+| `LatchLPLocker` | *none exists* | **n/a — do not add one** | Immutable split bounds and `protocolRecipient`; no owner, pause or upgrade by design. |
+| `LaunchpadKit` v1 (`0x2a4C`) | *none exists* | **n/a — do not add one** | Not `Ownable`, not `AccessControl`. Every constructor argument is immutable; no withdrawal, no pause, no upgrade, and it custodies nothing between transactions. The trade is real and accepted: no admin key also means no recovery, which is why the deploy scripts assert every argument instead of relying on a fix later. Native sent to it directly is unrecoverable. |
 | `LatchRegistry` listing steward for `LaunchGuardHook` | steward | **Ops** | Metadata only, and `CURATOR_ROLE` can reassign it. This is a runbook item, not a key: list the hook in the same session it is deployed, or a stranger can list the protocol's own hook first, with hostile metadata. |
 
 ### Pool-level — NOT ours, never assign these
