@@ -19,6 +19,8 @@ import { ROUTES } from './routes/table'
  *                              Meant to be linked from a hook author's own site,
  *                              so it must stay readable with no wallet and no
  *                              dapp chrome around it.
+ *   /ecosystem               — public directory of projects building on Latch,
+ *                              in the landing chrome. /app/ecosystem redirects here.
  *
  * Design tokens live in src/styles/tokens.css, transcribed from the spec.
  * Never hardcode a hex, radius or shadow in a component — add it to the spec

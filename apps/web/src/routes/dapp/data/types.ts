@@ -22,9 +22,6 @@ export type Screen =
      funds, which is why it is its own route and not a tab on Pool Detail. */
   | 'swap'
   | 'marketplace'
-  /* Third-party projects building on Latch: /app/ecosystem. A curated file,
-     not a chain read — see data/ecosystem.ts. */
-  | 'ecosystem'
   | 'deploy'
   | 'pool'
   | 'portfolio'

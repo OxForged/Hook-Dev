@@ -1,6 +1,6 @@
 /* ============================================================================
    One ecosystem listing, as a card. Shared by the landing page's "Built on
-   Latch" section and the /app/ecosystem directory, so the two surfaces can
+   Latch" section and the /ecosystem directory, so the two surfaces can
    never disagree about what a listing looks like or what it says.
 
    STRUCTURE from Ink's app directory (large logo tile, badges top-right, name,
@@ -23,15 +23,15 @@
    accessible name that says where it goes.
    ============================================================================ */
 
-import { ChainTag } from '../../../components/ChainTag.tsx'
-import { safeHttpUrl } from './latchModel.ts'
+import { ChainTag } from '../../components/ChainTag.tsx'
+import { safeHttpUrl } from '../dapp/components/latchModel.ts'
 import {
   LATCH_KINDS,
   LISTING_PROVENANCE,
   hostOf,
   monogramFor,
   type EcosystemProject,
-} from '../data/ecosystem.ts'
+} from './data/ecosystem.ts'
 import './ecosystemCard.css'
 
 /** A supplied official asset, or a monogram. Never an approximation of a logo. */

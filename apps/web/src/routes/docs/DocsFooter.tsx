@@ -19,6 +19,7 @@ export default function DocsFooter() {
       </div>
       <nav className="dk-footer__links" aria-label="Footer">
         <Link to="/">Home</Link>
+        <Link to="/ecosystem">Ecosystem</Link>
         <Link to="/brand">Brand Kit</Link>
         <Link to="/app">App</Link>
         <Link to="/privacy">Privacy</Link>

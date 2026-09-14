@@ -2210,16 +2210,16 @@ img.dapp-netchip__mark { object-fit: contain; }
 
 /* ==========================================================================
    ECOSYSTEM — the remaining screen-level pieces (eco-*)
-   The directory cards, marks and submission form moved to the Ecosystem
-   rebuild (`eco2-*`, routes/dapp/ecosystem.css and
-   components/ecosystemCard.css, owned there). What stays here is the page
-   head, the empty state and the legend/how-it-works notes, which that screen
-   still renders. The old `.eco-card*`, `.eco-mark*`, `.eco-facts*`,
-   `.eco-uses`, `.eco-chains`, `.eco-chip*`, `.eco-submit*`, `.eco-field` and
-   `.eco-input` rules were deleted on 2026-09-13 with zero references.
+   The directory is no longer a dapp screen: it is the public page /ecosystem,
+   and its cards, marks, submission form and layout live in routes/ecosystem/
+   (`eco2-*`, directory.css and ecosystemCard.css, owned there). What stays
+   here is the empty state and the legend/how-it-works notes, which that page
+   still renders; this file is global, so they reach it unchanged. The old
+   `.eco-card*`, `.eco-mark*`, `.eco-facts*`, `.eco-uses`, `.eco-chains`,
+   `.eco-chip*`, `.eco-submit*`, `.eco-field` and `.eco-input` rules were
+   deleted on 2026-09-13 with zero references, and `.eco-head` went the same
+   day with the head card it styled.
    ========================================================================== */
-
-.eco-head .dapp-card__head { flex-wrap: wrap; }
 
 /* With zero entries the empty state IS the page, so it is a card — in the
    dashed empty grammar, tile on the left like a card identity row. */

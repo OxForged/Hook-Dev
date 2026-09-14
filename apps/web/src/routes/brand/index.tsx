@@ -30,6 +30,7 @@ export default function BrandKit() {
           <a href="#color">Color</a>
           <a href="#type">Type</a>
           <a href="#embed">Embed</a>
+          <Link to="/ecosystem">Ecosystem</Link>
           <Link to="/docs">Docs</Link>
           <Link to="/app">Launch App</Link>
         </nav>

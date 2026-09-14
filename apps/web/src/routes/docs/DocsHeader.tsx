@@ -11,13 +11,13 @@ type Props = {
 
 /**
  * Sticky docs header: lockup + `DOCS` badge, then
- * Home · Quickstart (active) · Reference · Brand Kit · Launch App.
+ * Home · Quickstart (active) · Reference · Ecosystem · Brand Kit · Launch App.
  *
  * Option B's header: a translucent surface over a blur with one hairline
  * underneath, and a flat primary button. The sheen that used to sweep the
  * pill is gone — B has no decorative motion on actions.
  *
- * Below 1024px the four text links move into the rail drawer and a second
+ * Below 1024px the text links move into the rail drawer and a second
  * header row carries the drawer trigger, so the header never wraps and the
  * sticky offset stays constant.
  */
@@ -42,6 +42,9 @@ export default function DocsHeader({ activeLabel, railOpen, onToggleRail }: Prop
           <a href="#interface" className="dk-nav__link">
             Reference
           </a>
+          <Link to="/ecosystem" className="dk-nav__link">
+            Ecosystem
+          </Link>
           <Link to="/brand" className="dk-nav__link">
             Brand Kit
           </Link>

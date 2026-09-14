@@ -1,9 +1,9 @@
 # Ecosystem directory listing.
 #
 # This form is the submission path for apps/web's ecosystem directory
-# (/app/ecosystem and the landing page's "Built on Latch" section). The site's
+# (/ecosystem and the landing page's "Built on Latch" section). The site's
 # "Submit app" form opens it prefilled via `buildListingIssue()` in
-# apps/web/src/routes/dapp/data/ecosystem.ts. Field `id`s below are the URL
+# apps/web/src/routes/ecosystem/data/ecosystem.ts. Field `id`s below are the URL
 # query parameters that function sets — `LISTING_FIELDS` in that file is the
 # other half of this list. Keep them in step.
 #

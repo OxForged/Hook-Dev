@@ -188,7 +188,7 @@ export interface EcosystemProject {
   /**
    * LOGO SLOT — intentionally empty on every entry until a real asset exists.
    *
-   * Path under `public/ecosystem/` to a mark supplied by the project itself,
+   * Path under `public/project-logos/` to a mark supplied by the project itself,
    * taken as-is from its own site, CDN or GitHub org, with provenance recorded
    * the way `public/chains/SOURCES.md` records chain marks. Never drawn,
    * traced, recoloured or copied from an aggregator. While this is absent the
@@ -231,7 +231,7 @@ export interface EcosystemProject {
  * REPLACE OR REMOVE BEFORE A PUBLIC LAUNCH. Everything else is real: names,
  * taglines and URLs were read from each site's own <title> and og: tags, and
  * the two logos were downloaded as-is from the sites' own brand paths with
- * provenance recorded in public/ecosystem/SOURCES.md.
+ * provenance recorded in public/project-logos/SOURCES.md.
  * ############################################################################
  *
  * The normal path for a real entry is unchanged: merge a listing issue opened
@@ -257,7 +257,7 @@ export const ECOSYSTEM_PROJECTS: readonly EcosystemProject[] = [
        serves a different chain does not carry a stale claim about this one. */
     chains: [ACTIVE_CHAIN_ID],
     addedAt: '2026-09-13',
-    logo: '/ecosystem/peddles.svg',
+    logo: '/project-logos/peddles.svg',
   },
   {
     name: 'PeddleSwap',
@@ -278,7 +278,7 @@ export const ECOSYSTEM_PROJECTS: readonly EcosystemProject[] = [
     /* No `logo` KEY AT ALL, which is the correct output rather than an
        oversight: peddleswap.xyz answers 200 with its app-shell HTML for every
        asset path its own <head> declares, so there is no mark to take. The
-       card renders the typographic monogram. See public/ecosystem/SOURCES.md. */
+       card renders the typographic monogram. See public/project-logos/SOURCES.md. */
   },
   {
     name: 'PeddlesQuest',
@@ -296,7 +296,7 @@ export const ECOSYSTEM_PROJECTS: readonly EcosystemProject[] = [
     /* PLACEHOLDER. */
     chains: [ACTIVE_CHAIN_ID],
     addedAt: '2026-09-13',
-    logo: '/ecosystem/peddlequest.png',
+    logo: '/project-logos/peddlequest.png',
   },
 ]
 

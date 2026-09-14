@@ -13,6 +13,13 @@
    property of the whole surface — it is in the header badge, the count line
    and on every card — rather than a per-entry flag nothing could set.
 
+   WHERE IT LIVES. A public page at /ecosystem (./index.tsx puts it inside the
+   site header and footer), not a dapp screen: a visitor evaluating the
+   protocol should not have to launch the app to see who builds on it. It was
+   /app/ecosystem until 2026-09-13; that path now redirects here. The page
+   title, badge and caveat are rendered by ./index.tsx; everything below them
+   is this component.
+
    THE LAYOUT is Ink's app directory, taken for structure only: search with a
    `/` shortcut, category tabs, two filter menus (Tags = Latch families from
    `uses`, Network = `chains`), "Submit app", and the card grid. The card and
@@ -38,11 +45,15 @@ import {
 } from 'react'
 import { Link } from 'react-router-dom'
 
-import { ChainTag, chainNameFor } from '../../../components/ChainTag.tsx'
-import { BarList } from '../components/charts.tsx'
-import { EcosystemCard } from '../components/EcosystemCard.tsx'
-import { SubmitAppModal } from '../components/SubmitAppModal.tsx'
-import '../components/ecosystemCard.css'
+import { ChainTag, chainNameFor } from '../../components/ChainTag.tsx'
+/* Shared, wallet-free dapp primitives, as the landing, docs and verify pages
+   already use them: the bar chart, its data types and the dapp's path helper. */
+import { BarList } from '../dapp/components/charts.tsx'
+import type { LabelledBar, SeriesColor } from '../dapp/data/types.ts'
+import { dappPath } from '../dapp/paths.ts'
+import { EcosystemCard } from './EcosystemCard.tsx'
+import { SubmitAppButton } from './SubmitAppButton.tsx'
+import './ecosystemCard.css'
 import {
   ECOSYSTEM_ISSUES_REPO,
   ECOSYSTEM_PROJECTS,
@@ -58,10 +69,8 @@ import {
   type EcosystemCategory,
   type EcosystemProject,
   type LatchKind,
-} from '../data/ecosystem.ts'
-import type { LabelledBar, SeriesColor } from '../data/types.ts'
-import { dappPath } from '../paths.ts'
-import '../ecosystem.css'
+} from './data/ecosystem.ts'
+import './directory.css'
 
 /** A keystroke should not interrupt the previous announcement (see Explorer). */
 const ANNOUNCE_DELAY_MS = 700
@@ -425,7 +434,7 @@ function HowItWorks() {
 
 /* ---- the screen ------------------------------------------------------------------ */
 
-export default function Ecosystem() {
+export function Directory() {
   const all = useMemo(() => sortedProjects(ECOSYSTEM_PROJECTS), [])
   const categories = useMemo(() => categoriesListed(all), [all])
   const kinds = useMemo(() => kindsListed(all), [all])
@@ -435,6 +444,7 @@ export default function Ecosystem() {
   const [category, setCategory] = useState<EcosystemCategory | 'all'>('all')
   const [kind, setKind] = useState<LatchKind | 'all'>('all')
   const [chain, setChain] = useState<number | 'all'>('all')
+  /* True while the submission dialog is open; reported by SubmitAppButton. */
   const [submitting, setSubmitting] = useState(false)
 
   const searchRef = useRef<HTMLInputElement>(null)
@@ -530,35 +540,20 @@ export default function Ecosystem() {
   )
 
   const submitButton = (
-    <button type="button" className="eco2-btn" onClick={() => setSubmitting(true)}>
+    <SubmitAppButton className="eco2-btn" onOpenChange={setSubmitting}>
       <span className="eco2-btn__plus" aria-hidden="true">
         +
       </span>
       Submit app
-    </button>
+    </SubmitAppButton>
   )
 
   return (
     <div className="eco2-dir">
-      <section className="dapp-card hx-head eco-head" aria-labelledby="eco-h">
-        <div className="dapp-card__head">
-          <h2 id="eco-h" className="dapp-card__title dapp-card__title--lg">
-            Projects building on Latch
-          </h2>
-          {/* Not a LIVE badge. Nothing on this page is read from chain, and
-              the badge that says so has to be the first thing after the title. */}
-          <span className="dapp-badge dapp-badge--mute">SELF-SUBMITTED · UNVERIFIED</span>
-        </div>
-        {/* The last sentence is the caveat, not padding: without it a
-            directory of names reads as a directory of endorsements. */}
-        <p className="live-note">
-          Teams and products, not contracts — those are on the{' '}
-          <Link to={dappPath('marketplace')}>Marketplace</Link>, read from the registry. Every
-          entry here was written by the project itself and merged as submitted, so a listing says
-          a team asked to be listed. It does not say the integration works, is safe, or is
-          still live.
-        </p>
-      </section>
+      {/* The dapp head card's visible H2, kept for the outline: the page H1
+          in ./index.tsx replaced it on screen, and without it the card names
+          (h3) and the empty state (h3) would sit directly under the H1. */}
+      <h2 className="dapp-sr">Projects building on Latch</h2>
 
       {all.length > 0 && (
         <div className="eco2-dir__toolbar">
@@ -648,13 +643,12 @@ export default function Ecosystem() {
               <Link to={dappPath('marketplace')}>Marketplace</Link>, read from the on-chain
               registry.
             </p>
-            <button
-              type="button"
+            <SubmitAppButton
               className="dapp-btn dapp-btn--primary dapp-btn--sm eco-empty__cta"
-              onClick={() => setSubmitting(true)}
+              onOpenChange={setSubmitting}
             >
               Be the first — submit your app
-            </button>
+            </SubmitAppButton>
           </div>
         </section>
       )}
@@ -692,8 +686,6 @@ export default function Ecosystem() {
         <KindLegend />
         {all.length > 0 && <ChainMix projects={all} />}
       </div>
-
-      {submitting ? <SubmitAppModal onClose={() => setSubmitting(false)} /> : null}
     </div>
   )
 }

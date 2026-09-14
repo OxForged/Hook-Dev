@@ -1,0 +1,79 @@
+/* ============================================================================
+   /ecosystem — the public page's own chrome. Option B.
+
+   THE SECTION BOX IS NOT THIS FILE'S JOB. The column comes from `.section` in
+   landing.module.css (`--b-wrap` wide, `--b-gutter` each side, which the
+   landing `.page` narrows to 20px under 560px), so this page lines up with
+   every other public page to the pixel.
+
+   What is here, and why:
+     · the page header — B's serif H1, the badge, the subtitle and the caveat
+       that the dapp's TopBar and head card used to carry;
+     · what the dapp shell supplied to the directory by inheritance. dapp.css
+       is global, but `.dapp` scopes one custom property, `--dapp-ease`, that
+       `.dapp-card`'s entry animation and `BarList`'s bar transition read.
+       Outside `.dapp` that var is undefined, which invalidates the whole
+       `animation` declaration. landing.module.css, docs.css and
+       verify.module.css each restate it where they host these primitives;
+       this page does the same. (`.dapp`'s font-size, line-height and ink are
+       already set identically by the landing `.page` this page renders in.)
+
+   TOKENS ONLY — every colour, type size and space is a token from
+   src/styles/tokens.css, so both themes resolve through `light-dark()`.
+   ============================================================================ */
+
+.wrap {
+  --dapp-ease: var(--ease);
+}
+
+/* Bottom room above the footer. `.section` carries only top padding because
+   on the landing the next section supplies the gap; here the footer is next.
+   Doubled so it outranks `.section`'s shorthand regardless of stylesheet order. */
+.wrap.wrap {
+  padding-bottom: var(--b-section-pad);
+}
+
+.head {
+  display: grid;
+  gap: var(--s3);
+  margin-bottom: var(--s6);
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s4);
+}
+
+/* B's page title on the column's left edge — the same treatment the legal
+   pages give their H1, not the landing's centred hero measure. */
+.title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: clamp(var(--b-sec-h), 4.2vw, calc(var(--b-sec-h) * 1.5));
+  line-height: var(--b-h1-lh);
+  letter-spacing: var(--b-h1-track);
+  color: var(--ink-bright);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: var(--b-sec-s);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+}
+
+.caveat {
+  max-width: 72ch;
+  margin: 0;
+  font-size: var(--b-caption);
+  line-height: var(--b-body-lh);
+  color: var(--muted-ink);
+  text-wrap: pretty;
+}
+
+.caveat a {
+  color: var(--signal-blue);
+}

@@ -4,16 +4,16 @@
    STRUCTURE from Ink's "Featured apps" section: heading on the left, "View all
    apps" on the right, a grid of cards below. VISUALS are Option B tokens.
 
-   WHY THIS IS ON THE LANDING PAGE AT ALL. The directory at /app/ecosystem is
-   the one place a visitor evaluating the protocol will not look: reaching it
-   means launching an app you have not decided to trust yet. The directory IS
-   the marketing, and the submission form is worthless if the people who would
-   submit never see it.
+   WHY THIS IS ON THE LANDING PAGE AT ALL. The full directory is the public
+   page /ecosystem; this section is its featured preview, for the visitor who
+   never opens the header nav. The directory IS the marketing, and the
+   submission form is worthless if the people who would submit never see it.
 
    ONE SOURCE OF TRUTH, NOT A COPY. The projects, the card and the form are all
-   imported: data/ecosystem.ts, components/EcosystemCard.tsx and
-   components/SubmitAppModal.tsx. A second hand-kept list here would drift
-   within a week, and a visitor cannot tell which surface is stale.
+   imported from routes/ecosystem/: data/ecosystem.ts, EcosystemCard.tsx and
+   SubmitAppButton.tsx (which loads SubmitAppModal.tsx on demand, so the form
+   is not part of this page's first paint). A second hand-kept list here would
+   drift within a week, and a visitor cannot tell which surface is stale.
 
    WHICH CARDS. Only entries with `featured: true` — an editorial choice by
    Latch, documented on the field. Three states, each distinct:
@@ -27,13 +27,13 @@
    ECOSYSTEM_PROJECTS) are why that line has to stay on screen.
    ========================================================================== */
 
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { EcosystemCard } from '../dapp/components/EcosystemCard.tsx'
-import { SubmitAppModal } from '../dapp/components/SubmitAppModal.tsx'
-import { sortedProjects } from '../dapp/data/ecosystem.ts'
 import { dappPath } from '../dapp/paths.ts'
+import { sortedProjects } from '../ecosystem/data/ecosystem.ts'
+import { EcosystemCard } from '../ecosystem/EcosystemCard.tsx'
+import { SubmitAppButton } from '../ecosystem/SubmitAppButton.tsx'
+import { LINKS } from './data'
 import page from './landing.module.css'
 import styles from './ecosystem.module.css'
 import { cx } from './ui'
@@ -44,7 +44,6 @@ const MAX_FEATURED = 6
 export function Ecosystem() {
   const all = sortedProjects()
   const featured = all.filter((p) => p.featured === true).slice(0, MAX_FEATURED)
-  const [submitting, setSubmitting] = useState(false)
 
   return (
     <section
@@ -59,7 +58,7 @@ export function Ecosystem() {
             Built on Latch
           </h2>
         </div>
-        <Link className={styles['viewAll']} to={dappPath('ecosystem')}>
+        <Link className={styles['viewAll']} to={LINKS.ecosystem}>
           View all apps <span aria-hidden="true">→</span>
         </Link>
       </div>
@@ -77,19 +76,19 @@ export function Ecosystem() {
             The directory is open and free. Listing is a GitHub issue, merged as written — there is
             no application and nothing to pay.
           </p>
-          <button type="button" className="eco2-btn eco2-btn--primary" onClick={() => setSubmitting(true)}>
+          <SubmitAppButton className="eco2-btn eco2-btn--primary">
             <span className="eco2-btn__plus" aria-hidden="true">
               +
             </span>
             Submit app
-          </button>
+          </SubmitAppButton>
         </div>
       ) : (
         <>
           {featured.length === 0 ? (
             <p className={styles['none']}>
               No apps are featured right now.{' '}
-              <Link to={dappPath('ecosystem')}>
+              <Link to={LINKS.ecosystem}>
                 Browse all {all.length === 1 ? '1 listed app' : `${all.length} listed apps`}
               </Link>
               .
@@ -108,17 +107,16 @@ export function Ecosystem() {
             <p className={styles['footNote']}>
               Building on Latch? Listing is free — a prefilled GitHub issue, merged as written.
             </p>
-            <button type="button" className="eco2-btn" onClick={() => setSubmitting(true)}>
+            <SubmitAppButton className="eco2-btn">
               <span className="eco2-btn__plus" aria-hidden="true">
                 +
               </span>
               Submit app
-            </button>
+            </SubmitAppButton>
           </div>
         </>
       )}
 
-      {submitting ? <SubmitAppModal onClose={() => setSubmitting(false)} /> : null}
     </section>
   )
 }

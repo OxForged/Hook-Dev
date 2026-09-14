@@ -121,7 +121,7 @@ export default function LeftRail({ activeId, isDrawer, open, onClose }: Props) {
               <span className="dk-rail__title" id="rail-site">
                 SITE
               </span>
-              {/* These three are DESTINATIONS, not headings in this document,
+              {/* These four are DESTINATIONS, not headings in this document,
                   so they take the same icons the dapp sidebar uses for them.
                   That is the one place in the rail where an icon carries
                   information: it says "this leaves the page you are reading". */}
@@ -130,6 +130,12 @@ export default function LeftRail({ activeId, isDrawer, open, onClose }: Props) {
                   <Link to="/" className="dk-rail__link dk-rail__link--site" onClick={handleNav}>
                     <NavIcon name="home" size={15} />
                     Home
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/ecosystem" className="dk-rail__link dk-rail__link--site" onClick={handleNav}>
+                    <NavIcon name="ecosystem" size={15} />
+                    Ecosystem
                   </Link>
                 </li>
                 <li>

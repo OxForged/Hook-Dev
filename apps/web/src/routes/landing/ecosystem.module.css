@@ -4,7 +4,7 @@
    THE SECTION BOX AND HEADING ARE NOT THIS FILE'S JOB. They come from
    `.section`, `.eyebrow`, `.h2` and `.sectionLead` in landing.module.css.
    THE CARD, THE BUTTONS AND THE MODAL ARE NOT EITHER: they are the shared
-   `eco2-` classes in routes/dapp/components/ecosystemCard.css, so the landing
+   `eco2-` classes in routes/ecosystem/ecosystemCard.css, so the landing
    page and the directory render one card.
 
    What is here: the heading row with "View all apps" on the right (Ink's

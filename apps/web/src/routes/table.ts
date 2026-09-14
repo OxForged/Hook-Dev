@@ -29,6 +29,7 @@ export const Brand = lazyRoute(() => import('./brand/index.tsx'))
 export const Privacy = lazyRoute(() => import('./legal/Privacy.tsx'))
 export const Terms = lazyRoute(() => import('./legal/Terms.tsx'))
 export const Verify = lazyRoute(() => import('./verify/index.tsx'))
+export const Ecosystem = lazyRoute(() => import('./ecosystem/index.tsx'))
 
 type RouteEntry = {
   readonly path: string
@@ -50,6 +51,7 @@ export const ROUTES: readonly RouteEntry[] = [
   { path: '/privacy', Component: Privacy, holdFirstPaint: true },
   { path: '/terms', Component: Terms, holdFirstPaint: true },
   { path: '/verify/:hookAddress', Component: Verify, holdFirstPaint: true },
+  { path: '/ecosystem', Component: Ecosystem, holdFirstPaint: true },
 ]
 
 /**

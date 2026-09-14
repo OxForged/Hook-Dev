@@ -100,7 +100,8 @@ export interface NavItem {
  *   `#fees`       FeeChart's section wrapper, rendered on every branch
  *   `#presets`    the wrapper index.tsx puts around PresetCurve
  *   `#ecosystem`  Ecosystem's section, mounted again after FourThings
- *                 (2026-09-13, owner request). Used by MENU_NAV and the footer.
+ *                 (2026-09-13, owner request). No longer linked from the nav
+ *                 or the footer: both point at the `/ecosystem` page instead.
  *
  * "Contracts" LEFT THE BAR, 2026-09-13. The contract book moved to the docs
  * (owner: "contracts need to be on docs not on landing"), and Docs is already
@@ -108,9 +109,18 @@ export interface NavItem {
  * chrome for its own sake. The book is `LINKS.contracts` below; the footer and
  * the CTA band carry it.
  */
+/*
+ * ECOSYSTEM JOINED THE BAR, 2026-09-13 (owner: "ecosystem needs to be on the
+ * navigation and public"). It is a ROUTE, `/ecosystem`, not the `#ecosystem`
+ * section: the directory left the dapp for its own public page, and a route is
+ * the only kind of item `isCurrentPage` can mark current. It sits after the
+ * two landing sections and before Docs: what it costs, how launches behave,
+ * who is building on it, then the reference.
+ */
 export const NAV: readonly NavItem[] = [
   { label: 'Fees', href: '#fees', icon: 'revenue' },
   { label: 'Presets', href: '#presets', icon: 'launch' },
+  { label: 'Ecosystem', href: '/ecosystem', icon: 'ecosystem' },
   { label: 'Docs', href: '/docs', icon: 'docs' },
 ]
 
@@ -121,7 +131,6 @@ export const NAV: readonly NavItem[] = [
  */
 export const MENU_NAV: readonly NavItem[] = [
   ...NAV,
-  { label: 'Ecosystem', href: '#ecosystem', icon: 'ecosystem' },
   { label: 'Brand Kit', href: '/brand', icon: 'brand' },
 ]
 
@@ -146,7 +155,8 @@ export const LINKS = {
   promptDex: `${GITHUB_URL}/latch-sdk/blob/main/prompts/dex-integration.md`,
   promptLaunchpad: `${GITHUB_URL}/latch-sdk/blob/main/prompts/launchpad-integration.md`,
   analytics: '/app/analytics',
-  ecosystem: '/app/ecosystem',
+  /* The public directory page. Was /app/ecosystem, which now redirects here. */
+  ecosystem: '/ecosystem',
   /* The docs' "Deployed contracts" section. A route with a hash, so the chrome
      renders it as a client-side <Link>; docs/hooks.ts `useHashScroll` does the
      scrolling react-router will not. `/#contracts` redirects here. */
@@ -513,11 +523,10 @@ export const FOOTER_GROUPS: readonly FooterGroup[] = [
   },
   {
     title: 'Project',
-    /* `#ecosystem` is the landing section again; its "Open the full directory"
-       action is the route into /app/ecosystem. */
+    /* Ecosystem is the public /ecosystem page, not the landing section. */
     links: [
       { label: 'Launch App', href: LINKS.app },
-      { label: 'Ecosystem', href: '#ecosystem' },
+      { label: 'Ecosystem', href: LINKS.ecosystem },
       { label: 'Brand Kit', href: LINKS.brand },
     ],
   },

@@ -11,8 +11,6 @@
      /app/swap                   Swap — quote and trade through a live pool
      /app/marketplace            Latch Marketplace
      /app/marketplace/:address   Latch Detail — one Latch, in full
-     /app/ecosystem              Ecosystem — third-party projects building on Latch
-                                 (a curated file, not a chain read; see data/ecosystem.ts)
      /app/deploy                 Deploy a Latch
      /app/pool                   Pool Detail
      /app/portfolio              Portfolio
@@ -26,6 +24,10 @@
 
    /app/explorer is not a screen. It is the marketplace's old path, kept purely
    as a redirect to /app/marketplace so shipped links do not break.
+
+   /app/ecosystem is not a screen either. The Ecosystem directory became the
+   public page /ecosystem (routes/ecosystem/) on 2026-09-13; this path is kept
+   only as a redirect there.
 
    EVERY FIGURE RENDERED HERE IS READ FROM CHAIN. There is no placeholder data
    left in this dapp — the mock modules that used to back Pool Detail, Portfolio,
@@ -50,7 +52,6 @@ import Analytics from './screens/Analytics.tsx'
 import Claim from './screens/Claim.tsx'
 import Dashboard from './screens/Dashboard.tsx'
 import Deploy from './screens/Deploy.tsx'
-import Ecosystem from './screens/Ecosystem.tsx'
 import Explorer from './screens/Explorer.tsx'
 import Governance from './screens/Governance.tsx'
 import LatchDetail from './screens/LatchDetail.tsx'
@@ -75,7 +76,6 @@ const SCREEN_BY_SEGMENT: Record<string, Screen> = {
      /app/explorer link still resolves the header and highlights the right nav
      row while the route below redirects it. */
   explorer: 'marketplace',
-  ecosystem: 'ecosystem',
   deploy: 'deploy',
   pool: 'pool',
   portfolio: 'portfolio',
@@ -159,7 +159,10 @@ function Shell() {
             {/* Old path. Redirect rather than delete: the previous nav shipped
                 /app/explorer, and a dead link is worse than a hop. */}
             <Route path="explorer" element={<Navigate to={dappPath('marketplace')} replace />} />
-            <Route path="ecosystem" element={<Ecosystem />} />
+            {/* Moved out of the dapp to the public /ecosystem page. An absolute
+                `to` resolves against the router's basename, so under the GitHub
+                Pages base this lands on /Hook-Dev/ecosystem like every <Link>. */}
+            <Route path="ecosystem" element={<Navigate to="/ecosystem" replace />} />
             <Route path="deploy" element={<Deploy />} />
             <Route path="pool" element={<PoolDetail />} />
             <Route path="portfolio" element={<Portfolio />} />

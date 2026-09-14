@@ -1,10 +1,12 @@
 /* ============================================================================
    Ecosystem card, shared buttons and the "Submit app" modal — plain CSS,
-   prefix `eco2-`, loaded by EcosystemCard.tsx and SubmitAppModal.tsx.
+   prefix `eco2-`, loaded by EcosystemCard.tsx, SubmitAppButton.tsx and
+   SubmitAppModal.tsx.
 
    Plain CSS rather than a module because the same classes render on the
-   landing page (CSS modules) and in the dapp (global CSS); one global file
-   with a private prefix is the only thing both can import unchanged.
+   landing page (CSS modules) and on the /ecosystem directory (global CSS); one
+   global file with a private prefix is the only thing both can import
+   unchanged.
 
    TOKENS ONLY. Every colour, radius, shadow, type size and space is a token
    from src/styles/tokens.css, so both themes resolve through `light-dark()`
@@ -359,6 +361,53 @@
 .eco2-btn__plus {
   font-size: var(--b-panel-h);
   line-height: 1;
+}
+
+/* ---- "Submit app" while its form's chunk loads (SubmitAppButton.tsx) ------
+   `aria-disabled`, not `disabled`, so the opener keeps focus. Doubled class so
+   this outranks both `.eco2-btn:hover:not(:disabled)` and the dapp.css
+   `.dapp-btn:hover:not(:disabled)` lift regardless of stylesheet order. */
+
+.eco2-launch.eco2-launch[aria-disabled="true"],
+.eco2-launch.eco2-launch[aria-disabled="true"]:hover {
+  cursor: progress;
+  opacity: 0.7;
+  box-shadow: none;
+  transform: none;
+}
+
+.eco2-launch__error {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1);
+  font-size: var(--b-label);
+  line-height: 1.5;
+  color: var(--error);
+}
+
+.eco2-launch__retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--signal-blue);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.eco2-launch__retry:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: 2px;
+  border-radius: var(--r-micro);
+}
+
+@media (pointer: coarse) {
+  .eco2-launch__retry {
+    min-height: 44px;
+  }
 }
 
 /* ============================================================================

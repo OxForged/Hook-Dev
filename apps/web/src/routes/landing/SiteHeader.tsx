@@ -69,12 +69,13 @@ function NavItemLink({
 }
 
 /**
- * A1. Sticky translucent header, shared by the landing page, the legal pages
- * and the verify page.
+ * A1. Sticky translucent header, shared by the landing page, the legal pages,
+ * the verify page and the ecosystem directory.
  *
  * OPTION B, MINIMAL CUT (2026-09-13): a 64px bar inside the content column —
- * lockup, three text-only links (Contracts left for the docs, 2026-09-13; see
- * NAV in ./data.ts), the theme control, and Launch App as the only
+ * lockup, four text-only links (Contracts left for the docs and Ecosystem
+ * joined as a page, both 2026-09-13; see NAV in ./data.ts), the theme
+ * control, and Launch App as the only
  * filled element. Nothing else competes with the primary action.
  *
  * WHAT LEFT THE BAR, AND WHERE IT WENT

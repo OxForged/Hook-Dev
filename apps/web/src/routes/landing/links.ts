@@ -1,8 +1,8 @@
 /**
  * Link classification for the shared site chrome.
  *
- * `SiteHeader` and `SiteFooter` are rendered by `/`, `/privacy`, `/terms` and
- * `/verify`, not only by the landing page, and the three kinds of href they
+ * `SiteHeader` and `SiteFooter` are rendered by `/`, `/privacy`, `/terms`,
+ * `/verify` and `/ecosystem`, not only by the landing page, and the three kinds of href they
  * carry each behave differently once you are off `/`:
  *
  *   external  `https://…`  — must open in a new tab, never through <Link>,

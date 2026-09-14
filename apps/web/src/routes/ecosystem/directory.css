@@ -1,14 +1,17 @@
 /* ============================================================================
-   /app/ecosystem — directory-specific layout. Imported by screens/Ecosystem.tsx.
+   /ecosystem — directory-specific layout. Imported by ./Directory.tsx.
 
    STRUCTURE from Ink's app directory: a search field with a `/` shortcut, a
    row of category tabs that scrolls on its own when it overflows, two filter
    menus and "Submit app" on the right, then the card grid. VISUALS are
    Option B tokens.
 
-   Not here: the card, the buttons and the modal (components/ecosystemCard.css,
-   shared with the landing page), and the head card, count line, legend and
-   empty-state chrome, which are dapp.css classes this screen reuses unchanged.
+   Not here: the card, the buttons and the modal (./ecosystemCard.css, shared
+   with the landing page); the page header and what the dapp shell used to
+   supply by inheritance (./page.module.css); and the count line, legend,
+   panels and empty-state chrome, which are global dapp.css classes this page
+   reuses unchanged. None of those dapp.css rules is scoped under a dapp shell
+   ancestor, so they apply here as they did inside /app.
 
    TOKENS ONLY. Every colour, radius, shadow, type size and space is a token
    from src/styles/tokens.css, so both themes resolve through `light-dark()`.

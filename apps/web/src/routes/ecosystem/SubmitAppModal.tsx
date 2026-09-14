@@ -1,6 +1,7 @@
 /* ============================================================================
    "Submit app" — the listing form, shared by the landing page and the
-   /app/ecosystem directory.
+   /ecosystem directory. Never imported statically: SubmitAppButton.tsx
+   fetches this module on demand, so it stays out of both pages' first paint.
 
    THE SITE IS STATIC. It is served from GitHub Pages and has no backend, so
    this form stores nothing, uploads nothing and sends nothing. Its only output
@@ -43,8 +44,8 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 
-import { ChainTag } from '../../../components/ChainTag.tsx'
-import { CHAIN_ROWS } from '../../../data/chains.ts'
+import { ChainTag } from '../../components/ChainTag.tsx'
+import { CHAIN_ROWS } from '../../data/chains.ts'
 import {
   CATEGORY_OTHER,
   ECOSYSTEM_CATEGORIES,
@@ -58,7 +59,7 @@ import {
   type EcosystemCategory,
   type LatchKind,
   type ListingIcon,
-} from '../data/ecosystem.ts'
+} from './data/ecosystem.ts'
 import './ecosystemCard.css'
 
 /* ---- validation ------------------------------------------------------------ */
@@ -169,7 +170,7 @@ function validate(v: FormValues): Partial<Record<FieldKey, string>> {
 /* ---- icon ------------------------------------------------------------------ */
 
 /**
- * The formats public/ecosystem/SOURCES.md records: an SVG (preferred — the
+ * The formats public/project-logos/SOURCES.md records: an SVG (preferred — the
  * Peddles mark) or a PNG where a site publishes no SVG (PeddlesQuest). Anything
  * else is refused here rather than accepted and rejected at merge.
  */

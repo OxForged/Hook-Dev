@@ -40,7 +40,7 @@ export interface NavItem {
  * WHY THERE IS NO `soon` FLAG ON `NavItem`, and why nothing here is badged.
  *
  * The restyle brief called for a right-aligned SOON badge on rows that are not
- * yet available. Every one of these twelve rows resolves to a screen that reads
+ * yet available. Every one of these eleven rows resolves to a screen that reads
  * the live deployment: Swap builds real router calldata, Deploy sends a real
  * `register` transaction, and Revenue Share and Claim both resolve a
  * `RevShareHook` from `DEPLOYMENTS` on either chain. There is nothing here to
@@ -117,12 +117,12 @@ export const externalLinks: readonly ExternalLink[] = [
 /**
  * SCREENS.md § C: sidebar nav order, now in five blocks instead of one run.
  *
- * WHY GROUP AT ALL. Twelve equal rows is a list you read from the top every
+ * WHY GROUP AT ALL. Eleven equal rows is a list you read from the top every
  * time, because nothing in it tells you where to stop looking. The headings do
  * not add information about any single row — they tell you which four rows you
  * can ignore, which is the whole job of a nav column that no longer fits on one
  * glance. They are also what pays for the taller rows: a labelled block of
- * three scans faster than an unlabelled run of twelve, so the extra height buys
+ * three scans faster than an unlabelled run of eleven, so the extra height buys
  * something rather than just spending the column.
  *
  * THE GROUPS, AND THE QUESTION EACH ONE ANSWERS.
@@ -131,9 +131,9 @@ export const externalLinks: readonly ExternalLink[] = [
  *                 to do. Deliberately above the first heading rather than
  *                 inside a "General" group: they are not a category, they are
  *                 the two rows that must never be hunted for.
- *   Latches       Which Latches exist, how to publish one, and who is shipping
- *                 them. The product noun, and everything about the artefact
- *                 itself rather than about a pool or an address.
+ *   Latches       Which Latches exist and how to publish one. The product
+ *                 noun, and everything about the artefact itself rather than
+ *                 about a pool or an address.
  *   Liquidity     One pool's live state, and the positions the connected
  *                 address holds in pools. Both are "what is in the Vault".
  *   Revenue       What a RevShareHook has taken and what it owes an address.
@@ -143,9 +143,9 @@ export const externalLinks: readonly ExternalLink[] = [
  *                 chain and endpoints this build is talking to. The three rows
  *                 nobody visits mid-task.
  *
- * Nothing is grouped alone. Ecosystem moved one row later (it now follows
- * Deploy rather than preceding it) because "browse, publish, then see who
- * else has" is the order a reader walks that block in; no other row moved.
+ * Nothing is grouped alone. Ecosystem LEFT the dapp on 2026-09-13: the
+ * directory of teams building on Latch is the public page /ecosystem, reached
+ * from the site header and footer, and /app/ecosystem redirects there.
  */
 const navGroups: readonly NavGroup[] = [
   {
@@ -163,7 +163,6 @@ const navGroups: readonly NavGroup[] = [
     items: [
       { screen: 'marketplace', label: 'Latch Marketplace', path: 'marketplace', icon: 'explorer' },
       { screen: 'deploy', label: 'Deploy a Latch', path: 'deploy', icon: 'deploy' },
-      { screen: 'ecosystem', label: 'Ecosystem', path: 'ecosystem', icon: 'ecosystem' },
     ],
   },
   {
@@ -208,9 +207,6 @@ const meta: Record<Screen, ScreenMeta> = {
     title: 'Latch Marketplace',
     subtitle: `On-chain registry · ${DEPLOYMENTS[ACTIVE_CHAIN_ID].name}`,
   },
-  /* Not a chain read and the subtitle says so — the one screen in the dapp whose
-     data is a curated file, submitted by the projects themselves. */
-  ecosystem: { title: 'Ecosystem', subtitle: 'Projects building on Latch · self-submitted, not verified' },
   deploy: { title: 'Deploy a Latch', subtitle: 'List a Latch in the on-chain registry' },
   /* No pair or fee here any more. This meta is static, and the screen reads the
      real pair, fee and vault balances off chain — a hardcoded "ETH / USDC · 0.05%"
