@@ -441,6 +441,14 @@ re-prices by hand.
    where a front-runner claims a predictable launch pool first.
 5. `LatchLPLocker.skim` surplus (tokens sent to the locker by mistake) credits the **protocol**.
 
+**Treasury conversion, owner decision 2026-09-14.** Protocol revenue arrives as a basket of pool
+tokens; only the kit launch fee is native. It is converted to **native ETH**, and ONLY for tokens on
+an owner-approved **allowlist** — launch-token and memecoin revenue is held, never sold, because
+selling into thin launch pools moves their price and reads badly for the projects building on
+Latch. Conversions route through **Latch pools only** (Infinity-only), so a token with no Latch
+route to ETH is simply not convertible yet. Nothing executes automatically: the admin panel builds
+a quoted, slippage-bounded, simulated Safe batch that the Safe owners sign. No key anywhere.
+
 **Second revenue line: a hosted API tier.** Indexer, charts, quotes and DexScreener-format token
 metadata served from Latch infrastructure, with a rate-limited free tier and paid API keys. Code
 can be forked; a maintained, indexed data service cannot be copied in an afternoon.
