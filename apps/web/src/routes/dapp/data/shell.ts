@@ -230,7 +230,7 @@ const meta: Record<Screen, ScreenMeta> = {
   governance: { title: 'Governance', subtitle: 'The Safe, both timelocks, and every queued operation' },
   /* Not "Account and API access": there is no account system and no Latch API.
      The screen itself says so — a subtitle promising both contradicted it. */
-  settings: { title: 'Settings', subtitle: 'Networks, RPC endpoints and build configuration' },
+  settings: { title: 'Settings', subtitle: 'Appearance, network and connection' },
 }
 
 export function loadShell(): ShellData {

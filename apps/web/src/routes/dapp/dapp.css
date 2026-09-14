@@ -3471,3 +3471,22 @@ img.dapp-netchip__mark { object-fit: contain; }
   padding-bottom: 0;
   animation: none;
 }
+
+/* ---- Settings, minimal (2026-09-14) -------------------------------------- */
+
+.set-push { margin-left: auto; }
+.set-gap { margin: var(--s3) 0 0; }
+.set-gap a { color: var(--latch-blue); }
+.set-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.set-actions .dapp-btn { display: inline-flex; align-items: center; gap: var(--s2); }
+.set-dot { background: var(--muted-ink); }
+.set-dot.is-live { background: var(--success); animation: live-pulse 1.6s ease-in-out infinite; }
+.set-kpis { margin: var(--s4) 0; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
+/* Re-keyed on every new head, so the number rises into place each block. */
+.set-tick { display: inline-block; animation: dapp-fade 0.45s var(--dapp-ease, ease-out) both; }
+.set-charts { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); align-items: start; }
+.set-of { font-size: var(--b-label); font-weight: 500; color: var(--muted-ink); letter-spacing: 0; }
+.set-row { border-bottom: 0; padding-bottom: 0; }
+.set-coverage { gap: var(--s4); }
+.set-coverage .dapp-donut { flex: 0 0 96px; width: 96px; }
+.dapp-pref.set-net { flex-direction: row; flex-wrap: nowrap; align-items: center; }
