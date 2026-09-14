@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeBitmap, flagTable, toBinaryLiteral } from "../src/services/permissions.service.js";
+import { describeBitmap, flagTable, toBinaryLiteral } from "../src/lib/permissions.js";
 
 /**
  * These assertions pin the bit layout to the Solidity constants in

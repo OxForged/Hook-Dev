@@ -3,31 +3,25 @@ import { env, isProduction } from "../config/env.js";
 import { logger } from "../config/logger.js";
 
 /**
- * One Prisma client per process. In watch mode `tsx` re-evaluates modules on
- * change, so the instance is stashed on `globalThis` to avoid leaking a
- * connection pool per reload.
+ * One Prisma client per process. Query logging is OFF: a logged query carries
+ * parameter values, and those include API-key hashes and session ids.
  */
-const globalForPrisma = globalThis as unknown as { __hpPrisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as { __latchPrisma?: PrismaClient };
 
 export const prisma: PrismaClient =
-  globalForPrisma.__hpPrisma ??
+  globalForPrisma.__latchPrisma ??
   new PrismaClient({
     datasources: { db: { url: env.DATABASE_URL } },
-    log: isProduction
-      ? [{ emit: "event", level: "error" }]
-      : [
-          { emit: "event", level: "error" },
-          { emit: "event", level: "warn" },
-        ],
+    log: [{ emit: "event", level: "error" }],
   });
 
-prisma.$on("error" as never, (e: unknown) => logger.error({ prisma: e }, "prisma error"));
+prisma.$on("error" as never, (e: { message?: string; target?: string }) =>
+  // `message` can embed SQL parameters; keep the target only.
+  logger.error({ target: e?.target }, "prisma error"),
+);
 
-if (!isProduction) {
-  globalForPrisma.__hpPrisma = prisma;
-}
+if (!isProduction) globalForPrisma.__latchPrisma = prisma;
 
-/** Cheap liveness probe for the readiness endpoint. */
 export async function pingDatabase(): Promise<void> {
   await prisma.$queryRaw`SELECT 1`;
 }

@@ -3,51 +3,48 @@ import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
 
 /**
- * Two Redis connections, deliberately.
+ * Redis connections, created on first use (so importing a module that might
+ * touch Redis does not open a socket — the unit tests rely on that).
  *
- * BullMQ requires `maxRetriesPerRequest: null` and takes ownership of its
- * connection's blocking commands, so sharing one client between the job queue
- * and the response cache makes cache reads stall behind a blocking BRPOPLPUSH.
- * Keep them separate.
+ * Two connections, deliberately: BullMQ needs `maxRetriesPerRequest: null` and
+ * owns blocking commands on its connection; the cache/rate-limit client must not
+ * stall behind them.
  */
 
-const BASE_OPTIONS: RedisOptions = {
-  lazyConnect: false,
+const BASE: RedisOptions = {
   enableReadyCheck: true,
   retryStrategy: (times) => Math.min(times * 200, 5_000),
 };
 
+let cache: Redis | undefined;
+let queue: Redis | undefined;
+
 function create(name: string, options: RedisOptions): Redis {
-  const client = new Redis(env.REDIS_URL, { ...BASE_OPTIONS, ...options, connectionName: name });
-  client.on("error", (err) => logger.warn({ err, name }, "redis connection error"));
-  client.on("ready", () => logger.debug({ name }, "redis ready"));
+  const client = new Redis(env.REDIS_URL, { ...BASE, ...options, connectionName: name });
+  // The error object from ioredis can include the connection string; log the code only.
+  client.on("error", (err: NodeJS.ErrnoException) =>
+    logger.warn({ name, code: err.code ?? "unknown" }, "redis connection error"),
+  );
   return client;
 }
 
-const globalForRedis = globalThis as unknown as {
-  __hpCacheRedis?: Redis;
-  __hpQueueRedis?: Redis;
-};
+export function cacheRedis(): Redis {
+  cache ??= create("latch-cache", { maxRetriesPerRequest: 1, commandTimeout: 1_000 });
+  return cache;
+}
 
-/** General-purpose cache connection. */
-export const cacheRedis: Redis = globalForRedis.__hpCacheRedis ?? create("hp-cache", {});
-
-/** Connection handed to BullMQ queues and workers. */
-export const queueRedis: Redis =
-  globalForRedis.__hpQueueRedis ??
-  create("hp-queue", {
-    // Required by BullMQ: it must be allowed to block indefinitely.
-    maxRetriesPerRequest: null,
-  });
-
-globalForRedis.__hpCacheRedis = cacheRedis;
-globalForRedis.__hpQueueRedis = queueRedis;
+export function queueRedis(): Redis {
+  queue ??= create("latch-queue", { maxRetriesPerRequest: null });
+  return queue;
+}
 
 export async function pingRedis(): Promise<void> {
-  const pong = await cacheRedis.ping();
-  if (pong !== "PONG") throw new Error(`Unexpected Redis PING response: ${pong}`);
+  const pong = await cacheRedis().ping();
+  if (pong !== "PONG") throw new Error("unexpected PING response");
 }
 
 export async function disconnectRedis(): Promise<void> {
-  await Promise.allSettled([cacheRedis.quit(), queueRedis.quit()]);
+  await Promise.allSettled([cache?.quit(), queue?.quit()]);
+  cache = undefined;
+  queue = undefined;
 }

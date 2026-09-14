@@ -1,510 +1,317 @@
-import { decodeProtocolFee, decodeProtocolLog, descriptorsForTopic } from "@latchprotocol/sdk";
+import { decodeBinPoolParameters, decodeCLPoolParameters, decodeProtocolLog } from "@latchprotocol/sdk";
 import { decodeEventLog, type Hex } from "viem";
-import { logger } from "../config/logger.js";
-import {
-  FEE_CONTROLLER_EVENTS_ABI,
-  isSdkRole,
-  normalizeAddress,
-  type ContractRole,
-} from "./contracts.js";
-import type { RawLog } from "./provider/types.js";
+import { COLLECT_SELECTOR, HAZARD_SELECTORS, KNOWN_SELECTORS, SWEEP_SELECTOR } from "./abis.js";
+import { abiForRole, type WatchRole } from "./deployments.js";
 
 /**
- * Log -> domain event.
+ * Log -> typed indexer event. Pure: no I/O, no clock, no database.
  *
- * Decoding is ALWAYS driven by `(chainId, contractRole, topic0)`, never by
- * topic0 alone. See the collision note in ./contracts.ts: `ProtocolFeeUpdated`,
- * `Paused`, `Unpaused`, `OwnershipTransferred`, `ProtocolFeeControllerUpdated`
- * and `DynamicLPFeeUpdated` are byte-identical across contracts, so a
- * topic0-keyed dispatch would merge CL and bin activity into one bucket.
- *
- * The caller resolves an emitting address to a role (from the Chain's recorded
- * deployment addresses) and passes it in; a log from an unknown address is
- * never decoded.
+ * Decoding is keyed on (emitting address -> role), never on topic0 alone:
+ * ProtocolFeeUpdated, DynamicLPFeeUpdated, OwnershipTransferred and friends are
+ * byte-identical across Latch contracts, and a third-party contract can emit any
+ * signature we index. A log from an address with no role is never decoded.
  */
 
-export type PoolTypeName = "CL" | "BIN";
-
-export interface EventMeta {
-  readonly chainId: number;
-  readonly role: ContractRole;
-  /** Emitting contract, lowercased. Persisted on every row. */
-  readonly contract: Hex;
-  readonly topic0: Hex;
-  readonly txHash: Hex;
+/** A log as fetched, before timestamps are joined. */
+export interface RawLog {
+  readonly address: Hex;
+  readonly topics: readonly Hex[];
+  readonly data: Hex;
   readonly blockNumber: bigint;
-  readonly blockTimestamp: Date;
+  readonly blockHash: Hex;
+  readonly transactionHash: Hex;
+  readonly transactionIndex: number;
   readonly logIndex: number;
-  /** `${chainId}-${txHash}-${logIndex}` — the primary key of the event row. */
+}
+
+export interface LogMeta {
+  readonly chainId: number;
+  readonly role: WatchRole;
+  /** `${chainId}-${txHash}-${logIndex}` */
   readonly id: string;
+  readonly contract: Hex;
+  readonly blockNumber: bigint;
+  readonly txHash: Hex;
+  readonly txIndex: number;
+  readonly logIndex: number;
 }
 
-export interface PoolInitializedEvent {
-  readonly kind: "PoolInitialized";
-  readonly meta: EventMeta;
-  readonly poolType: PoolTypeName;
-  readonly poolId: Hex;
-  readonly currency0: Hex;
-  readonly currency1: Hex;
-  readonly hooks: Hex;
-  readonly fee: number;
-  readonly parameters: Hex;
-  /** CL only. */
-  readonly sqrtPriceX96?: bigint;
-  /** CL only. */
-  readonly tick?: number;
-  /** Bin only. */
-  readonly activeId?: number;
+export type IndexedEvent =
+  | { kind: "PoolInitialized"; meta: LogMeta; poolType: "CL" | "BIN"; poolId: Hex; currency0: Hex; currency1: Hex; hooks: Hex; fee: number; parameters: Hex; hookBitmap: number; tickSpacing: number | null; binStep: number | null; sqrtPriceX96: bigint | null; tick: number | null; activeId: number | null }
+  | { kind: "Swap"; meta: LogMeta; poolType: "CL" | "BIN"; poolId: Hex; sender: Hex; amount0: bigint; amount1: bigint; fee: number; protocolFee: number; sqrtPriceX96: bigint | null; liquidity: bigint | null; tick: number | null; activeId: number | null }
+  | { kind: "Liquidity"; meta: LogMeta; poolId: Hex; liquidityKind: "MODIFY" | "MINT" | "BURN"; sender: Hex; salt: Hex; tickLower: number | null; tickUpper: number | null; liquidityDelta: bigint | null; binIds: string[]; packedAmounts: Hex[] }
+  | { kind: "PoolFeeUpdate"; meta: LogMeta; poolId: Hex; feeKind: "PROTOCOL_FEE" | "DYNAMIC_LP_FEE"; value: number }
+  | { kind: "RevShareTaken"; meta: LogMeta; poolId: Hex; currency: Hex; lpDonated: bigint; toBeneficiaries: bigint; toDistributor: bigint }
+  | { kind: "RevShareClaimed"; meta: LogMeta; beneficiary: Hex; currency: Hex; to: Hex; amount: bigint }
+  | { kind: "ProtocolFeesCollected"; meta: LogMeta; poolManager: Hex; currency: Hex; recipient: Hex; amount: bigint }
+  | { kind: "LaunchCreated"; meta: LogMeta; poolId: Hex; launchToken: Hex; operator: Hex; quoteToken: Hex; startContractBlock: bigint; decayContractBlocks: number; initialFeeBips: number; finalFeeBips: number; maxBuyPerTx: bigint; launchTokenIsCurrency0: boolean; preset: number }
+  | { kind: "Timelock"; meta: LogMeta; eventName: string; operationId: Hex | null; callIndex: number | null; target: Hex | null; value: bigint | null; data: Hex | null; predecessor: Hex | null; delaySeconds: bigint | null }
+  | { kind: "Generic"; meta: LogMeta; eventName: string; subject: string | null; args: Record<string, unknown> };
+
+export type DecodeResult =
+  | { ok: true; event: IndexedEvent }
+  | { ok: false; reason: "unknown-signature" | "not-indexed" | "malformed"; eventName?: string };
+
+const lowerHex = (v: unknown): Hex => String(v).toLowerCase() as Hex;
+const big = (v: unknown): bigint => (typeof v === "bigint" ? v : BigInt(String(v)));
+const num = (v: unknown): number => Number(v);
+
+const CORE_CONTRACT: Partial<Record<WatchRole, "Vault" | "CLPoolManager" | "BinPoolManager">> = {
+  vault: "Vault",
+  clPoolManager: "CLPoolManager",
+  binPoolManager: "BinPoolManager",
+};
+
+export function logId(chainId: number, txHash: string, logIndex: number): string {
+  return `${chainId}-${txHash.toLowerCase()}-${logIndex}`;
 }
 
-export interface SwapEvent {
-  readonly kind: "Swap";
-  readonly meta: EventMeta;
-  readonly poolType: PoolTypeName;
-  readonly poolId: Hex;
-  readonly sender: Hex;
-  readonly amount0: bigint;
-  readonly amount1: bigint;
-  readonly fee: number;
-  readonly protocolFee: number;
-  readonly sqrtPriceX96?: bigint;
-  readonly tick?: number;
-  readonly liquidity?: bigint;
-  readonly activeId?: number;
+/** Integers -> decimal strings, recursively, so `args` is JSON-safe with no precision loss. */
+export function jsonArgs(value: unknown): unknown {
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value)) return value.map(jsonArgs);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, jsonArgs(v)]));
+  }
+  if (typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value)) return value.toLowerCase();
+  return value;
 }
 
-export interface LiquidityChangeEvent {
-  readonly kind: "LiquidityChange";
-  readonly meta: EventMeta;
-  readonly poolType: PoolTypeName;
-  readonly poolId: Hex;
-  readonly changeType: "ADD" | "REMOVE";
-  readonly sender: Hex;
-  readonly salt: Hex;
-  readonly tickLower?: number;
-  readonly tickUpper?: number;
-  readonly liquidityDelta?: bigint;
-  readonly binIds?: bigint[];
-  /**
-   * Packed per-bin amounts, kept as opaque 32-byte words.
-   *
-   * `Mint`/`Burn` emit `bytes32[] amounts` where each word packs an
-   * (amount0, amount1) pair under `PackedUint128Math`. The packing is not
-   * unpacked here — doing so correctly requires verifying the layout against
-   * `BinHelper`/`PackedUint128Math`, and a wrong guess would silently produce
-   * wrong volume numbers. Stored verbatim until that verification happens.
-   */
-  readonly binAmounts?: Hex[];
-  readonly compositionFeeAmount?: Hex;
-  readonly feeAmountToProtocol?: Hex;
-}
-
-export interface DonateEvent {
-  readonly kind: "Donate";
-  readonly meta: EventMeta;
-  readonly poolType: PoolTypeName;
-  readonly poolId: Hex;
-  readonly sender: Hex;
-  readonly amount0: bigint;
-  readonly amount1: bigint;
-  readonly tick?: number;
-  readonly binId?: number;
-}
-
-export interface DynamicLpFeeEvent {
-  readonly kind: "DynamicLpFee";
-  readonly meta: EventMeta;
-  readonly poolType: PoolTypeName;
-  readonly poolId: Hex;
-  readonly dynamicLpFee: number;
-}
-
-export type ProtocolFeeChangeSourceName =
-  | "POOL_MANAGER_PROTOCOL_FEE_UPDATED"
-  | "POOL_MANAGER_CONTROLLER_UPDATED"
-  | "CONTROLLER_DEFAULT_FEE_UPDATED"
-  | "CONTROLLER_POOL_FEE_UPDATED"
-  | "CONTROLLER_TIER_FEE_UPDATED"
-  | "CONTROLLER_DYNAMIC_FEE_UPDATED"
-  | "CONTROLLER_FEES_DISABLED_SET";
-
-export interface ProtocolFeeChangeEvent {
-  readonly kind: "ProtocolFeeChange";
-  readonly meta: EventMeta;
-  readonly source: ProtocolFeeChangeSourceName;
-  readonly poolId?: Hex;
-  readonly protocolFeeRaw?: number;
-  readonly protocolFeeZeroForOne?: number;
-  readonly protocolFeeOneForZero?: number;
-  readonly isSet?: boolean;
-  readonly lpFeeTier?: number;
-  readonly disabled?: boolean;
-  readonly controller?: Hex;
-}
-
-export interface AppRegisteredEvent {
-  readonly kind: "AppRegistered";
-  readonly meta: EventMeta;
-  readonly app: Hex;
-}
-
-export interface VaultTokenEvent {
-  readonly kind: "VaultToken";
-  readonly meta: EventMeta;
-  readonly tokenEventKind: "TRANSFER" | "APPROVAL" | "OPERATOR_SET";
-  readonly caller?: Hex;
-  readonly from?: Hex;
-  readonly to?: Hex;
-  readonly owner?: Hex;
-  readonly spender?: Hex;
-  readonly operator?: Hex;
-  readonly approved?: boolean;
-  readonly currency?: Hex;
-  readonly amount?: bigint;
-}
-
-export type ProtocolEvent =
-  | PoolInitializedEvent
-  | SwapEvent
-  | LiquidityChangeEvent
-  | DonateEvent
-  | DynamicLpFeeEvent
-  | ProtocolFeeChangeEvent
-  | AppRegisteredEvent
-  | VaultTokenEvent;
-
-// ---------------------------------------------------------------------------
-// Argument coercion helpers
-// ---------------------------------------------------------------------------
-
-const asHex = (v: unknown): Hex => normalizeAddress(String(v));
-const asRawHex = (v: unknown): Hex => String(v).toLowerCase() as Hex;
-const asBigInt = (v: unknown): bigint => (typeof v === "bigint" ? v : BigInt(String(v)));
-const asNumber = (v: unknown): number => (typeof v === "number" ? v : Number(v));
-const asBool = (v: unknown): boolean => Boolean(v);
-
-function poolTypeForRole(role: ContractRole): PoolTypeName | undefined {
-  if (role === "CLPoolManager") return "CL";
-  if (role === "BinPoolManager") return "BIN";
-  return undefined;
-}
-
-function buildMeta(chainId: number, role: ContractRole, log: RawLog): EventMeta | undefined {
+export function decodeLog(chainId: number, role: WatchRole, log: RawLog): DecodeResult {
   const topic0 = log.topics[0];
-  if (topic0 === undefined) return undefined;
-  return {
-    chainId,
-    role,
-    contract: normalizeAddress(log.address),
-    topic0: topic0.toLowerCase() as Hex,
-    txHash: log.transactionHash.toLowerCase() as Hex,
-    blockNumber: log.blockNumber,
-    blockTimestamp: new Date(Number(log.blockTimestamp) * 1000),
-    logIndex: log.logIndex,
-    id: `${chainId}-${log.transactionHash.toLowerCase()}-${log.logIndex}`,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Decoding
-// ---------------------------------------------------------------------------
-
-export interface DecodeResult {
-  /** The domain event, or undefined when the log is known but not modelled. */
-  readonly event?: ProtocolEvent;
-  /** Why a log produced no event. Used for ingestion-run counters. */
-  readonly skipReason?: "unknown-signature" | "not-modelled" | "malformed";
-  readonly eventName?: string;
-}
-
-/**
- * Decode one log that is known to have been emitted by `role`.
- *
- * Returns `{}` with a `skipReason` rather than throwing: an ingestion window
- * routinely contains events this API does not model (ownership transfers,
- * pause toggles), and one unrecognised log must not abort a batch.
- */
-export function decodeLog(chainId: number, role: ContractRole, log: RawLog): DecodeResult {
-  const meta = buildMeta(chainId, role, log);
-  if (!meta) return { skipReason: "malformed" };
+  if (!topic0) return { ok: false, reason: "malformed" };
 
   let eventName: string;
   let args: Record<string, unknown>;
-
-  if (isSdkRole(role)) {
-    const decoded = decodeProtocolLog(role, { data: log.data, topics: log.topics as [] });
-    if (!decoded) {
-      // Either the signature is unknown, or it is known but belongs to a
-      // different contract — which is exactly the collision case.
-      const known = descriptorsForTopic(meta.topic0);
-      return {
-        skipReason: known.length > 0 ? "not-modelled" : "unknown-signature",
-        eventName: known[0]?.eventName,
-      };
-    }
+  const core = CORE_CONTRACT[role];
+  if (core) {
+    const decoded = decodeProtocolLog(core, { data: log.data, topics: log.topics as [] });
+    if (!decoded) return { ok: false, reason: "unknown-signature" };
     eventName = decoded.eventName;
-    args = decoded.args;
+    args = decoded.args as Record<string, unknown>;
   } else {
     try {
-      const decoded = decodeEventLog({
-        abi: FEE_CONTROLLER_EVENTS_ABI,
-        data: log.data,
-        topics: log.topics as [Hex, ...Hex[]],
-      });
-      eventName = decoded.eventName as string;
-      args = (decoded.args ?? {}) as unknown as Record<string, unknown>;
+      const decoded = decodeEventLog({ abi: abiForRole(role), data: log.data, topics: log.topics as [Hex, ...Hex[]] });
+      eventName = String(decoded.eventName);
+      args = (decoded.args ?? {}) as Record<string, unknown>;
     } catch {
-      return { skipReason: "unknown-signature" };
+      return { ok: false, reason: "unknown-signature" };
     }
   }
 
+  const meta: LogMeta = {
+    chainId,
+    role,
+    id: logId(chainId, log.transactionHash, log.logIndex),
+    contract: log.address.toLowerCase() as Hex,
+    blockNumber: log.blockNumber,
+    txHash: log.transactionHash.toLowerCase() as Hex,
+    txIndex: log.transactionIndex,
+    logIndex: log.logIndex,
+  };
+
   try {
-    const event = toDomainEvent(meta, role, eventName, args);
-    return event ? { event, eventName } : { skipReason: "not-modelled", eventName };
-  } catch (err) {
-    logger.warn(
-      { err, chainId, role, eventName, tx: meta.txHash, logIndex: meta.logIndex },
-      "failed to map decoded log to a domain event",
-    );
-    return { skipReason: "malformed", eventName };
+    const event = toEvent(meta, role, eventName, args);
+    return event ? { ok: true, event } : { ok: false, reason: "not-indexed", eventName };
+  } catch {
+    return { ok: false, reason: "malformed", eventName };
   }
 }
 
-function toDomainEvent(
-  meta: EventMeta,
-  role: ContractRole,
-  eventName: string,
-  args: Record<string, unknown>,
-): ProtocolEvent | undefined {
-  const poolType = poolTypeForRole(role);
-
-  switch (eventName) {
-    // --- Vault ------------------------------------------------------------
-    case "AppRegistered":
-      return { kind: "AppRegistered", meta, app: asHex(args.app) };
-
-    case "Transfer":
-      return {
-        kind: "VaultToken",
-        meta,
-        tokenEventKind: "TRANSFER",
-        caller: asHex(args.caller),
-        from: asHex(args.from),
-        to: asHex(args.to),
-        currency: asHex(args.currency),
-        amount: asBigInt(args.amount),
-      };
-
-    case "Approval":
-      return {
-        kind: "VaultToken",
-        meta,
-        tokenEventKind: "APPROVAL",
-        owner: asHex(args.owner),
-        spender: asHex(args.spender),
-        currency: asHex(args.currency),
-        amount: asBigInt(args.amount),
-      };
-
-    case "OperatorSet":
-      return {
-        kind: "VaultToken",
-        meta,
-        tokenEventKind: "OPERATOR_SET",
-        owner: asHex(args.owner),
-        operator: asHex(args.operator),
-        approved: asBool(args.approved),
-      };
-
-    // --- Pool managers ----------------------------------------------------
-    case "Initialize": {
-      if (!poolType) return undefined;
-      const base = {
-        kind: "PoolInitialized" as const,
-        meta,
-        poolType,
-        poolId: asRawHex(args.id),
-        currency0: asHex(args.currency0),
-        currency1: asHex(args.currency1),
-        hooks: asHex(args.hooks),
-        fee: asNumber(args.fee),
-        parameters: asRawHex(args.parameters),
-      };
-      return poolType === "CL"
-        ? { ...base, sqrtPriceX96: asBigInt(args.sqrtPriceX96), tick: asNumber(args.tick) }
-        : { ...base, activeId: asNumber(args.activeId) };
+function toEvent(meta: LogMeta, role: WatchRole, name: string, a: Record<string, unknown>): IndexedEvent | null {
+  switch (role) {
+    case "clPoolManager":
+    case "binPoolManager": {
+      const poolType = role === "clPoolManager" ? "CL" : "BIN";
+      switch (name) {
+        case "Initialize": {
+          const parameters = lowerHex(a.parameters);
+          const decoded = poolType === "CL" ? decodeCLPoolParameters(parameters) : decodeBinPoolParameters(parameters);
+          return {
+            kind: "PoolInitialized",
+            meta,
+            poolType,
+            poolId: lowerHex(a.id),
+            currency0: lowerHex(a.currency0),
+            currency1: lowerHex(a.currency1),
+            hooks: lowerHex(a.hooks),
+            fee: num(a.fee),
+            parameters,
+            hookBitmap: decoded.hooksRegistrationBitmap,
+            tickSpacing: "tickSpacing" in decoded ? decoded.tickSpacing : null,
+            binStep: "binStep" in decoded ? decoded.binStep : null,
+            sqrtPriceX96: poolType === "CL" ? big(a.sqrtPriceX96) : null,
+            tick: poolType === "CL" ? num(a.tick) : null,
+            activeId: poolType === "BIN" ? num(a.activeId) : null,
+          };
+        }
+        case "Swap":
+          return {
+            kind: "Swap",
+            meta,
+            poolType,
+            poolId: lowerHex(a.id),
+            sender: lowerHex(a.sender),
+            amount0: big(a.amount0),
+            amount1: big(a.amount1),
+            fee: num(a.fee),
+            protocolFee: num(a.protocolFee),
+            sqrtPriceX96: poolType === "CL" ? big(a.sqrtPriceX96) : null,
+            liquidity: poolType === "CL" ? big(a.liquidity) : null,
+            tick: poolType === "CL" ? num(a.tick) : null,
+            activeId: poolType === "BIN" ? num(a.activeId) : null,
+          };
+        case "ModifyLiquidity":
+          if (poolType !== "CL") return null;
+          return {
+            kind: "Liquidity",
+            meta,
+            poolId: lowerHex(a.id),
+            liquidityKind: "MODIFY",
+            sender: lowerHex(a.sender),
+            salt: lowerHex(a.salt),
+            tickLower: num(a.tickLower),
+            tickUpper: num(a.tickUpper),
+            liquidityDelta: big(a.liquidityDelta),
+            binIds: [],
+            packedAmounts: [],
+          };
+        case "Mint":
+        case "Burn":
+          if (poolType !== "BIN") return null;
+          return {
+            kind: "Liquidity",
+            meta,
+            poolId: lowerHex(a.id),
+            liquidityKind: name === "Mint" ? "MINT" : "BURN",
+            sender: lowerHex(a.sender),
+            salt: lowerHex(a.salt),
+            tickLower: null,
+            tickUpper: null,
+            liquidityDelta: null,
+            binIds: (a.ids as readonly unknown[]).map((x) => big(x).toString()),
+            packedAmounts: (a.amounts as readonly unknown[]).map(lowerHex),
+          };
+        case "ProtocolFeeUpdated":
+          return { kind: "PoolFeeUpdate", meta, poolId: lowerHex(a.id), feeKind: "PROTOCOL_FEE", value: num(a.protocolFee) };
+        case "DynamicLPFeeUpdated":
+          return { kind: "PoolFeeUpdate", meta, poolId: lowerHex(a.id), feeKind: "DYNAMIC_LP_FEE", value: num(a.dynamicLPFee) };
+        default:
+          return null;
+      }
     }
-
-    case "Swap": {
-      if (!poolType) return undefined;
-      const amount0 = asBigInt(args.amount0);
-      const amount1 = asBigInt(args.amount1);
-      const base = {
-        kind: "Swap" as const,
+    case "revShareHook":
+      if (name === "RevShareTaken") {
+        return {
+          kind: "RevShareTaken",
+          meta,
+          poolId: lowerHex(a.poolId),
+          currency: lowerHex(a.currency),
+          lpDonated: big(a.lpDonated),
+          toBeneficiaries: big(a.toBeneficiaries),
+          toDistributor: big(a.toDistributor),
+        };
+      }
+      if (name === "Claimed") {
+        return {
+          kind: "RevShareClaimed",
+          meta,
+          beneficiary: lowerHex(a.beneficiary),
+          currency: lowerHex(a.currency),
+          to: lowerHex(a.to),
+          amount: big(a.amount),
+        };
+      }
+      return null;
+    case "feeController":
+      if (name !== "ProtocolFeesCollected") return null;
+      return {
+        kind: "ProtocolFeesCollected",
         meta,
-        poolType,
-        poolId: asRawHex(args.id),
-        sender: asHex(args.sender),
-        amount0,
-        amount1,
-        fee: asNumber(args.fee),
-        protocolFee: asNumber(args.protocolFee),
+        poolManager: lowerHex(a.poolManager),
+        currency: lowerHex(a.currency),
+        recipient: lowerHex(a.recipient),
+        amount: big(a.amount),
       };
-      return poolType === "CL"
-        ? {
-            ...base,
-            sqrtPriceX96: asBigInt(args.sqrtPriceX96),
-            liquidity: asBigInt(args.liquidity),
-            tick: asNumber(args.tick),
-          }
-        : { ...base, activeId: asNumber(args.activeId) };
+    case "launchpadKit":
+      if (name === "LaunchCreated") {
+        return {
+          kind: "LaunchCreated",
+          meta,
+          poolId: lowerHex(a.poolId),
+          launchToken: lowerHex(a.launchToken),
+          operator: lowerHex(a.operator),
+          quoteToken: lowerHex(a.quoteToken),
+          startContractBlock: big(a.startBlock),
+          decayContractBlocks: num(a.decayBlocks),
+          initialFeeBips: num(a.initialFeeBips),
+          finalFeeBips: num(a.finalFeeBips),
+          maxBuyPerTx: big(a.maxBuyPerTx),
+          launchTokenIsCurrency0: Boolean(a.launchTokenIsCurrency0),
+          preset: num(a.preset),
+        };
+      }
+      if (name === "LaunchSeeded" || name === "LaunchReconfigured") {
+        return { kind: "Generic", meta, eventName: name, subject: lowerHex(a.poolId), args: jsonArgs(a) as Record<string, unknown> };
+      }
+      if (name === "HookListed") {
+        return { kind: "Generic", meta, eventName: name, subject: lowerHex(a.hook), args: jsonArgs(a) as Record<string, unknown> };
+      }
+      return null;
+    case "registry": {
+      const indexed = [
+        "LatchRegistered",
+        "LatchListingChanged",
+        "LatchVerificationChanged",
+        "LatchMetadataUpdated",
+        "LatchStewardTransferred",
+        "RoleGranted",
+        "RoleRevoked",
+      ];
+      if (!indexed.includes(name)) return null;
+      const subject = "hook" in a ? lowerHex(a.hook) : "account" in a ? lowerHex(a.account) : null;
+      return { kind: "Generic", meta, eventName: name, subject, args: jsonArgs(a) as Record<string, unknown> };
     }
-
-    case "ModifyLiquidity": {
-      if (poolType !== "CL") return undefined;
-      const liquidityDelta = asBigInt(args.liquidityDelta);
+    case "launchRegistry":
+      return { kind: "Generic", meta, eventName: name, subject: "poolId" in a ? lowerHex(a.poolId) : null, args: jsonArgs(a) as Record<string, unknown> };
+    case "vault":
+      if (name !== "AppRegistered") return null;
+      return { kind: "Generic", meta, eventName: name, subject: lowerHex(a.app), args: jsonArgs(a) as Record<string, unknown> };
+    case "timelockCustody":
+    case "timelockPolicy":
       return {
-        kind: "LiquidityChange",
+        kind: "Timelock",
         meta,
-        poolType,
-        poolId: asRawHex(args.id),
-        changeType: liquidityDelta > 0n ? "ADD" : "REMOVE",
-        sender: asHex(args.sender),
-        salt: asRawHex(args.salt),
-        tickLower: asNumber(args.tickLower),
-        tickUpper: asNumber(args.tickUpper),
-        liquidityDelta,
+        eventName: name,
+        operationId: "id" in a ? lowerHex(a.id) : null,
+        callIndex: "index" in a ? num(a.index) : null,
+        target: "target" in a ? lowerHex(a.target) : null,
+        value: "value" in a ? big(a.value) : null,
+        data: "data" in a ? lowerHex(a.data) : null,
+        predecessor: "predecessor" in a ? lowerHex(a.predecessor) : null,
+        delaySeconds: "delay" in a ? big(a.delay) : "newDuration" in a ? big(a.newDuration) : null,
       };
-    }
-
-    case "Mint":
-    case "Burn": {
-      if (poolType !== "BIN") return undefined;
-      const isMint = eventName === "Mint";
-      return {
-        kind: "LiquidityChange",
-        meta,
-        poolType,
-        poolId: asRawHex(args.id),
-        changeType: isMint ? "ADD" : "REMOVE",
-        sender: asHex(args.sender),
-        salt: asRawHex(args.salt),
-        binIds: (args.ids as readonly unknown[]).map(asBigInt),
-        binAmounts: (args.amounts as readonly unknown[]).map(asRawHex),
-        ...(isMint
-          ? {
-              compositionFeeAmount: asRawHex(args.compositionFeeAmount),
-              feeAmountToProtocol: asRawHex(args.feeAmountToProtocol),
-            }
-          : {}),
-      };
-    }
-
-    case "Donate": {
-      if (!poolType) return undefined;
-      const base = {
-        kind: "Donate" as const,
-        meta,
-        poolType,
-        poolId: asRawHex(args.id),
-        sender: asHex(args.sender),
-        amount0: asBigInt(args.amount0),
-        amount1: asBigInt(args.amount1),
-      };
-      return poolType === "CL"
-        ? { ...base, tick: asNumber(args.tick) }
-        : { ...base, binId: asNumber(args.binId) };
-    }
-
-    case "DynamicLPFeeUpdated": {
-      if (!poolType) return undefined;
-      return {
-        kind: "DynamicLpFee",
-        meta,
-        poolType,
-        poolId: asRawHex(args.id),
-        dynamicLpFee: asNumber(args.dynamicLPFee),
-      };
-    }
-
-    // --- Protocol fee governance -----------------------------------------
-    // NOTE: reachable from BOTH pool managers with an identical topic0.
-    // `meta.contract` is what separates them downstream.
-    case "ProtocolFeeUpdated": {
-      const raw = asNumber(args.protocolFee);
-      const { zeroForOne, oneForZero } = decodeProtocolFee(raw);
-      return {
-        kind: "ProtocolFeeChange",
-        meta,
-        source: "POOL_MANAGER_PROTOCOL_FEE_UPDATED",
-        poolId: asRawHex(args.id),
-        protocolFeeRaw: raw,
-        protocolFeeZeroForOne: zeroForOne,
-        protocolFeeOneForZero: oneForZero,
-      };
-    }
-
-    case "ProtocolFeeControllerUpdated":
-      return {
-        kind: "ProtocolFeeChange",
-        meta,
-        source: "POOL_MANAGER_CONTROLLER_UPDATED",
-        controller: asHex(args.protocolFeeController),
-      };
-
-    // --- LatchProtocolFeeController ---------------------------------------
-    case "DefaultFeeUpdated":
-      return {
-        kind: "ProtocolFeeChange",
-        meta,
-        source: "CONTROLLER_DEFAULT_FEE_UPDATED",
-        protocolFeeZeroForOne: asNumber(args.zeroForOne),
-        protocolFeeOneForZero: asNumber(args.oneForZero),
-      };
-
-    case "PoolFeeUpdated":
-      return {
-        kind: "ProtocolFeeChange",
-        meta,
-        source: "CONTROLLER_POOL_FEE_UPDATED",
-        poolId: asRawHex(args.poolId),
-        isSet: asBool(args.isSet),
-        protocolFeeZeroForOne: asNumber(args.zeroForOne),
-        protocolFeeOneForZero: asNumber(args.oneForZero),
-      };
-
-    case "TierFeeUpdated":
-      return {
-        kind: "ProtocolFeeChange",
-        meta,
-        source: "CONTROLLER_TIER_FEE_UPDATED",
-        lpFeeTier: asNumber(args.lpFeeTier),
-        isSet: asBool(args.isSet),
-        protocolFeeZeroForOne: asNumber(args.zeroForOne),
-        protocolFeeOneForZero: asNumber(args.oneForZero),
-      };
-
-    case "DynamicFeeUpdated":
-      return {
-        kind: "ProtocolFeeChange",
-        meta,
-        source: "CONTROLLER_DYNAMIC_FEE_UPDATED",
-        isSet: asBool(args.isSet),
-        protocolFeeZeroForOne: asNumber(args.zeroForOne),
-        protocolFeeOneForZero: asNumber(args.oneForZero),
-      };
-
-    case "FeesDisabledSet":
-      return {
-        kind: "ProtocolFeeChange",
-        meta,
-        source: "CONTROLLER_FEES_DISABLED_SET",
-        disabled: asBool(args.disabled),
-      };
-
-    // Known but not modelled: Paused, Unpaused, OwnershipTransferred,
-    // OwnershipTransferStarted, SetMaxBinStep, SetMinBinSharesForDonate.
-    default:
-      return undefined;
   }
+}
+
+/** Selector, readable signature and CLAUDE.md hazard flag for a timelock call. */
+export function classifyTimelockCall(data: Hex | null): {
+  selector: Hex | null;
+  functionSignature: string | null;
+  hazard: string | null;
+  hazardNote: string | null;
+} {
+  if (!data || data.length < 10) return { selector: null, functionSignature: null, hazard: null, hazardNote: null };
+  const selector = data.slice(0, 10).toLowerCase() as Hex;
+  const hz = HAZARD_SELECTORS.get(selector);
+  if (hz) return { selector, functionSignature: hz.signature, hazard: hz.hazard, hazardNote: hz.note };
+  return { selector, functionSignature: KNOWN_SELECTORS.get(selector) ?? null, hazard: null, hazardNote: null };
+}
+
+/** How a ProtocolFeesCollected came about, from the outer transaction's input. */
+export function collectionVia(txInput: Hex | undefined): "COLLECT" | "SWEEP" | "INNER_CALL" {
+  const sel = txInput?.slice(0, 10).toLowerCase();
+  if (sel === COLLECT_SELECTOR) return "COLLECT";
+  if (sel === SWEEP_SELECTOR) return "SWEEP";
+  return "INNER_CALL";
 }

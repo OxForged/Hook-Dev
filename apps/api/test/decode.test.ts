@@ -1,240 +1,214 @@
-import { ALL_EVENT_TOPICS, EVENT_DESCRIPTORS, descriptorsForTopic } from "@latchprotocol/sdk";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { LATCH_DEPLOYMENTS } from "@latchprotocol/sdk";
 import { describe, expect, it } from "vitest";
-import { decodeLog } from "../src/chain/decode.js";
-import {
-  FIXTURE_ADDRESSES,
-  FIXTURE_CHAIN_ID,
-  FIXTURE_POOLS,
-  addressForRole,
-  fixtureLogs,
-} from "../src/chain/fixtures/devnet.js";
-import { FixtureChainLogProvider } from "../src/chain/provider/fixture.js";
-import type { ContractRole } from "../src/chain/contracts.js";
-import type { RawLog } from "../src/chain/provider/types.js";
+import type { Hex } from "viem";
+import { classifyTimelockCall, collectionVia, decodeLog, type IndexedEvent, type RawLog } from "../src/chain/decode.js";
+import { COLLECT_SELECTOR, SWEEP_SELECTOR } from "../src/chain/abis.js";
+import { revShareHooksFor, staticContractsFor, topicsForRole } from "../src/chain/deployments.js";
+import { buildWindowRows } from "../src/indexer/rows.js";
+import { splitSwap } from "../src/lib/units.js";
+import { FIXTURE_ADDRESSES, FIXTURE_CHAIN_ID, fixtureLogs } from "./fixtures/devnet.js";
 
-const ROLE_BY_ADDRESS = new Map<string, ContractRole>([
-  [FIXTURE_ADDRESSES.vault, "Vault"],
-  [FIXTURE_ADDRESSES.clPoolManager, "CLPoolManager"],
-  [FIXTURE_ADDRESSES.binPoolManager, "BinPoolManager"],
-  [FIXTURE_ADDRESSES.feeController, "FeeController"],
-]);
-
-function roleFor(log: RawLog): ContractRole {
-  const role = ROLE_BY_ADDRESS.get(log.address.toLowerCase());
-  if (!role) throw new Error(`fixture emitted from an unmapped address: ${log.address}`);
-  return role;
+/**
+ * REAL chain data: the receipt of Robinhood Chain (4663) tx
+ * 0x68286e9b10e1e4d7e42adc9bc02bda0484ac53f6943dc8cd37cfd1d959bc629a, the first
+ * swap on the LTT1/LTT2 reference pool (block 60,244,152), read with
+ * eth_getTransactionReceipt on 2026-09-13.
+ */
+interface Receipt {
+  blockNumber: string;
+  blockHash: Hex;
+  transactionIndex: number;
+  timestamp: string;
+  logs: { address: Hex; topics: Hex[]; data: Hex; logIndex: number }[];
 }
+const receipt = JSON.parse(
+  readFileSync(fileURLToPath(new URL("./fixtures/robinhood-swap-0x68286e9b.json", import.meta.url)), "utf8"),
+) as Receipt;
+const TX = "0x68286e9b10e1e4d7e42adc9bc02bda0484ac53f6943dc8cd37cfd1d959bc629a" as Hex;
+const d = LATCH_DEPLOYMENTS[4663];
 
-describe("event signature collisions", () => {
-  it("has more event declarations than distinct signatures", () => {
-    // 34 declarations, 22 unique topic0s. This is the whole reason the pipeline
-    // keys on (chainId, contract, topic0) rather than topic0 alone.
-    expect(EVENT_DESCRIPTORS.length).toBeGreaterThan(ALL_EVENT_TOPICS.length);
+const raw = (i: number): RawLog => {
+  const l = receipt.logs[i]!;
+  return {
+    address: l.address,
+    topics: l.topics,
+    data: l.data,
+    blockNumber: BigInt(receipt.blockNumber),
+    blockHash: receipt.blockHash,
+    transactionHash: TX,
+    transactionIndex: receipt.transactionIndex,
+    logIndex: l.logIndex,
+  };
+};
+
+const E18 = 10n ** 18n;
+const LTT1 = "0x2a21c0826848f2d597b7c87a4b931de1407958a6";
+const LTT2 = "0xa29927045bdffd61b8f539d491085f1b6f7a8be4";
+const DEMO_POOL = "0xcb1fbdafcaa52a0cc8f5ece1752737c2a5eec2b7242953270c15bdd9818a50e8";
+
+describe("Swap sign convention, on the real Robinhood swap", () => {
+  const swapLog = raw(0);
+  const decoded = decodeLog(4663, "clPoolManager", swapLog);
+
+  it("decodes the CLPoolManager Swap", () => {
+    expect(swapLog.address).toBe(d.clPoolManager.toLowerCase());
+    expect(decoded.ok).toBe(true);
+    const e = (decoded as { event: IndexedEvent }).event;
+    expect(e.kind).toBe("Swap");
   });
 
-  it("maps the shared ProtocolFees events to more than one contract", () => {
-    const colliding = ALL_EVENT_TOPICS.map((topic) => descriptorsForTopic(topic)).filter(
-      (d) => d.length > 1,
-    );
-
-    const names = new Set(colliding.map((d) => d[0]!.eventName));
-    expect(names).toContain("ProtocolFeeUpdated");
-    expect(names).toContain("DynamicLPFeeUpdated");
-    expect(names).toContain("ProtocolFeeControllerUpdated");
-    expect(names).toContain("OwnershipTransferred");
+  it("amount0 is -1e18: the caller PAID 1 LTT1 in (caller-side delta, negative = paid in)", () => {
+    const e = (decoded as { event: Extract<IndexedEvent, { kind: "Swap" }> }).event;
+    expect(e.poolId).toBe(DEMO_POOL);
+    expect(e.amount0).toBe(-E18);
+    expect(e.amount1).toBe(996006981039903216n);
+    expect(e.fee).toBe(3000);
+    expect(e.protocolFee).toBe(0);
   });
 
-  it("attributes an identical topic0 to the right pool type using the emitting address", () => {
-    const logs = fixtureLogs();
-
-    // The fixture timeline emits ProtocolFeeUpdated from BOTH pool managers.
-    const feeUpdates = logs
-      .map((log) => ({ log, decoded: decodeLog(FIXTURE_CHAIN_ID, roleFor(log), log) }))
-      .filter(({ decoded }) => decoded.eventName === "ProtocolFeeUpdated");
-
-    expect(feeUpdates.length).toBeGreaterThanOrEqual(2);
-
-    // Same signature...
-    const topics = new Set(feeUpdates.map(({ log }) => log.topics[0]));
-    expect(topics.size).toBe(1);
-
-    // ...different emitters, and therefore different attribution.
-    const emitters = new Set(feeUpdates.map(({ log }) => log.address));
-    expect(emitters).toContain(FIXTURE_ADDRESSES.clPoolManager);
-    expect(emitters).toContain(FIXTURE_ADDRESSES.binPoolManager);
-
-    for (const { log, decoded } of feeUpdates) {
-      expect(decoded.event?.kind).toBe("ProtocolFeeChange");
-      expect(decoded.event?.meta.contract).toBe(log.address);
-      expect(decoded.event?.meta.role).toBe(roleFor(log));
-    }
+  it("the same tx moved exactly 1e18 LTT1 INTO the Vault, proving the sign", () => {
+    const transfer = receipt.logs[4]!;
+    expect(transfer.address).toBe(LTT1);
+    // Transfer(from, to=Vault, value)
+    expect(`0x${transfer.topics[2]!.slice(26)}`).toBe(d.vault.toLowerCase());
+    expect(BigInt(transfer.data)).toBe(E18);
   });
 
-  it("refuses to decode a pool-manager log under the wrong role", () => {
-    const clSwap = fixtureLogs().find(
-      (l) => l.address === FIXTURE_ADDRESSES.clPoolManager && decodeLog(FIXTURE_CHAIN_ID, "CLPoolManager", l).eventName === "Swap",
-    );
-    expect(clSwap).toBeDefined();
-
-    // A CL Swap has a different signature from a bin Swap, so decoding it as a
-    // bin log must fail rather than silently produce a bin event.
-    const wrong = decodeLog(FIXTURE_CHAIN_ID, "BinPoolManager", clSwap!);
-    expect(wrong.event).toBeUndefined();
-    expect(wrong.skipReason).toBeDefined();
-  });
-});
-
-describe("decodeLog over the fixture timeline", () => {
-  const logs = fixtureLogs();
-
-  it("decodes every fixture log it is meant to model", () => {
-    const results = logs.map((log) => decodeLog(FIXTURE_CHAIN_ID, roleFor(log), log));
-    const undecoded = results.filter((r) => !r.event);
-
-    // The fixture timeline only contains modelled events, so nothing should be
-    // skipped. If this fails, either the fixture or the decoder has drifted.
-    expect(undecoded.map((r) => r.skipReason ?? "?")).toEqual([]);
-  });
-
-  it("produces the expected event kinds", () => {
-    const kinds = new Set(
-      logs.map((log) => decodeLog(FIXTURE_CHAIN_ID, roleFor(log), log).event?.kind),
-    );
-    expect(kinds).toContain("AppRegistered");
-    expect(kinds).toContain("PoolInitialized");
-    expect(kinds).toContain("Swap");
-    expect(kinds).toContain("LiquidityChange");
-    expect(kinds).toContain("Donate");
-    expect(kinds).toContain("DynamicLpFee");
-    expect(kinds).toContain("ProtocolFeeChange");
-    expect(kinds).toContain("VaultToken");
-  });
-
-  it("builds chain-scoped, deterministic event ids", () => {
-    const first = logs[0]!;
-    const decoded = decodeLog(FIXTURE_CHAIN_ID, roleFor(first), first);
-    expect(decoded.event?.meta.id).toBe(
-      `${FIXTURE_CHAIN_ID}-${first.transactionHash}-${first.logIndex}`,
-    );
-
-    const ids = logs.map((log) => decodeLog(FIXTURE_CHAIN_ID, roleFor(log), log).event?.meta.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it("recovers the pool ids the fixture pools were built with", () => {
-    const initialized = logs
-      .map((log) => decodeLog(FIXTURE_CHAIN_ID, roleFor(log), log).event)
-      .filter((e) => e?.kind === "PoolInitialized");
-
-    expect(initialized).toHaveLength(FIXTURE_POOLS.length);
-    const decodedIds = new Set(initialized.map((e) => (e as { poolId: string }).poolId));
-    for (const pool of FIXTURE_POOLS) {
-      expect(decodedIds).toContain(pool.poolId);
-    }
-  });
-
-  it("keeps bin Mint/Burn amounts opaque", () => {
-    const binChange = logs
-      .map((log) => decodeLog(FIXTURE_CHAIN_ID, roleFor(log), log).event)
-      .find((e) => e?.kind === "LiquidityChange" && e.poolType === "BIN");
-
-    expect(binChange).toBeDefined();
-    const change = binChange as { binIds?: bigint[]; binAmounts?: string[] };
-    expect(change.binIds?.length).toBeGreaterThan(0);
-    // Stored as 32-byte words, not unpacked into amount0/amount1. Decoding them
-    // requires verifying PackedUint128Math's layout first.
-    expect(change.binAmounts?.length).toBe(change.binIds?.length);
-    for (const word of change.binAmounts ?? []) {
-      expect(word).toMatch(/^0x[0-9a-f]{64}$/);
-    }
-  });
-
-  it("signs swap amounts from the pool's point of view", () => {
-    const swaps = logs
-      .map((log) => decodeLog(FIXTURE_CHAIN_ID, roleFor(log), log).event)
-      .filter((e) => e?.kind === "Swap") as { amount0: bigint; amount1: bigint }[];
-
-    expect(swaps.length).toBeGreaterThan(0);
-    for (const swap of swaps) {
-      // Exactly one side is the input. Both positive or both negative would
-      // mean the decoder lost a sign somewhere.
-      expect(swap.amount0 > 0n).not.toBe(swap.amount1 > 0n);
-    }
+  it("splitSwap: zeroForOne, 1e18 in, fee from the swap's own 3000 pips, all to LPs", () => {
+    const split = splitSwap(-E18, 996006981039903216n, 3000, 0)!;
+    expect(split.zeroForOne).toBe(true);
+    expect(split.inputIndex).toBe(0);
+    expect(split.amountIn).toBe(E18);
+    expect(split.amountOut).toBe(996006981039903216n);
+    expect(split.feeTotal).toBe(3n * 10n ** 15n);
+    expect(split.feeProtocol).toBe(0n);
+    expect(split.feeLp).toBe(3n * 10n ** 15n);
   });
 });
 
-describe("FixtureChainLogProvider", () => {
-  const provider = new FixtureChainLogProvider(FIXTURE_CHAIN_ID);
-
-  const contracts = (["Vault", "CLPoolManager", "BinPoolManager", "FeeController"] as const).map(
-    (role) => ({
-      chainId: FIXTURE_CHAIN_ID,
-      role,
-      address: addressForRole(role),
-      label: role,
-    }),
-  );
-
-  it("reports its kind so the boundary is visible at runtime", () => {
-    expect(provider.kind).toBe("fixture");
-    expect(provider.describe()).toContain("fixture");
+describe("RevShareTaken on the same transaction", () => {
+  it("decodes only under the revShareHook role, from the retired hook bound to the pool", () => {
+    const log = raw(3);
+    expect(log.address).toBe("0x23ce34e8199927dd270dddd8579c947542bde446");
+    const r = decodeLog(4663, "revShareHook", log);
+    expect(r.ok).toBe(true);
+    const e = (r as { event: Extract<IndexedEvent, { kind: "RevShareTaken" }> }).event;
+    expect(e.kind).toBe("RevShareTaken");
+    expect(e.poolId).toBe(DEMO_POOL);
+    expect(e.currency).toBe(LTT2);
+    expect(e.lpDonated).toBe(0x21f8491611445n);
+    expect(e.toBeneficiaries).toBe(0x87e1245845117n);
+    expect(e.toDistributor).toBe(0n);
   });
 
-  it("respects the requested block range", async () => {
-    const head = await provider.getLatestBlockNumber();
-    const all = await provider.getLogs({ fromBlock: 0n, toBlock: head, contracts });
-    expect(all.length).toBe(fixtureLogs().length);
-
-    const mid = all[Math.floor(all.length / 2)]!.blockNumber;
-    const firstHalf = await provider.getLogs({ fromBlock: 0n, toBlock: mid, contracts });
-    const secondHalf = await provider.getLogs({ fromBlock: mid + 1n, toBlock: head, contracts });
-
-    expect(firstHalf.length + secondHalf.length).toBe(all.length);
-    // Windows must not overlap, or ingestion would double-read every boundary.
-    const ids = new Set([...firstHalf, ...secondHalf].map((l) => `${l.transactionHash}-${l.logIndex}`));
-    expect(ids.size).toBe(all.length);
+  it("the cut comes out of the output leg: amount1 - cut = what the Vault paid the trader", () => {
+    const cut = 0x21f8491611445n + 0x87e1245845117n;
+    const paidOut = BigInt(receipt.logs[5]!.data);
+    expect(996006981039903216n - cut).toBe(paidOut);
   });
 
-  it("returns nothing when no contracts are watched", async () => {
-    const logs = await provider.getLogs({ fromBlock: 0n, toBlock: 10_000_000n, contracts: [] });
-    expect(logs).toEqual([]);
-  });
-
-  it("filters by emitting address", async () => {
-    const head = await provider.getLatestBlockNumber();
-    const vaultOnly = await provider.getLogs({
-      fromBlock: 0n,
-      toBlock: head,
-      contracts: [contracts[0]!],
-    });
-    expect(vaultOnly.length).toBeGreaterThan(0);
-    for (const log of vaultOnly) {
-      expect(log.address).toBe(FIXTURE_ADDRESSES.vault);
-    }
-  });
-
-  it("orders logs by (blockNumber, logIndex)", async () => {
-    const head = await provider.getLatestBlockNumber();
-    const logs = await provider.getLogs({ fromBlock: 0n, toBlock: head, contracts });
-    for (let i = 1; i < logs.length; i++) {
-      const prev = logs[i - 1]!;
-      const cur = logs[i]!;
-      const ordered =
-        cur.blockNumber > prev.blockNumber ||
-        (cur.blockNumber === prev.blockNumber && cur.logIndex > prev.logIndex);
-      expect(ordered).toBe(true);
-    }
+  it("revShareHooksFor adds the reference pool's hook to the address-book hook", () => {
+    const hooks = revShareHooksFor(d, "0x23CE34E8199927DD270dddd8579c947542bDE446");
+    expect(hooks).toContain(d.revShareHook.toLowerCase());
+    expect(hooks).toContain("0x23ce34e8199927dd270dddd8579c947542bde446");
+    expect(revShareHooksFor(d, `0x${"0".repeat(40)}`)).toEqual([d.revShareHook.toLowerCase()]);
   });
 });
 
-describe("fixture labelling", () => {
-  it("marks every fabricated address with the fixture prefix", () => {
-    const addresses = Object.entries(FIXTURE_ADDRESSES).filter(
-      ([, value]) => !/^0x0+$/.test(value),
-    );
-    expect(addresses.length).toBeGreaterThan(0);
-    for (const [name, value] of addresses) {
-      expect(value, `${name} must be visibly a fixture address`).toMatch(/^0xf1c7/);
+describe("decoding is keyed on role, never topic0 alone", () => {
+  it("refuses a CL Swap under the bin role", () => {
+    expect(decodeLog(4663, "binPoolManager", raw(0)).ok).toBe(false);
+  });
+
+  it("refuses a RevShareTaken presented as a pool-manager log", () => {
+    expect(decodeLog(4663, "clPoolManager", raw(3)).ok).toBe(false);
+  });
+
+  it("does not index the CL Donate the hook emitted (not in the watched set)", () => {
+    const r = decodeLog(4663, "clPoolManager", raw(1));
+    expect(r.ok).toBe(false);
+  });
+
+  it("every watched event name resolves to a topic in the SDK or local ABI", () => {
+    for (const c of staticContractsFor(d)) {
+      expect(topicsForRole(c.role).length).toBe(c.events.length);
     }
+    expect(topicsForRole("revShareHook")).toHaveLength(2);
+  });
+
+  it("decodes the synthetic devnet pool-manager logs (test fixture) without loss", () => {
+    const pm = fixtureLogs().filter((l) => l.address === FIXTURE_ADDRESSES.clPoolManager || l.address === FIXTURE_ADDRESSES.binPoolManager);
+    const swaps = pm
+      .map((l) => decodeLog(FIXTURE_CHAIN_ID, l.address === FIXTURE_ADDRESSES.clPoolManager ? "clPoolManager" : "binPoolManager", l))
+      .flatMap((r) => (r.ok && r.event.kind === "Swap" ? [r.event] : []));
+    expect(swaps.length).toBe(240);
+    for (const s of swaps) expect(s.amount0 < 0n).not.toBe(s.amount1 < 0n);
+  });
+});
+
+describe("buildWindowRows on the real receipt", () => {
+  const events = [decodeLog(4663, "clPoolManager", raw(0)), decodeLog(4663, "revShareHook", raw(3))].flatMap((r) => (r.ok ? [r.event] : []));
+  const base = {
+    chainId: 4663,
+    timestamps: new Map([[BigInt(receipt.blockNumber), BigInt(receipt.timestamp)]]),
+    txInputs: new Map<string, Hex>(),
+    txFrom: new Map<string, Hex>([[TX, "0x304b0cc019cdba6c7c767d86a2a34e69fdb3c9a9"]]),
+    protocolBeneficiaries: new Set([d.governanceSafe.toLowerCase()]),
+    timelockTier: new Map<string, string>(),
+  };
+
+  it("writes a swap with tokenIn = LTT1 and the LP/protocol split, and the cut row", () => {
+    const rows = buildWindowRows({ ...base, poolCurrencies: new Map([[DEMO_POOL, { currency0: LTT1 as Hex, currency1: LTT2 as Hex }]]) }, events);
+    expect(rows.orphans).toBe(0);
+    expect(rows.swaps).toHaveLength(1);
+    const s = rows.swaps[0]!;
+    expect(s.id).toBe(`4663-${TX}-40`);
+    expect(s.tokenIn).toBe(LTT1);
+    expect(s.tokenOut).toBe(LTT2);
+    expect(s.zeroForOne).toBe(true);
+    expect(s.amountIn).toBe(E18.toString());
+    expect(s.feeTotal).toBe("3000000000000000");
+    expect(s.feeProtocol).toBe("0");
+    expect(s.feeLp).toBe("3000000000000000");
+    expect(s.txFrom).toBe("0x304b0cc019cdba6c7c767d86a2a34e69fdb3c9a9");
+    expect(s.blockNumber).toBe(60244152n);
+    expect(rows.revShareTakes).toHaveLength(1);
+    expect(rows.revShareTakes[0]!.hook).toBe("0x23ce34e8199927dd270dddd8579c947542bde446");
+  });
+
+  it("is deterministic: the same inputs build identical rows (range replacement relies on it)", () => {
+    const ctx = { ...base, poolCurrencies: new Map([[DEMO_POOL, { currency0: LTT1 as Hex, currency1: LTT2 as Hex }]]) };
+    expect(JSON.stringify(buildWindowRows(ctx, events), (_k, v) => (typeof v === "bigint" ? v.toString() : v))).toBe(
+      JSON.stringify(buildWindowRows(ctx, events), (_k, v) => (typeof v === "bigint" ? v.toString() : v)),
+    );
+  });
+
+  it("counts a swap for an unknown pool as an orphan instead of guessing its tokens", () => {
+    const rows = buildWindowRows({ ...base, poolCurrencies: new Map() }, events);
+    expect(rows.swaps).toHaveLength(0);
+    expect(rows.orphans).toBe(1);
+  });
+
+  it("refuses a window with a log whose block has no timestamp", () => {
+    expect(() => buildWindowRows({ ...base, timestamps: new Map(), poolCurrencies: new Map() }, events)).toThrow(/no timestamp/);
+  });
+});
+
+describe("governance and fee-collection classification", () => {
+  it("flags CLAUDE.md do-not-queue selectors", () => {
+    expect(classifyTimelockCall("0x715018a6").hazard).toBe("renounceOwnership");
+    expect(classifyTimelockCall("0x64d62353" + "0".repeat(64) as Hex).hazard).toBe("updateDelay");
+    expect(classifyTimelockCall("0x2f2ff15d" + "0".repeat(128) as Hex).hazard).toBe("grantRole");
+    expect(classifyTimelockCall("0xf2fde38b" + "0".repeat(64) as Hex).hazard).toBeNull();
+    expect(classifyTimelockCall(null).selector).toBeNull();
+  });
+
+  it("tells collect() from sweep() by the outer transaction input", () => {
+    expect(collectionVia(`${COLLECT_SELECTOR}00` as Hex)).toBe("COLLECT");
+    expect(collectionVia(`${SWEEP_SELECTOR}00` as Hex)).toBe("SWEEP");
+    expect(collectionVia("0x6a761202" as Hex)).toBe("INNER_CALL");
+    expect(collectionVia(undefined)).toBe("INNER_CALL");
   });
 });

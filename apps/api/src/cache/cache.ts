@@ -3,85 +3,58 @@ import { logger } from "../config/logger.js";
 import { cacheRedis } from "./redis.js";
 
 /**
- * Read-through cache.
+ * Read-through response cache.
  *
- * Design rule: a cache failure must never become a request failure. Every Redis
- * call here is wrapped, and a miss caused by an outage is indistinguishable to
- * the caller from an ordinary miss — it just costs a database query.
- *
- * Values are stored as JSON, so callers must pass already-serialisable data
- * (run it through `toJsonSafe` first if it contains BigInt or Decimal).
+ * A cache failure never becomes a request failure: an outage is a miss. Values
+ * must already be JSON-safe (run through `toJsonSafe`). Every read endpoint is
+ * served from Postgres through this; no endpoint reads a chain.
  */
 
 function key(parts: readonly (string | number)[]): string {
   return [env.CACHE_PREFIX, ...parts].join(":");
 }
 
-export async function cacheGet<T>(parts: readonly (string | number)[]): Promise<T | undefined> {
-  if (env.CACHE_TTL_SECONDS === 0) return undefined;
-  try {
-    const raw = await cacheRedis.get(key(parts));
-    return raw === null ? undefined : (JSON.parse(raw) as T);
-  } catch (err) {
-    logger.debug({ err, key: parts }, "cache read failed; falling through");
-    return undefined;
-  }
-}
-
-export async function cacheSet(
-  parts: readonly (string | number)[],
-  value: unknown,
-  ttlSeconds = env.CACHE_TTL_SECONDS,
-): Promise<void> {
-  if (ttlSeconds <= 0) return;
-  try {
-    await cacheRedis.set(key(parts), JSON.stringify(value), "EX", ttlSeconds);
-  } catch (err) {
-    logger.debug({ err, key: parts }, "cache write failed; ignoring");
-  }
-}
-
-/** Fetch from cache, or compute and store. */
 export async function cached<T>(
   parts: readonly (string | number)[],
   ttlSeconds: number,
   compute: () => Promise<T>,
 ): Promise<T> {
-  const hit = await cacheGet<T>(parts);
-  if (hit !== undefined) return hit;
+  if (ttlSeconds > 0 && env.CACHE_TTL_SECONDS > 0) {
+    try {
+      const raw = await cacheRedis().get(key(parts));
+      if (raw !== null) return JSON.parse(raw) as T;
+    } catch {
+      logger.debug({ key: parts[0] }, "cache read failed; computing");
+    }
+  }
   const value = await compute();
-  await cacheSet(parts, value, ttlSeconds);
+  if (ttlSeconds > 0 && env.CACHE_TTL_SECONDS > 0) {
+    try {
+      await cacheRedis().set(key(parts), JSON.stringify(value), "EX", ttlSeconds);
+    } catch {
+      logger.debug({ key: parts[0] }, "cache write failed; ignoring");
+    }
+  }
   return value;
 }
 
-/**
- * Drop every cached entry under a prefix. Uses SCAN rather than KEYS so a large
- * keyspace does not block the Redis event loop.
- */
-export async function cacheInvalidate(parts: readonly (string | number)[]): Promise<number> {
+/** Drop cached entries under a prefix (SCAN, never KEYS). */
+export async function cacheInvalidate(parts: readonly (string | number)[]): Promise<void> {
   const pattern = `${key(parts)}*`;
   let cursor = "0";
-  let removed = 0;
   try {
     do {
-      const [next, batch] = await cacheRedis.scan(cursor, "MATCH", pattern, "COUNT", 200);
+      const [next, batch] = await cacheRedis().scan(cursor, "MATCH", pattern, "COUNT", 500);
       cursor = next;
-      if (batch.length > 0) {
-        removed += await cacheRedis.del(...batch);
-      }
+      if (batch.length > 0) await cacheRedis().del(...batch);
     } while (cursor !== "0");
-  } catch (err) {
-    logger.debug({ err, pattern }, "cache invalidation failed; ignoring");
+  } catch {
+    logger.debug("cache invalidation failed; entries will expire by TTL");
   }
-  return removed;
 }
 
-/** TTL presets, so call sites do not sprinkle magic numbers. */
 export const TTL = {
-  /** Reference data that barely changes. */
+  short: Math.max(5, env.CACHE_TTL_SECONDS),
+  medium: Math.max(15, env.CACHE_TTL_SECONDS * 2),
   long: 300,
-  /** List endpoints. */
-  medium: env.CACHE_TTL_SECONDS,
-  /** Aggregates over recent events. */
-  short: Math.max(5, Math.floor(env.CACHE_TTL_SECONDS / 2)),
 } as const;

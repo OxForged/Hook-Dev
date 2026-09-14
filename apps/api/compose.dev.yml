@@ -1,0 +1,37 @@
+# LOCAL DEVELOPMENT dependencies only (Postgres + Redis), for `npm run dev`.
+#
+#   docker compose -p latch-api-dev -f compose.dev.yml up -d
+#
+# A DIFFERENT project name from the deploy stack on purpose, so a developer
+# machine running the keeper stack (project `latch`) is never touched. Loopback
+# ports only; override if taken. Credentials here are throwaway dev values.
+
+name: latch-api-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: latch-api-dev-postgres
+    environment:
+      POSTGRES_USER: latch
+      POSTGRES_PASSWORD: latch-dev-only
+      POSTGRES_DB: latch
+    ports: ["127.0.0.1:${DEV_POSTGRES_PORT:-55432}:5432"]
+    volumes: ["latch-api-dev-pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U latch -d latch"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: latch-api-dev-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:${DEV_REDIS_PORT:-56379}:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  latch-api-dev-pgdata:

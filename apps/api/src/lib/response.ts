@@ -2,67 +2,45 @@ import type { Response } from "express";
 import { toJsonSafe } from "./serialize.js";
 
 /**
- * Response envelope.
+ * Response envelope: `{ data, provenance, page? }`.
  *
- * Every payload carries a `meta.dataSource`. This is not decoration: nothing is
- * deployed, so almost everything this API returns is derived from fixtures, and
- * a consumer must be able to tell without reading the docs. The same fact is
- * repeated in the `X-LatchProtocol-Data-Source` header so it survives logging
- * and proxying.
+ * Every response says which chain, which block range the data covers, how far
+ * the indexer is behind the chain head (as the WORKER last observed it — the API
+ * never asks a chain), and whether the numbers were reconciled against an
+ * on-chain counter. "Summed from logs since block N" is the difference between a
+ * total and an estimate, so it is never optional.
  */
 
-export type DataSourceLabel = "fixture" | "onchain" | "mixed" | "curated" | "empty";
+export type ReconciledState =
+  /** Every check covering this data passed at `atBlock`. */
+  | "verified"
+  /** At least one check failed. The data is served, labelled, and must not be presented as a total. */
+  | "mismatch"
+  /** A counter exists for some of it and not for the rest (e.g. a hook predating totalTaken). */
+  | "partial"
+  /** No on-chain counter covers this kind of data. */
+  | "not-applicable"
+  /** Checks exist but have not run yet. */
+  | "pending";
 
-export interface ResponseMeta {
-  dataSource: DataSourceLabel;
-  /** Present whenever any part of the payload is fabricated. */
-  disclaimer?: string;
-  generatedAt: string;
-  [key: string]: unknown;
-}
-
-export interface Envelope<T> {
-  data: T;
-  meta: ResponseMeta;
-}
-
-const FIXTURE_DISCLAIMER =
-  "Sample data. LatchProtocol is not deployed on any chain; these rows were produced by the " +
-  "fixture chain-log provider and describe no real activity.";
-
-const CURATED_DISCLAIMER =
-  "Curated listing metadata. Entries marked kind=EXAMPLE are illustrative and do not describe " +
-  "real projects.";
-
-export function metaFor(
-  dataSource: DataSourceLabel,
-  extra: Record<string, unknown> = {},
-): ResponseMeta {
-  const meta: ResponseMeta = {
-    dataSource,
-    generatedAt: new Date().toISOString(),
-    ...extra,
+export interface Provenance {
+  chainId: number;
+  source: "latch-indexer";
+  /** First L2 block the data could include (the deployment block for aggregates). */
+  fromBlock: string | null;
+  /** Last fully indexed L2 block. */
+  toBlock: string | null;
+  toBlockTimestamp: string | null;
+  indexerLag: {
+    blocks: string | null;
+    headBlock: string | null;
+    headObservedAt: string | null;
   };
-  if (dataSource === "fixture" || dataSource === "mixed") meta.disclaimer = FIXTURE_DISCLAIMER;
-  else if (dataSource === "curated") meta.disclaimer = CURATED_DISCLAIMER;
-  return meta;
+  reconciled: { state: ReconciledState; atBlock: string | null; checks: number };
+  generatedAt: string;
+  notes?: string[];
 }
 
-/**
- * Collapse the per-row `dataSource` values of a result set into one label.
- * `mixed` is deliberately loud: it means at least one fabricated row is present.
- */
-export function labelFor(rows: readonly { dataSource?: string | null }[]): DataSourceLabel {
-  if (rows.length === 0) return "empty";
-  const kinds = new Set(rows.map((r) => (r.dataSource ?? "FIXTURE").toLowerCase()));
-  if (kinds.size > 1) return "mixed";
-  const only = [...kinds][0];
-  if (only === "onchain") return "onchain";
-  if (only === "curated") return "curated";
-  return "fixture";
-}
-
-export function send<T>(res: Response, data: T, meta: ResponseMeta, status = 200): void {
-  res.setHeader("X-LatchProtocol-Data-Source", meta.dataSource);
-  res.status(status).json(toJsonSafe({ data, meta }));
+export function send(res: Response, body: { data: unknown; provenance: Provenance; page?: unknown }, status = 200): void {
+  res.status(status).json(toJsonSafe(body));
 }

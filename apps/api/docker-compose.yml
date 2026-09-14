@@ -1,73 +1,130 @@
-# Local dependencies for the Latch Protocol API.
+# The `latch` stack: hosted API tier (Postgres, Redis, migrate, API, indexer).
 #
-#   docker compose up -d
-#   npm run db:push && npm run db:seed && npm run dev
+# FOR THE SHARED HOST. Read apps/api/README.md "Deploying on the shared VPS"
+# before running anything. The rules, restated because a mistake here takes down
+# somebody else's production:
 #
-# Host ports are overridable, because 5432 and 6379 are frequently already
-# claimed by another project on a developer machine:
+#   project  latch      pinned by `name:`. The keeper (packages/keeper) is ALSO in
+#                       project `latch`, from a different compose file. So:
+#                         * ALWAYS pass `-p latch -f docker-compose.yml`
+#                         * NEVER pass --remove-orphans (it would delete latch-keeper)
+#                         * NEVER run a bare `down`; stop named services instead
+#                         * export COMPOSE_IGNORE_ORPHANS=1 to silence the warning
+#   network  latch_net  EXTERNAL here. The keeper stack owns it; this file never
+#                       creates or removes it.
+#   names    latch-api-postgres, latch-api-redis, latch-api-migrate, latch-api, latch-indexer
+#   ports    ONE published: the API on 127.0.0.1:${LATCH_API_PORT:-8093}. Loopback only.
+#            8090-8092 belong to peddlepro. Postgres and Redis publish nothing.
 #
-#   POSTGRES_PORT=5442 REDIS_PORT=6389 docker compose up -d
+# Secrets come from `.env` beside this file (chmod 600, never committed):
+#   POSTGRES_PASSWORD, REDIS_PASSWORD, API_KEY_PEPPER  (hex, e.g. `openssl rand -hex 32`)
+#   optional: LATCH_RPC_4663 (a keyed endpoint), ADMIN_* (see .env.example)
 #
-# Set the same ports in DATABASE_URL / REDIS_URL in your .env.
-#
-# Only Postgres and Redis run here; the API itself runs on the host so it
-# reloads on edit. Both services expose healthchecks so `depends_on` in any
-# larger compose file can wait for them properly.
+# Build context is the repo root (the API depends on packages/sdk):
+#   LATCH_REPO=../.. (default, when run from apps/api in a checkout)
 
-name: latch-api
+name: latch
+
+x-app: &app
+  image: latch-api:${LATCH_API_TAG:-local}
+  build:
+    context: ${LATCH_REPO:-../..}
+    dockerfile: apps/api/Dockerfile
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgresql://latch:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/latch?schema=public&connection_limit=10&pool_timeout=10&socket_timeout=20
+    REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
+    API_KEY_PEPPER: ${API_KEY_PEPPER:?set API_KEY_PEPPER in .env}
+  networks: [latch_net]
+  restart: unless-stopped
+  read_only: true
+  tmpfs: ["/tmp"]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: latch-postgres
+    container_name: latch-api-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: latch
-      POSTGRES_PASSWORD: latch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: latch
-      # Faster and deterministic collation for a dev database.
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - latch-postgres-data:/var/lib/postgresql/data
+    volumes: ["latch-api-pgdata:/var/lib/postgresql/data"]
+    networks: [latch_net]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U latch -d latch"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 10s
-    command:
-      # A dev box does not need durability, and fsync dominates the runtime of
-      # an ingestion backfill. Do NOT copy these flags to a real deployment.
-      - postgres
-      - -c
-      - fsync=off
-      - -c
-      - synchronous_commit=off
-      - -c
-      - full_page_writes=off
-      - -c
-      - max_connections=200
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
   redis:
     image: redis:7-alpine
-    container_name: latch-redis
+    container_name: latch-api-redis
     restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - latch-redis-data:/data
-    # appendonly keeps queued jobs across a restart, which matters because
-    # BullMQ's repeatable-job schedule lives in Redis.
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    # noeviction: BullMQ schedules live in Redis and must not be evicted.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}", "--appendonly", "yes", "--maxmemory", "200mb", "--maxmemory-policy", "noeviction"]
+    volumes: ["latch-api-redisdata:/data"]
+    networks: [latch_net]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
       retries: 10
-      start_period: 5s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  migrate:
+    <<: *app
+    container_name: latch-api-migrate
+    restart: "no"
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    container_name: latch-api
+    command: ["node", "dist/index.js"]
+    ports:
+      - "127.0.0.1:${LATCH_API_PORT:-8093}:4000"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    mem_limit: 512m
+
+  indexer:
+    <<: *app
+    container_name: latch-indexer
+    command: ["node", "dist/worker.js"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    mem_limit: 512m
+
+networks:
+  latch_net:
+    external: true
+    name: latch_net
 
 volumes:
-  latch-postgres-data:
-  latch-redis-data:
+  latch-api-pgdata:
+  latch-api-redisdata:
