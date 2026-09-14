@@ -158,14 +158,16 @@ contract LaunchGuardHook is BaseCLHook {
      * `uint48 constant MAX_START_DELAY = 1_000_000`, sized as "about 139 days at 12s blocks" -
      * comfortably generous for the only chain anybody had in mind.
      *
-     * Robinhood Chain (4663) produces a block every 0.102s, measured over 500 000 blocks. On that
-     * chain those same constants are:
+     * CORRECTION, 2026-09-13. This comment used to claim that on Robinhood Chain (4663), "which
+     * produces a block every 0.102s", those constants were 28 hours. They were not: 0.102 s is the
+     * L2 block the RPC reports, and Robinhood is Arbitrum Nitro, where `block.number` INSIDE THE
+     * EVM is Ethereum's block number, ~12 s per block. The live deployment of this hook then
+     * declared `blockTimeCentis = 10` and `MAX_DECAY_BLOCKS = 26 000 000` from that same wrong
+     * measurement, which on the real clock is ~9.9 YEARS. Measure the EVM's clock (`eth_call`
+     * NUMBER against TIMESTAMP), never header block numbers; the deploy script now does it.
      *
-     *     1 000 000 x 0.102 s = 102 000 seconds = 28 HOURS
-     *
-     * So a three-day fair launch - an entirely ordinary thing to want, and the single most common
-     * shape a launchpad sells - simply REVERTS with `InvalidDecayBlocks`. Nothing is unsafe; the
-     * product is unbuildable, and the error message points at the caller rather than at the cap.
+     * The design point stands regardless: a block-count cap is only as right as the block time it
+     * was sized for.
      *
      * The general rule this hook now follows: A DURATION IN BLOCKS IS NOT A DURATION. It is a
      * duration times an unknown the deployer picks later. Both caps are therefore chosen per chain
@@ -253,8 +255,9 @@ contract LaunchGuardHook is BaseCLHook {
     /// @param _poolManager The CL singleton this hook serves, forever.
     /// @param blockTimeCentis_ This chain's block time in hundredths of a second. Round DOWN when
     /// it is not an integer: a smaller block time makes each cap's computed duration shorter, so
-    /// the constructor demands MORE blocks for the same window, which errs safe. Robinhood Chain
-    /// measures 10.2 - declare 10, never 11.
+    /// the constructor demands MORE blocks for the same window, which errs safe. It is the cadence
+    /// of `block.number` AS THE EVM REPORTS IT: 1200 on Robinhood Chain (Arbitrum Nitro, where
+    /// `block.number` is Ethereum's), not the 10 its RPC's 0.1 s L2 blocks suggest.
     /// @param maxDecayBlocks_ Ceiling on `decayBlocks`. Its real duration must land inside
     /// [`MIN_LAUNCH_WINDOW_SECONDS`, `MAX_LAUNCH_WINDOW_SECONDS`].
     /// @param maxStartDelayBlocks_ Ceiling on how far ahead `startBlock` may be set, under the

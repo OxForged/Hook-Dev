@@ -158,15 +158,14 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// "roughly 12 hours at 12s blocks, or proportionally less on a faster chain - documented
     /// rather than configurable so it cannot be shortened".
     ///
-    /// Robinhood Chain (4663) produces a block every 0.102s, measured over 500 000 blocks. So on
-    /// the chain this contract was actually deployed to, 3600 blocks is:
-    ///
-    ///     3 600 x 0.102 s = 367 seconds = 6.1 MINUTES
-    ///
-    /// 118x shorter than the number in the docstring. That is not "proportionally less"; it is the
-    /// mechanism defeated. The delay exists so a pool owner cannot land a fee rise in front of a
-    /// large trade, and six minutes of notice on a chain where nobody watches a mempool for
-    /// `proposeConfig` does not buy a trader anything.
+    /// CORRECTION, 2026-09-13. This comment used to say that on Robinhood Chain (4663), "which
+    /// produces a block every 0.102s", 3600 blocks was six minutes. It was not. 0.102 s is the L2
+    /// block the RPC reports. Robinhood is Arbitrum Nitro, and inside the EVM `block.number` is
+    /// Ethereum's block number, ~12 s per block, so the retired hook's 3600 was ~12 real hours all
+    /// along. The replacement deployment then declared `blockTimeCentis = 10` from the same wrong
+    /// measurement: its 432 000-block delay is ~60 real days and its derived proposal TTL ~1 year.
+    /// Measure the EVM's clock (`eth_call` NUMBER against TIMESTAMP), never header block numbers;
+    /// the deploy script now does this itself and refuses to broadcast a mismatch.
     ///
     /// The lesson generalises and is worth stating once: A DURATION EXPRESSED IN BLOCKS IS NOT A
     /// DURATION. It is a duration multiplied by an unknown the deployer chooses later. So the
@@ -504,8 +503,9 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// against `MIN_CONFIG_DELAY_SECONDS` in real seconds rather than trusted.
     /// @param blockTimeCentis_ This chain's block time in hundredths of a second. Round DOWN when
     /// it is not an integer: a smaller block time makes the computed window shorter, so the
-    /// constructor demands MORE blocks, which errs safe. Robinhood Chain measures 10.2 - declare
-    /// 10, never 11.
+    /// constructor demands MORE blocks, which errs safe. It is the cadence of `block.number` AS THE
+    /// EVM REPORTS IT, not the RPC's block time: 1200 on Robinhood Chain (Arbitrum Nitro, where
+    /// `block.number` is Ethereum's), not the 10 the RPC's 0.1 s L2 blocks suggest.
     /// @param maxBeneficiaries_ Roster ceiling for `settleBeneficiaries`. 1..
     /// `MAX_BENEFICIARIES_CEILING`.
     constructor(

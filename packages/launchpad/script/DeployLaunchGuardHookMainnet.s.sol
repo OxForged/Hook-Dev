@@ -6,6 +6,7 @@ import "forge-std/Script.sol";
 
 import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";
 import {LaunchGuardHook} from "latch-hooks/src/launch/LaunchGuardHook.sol";
+import {ContractClockMath, ContractClockProbe} from "latch-hooks/script/ContractClock.sol";
 
 /**
  * STEP 1 OF 2. Deploys `LaunchGuardHook` to a MAINNET chain.
@@ -52,25 +53,30 @@ import {LaunchGuardHook} from "latch-hooks/src/launch/LaunchGuardHook.sol";
  * entry of `additionalContracts`, which has cost this project time before.
  *
  * THE BLOCK-TIME ARGUMENTS. `MAX_DECAY_BLOCKS` and `MAX_START_DELAY` used to be
- * `constant 1_000_000` — "about 139 days at 12s blocks". Robinhood produces a
- * block every 0.102s, so on this chain that is 102 000 seconds: 28 HOURS. An
- * ordinary three-day fair launch reverts with `InvalidDecayBlocks`, and the error
- * blames the launcher. Both caps are now arguments, validated by the hook against
- * a wall-clock range of [3 days, 180 days].
+ * `constant 1_000_000` — "about 139 days at 12s blocks". Both caps are now
+ * arguments, validated by the hook against a wall-clock range of [3 days, 180 days].
  *
- * ROUND THE BLOCK TIME DOWN. Robinhood measures 10.2 centis; declare 10. A smaller
- * declared block time makes each cap's computed duration shorter, so the hook
- * demands MORE blocks for the same window — which errs long. Declaring 11 would
- * make every window short.
+ * THE BLOCK TIME IS THE EVM's, NOT THE RPC's — AND IT IS MEASURED, NOT TYPED.
+ * The first Robinhood deployment declared 10 centis because the chain's RPC shows a
+ * block every 0.102 s. Robinhood is Arbitrum Nitro: inside the EVM `block.number`
+ * is Ethereum's block number, ~12 s per block. So that hook (0x8b4F…575c) has a
+ * MAX_DECAY_BLOCKS of 26 000 000 that really means ~9.9 YEARS, and every window a
+ * kit resolves against it runs ~120x long. `run()` now measures NUMBER against
+ * TIMESTAMP on the live chain over `CLOCK_PROBE_SECONDS` of real waiting (see
+ * `latch-hooks/script/ContractClock.sol`) and refuses to broadcast unless
+ * LAUNCH_BLOCK_TIME_CENTIS agrees with it. Expect the dry run to pause that long.
+ *
+ * Round the block time DOWN when it is not an integer: a smaller declared block time
+ * makes each cap's computed duration shorter, so the hook demands MORE blocks.
  *
  * Usage (dry run first — no --broadcast):
  *   CL_POOL_MANAGER=0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66 \
- *   LAUNCH_BLOCK_TIME_CENTIS=10 \
- *   LAUNCH_MAX_DECAY_BLOCKS=26000000 \
- *   LAUNCH_MAX_START_DELAY_BLOCKS=26000000 \
+ *   LAUNCH_BLOCK_TIME_CENTIS=1200 \
+ *   LAUNCH_MAX_DECAY_BLOCKS=216000 \
+ *   LAUNCH_MAX_START_DELAY_BLOCKS=216000 \
  *   forge script script/DeployLaunchGuardHookMainnet.s.sol --rpc-url $ROBINHOOD_RPC
  *
- * 26 000 000 blocks x 10 centis = 2 600 000 s = 30.1 days on Robinhood.
+ * 216 000 blocks x 1200 centis = 2 592 000 s = 30 days on Robinhood.
  *
  * Then, when a human has read the simulation:
  *   ... --broadcast --slow
@@ -83,6 +89,11 @@ contract DeployLaunchGuardHookMainnetScript is Script {
     /// nothing.
     uint16 internal constant EXPECTED_HOOK_BITMAP = 0x0041;
 
+    /// @notice Real seconds `run()` waits between its two reads of the contract clock.
+    /// @dev 180 s is ~15 Ethereum blocks: one block of jitter is under 7%, inside the band
+    /// `ContractClockMath.requireDeclaredMatches` allows.
+    uint256 internal constant CLOCK_PROBE_SECONDS = 180;
+
     /// @notice Entry point. Reads the environment and hands off to `runWith`.
     /// @dev The environment is read HERE AND NOWHERE ELSE, so `runWith` can be driven directly by
     /// `test/DeployScripts.t.sol`. That split is not cosmetic: forge runs test cases
@@ -92,30 +103,47 @@ contract DeployLaunchGuardHookMainnetScript is Script {
     /// @return hook The deployed hook. Returned so `forge script --json` reports the address
     /// without anyone having to parse a broadcast artifact for it.
     function run() public returns (LaunchGuardHook hook) {
+        // Measured BEFORE anything else, against the chain the script is forked from. This is the
+        // one input that cannot come from the environment, because the environment is where the
+        // wrong value came from last time.
+        ContractClockProbe.Measurement memory clock = ContractClockProbe.measure(CLOCK_PROBE_SECONDS);
+        console.log("contract clock: centis per block.number ", clock.centisPerBlock);
+        console.log("contract clock: block.number / eth_blockNumber", clock.contractBlockNumber, clock.rpcBlockNumber);
+        if (clock.clockDiffersFromRpc) {
+            console.log("contract clock: the EVM's block.number is NOT the RPC block (parent-chain clock)");
+        }
         return runWith(
             vm.envUint("PRIVATE_KEY"),
             vm.envAddress("CL_POOL_MANAGER"),
             vm.envUint("LAUNCH_BLOCK_TIME_CENTIS"),
             vm.envUint("LAUNCH_MAX_DECAY_BLOCKS"),
-            vm.envUint("LAUNCH_MAX_START_DELAY_BLOCKS")
+            vm.envUint("LAUNCH_MAX_START_DELAY_BLOCKS"),
+            clock.centisPerBlock
         );
     }
 
     /// @param pk Deployer key. Never a literal - `run` takes it from `PRIVATE_KEY`.
     /// @param poolManager The CL singleton this hook will serve, forever.
-    /// @param blockTimeCentis Chain block time in hundredths of a second. Round DOWN.
+    /// @param blockTimeCentis Contract block time in hundredths of a second. Round DOWN.
     /// @param maxDecayBlocks Ceiling on a launch's decay window, in blocks.
     /// @param maxStartDelayBlocks Ceiling on how far ahead a launch may be scheduled.
+    /// @param measuredBlockTimeCentis The contract clock as `run()` MEASURED it on the live chain.
     function runWith(
         uint256 pk,
         address poolManager,
         uint256 blockTimeCentis,
         uint256 maxDecayBlocks,
-        uint256 maxStartDelayBlocks
+        uint256 maxStartDelayBlocks,
+        uint256 measuredBlockTimeCentis
     ) public returns (LaunchGuardHook hook) {
         address deployer = vm.addr(pk);
 
         /* ---- pre-flight, before anything is broadcast ------------------- */
+
+        // THE CLOCK GUARD. Every cap below is converted to real time with `blockTimeCentis`, so if
+        // that number is not the EVM's real cadence, every check below is checking fiction. On
+        // Robinhood, declaring the RPC's 0.1 s against a measured ~12 s reverts here.
+        ContractClockMath.requireDeclaredMatches(blockTimeCentis, measuredBlockTimeCentis);
 
         // The pool manager is an immutable on the hook. A typo here produces a
         // hook that every `configureLaunch` rejects with `PoolManagerMismatch`,
@@ -143,6 +171,7 @@ contract DeployLaunchGuardHookMainnetScript is Script {
         console.log("  deployer      ", deployer);
         console.log("  poolManager   ", poolManager);
         console.log("  blockTimeCentis          ", blockTimeCentis);
+        console.log("  measured on chain        ", measuredBlockTimeCentis);
         console.log("  maxDecayBlocks           ", maxDecayBlocks);
         console.log("  => longest launch, days  ", decaySeconds / 1 days);
         console.log("  maxStartDelayBlocks      ", maxStartDelayBlocks);

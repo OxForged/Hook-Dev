@@ -5,6 +5,7 @@ pragma solidity 0.8.26;
 import "forge-std/Script.sol";
 import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";
 import {RevShareHook} from "../src/RevShareHook.sol";
+import {ContractClockMath, ContractClockProbe} from "latch-hooks/script/ContractClock.sol";
 
 /**
  * Deploys `RevShareHook` to a MAINNET chain.
@@ -35,9 +36,13 @@ import {RevShareHook} from "../src/RevShareHook.sol";
  * ####################### THE BLOCK-TIME ARGUMENTS #######################
  *
  * `CONFIG_DELAY_BLOCKS` used to be a `constant 3600`, documented as "roughly 12
- * hours at 12s blocks". On Robinhood Chain, which produces a block every 0.102s,
- * that is SIX MINUTES — 118x shorter than the docstring, and short enough that the
- * delay stopped being a defence against landing a fee rise in front of a trade.
+ * hours at 12s blocks". This header then claimed that on Robinhood Chain, "which
+ * produces a block every 0.102s", it was six minutes. THAT WAS WRONG. 0.102 s is
+ * Robinhood's L2 block as the RPC reports it; Robinhood is Arbitrum Nitro, and
+ * inside the EVM `block.number` is Ethereum's, ~12 s. The retired hook's 3600 was
+ * ~12 real hours all along, and the replacement (0xfC00…2aD2), built at 10 centis
+ * with 432 000 blocks, has a ~60-DAY delay and a ~1-YEAR proposal expiry. The
+ * script now measures the contract clock before it will broadcast.
  *
  * It is now a constructor argument in blocks PAIRED WITH THE CHAIN'S BLOCK TIME,
  * and the hook multiplies them out and refuses anything under
@@ -46,19 +51,23 @@ import {RevShareHook} from "../src/RevShareHook.sol";
  * `REVSHARE_CONFIG_DELAY_BLOCKS` is allowed to be, and the constructor reverts
  * rather than silently shipping a short window.
  *
- * ROUND THE BLOCK TIME DOWN. Robinhood measures 10.2 centis; declare 10. A smaller
- * declared block time makes the computed delay shorter, so the constructor demands
- * MORE blocks — which errs long. Declaring 11 would make every window short.
+ * ROUND THE BLOCK TIME DOWN when it is not an integer. A smaller declared block
+ * time makes the computed delay shorter, so the constructor demands MORE blocks —
+ * which errs long. The measured-clock guard allows 75%..105% of the measurement.
  *
- * Usage (dry run first — no --broadcast):
+ * Usage (dry run first — no --broadcast; it pauses ~3 minutes to measure the clock):
  *   CL_POOL_MANAGER=0x...  REVSHARE_OWNER=0x...  REVSHARE_GUARDIAN=0x...
- *   REVSHARE_CONFIG_DELAY_BLOCKS=432000  REVSHARE_BLOCK_TIME_CENTIS=10
+ *   REVSHARE_CONFIG_DELAY_BLOCKS=3600  REVSHARE_BLOCK_TIME_CENTIS=1200
  *   REVSHARE_MAX_BENEFICIARIES=8
  *   forge script script/DeployRevShareHookMainnet.s.sol --rpc-url <chain>
  *
- * 432 000 blocks x 10 centis = 43 200 s = exactly 12h on Robinhood.
+ * 3 600 blocks x 1200 centis = 43 200 s = 12h on Robinhood (CONFIG_PROPOSAL_TTL_BLOCKS
+ * then derives to 21 600 = 3 days).
  */
 contract DeployRevShareHookMainnetScript is Script {
+    /// @notice Real seconds `run()` waits between its two reads of the contract clock.
+    uint256 internal constant CLOCK_PROBE_SECONDS = 180;
+
     function run() public {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
@@ -88,6 +97,16 @@ contract DeployRevShareHookMainnetScript is Script {
            convert in their head. */
         require(blockTimeCentis > 0, "REVSHARE_BLOCK_TIME_CENTIS not set - it has no safe default");
         require(blockTimeCentis <= 60_000, "REVSHARE_BLOCK_TIME_CENTIS above 600s per block");
+
+        /* THE CLOCK GUARD. The delay below is only a delay if `blockTimeCentis` is
+           the EVM's real `block.number` cadence. Measured on the forked chain over a
+           real wait, never taken from the environment — the environment is where the
+           live hook's 10 (the RPC's L2 block time on an Arbitrum chain) came from,
+           which turned a 12-hour delay into ~60 days and a 3-day expiry into ~1 year. */
+        ContractClockProbe.Measurement memory clock = ContractClockProbe.measure(CLOCK_PROBE_SECONDS);
+        console.log("contract clock: centis per block.number ", clock.centisPerBlock);
+        console.log("contract clock: block.number / eth_blockNumber", clock.contractBlockNumber, clock.rpcBlockNumber);
+        ContractClockMath.requireDeclaredMatches(blockTimeCentis, clock.centisPerBlock);
         require(configDelayBlocks <= type(uint48).max, "REVSHARE_CONFIG_DELAY_BLOCKS exceeds uint48");
         require(blockTimeCentis <= type(uint32).max, "REVSHARE_BLOCK_TIME_CENTIS exceeds uint32");
 

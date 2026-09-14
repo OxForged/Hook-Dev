@@ -169,9 +169,13 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
         }
         // Any non-zero block time up to 600s.
         //
-        // The floor used to be 50 (0.5s) on the assumption that nothing ships faster. Robinhood
-        // Chain (4663) produces a block every 0.102s - 10 centis - so that floor made this kit
-        // literally unconstructable on the chain it was written for, and the tempting workaround
+        // The floor used to be 50 (0.5s) on the assumption that nothing ships faster.
+        //
+        // CORRECTION, 2026-09-13: this comment used to say Robinhood Chain (4663) needs 10 centis
+        // because its RPC shows a block every 0.102s. Wrong clock. Robinhood is Arbitrum Nitro and
+        // `block.number` inside the EVM is Ethereum's, ~12 s: the right value there is 1200, and the
+        // live kit built at 10 runs every preset 120x long. Genuinely sub-second contract clocks do
+        // exist elsewhere, so the floor stays removed, and the tempting workaround
         // (pass the floor value, 50) is worse than the revert: `secondsToBlocks` divides by this
         // number, so a block time declared 5x too slow makes every preset window 5x too SHORT.
         // A "five minute fair launch" would have lifted its tax after sixty seconds, silently, in

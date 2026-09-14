@@ -24,6 +24,7 @@ import {LaunchpadKit} from "../src/LaunchpadKit.sol";
 import {IHookRegistryListing} from "../src/interfaces/IHookRegistryListing.sol";
 import {DeployLaunchGuardHookMainnetScript} from "../script/DeployLaunchGuardHookMainnet.s.sol";
 import {DeployLaunchpadKitMainnetScript} from "../script/DeployLaunchpadKitMainnet.s.sol";
+import {ContractClockMath} from "latch-hooks/script/ContractClock.sol";
 
 /// @title DeployScriptsTest
 /// @notice Runs both mainnet deploy scripts end to end against a locally built stack.
@@ -46,8 +47,11 @@ import {DeployLaunchpadKitMainnetScript} from "../script/DeployLaunchpadKitMainn
 /// PREVIOUS test's error message. That is the shape of that bug; it is why the scripts read env
 /// in exactly one function and take their inputs as arguments everywhere else.
 ///
-/// The block time used throughout is Robinhood Chain's real one - 10 centis, 0.1s blocks -
-/// because that is the case the kit's old constructor floor of 50 rejected outright.
+/// The block time used throughout is Robinhood Chain's real CONTRACT block time - 1200 centis.
+/// Robinhood is Arbitrum Nitro: inside the EVM `block.number` is Ethereum's block number (~12 s),
+/// not the ~0.1 s L2 block its RPC reports. This file previously used 10, the RPC's figure, which
+/// is how the live kit and hook came to run every window ~120x long. The scripts now take the
+/// cadence `run()` measured on chain and refuse a declaration that disagrees with it.
 /// ###################################################################
 contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     Vault vault;
@@ -64,16 +68,20 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     /// need a key they can derive an address from.
     uint256 constant TEST_PK = 1;
 
-    /// @dev Robinhood Chain (4663): measured 51 000s over 500 000 blocks => 0.102 s/block.
-    /// Declared DOWN to 10 so preset windows round long rather than short.
-    uint256 constant ROBINHOOD_CENTIS = 10;
+    /// @dev Robinhood Chain (4663) contract block time, declared. Ethereum's 12 s slot.
+    uint256 constant ROBINHOOD_CENTIS = 1200;
 
-    /// @dev The hook's two block caps, as a Robinhood deployment must set them. At 10 centis these
-    /// are ~30 days each. The old `constant 1_000_000` would have been 28 HOURS here, so a
-    /// three-day fair launch reverted with `InvalidDecayBlocks` - the same class of bug as the
-    /// kit's old block-time floor, and the reason both are arguments now.
-    uint256 constant MAX_DECAY = 26_000_000;
-    uint256 constant MAX_START = 26_000_000;
+    /// @dev What `ContractClockProbe.measure` returns on Robinhood: 3,428 s over 283 contract
+    /// blocks between two real headers read on 2026-09-13 (missed Ethereum slots push it past 1200).
+    uint256 constant ROBINHOOD_MEASURED = 1211;
+
+    /// @dev What the live Robinhood kit and hook declared: the RPC's L2 block time.
+    uint256 constant LIVE_WRONG_CENTIS = 10;
+
+    /// @dev The hook's two block caps at 1200 centis: 216 000 x 12 s = 30 days each. The live hook
+    /// set 26 000 000 at 10 centis, which on the real clock is ~9.9 years.
+    uint256 constant MAX_DECAY = 216_000;
+    uint256 constant MAX_START = 216_000;
 
     address constant REGISTRY_ADMIN = address(0xAD3111);
 
@@ -102,7 +110,8 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
             positionManager: address(posm),
             permit2: address(permit2),
             registry: address(registry),
-            blockTimeCentis: ROBINHOOD_CENTIS
+            blockTimeCentis: ROBINHOOD_CENTIS,
+            measuredBlockTimeCentis: ROBINHOOD_MEASURED
         });
     }
 
@@ -114,7 +123,7 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     /// inside them is live; this passing means none of them tripped, and the post-flight
     /// assertions inside the scripts have already read every immutable back off chain.
     function test_bothScriptsRunInOrder() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START);
+        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
         assertGt(address(hook).code.length, 0, "hook has no code");
         assertEq(address(hook.poolManager()), address(poolManager));
 
@@ -136,7 +145,7 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     /// script requires it to be passed explicitly, so "forgot to set it" cannot look like
     /// "meant no registry" - the absence of a default is the safety property.
     function test_kitScriptAcceptsNoRegistry() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START);
+        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
 
         DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
         w.registry = address(0);
@@ -146,17 +155,22 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     }
 
     /// @dev The whole point of the block-time fix, stated as an outcome rather than a bound: at
-    /// Robinhood's block time a "five minute" FairLaunch must span at least five real minutes.
-    function test_robinhoodBlockTimeProducesWindowsThatAreNotShort() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START);
+    /// Robinhood's real contract cadence a "five minute" FairLaunch spans five real minutes - not
+    /// less, and not the ten hours the live kit gives it.
+    function test_robinhoodBlockTimeProducesWindowsThatMatchTheirLabel() public {
+        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
         LaunchpadKit kit = kitScript.runWith(_wiring(address(hook)));
 
-        // FairLaunch documents 300s. 3000 blocks at the chain's real 0.102s is 306 real seconds.
-        uint256 blocks = 300 * 100 / kit.blockTimeCentis();
-        assertEq(blocks, 3000);
-        // 102 = the measured real block time in centis. Rounding the declared value DOWN is what
-        // makes this hold; declaring it up would put the window under 300s.
-        assertGe((blocks * 102) / 100, 300, "the tax would lift before the documented window ends");
+        // FairLaunch documents 300s. 25 blocks at the measured 12.11 s is 302 real seconds.
+        uint256 blocks = (300 * 100 + kit.blockTimeCentis() - 1) / kit.blockTimeCentis();
+        assertEq(blocks, 25);
+        uint256 realSeconds = (blocks * ROBINHOOD_MEASURED) / 100;
+        assertGe(realSeconds, 300, "the tax would lift before the documented window ends");
+        assertLe(realSeconds, 330, "the window runs far past its label");
+
+        // The live kit's declaration, for contrast: 3 000 blocks, ~10 real hours.
+        uint256 liveBlocks = 300 * 100 / LIVE_WRONG_CENTIS;
+        assertEq((liveBlocks * ROBINHOOD_MEASURED) / 100, 36_330);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -165,7 +179,7 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
 
     function test_hookScript_rejectsAPoolManagerWithNoCode() public {
         vm.expectRevert(bytes("CL_POOL_MANAGER has no code - not a contract"));
-        hookScript.runWith(TEST_PK, address(0xDEAD), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START);
+        hookScript.runWith(TEST_PK, address(0xDEAD), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
     }
 
     function test_kitScript_rejectsAHookThatWasNeverDeployed() public {
@@ -186,7 +200,7 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     /// @dev A position manager on another singleton passes every `code.length` check and fails
     /// only inside a settle, later, with a message about currencies.
     function test_kitScript_rejectsAPositionManagerOnAnotherSingleton() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START);
+        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
 
         (Vault otherVault, CLPoolManager other) = createFreshManager();
         ICLPositionDescriptor descriptor = new CLPositionDescriptorOffChain("https://latch.example/other/");
@@ -205,7 +219,7 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     /// caller and every seed reverts - so the check is identity against the position manager's
     /// own immutable, and a plausible impostor with code must still be rejected.
     function test_kitScript_rejectsAPermit2ThePositionManagerDoesNotUse() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START);
+        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
 
         DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
         w.permit2 = address(registry); // has code, is not the position manager's Permit2
@@ -220,7 +234,7 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     /// has one live on Sepolia that does exactly that. An address with code but the wrong ABI has
     /// to stop the deploy, because the kit's registry can never be re-pointed.
     function test_kitScript_rejectsARegistryWithTheWrongAbi() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START);
+        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
 
         DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
         w.registry = address(new MockERC20("Not", "NOT", 18));
@@ -230,7 +244,7 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     }
 
     function test_kitScript_rejectsAZeroBlockTime() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START);
+        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
 
         DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
         w.blockTimeCentis = 0;
@@ -240,12 +254,63 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     }
 
     function test_kitScript_rejectsABlockTimeAboveTenMinutes() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START);
+        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
 
         DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
         w.blockTimeCentis = 60_001;
 
         vm.expectRevert(bytes("LAUNCHPAD_BLOCK_TIME_CENTIS above 600s per block"));
+        kitScript.runWith(w);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+        CLOCK MUTATIONS - the guards that would have refused the live
+        Robinhood deployment. Delete a guard and its case stops reverting.
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev THE BUG, replayed: the RPC's 0.1 s declared against a measured ~12 s contract clock.
+    function test_hookScript_rejectsTheRpcBlockTimeOnANitroChain() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ContractClockMath.DeclaredBlockTimeTooShort.selector, LIVE_WRONG_CENTIS, ROBINHOOD_MEASURED
+            )
+        );
+        hookScript.runWith(TEST_PK, address(poolManager), LIVE_WRONG_CENTIS, 26_000_000, 26_000_000, ROBINHOOD_MEASURED);
+    }
+
+    /// @dev Declaring the chain SLOWER than it is shortens every window - the sniper's direction.
+    function test_hookScript_rejectsADeclarationThatShortensWindows() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(ContractClockMath.DeclaredBlockTimeTooLong.selector, 1300, ROBINHOOD_MEASURED)
+        );
+        hookScript.runWith(TEST_PK, address(poolManager), 1300, 200_000, 200_000, ROBINHOOD_MEASURED);
+    }
+
+    function test_kitScript_rejectsTheRpcBlockTimeOnANitroChain() public {
+        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
+
+        DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
+        w.blockTimeCentis = LIVE_WRONG_CENTIS;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ContractClockMath.DeclaredBlockTimeTooShort.selector, LIVE_WRONG_CENTIS, ROBINHOOD_MEASURED
+            )
+        );
+        kitScript.runWith(w);
+    }
+
+    /// @dev Both inside the measured band, but not equal to each other: the kit would convert
+    /// seconds at one cadence and the hook validate its caps at another.
+    function test_kitScript_rejectsAKitThatDisagreesWithItsHook() public {
+        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
+
+        DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
+        w.blockTimeCentis = 1150;
+
+        vm.expectRevert(
+            bytes("LAUNCHPAD_BLOCK_TIME_CENTIS differs from the hook's blockTimeCentis - one of them is wrong")
+        );
         kitScript.runWith(w);
     }
 

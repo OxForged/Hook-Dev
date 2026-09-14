@@ -10,6 +10,7 @@ import {IImmutableState} from "infinity-periphery/src/interfaces/IImmutableState
 import {Permit2Forwarder} from "infinity-periphery/src/base/Permit2Forwarder.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 import {LaunchGuardHook} from "latch-hooks/src/launch/LaunchGuardHook.sol";
+import {ContractClockMath, ContractClockProbe} from "latch-hooks/script/ContractClock.sol";
 
 import {LaunchpadKit} from "../src/LaunchpadKit.sol";
 import {IHookRegistryListing} from "../src/interfaces/IHookRegistryListing.sol";
@@ -50,19 +51,21 @@ import {LaunchPresets, Preset} from "../src/libraries/LaunchPresets.sol";
  * early, silently, in the sniper's favour. Declare it faster and windows run
  * long, which is the safe direction.
  *
- *   Measured on Robinhood Chain (4663), 500 000 blocks: 51 000s => 0.102 s/block
- *   => 10.2 centis. Declare 10, not 11: rounding the block time DOWN rounds the
- *   window UP, so a "five minute" FairLaunch spans 3 000 blocks = 306 real
- *   seconds rather than 278.
- *
- * Re-measure before running this on any chain. Two `cast block` reads a few
- * hundred thousand blocks apart is the whole procedure:
- *   BN=$(cast block-number --rpc-url $RPC)
- *   echo $(( ( $(cast block $BN --field timestamp --rpc-url $RPC) \
- *            - $(cast block $((BN-500000)) --field timestamp --rpc-url $RPC) ) * 100 / 500000 ))
+ *   THE BLOCK IS THE EVM's, NOT THE RPC's. This header used to prescribe
+ *   measuring `cast block` timestamps 500 000 blocks apart, which on Robinhood
+ *   gives 0.102 s — the L2 block the RPC indexes. Robinhood is Arbitrum Nitro:
+ *   the hook's `block.number` is Ethereum's, ~12 s. The live kit
+ *   (0x2a4C…bcA7) was deployed at 10 centis from that measurement, so its
+ *   "five minute" FairLaunch is 3 000 blocks = ~10 HOURS. Header block numbers
+ *   measure the wrong clock on any Nitro chain; `run()` now measures NUMBER
+ *   against TIMESTAMP as the EVM reports them (`latch-hooks/script/
+ *   ContractClock.sol`), waits `CLOCK_PROBE_SECONDS` to do it, and refuses to
+ *   broadcast a declaration outside the band. It also refuses a kit whose block
+ *   time differs from its hook's: the kit converts seconds, the hook enforces
+ *   them, and the two disagreeing means one of them is wrong.
  *
  * The script prints every preset's resolved window in blocks AND in real
- * seconds at the declared block time, so a wrong value is visible in the dry
+ * seconds at the MEASURED block time, so a wrong value is visible in the dry
  * run rather than in a launch six weeks from now.
  *
  * THE REGISTRY IS IMMUTABLE ON THE KIT. `LaunchpadKit` cannot be re-pointed at
@@ -99,8 +102,8 @@ import {LaunchPresets, Preset} from "../src/libraries/LaunchPresets.sol";
  *   LAUNCH_GUARD_HOOK=0x...                                    \
  *   CL_POSITION_MANAGER=0x957cc13b24a563cc92253213d9d5e6954c8db6a7 \
  *   PERMIT2=0x000000000022D473030F116dDEE9F6B43aC78BA3          \
- *   LAUNCHPAD_REGISTRY=0xE4395085De89365440A6Ee25cE24BE2bAD66AC86 \
- *   LAUNCHPAD_BLOCK_TIME_CENTIS=10                              \
+ *   LAUNCHPAD_REGISTRY=0xb2c8BB7473A09b0906f192D69e30D7362fA988CC \
+ *   LAUNCHPAD_BLOCK_TIME_CENTIS=1200                            \
  *   forge script script/DeployLaunchpadKitMainnet.s.sol --rpc-url $ROBINHOOD_RPC
  *
  * Then, when a human has read the simulation:
@@ -124,7 +127,12 @@ contract DeployLaunchpadKitMainnetScript is Script {
         address registry;
         /// @dev Hundredths of a second per block. See the header; this is the one to get right.
         uint256 blockTimeCentis;
+        /// @dev The contract clock as `run()` MEASURED it on the live chain. Never from env.
+        uint256 measuredBlockTimeCentis;
     }
+
+    /// @notice Real seconds `run()` waits between its two reads of the contract clock.
+    uint256 internal constant CLOCK_PROBE_SECONDS = 180;
 
     /// @notice Entry point. Reads the environment and hands off to `runWith`.
     /// @dev The environment is read HERE AND NOWHERE ELSE, so `runWith` can be driven directly by
@@ -135,6 +143,9 @@ contract DeployLaunchpadKitMainnetScript is Script {
     /// @return kit The deployed kit. Returned so `forge script --json` reports the address
     /// without anyone having to parse a broadcast artifact for it.
     function run() public returns (LaunchpadKit kit) {
+        ContractClockProbe.Measurement memory clock = ContractClockProbe.measure(CLOCK_PROBE_SECONDS);
+        console.log("contract clock: centis per block.number ", clock.centisPerBlock);
+        console.log("contract clock: block.number / eth_blockNumber", clock.contractBlockNumber, clock.rpcBlockNumber);
         return runWith(
             Wiring({
                 pk: vm.envUint("PRIVATE_KEY"),
@@ -143,14 +154,17 @@ contract DeployLaunchpadKitMainnetScript is Script {
                 positionManager: vm.envAddress("CL_POSITION_MANAGER"),
                 permit2: vm.envAddress("PERMIT2"),
                 registry: vm.envAddress("LAUNCHPAD_REGISTRY"),
-                blockTimeCentis: vm.envUint("LAUNCHPAD_BLOCK_TIME_CENTIS")
+                blockTimeCentis: vm.envUint("LAUNCHPAD_BLOCK_TIME_CENTIS"),
+                measuredBlockTimeCentis: clock.centisPerBlock
             })
         );
     }
 
     function runWith(Wiring memory w) public returns (LaunchpadKit kit) {
         _preflight(w);
-        _reportSchedule(uint32(w.blockTimeCentis), LaunchGuardHook(w.hook).MAX_DECAY_BLOCKS());
+        _reportSchedule(
+            uint32(w.blockTimeCentis), uint32(w.measuredBlockTimeCentis), LaunchGuardHook(w.hook).MAX_DECAY_BLOCKS()
+        );
 
         vm.startBroadcast(w.pk);
         kit = new LaunchpadKit(
@@ -241,6 +255,16 @@ contract DeployLaunchpadKitMainnetScript is Script {
         require(blockTimeCentis > 0, "LAUNCHPAD_BLOCK_TIME_CENTIS not set - it has no safe default");
         require(blockTimeCentis <= 60_000, "LAUNCHPAD_BLOCK_TIME_CENTIS above 600s per block");
 
+        /* --- THE CLOCK GUARDS. The declaration must be the EVM's real cadence,
+               and it must be the SAME cadence the hook was built with. The kit
+               turns seconds into blocks; the hook turns blocks back into the
+               wall-clock bounds it validates. If they disagree, one is wrong. --- */
+        ContractClockMath.requireDeclaredMatches(blockTimeCentis, w.measuredBlockTimeCentis);
+        require(
+            uint256(hook.blockTimeCentis()) == blockTimeCentis,
+            "LAUNCHPAD_BLOCK_TIME_CENTIS differs from the hook's blockTimeCentis - one of them is wrong"
+        );
+
         console.log("=== LaunchpadKit: pre-flight ===");
         console.log("  chain id           ", block.chainid);
         console.log("  deployer           ", deployer);
@@ -271,19 +295,19 @@ contract DeployLaunchpadKitMainnetScript is Script {
     /// `1_000_000` here, which was the hook's old `constant` - and the moment that cap became a
     /// per-chain argument, a literal in this script would have been asserting the environment
     /// against a number the hook no longer uses.
-    function _reportSchedule(uint32 centis, uint32 maxDecayBlocks) internal pure {
+    function _reportSchedule(uint32 centis, uint32 measuredCentis, uint32 maxDecayBlocks) internal pure {
         console.log("=== Preset windows at this block time ===");
-        _reportOne("FairLaunch          ", Preset.FairLaunch, centis, maxDecayBlocks);
-        _reportOne("AntiSniperAggressive", Preset.AntiSniperAggressive, centis, maxDecayBlocks);
-        _reportOne("Stealth             ", Preset.Stealth, centis, maxDecayBlocks);
-        _reportOne("NoTax               ", Preset.NoTax, centis, maxDecayBlocks);
+        _reportOne("FairLaunch          ", Preset.FairLaunch, centis, measuredCentis, maxDecayBlocks);
+        _reportOne("AntiSniperAggressive", Preset.AntiSniperAggressive, centis, measuredCentis, maxDecayBlocks);
+        _reportOne("Stealth             ", Preset.Stealth, centis, measuredCentis, maxDecayBlocks);
+        _reportOne("NoTax               ", Preset.NoTax, centis, measuredCentis, maxDecayBlocks);
         console.log("");
         console.log("If a 'real s' column does not match the preset's documented window,");
         console.log("LAUNCHPAD_BLOCK_TIME_CENTIS is wrong. Stop.");
         console.log("");
     }
 
-    function _reportOne(string memory name, Preset preset, uint32 centis, uint32 maxDecayBlocks)
+    function _reportOne(string memory name, Preset preset, uint32 centis, uint32 measuredCentis, uint32 maxDecayBlocks)
         internal
         pure
     {
@@ -298,8 +322,8 @@ contract DeployLaunchpadKitMainnetScript is Script {
                 "                          -> ",
                 vm.toString(blocks),
                 " blocks = ",
-                vm.toString((blocks * centis) / 100),
-                " real s"
+                vm.toString((blocks * measuredCentis) / 100),
+                " real s (at the measured cadence)"
             )
         );
     }
