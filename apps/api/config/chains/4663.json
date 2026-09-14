@@ -29,6 +29,38 @@
       "notes": "NVIDIA Robinhood stock token (beacon proxy). uiMultiplier read 1.000775159164630595e18 on 2026-09-13, so raw token units are not shares: USD per token = feed answer x uiMultiplier / 1e18."
     }
   ],
+  "treasuryConversion": {
+    "target": "native",
+    "rationale": "CLAUDE.md 'Treasury conversion, owner decision 2026-09-14': allowlisted revenue tokens to native ETH, through Latch pools only, as a Safe batch the owners sign. Launch-token and memecoin revenue is never on this list. Changing the list is a reviewed commit to this file, never an HTTP write.",
+    "allowlist": [
+      {
+        "token": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+        "symbol": "USDG",
+        "decimals": 6,
+        "alertBalanceRaw": "1000000000",
+        "rationale": "Global Dollar stablecoin from the SDK address book (decimals 6, read on chain 2026-09-14). Not a launch token, so selling it moves no project's price. PROPOSED in the change that added treasuryConversion; the owner confirms or removes it in review. Alert above 1,000 USDG."
+      },
+      {
+        "token": "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+        "symbol": "NVDA",
+        "decimals": 18,
+        "alertBalanceRaw": "5000000000000000000",
+        "rationale": "NVIDIA Robinhood stock token, the one oracle-priced token in this file (decimals 18, symbol NVDA read on chain 2026-09-14). Issuer-pausable: a paused token's swap reverts, which simulation shows. PROPOSED in the change that added treasuryConversion; the owner confirms or removes it in review. Alert above 5 tokens."
+      }
+    ],
+    "maxPriceImpactBps": 100,
+    "slippageBps": 50,
+    "minValueWei": "1000000000000000",
+    "deadlineSeconds": 3600,
+    "maxQuoteAgeSeconds": 180,
+    "multiSendCallOnly": {
+      "address": "0x9641d764fc13c8B624c04430C7356C1C7C8102e2",
+      "version": "1.4.1",
+      "codeHash": "0xecd5bd14a08c5d2122379900b2f272bdf107a7e92423c10dd5fe3254386c9939",
+      "verification": "2026-09-14: cast code on 4663 (rpc.mainnet.chain.robinhood.com) returned 410 bytes whose keccak256 is 0xecd5bd14...9939, identical to the code at the same canonical address on Ethereum mainnet and Sepolia. The v1.3.0 MultiSendCallOnly addresses (0x40A2...130D, 0xA1da...102B) also exist on 4663 with a different hash; this batch uses 1.4.1 to match the Safe, whose VERSION() reads 1.4.1."
+    },
+    "notes": "minValueWei 1e15 (0.001 ETH): a Safe MultiSend of approve + Permit2 approve + router swap is budgeted at ~1,500,000 gas including the Nitro L1 data allowance; at the 78,334,000 wei reference price that is ~1.2e14 wei, so the floor keeps gas under ~12% of the guaranteed proceeds. deadlineSeconds 3600 gives two of three owners an hour to sign after the payload is built; min-out bounds the price for that whole hour, and an expired batch reverts atomically (the router deadline and the Permit2 expiration both lapse). maxPriceImpactBps 100 and slippageBps 50 are the defaults the owner decision names."
+  },
   "opsAccounts": [
     {
       "label": "canceller",

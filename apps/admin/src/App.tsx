@@ -12,12 +12,14 @@ import { RevenuePage } from './pages/Revenue.tsx'
 import { SafeActionsPage } from './pages/SafeActions.tsx'
 import { SafetyPage } from './pages/Safety.tsx'
 import { SignInPage } from './pages/SignIn.tsx'
+import { TreasuryPage } from './pages/Treasury.tsx'
 
-export type PageKey = 'overview' | 'revenue' | 'protocol' | 'governance' | 'safety' | 'moderation' | 'keys' | 'audit' | 'safe-actions'
+export type PageKey = 'overview' | 'revenue' | 'protocol' | 'governance' | 'safety' | 'moderation' | 'keys' | 'audit' | 'safe-actions' | 'treasury'
 
 const PAGES: { key: PageKey; label: string; role: 'viewer' | 'curator' | 'admin' }[] = [
   { key: 'overview', label: 'Overview', role: 'viewer' },
   { key: 'revenue', label: 'Revenue', role: 'viewer' },
+  { key: 'treasury', label: 'Treasury', role: 'viewer' },
   { key: 'protocol', label: 'Protocol', role: 'viewer' },
   { key: 'governance', label: 'Governance', role: 'viewer' },
   { key: 'safety', label: 'Safety', role: 'viewer' },
@@ -175,6 +177,8 @@ export function App() {
             <OverviewPage chainId={session.chainId} />
           ) : page === 'revenue' ? (
             <RevenuePage chainId={session.chainId} />
+          ) : page === 'treasury' ? (
+            <TreasuryPage session={session} />
           ) : page === 'protocol' ? (
             <ProtocolPage chainId={session.chainId} />
           ) : page === 'governance' ? (

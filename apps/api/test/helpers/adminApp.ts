@@ -4,6 +4,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { createSiweMessage } from "viem/siwe";
 import type { AdminRole, RoleResolver } from "../../src/admin/roles.js";
 import type { Simulator } from "../../src/admin/simulate.js";
+import type { TreasuryClient } from "../../src/admin/treasury/chain.js";
 import type { CaptchaVerifier } from "../../src/admin/turnstile.js";
 import { disabledCaptcha } from "../../src/admin/turnstile.js";
 import { createApp, type AppDeps } from "../../src/app.js";
@@ -77,6 +78,7 @@ export interface Seed {
   listingSubmission?: Row[];
   apiAccount?: Row[];
   apiKey?: Row[];
+  pool?: Row[];
 }
 
 export function fakePrisma(seed: Seed = {}) {
@@ -92,6 +94,7 @@ export function fakePrisma(seed: Seed = {}) {
     ownershipSnapshot: table(seed.ownershipSnapshot ?? []),
     opsBalance: table(seed.opsBalance ?? []),
     timelockEvent: table(seed.timelockEvent ?? []),
+    pool: table(seed.pool ?? []),
   };
   // Relations the routes include.
   const accountFindMany = tables.apiAccount.findMany;
@@ -127,6 +130,7 @@ export function buildAdminApp(opts: {
   listings?: { enabled: boolean; perHour?: number; captcha?: CaptchaVerifier };
   adminUiDir?: string | null;
   adminEnabled?: boolean;
+  treasuryClient?: TreasuryClient | null;
 } = {}) {
   const { prisma, tables } = fakePrisma(opts.seed);
   let roles: AdminRole[] = opts.roles ?? ["viewer"];
@@ -153,6 +157,7 @@ export function buildAdminApp(opts: {
             verifyClient: null,
             rate,
             simulator: opts.simulator ?? null,
+            treasuryClient: opts.treasuryClient ? () => opts.treasuryClient! : null,
             keys: { pepper: "admin-test-pepper-0123456789abcdef0123", defaultRpm: 600, defaultQuota: 1_000_000, invalidate: async (h) => void invalidated.push(h) },
             config: { origins: [ORIGIN], siweDomain: "admin.example", roleChainId: 4663, sessionTtlSeconds: 600, roleRecheckSeconds: 300, perMinute: 10_000, cookieSecure: true },
           },

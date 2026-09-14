@@ -1,0 +1,638 @@
+{
+  "_note": "TEST FIXTURE. Real apps/api responses (src/admin/treasury) computed over apps/api/test/helpers/treasuryChain.ts, an in-memory chain with LAYOUT pools, prices and balances. Not chain reads. On 4663 today no allowlisted token has a Latch route to ETH.",
+  "view": {
+    "chainId": 4663,
+    "configured": true,
+    "safe": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+    "safeAppUrl": "https://app.safe.global/home?safe=robinhood:0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+    "target": {
+      "currency": "0x0000000000000000000000000000000000000000",
+      "symbol": "ETH",
+      "name": "Ether",
+      "balance": {
+        "wei": "500000000000000000",
+        "units": "0.5"
+      },
+      "balanceError": null
+    },
+    "policy": {
+      "maxPriceImpactBps": 100,
+      "slippageBps": 50,
+      "minValueWei": "1000000000000000",
+      "deadlineSeconds": 3600,
+      "maxQuoteAgeSeconds": 180
+    },
+    "venue": "Latch pools only: the SDK's CLPoolManager, quoted by the SDK's CLQuoter, executed by the SDK's UniversalRouter. No other venue is ever considered.",
+    "readAtBlock": "62700000",
+    "readAt": "2026-09-14T09:06:26.000Z",
+    "inflowsProvenance": "revenue_ledger: this chain has not been indexed, so inflows are unmeasured, not zero",
+    "indexed": false,
+    "allowlistNote": "The allowlist is config (config/chains/<chainId>.json), changed by a reviewed commit. It is never written over HTTP. Launch-token and memecoin revenue is held, never sold.",
+    "tokens": [
+      {
+        "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "symbol": "USDG",
+        "decimals": 6,
+        "rationale": "Global Dollar stablecoin from the SDK address book (decimals 6, read on chain 2026-09-14). Not a launch token, so selling it moves no project's price. PROPOSED in the change that added treasuryConversion; the owner confirms or removes it in review. Alert above 1,000 USDG.",
+        "alertBalanceRaw": "1000000000",
+        "balance": {
+          "raw": "2000000000",
+          "units": "2000",
+          "onChainSymbol": "USDG",
+          "onChainDecimals": 6,
+          "mismatch": null
+        },
+        "balanceError": null,
+        "inflows": {
+          "raw": "0",
+          "units": "0",
+          "entries": 0,
+          "bySource": []
+        },
+        "usd": null
+      },
+      {
+        "token": "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec",
+        "symbol": "NVDA",
+        "decimals": 18,
+        "rationale": "NVIDIA Robinhood stock token, the one oracle-priced token in this file (decimals 18, symbol NVDA read on chain 2026-09-14). Issuer-pausable: a paused token's swap reverts, which simulation shows. PROPOSED in the change that added treasuryConversion; the owner confirms or removes it in review. Alert above 5 tokens.",
+        "alertBalanceRaw": "5000000000000000000",
+        "balance": {
+          "raw": "10000000000000000000",
+          "units": "10",
+          "onChainSymbol": "NVDA",
+          "onChainDecimals": 18,
+          "mismatch": null
+        },
+        "balanceError": null,
+        "inflows": {
+          "raw": "0",
+          "units": "0",
+          "entries": 0,
+          "bySource": []
+        },
+        "usd": null
+      }
+    ]
+  },
+  "routes": {
+    "0x5fc5360d0400a0fd4f2af552add042d716f1d168": {
+      "chainId": 4663,
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "symbol": "USDG",
+      "decimals": 6,
+      "policy": {
+        "maxPriceImpactBps": 100,
+        "slippageBps": 50,
+        "minValueWei": "1000000000000000",
+        "deadlineSeconds": 3600,
+        "maxQuoteAgeSeconds": 180
+      },
+      "venue": "Latch CLPoolManager 0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66 only; CLQuoter 0xdfd14247f87d1e4fc82f0f441fb43bc8aa466114",
+      "amountIn": "2000000000",
+      "amountInUnits": "2000",
+      "amountSource": "safe-balance",
+      "safeBalance": "2000000000",
+      "readAtBlock": "62700000",
+      "quotedAt": "2026-09-14T09:06:26.000Z",
+      "contractClock": {
+        "contractBlockNumber": "25975000",
+        "method": "eth_call NUMBER"
+      },
+      "consideredPools": 3,
+      "status": "route",
+      "message": "Latch route found through 1 pool(s).",
+      "best": {
+        "routeId": "0x06c71515724d21c0a5c3ba41289b7e62a37dec2ac8a33046a87bece24961675a",
+        "end": "native",
+        "hops": [
+          {
+            "poolId": "0x4c4fd6b2499ecdc804881bd5447719144e005bfd1adeceaca77402184aa069f4",
+            "currencyIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currencyOut": "0x0000000000000000000000000000000000000000",
+            "zeroForOne": false,
+            "hooks": null,
+            "fee": 3000,
+            "hook": {
+              "ok": true,
+              "hook": null,
+              "basis": "no hook",
+              "warnings": []
+            },
+            "slot0": {
+              "sqrtPriceX96": "5010828967500958623728276",
+              "tick": 0,
+              "protocolFee": 0,
+              "lpFee": 3000
+            }
+          }
+        ],
+        "quote": {
+          "amountOut": "498000000000000000",
+          "gasEstimate": "150000"
+        },
+        "impact": {
+          "midOut": "500000000000000000",
+          "feeAdjustedMidOut": "498500000000000000",
+          "priceImpactBps": 11,
+          "totalCostBps": 40,
+          "swapFeesPips": [
+            3000
+          ]
+        },
+        "refusals": [],
+        "minOut": "495510000000000000",
+        "minOutUnits": "0.49551",
+        "blockers": []
+      },
+      "candidates": [
+        {
+          "routeId": "0x06c71515724d21c0a5c3ba41289b7e62a37dec2ac8a33046a87bece24961675a",
+          "end": "native",
+          "hops": [
+            {
+              "poolId": "0x4c4fd6b2499ecdc804881bd5447719144e005bfd1adeceaca77402184aa069f4",
+              "currencyIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "currencyOut": "0x0000000000000000000000000000000000000000",
+              "zeroForOne": false,
+              "hooks": null,
+              "fee": 3000,
+              "hook": {
+                "ok": true,
+                "hook": null,
+                "basis": "no hook",
+                "warnings": []
+              },
+              "slot0": {
+                "sqrtPriceX96": "5010828967500958623728276",
+                "tick": 0,
+                "protocolFee": 0,
+                "lpFee": 3000
+              }
+            }
+          ],
+          "quote": {
+            "amountOut": "498000000000000000",
+            "gasEstimate": "150000"
+          },
+          "impact": {
+            "midOut": "500000000000000000",
+            "feeAdjustedMidOut": "498500000000000000",
+            "priceImpactBps": 11,
+            "totalCostBps": 40,
+            "swapFeesPips": [
+              3000
+            ]
+          },
+          "refusals": []
+        },
+        {
+          "routeId": "0xd770777c89d8a35662619f43539e6b1b63ee14d052a849104162680a57427a59",
+          "end": "weth",
+          "hops": [
+            {
+              "poolId": "0x953a887438e4ce4108f848a10b4e67de0fbf2ce012047b62fff1b8e64cfec0d8",
+              "currencyIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "currencyOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "zeroForOne": false,
+              "hooks": null,
+              "fee": 3000,
+              "hook": {
+                "ok": true,
+                "hook": null,
+                "basis": "no hook",
+                "warnings": []
+              },
+              "slot0": {
+                "sqrtPriceX96": "5017088593885959062552734",
+                "tick": 0,
+                "protocolFee": 0,
+                "lpFee": 3000
+              }
+            }
+          ],
+          "quote": {
+            "amountOut": "496758104738154612",
+            "gasEstimate": "150000"
+          },
+          "impact": {
+            "midOut": "498753117206982543",
+            "feeAdjustedMidOut": "497256857855361596",
+            "priceImpactBps": 11,
+            "totalCostBps": 41,
+            "swapFeesPips": [
+              3000
+            ]
+          },
+          "refusals": []
+        }
+      ]
+    },
+    "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec": {
+      "chainId": 4663,
+      "token": "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec",
+      "symbol": "NVDA",
+      "decimals": 18,
+      "policy": {
+        "maxPriceImpactBps": 100,
+        "slippageBps": 50,
+        "minValueWei": "1000000000000000",
+        "deadlineSeconds": 3600,
+        "maxQuoteAgeSeconds": 180
+      },
+      "venue": "Latch CLPoolManager 0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66 only; CLQuoter 0xdfd14247f87d1e4fc82f0f441fb43bc8aa466114",
+      "amountIn": "10000000000000000000",
+      "amountInUnits": "10",
+      "amountSource": "safe-balance",
+      "safeBalance": "10000000000000000000",
+      "readAtBlock": "62700000",
+      "quotedAt": "2026-09-14T09:06:27.000Z",
+      "contractClock": {
+        "contractBlockNumber": "25975000",
+        "method": "eth_call NUMBER"
+      },
+      "consideredPools": 2,
+      "status": "no-route",
+      "message": "No Latch route from NVDA to ETH: none of the 2 indexed Latch CL pool(s) connects NVDA to native ETH or WETH, directly or through one intermediate Latch pool. Nothing else is tried.",
+      "best": null,
+      "candidates": []
+    }
+  },
+  "prepared": {
+    "payload": {
+      "kind": "safe",
+      "chainId": 4663,
+      "safe": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+      "to": "0x9641d764fc13c8B624c04430C7356C1C7C8102e2",
+      "value": "0",
+      "data": "0x8d80ff0a0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000064b005fc5360d0400a0fd4f2af552add042d716f1d16800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3000000000000000000000000000000000000000000000000000000007735940000000000000022d473030f116ddee9f6b43ac78ba30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008487517c450000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d1680000000000000000000000002220df8ec6cabc7f2074bc1e56da092b765f736c0000000000000000000000000000000000000000000000000000000077359400000000000000000000000000000000000000000000000000000000006aa7c722002220df8ec6cabc7f2074bc1e56da092b765f736c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004843593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000006aa7c72200000000000000000000000000000000000000000000000000000000000000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000380000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003060c0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000002600000000000000000000000000000000000000000000000000000000000000180000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d1680000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f4a28fa4cfecaef349a7d52fa1eb4df56eb22f660000000000000000000000000000000000000000000000000000000000000bb800000000000000000000000000000000000000000000000000000000003c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007735940000000000000000000000000000000000000000000000000006e067b83ca760000000000000000000000000000000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d168000000000000000000000000000000000000000000000000000000007735940000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000715a6176946adbd22c1b2021d321fb3767ca34320000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "operation": 1,
+      "safeTxGas": "0",
+      "baseGas": "0",
+      "gasPrice": "0",
+      "gasToken": "0x0000000000000000000000000000000000000000",
+      "refundReceiver": "0x0000000000000000000000000000000000000000",
+      "description": "Convert 2000000000 raw USDG to native ETH through Latch pools; min-out 495510000000000000 wei to the Safe",
+      "decoded": {
+        "functionName": "multiSend",
+        "signature": "multiSend(bytes)",
+        "args": [
+          {
+            "name": "transactions",
+            "type": "bytes",
+            "value": "0x005fc5360d0400a0fd4f2af552add042d716f1d16800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3000000000000000000000000000000000000000000000000000000007735940000000000000022d473030f116ddee9f6b43ac78ba30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008487517c450000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d1680000000000000000000000002220df8ec6cabc7f2074bc1e56da092b765f736c0000000000000000000000000000000000000000000000000000000077359400000000000000000000000000000000000000000000000000000000006aa7c722002220df8ec6cabc7f2074bc1e56da092b765f736c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004843593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000006aa7c72200000000000000000000000000000000000000000000000000000000000000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000380000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003060c0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000002600000000000000000000000000000000000000000000000000000000000000180000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d1680000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f4a28fa4cfecaef349a7d52fa1eb4df56eb22f660000000000000000000000000000000000000000000000000000000000000bb800000000000000000000000000000000000000000000000000000000003c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007735940000000000000000000000000000000000000000000000000006e067b83ca760000000000000000000000000000000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d168000000000000000000000000000000000000000000000000000000007735940000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000715a6176946adbd22c1b2021d321fb3767ca34320000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ]
+      },
+      "innerCalls": [
+        {
+          "index": 0,
+          "label": "USDG.approve(Permit2, exactly 2000000000) — never unlimited",
+          "to": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+          "value": "0",
+          "operation": 0,
+          "data": "0x095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba30000000000000000000000000000000000000000000000000000000077359400",
+          "decoded": {
+            "functionName": "approve",
+            "signature": "approve(address,uint256)",
+            "args": [
+              {
+                "name": "spender",
+                "type": "address",
+                "value": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+              },
+              {
+                "name": "amount",
+                "type": "uint256",
+                "value": "2000000000"
+              }
+            ]
+          },
+          "router": null
+        },
+        {
+          "index": 1,
+          "label": "Permit2.approve(USDG, UniversalRouter, exactly 2000000000, expires 1789380386)",
+          "to": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+          "value": "0",
+          "operation": 0,
+          "data": "0x87517c450000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d1680000000000000000000000002220df8ec6cabc7f2074bc1e56da092b765f736c0000000000000000000000000000000000000000000000000000000077359400000000000000000000000000000000000000000000000000000000006aa7c722",
+          "decoded": {
+            "functionName": "approve",
+            "signature": "approve(address,address,uint160,uint48)",
+            "args": [
+              {
+                "name": "token",
+                "type": "address",
+                "value": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
+              },
+              {
+                "name": "spender",
+                "type": "address",
+                "value": "0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c"
+              },
+              {
+                "name": "amount",
+                "type": "uint160",
+                "value": "2000000000"
+              },
+              {
+                "name": "expiration",
+                "type": "uint48",
+                "value": "1789380386"
+              }
+            ]
+          },
+          "router": null
+        },
+        {
+          "index": 2,
+          "label": "UniversalRouter.execute: swap through 1 Latch pool(s), min-out 495510000000000000 wei to the Safe, deadline 1789380386",
+          "to": "0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c",
+          "value": "0",
+          "operation": 0,
+          "data": "0x3593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000006aa7c72200000000000000000000000000000000000000000000000000000000000000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000380000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003060c0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000002600000000000000000000000000000000000000000000000000000000000000180000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d1680000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f4a28fa4cfecaef349a7d52fa1eb4df56eb22f660000000000000000000000000000000000000000000000000000000000000bb800000000000000000000000000000000000000000000000000000000003c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007735940000000000000000000000000000000000000000000000000006e067b83ca760000000000000000000000000000000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d168000000000000000000000000000000000000000000000000000000007735940000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000715a6176946adbd22c1b2021d321fb3767ca34320000000000000000000000000000000000000000000000000000000000000000",
+          "decoded": {
+            "functionName": "execute",
+            "signature": "execute(bytes,bytes[],uint256)",
+            "args": [
+              {
+                "name": "commands",
+                "type": "bytes",
+                "value": "0x10"
+              },
+              {
+                "name": "inputs",
+                "type": "bytes[]",
+                "value": [
+                  "0x000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003060c0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000002600000000000000000000000000000000000000000000000000000000000000180000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d1680000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f4a28fa4cfecaef349a7d52fa1eb4df56eb22f660000000000000000000000000000000000000000000000000000000000000bb800000000000000000000000000000000000000000000000000000000003c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007735940000000000000000000000000000000000000000000000000006e067b83ca760000000000000000000000000000000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000005fc5360d0400a0fd4f2af552add042d716f1d168000000000000000000000000000000000000000000000000000000007735940000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000715a6176946adbd22c1b2021d321fb3767ca34320000000000000000000000000000000000000000000000000000000000000000"
+                ]
+              },
+              {
+                "name": "deadline",
+                "type": "uint256",
+                "value": "1789380386"
+              }
+            ]
+          },
+          "router": {
+            "deadline": "1789380386",
+            "steps": [
+              {
+                "command": "INFI_SWAP",
+                "commandByte": "0x10",
+                "actions": [
+                  {
+                    "action": "CL_SWAP_EXACT_IN_SINGLE",
+                    "actionByte": "0x06",
+                    "params": {
+                      "poolKey": {
+                        "currency0": "0x0000000000000000000000000000000000000000",
+                        "currency1": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+                        "hooks": "0x0000000000000000000000000000000000000000",
+                        "poolManager": "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
+                        "fee": "3000",
+                        "parameters": "0x00000000000000000000000000000000000000000000000000000000003c0000"
+                      },
+                      "zeroForOne": "false",
+                      "amountIn": "2000000000",
+                      "amountOutMinimum": "495510000000000000",
+                      "hookData": "0x"
+                    }
+                  },
+                  {
+                    "action": "SETTLE_ALL",
+                    "actionByte": "0x0c",
+                    "params": {
+                      "currency": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+                      "maxAmount": "2000000000"
+                    }
+                  },
+                  {
+                    "action": "TAKE",
+                    "actionByte": "0x0e",
+                    "params": {
+                      "currency": "0x0000000000000000000000000000000000000000",
+                      "recipient": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+                      "amount": "0"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "warnings": [
+        "operation = 1 (DELEGATECALL). The target is Safe's MultiSendCallOnly v1.4.1, verified by code hash when this payload was built; it can only CALL, never delegatecall onward. Confirm the `to` address in the Safe app before signing.",
+        "Nonce is not included: the Safe reads it at signing time.",
+        "Expires at unix 1789380386: after that the router deadline and the Permit2 allowance both lapse and the whole batch reverts. Rebuild rather than sign late.",
+        "Execute only after reviewing the simulation below. Nothing here has been sent anywhere."
+      ]
+    },
+    "route": {
+      "chainId": 4663,
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "symbol": "USDG",
+      "decimals": 6,
+      "policy": {
+        "maxPriceImpactBps": 100,
+        "slippageBps": 50,
+        "minValueWei": "1000000000000000",
+        "deadlineSeconds": 3600,
+        "maxQuoteAgeSeconds": 180
+      },
+      "venue": "Latch CLPoolManager 0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66 only; CLQuoter 0xdfd14247f87d1e4fc82f0f441fb43bc8aa466114",
+      "amountIn": "2000000000",
+      "amountInUnits": "2000",
+      "amountSource": "requested",
+      "safeBalance": "2000000000",
+      "readAtBlock": "62700000",
+      "quotedAt": "2026-09-14T09:06:26.000Z",
+      "contractClock": {
+        "contractBlockNumber": "25975000",
+        "method": "eth_call NUMBER"
+      },
+      "consideredPools": 3,
+      "status": "route",
+      "message": "Latch route found through 1 pool(s).",
+      "best": {
+        "routeId": "0x06c71515724d21c0a5c3ba41289b7e62a37dec2ac8a33046a87bece24961675a",
+        "end": "native",
+        "hops": [
+          {
+            "poolId": "0x4c4fd6b2499ecdc804881bd5447719144e005bfd1adeceaca77402184aa069f4",
+            "currencyIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+            "currencyOut": "0x0000000000000000000000000000000000000000",
+            "zeroForOne": false,
+            "hooks": null,
+            "fee": 3000,
+            "hook": {
+              "ok": true,
+              "hook": null,
+              "basis": "no hook",
+              "warnings": []
+            },
+            "slot0": {
+              "sqrtPriceX96": "5010828967500958623728276",
+              "tick": 0,
+              "protocolFee": 0,
+              "lpFee": 3000
+            }
+          }
+        ],
+        "quote": {
+          "amountOut": "498000000000000000",
+          "gasEstimate": "150000"
+        },
+        "impact": {
+          "midOut": "500000000000000000",
+          "feeAdjustedMidOut": "498500000000000000",
+          "priceImpactBps": 11,
+          "totalCostBps": 40,
+          "swapFeesPips": [
+            3000
+          ]
+        },
+        "refusals": [],
+        "minOut": "495510000000000000",
+        "minOutUnits": "0.49551",
+        "blockers": []
+      },
+      "candidates": [
+        {
+          "routeId": "0x06c71515724d21c0a5c3ba41289b7e62a37dec2ac8a33046a87bece24961675a",
+          "end": "native",
+          "hops": [
+            {
+              "poolId": "0x4c4fd6b2499ecdc804881bd5447719144e005bfd1adeceaca77402184aa069f4",
+              "currencyIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "currencyOut": "0x0000000000000000000000000000000000000000",
+              "zeroForOne": false,
+              "hooks": null,
+              "fee": 3000,
+              "hook": {
+                "ok": true,
+                "hook": null,
+                "basis": "no hook",
+                "warnings": []
+              },
+              "slot0": {
+                "sqrtPriceX96": "5010828967500958623728276",
+                "tick": 0,
+                "protocolFee": 0,
+                "lpFee": 3000
+              }
+            }
+          ],
+          "quote": {
+            "amountOut": "498000000000000000",
+            "gasEstimate": "150000"
+          },
+          "impact": {
+            "midOut": "500000000000000000",
+            "feeAdjustedMidOut": "498500000000000000",
+            "priceImpactBps": 11,
+            "totalCostBps": 40,
+            "swapFeesPips": [
+              3000
+            ]
+          },
+          "refusals": []
+        },
+        {
+          "routeId": "0xd770777c89d8a35662619f43539e6b1b63ee14d052a849104162680a57427a59",
+          "end": "weth",
+          "hops": [
+            {
+              "poolId": "0x953a887438e4ce4108f848a10b4e67de0fbf2ce012047b62fff1b8e64cfec0d8",
+              "currencyIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+              "currencyOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+              "zeroForOne": false,
+              "hooks": null,
+              "fee": 3000,
+              "hook": {
+                "ok": true,
+                "hook": null,
+                "basis": "no hook",
+                "warnings": []
+              },
+              "slot0": {
+                "sqrtPriceX96": "5017088593885959062552734",
+                "tick": 0,
+                "protocolFee": 0,
+                "lpFee": 3000
+              }
+            }
+          ],
+          "quote": {
+            "amountOut": "496758104738154612",
+            "gasEstimate": "150000"
+          },
+          "impact": {
+            "midOut": "498753117206982543",
+            "feeAdjustedMidOut": "497256857855361596",
+            "priceImpactBps": 11,
+            "totalCostBps": 41,
+            "swapFeesPips": [
+              3000
+            ]
+          },
+          "refusals": []
+        }
+      ]
+    },
+    "quote": {
+      "amountIn": "2000000000",
+      "amountOut": "498000000000000000",
+      "minOut": "495510000000000000",
+      "minOutUnits": "0.49551",
+      "slippageBps": 50,
+      "priceImpactBps": 11,
+      "totalCostBps": 40,
+      "readAtBlock": "62700000",
+      "quotedAt": "2026-09-14T09:06:26.000Z",
+      "deadline": "1789380386",
+      "deadlineAt": "2026-09-14T10:06:26.000Z"
+    },
+    "simulation": {
+      "simulatedAt": "2026-09-14T09:06:27.860Z",
+      "blockNumber": "62700000",
+      "from": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+      "method": "eth_call: MultiSend delegatecall under a Safe-code state override",
+      "status": "success",
+      "nativeBalanceBefore": "500000000000000000",
+      "nativeBalanceAfter": "996758104738154612",
+      "nativeReceived": "496758104738154612",
+      "meetsMinOut": true,
+      "revert": null,
+      "error": null,
+      "safe": {
+        "version": "1.4.1",
+        "guard": null,
+        "error": null
+      },
+      "simulated": [
+        "All 3 inner calls in order, as CALLs from the Safe's address, in one eth_call at block 62700000, atomically (a revert in any call reverts the batch).",
+        "Real token balances and allowances of the Safe, the real Permit2, the real Latch UniversalRouter, Vault, pool managers and hooks.",
+        "Native ETH received by the Safe, measured as SELFBALANCE after minus before."
+      ],
+      "notSimulated": [
+        "Safe.execTransaction itself: owner signatures, the 2-of-3 threshold and the nonce (the Safe's code is replaced by the stub for this call).",
+        "No transaction guard: the guard slot reads zero, so there is no guard check to simulate.",
+        "SafeReceived event on incoming ETH (the stub accepts ETH silently; balances are unaffected).",
+        "Gas: eth_call ran with the node's call gas cap, not a signed safeTxGas. Estimate gas in the Safe app.",
+        "State between this block and execution. The min-out and the deadline bound what can change; nothing else does."
+      ],
+      "steps": null
+    },
+    "multiSendCallOnly": {
+      "address": "0x9641d764fc13c8B624c04430C7356C1C7C8102e2",
+      "version": "1.4.1",
+      "codeHash": "0xecd5bd14a08c5d2122379900b2f272bdf107a7e92423c10dd5fe3254386c9939",
+      "verifiedAtBlock": "62700000"
+    },
+    "safeAppUrl": "https://app.safe.global/home?safe=robinhood:0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+    "note": "Prepared, not sent. Paste into the Safe app's transaction builder (or import the raw to/data/operation) and have two of three owners review the decoded calls and the simulation before signing."
+  }
+}

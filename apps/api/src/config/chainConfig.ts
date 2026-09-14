@@ -34,6 +34,57 @@ const GasBudgetSchema = z.object({
   rationale,
 });
 
+const hex32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "must be a 32-byte hex value").transform((v) => v.toLowerCase());
+
+/**
+ * Treasury conversion (CLAUDE.md "Treasury conversion, owner decision 2026-09-14").
+ * Allowlisted tokens only, to native ETH, through Latch pools only, prepared as a
+ * Safe batch the owners sign. The allowlist is CONFIG on purpose: a reviewed
+ * commit, never an HTTP write, so no session (stolen or not) can widen what the
+ * panel offers to sell.
+ */
+const TreasuryConversionSchema = z
+  .object({
+    target: z.literal("native"),
+    allowlist: z
+      .array(
+        z.object({
+          token: address,
+          symbol: z.string().min(1).max(32),
+          /** Checked against decimals() on chain at every read; a mismatch refuses the token. */
+          decimals: z.number().int().min(0).max(36),
+          /** Informational "conversion available" alert when the Safe holds more than this (raw units). */
+          alertBalanceRaw: uintString.optional(),
+          rationale,
+        }),
+      )
+      .default([]),
+    maxPriceImpactBps: z.number().int().min(0).max(10_000).default(100),
+    slippageBps: z.number().int().min(0).max(5_000).default(50),
+    /** Refuse a conversion whose GUARANTEED output (min-out, wei) is below this. */
+    minValueWei: uintString,
+    /** Router deadline and Permit2 expiration, both `chain time + deadlineSeconds`. */
+    deadlineSeconds: z.number().int().min(300).max(7 * 86_400),
+    /** A reviewed route older than this is stale and must be re-quoted before a payload is built. */
+    maxQuoteAgeSeconds: z.number().int().min(10).max(3_600).default(180),
+    /** The Safe MultiSendCallOnly the batch DELEGATECALLs. Re-verified by code hash on every build. */
+    multiSendCallOnly: z.object({
+      address,
+      version: z.literal("1.4.1"),
+      codeHash: hex32,
+      verification: z.string().min(40, "record how the address was verified"),
+    }),
+    rationale,
+  })
+  .superRefine((t, ctx) => {
+    const seen = new Set<string>();
+    for (const a of t.allowlist) {
+      if (/^0x0{40}$/.test(a.token)) ctx.addIssue({ code: "custom", message: "the native currency is the target, not an allowlist entry" });
+      if (seen.has(a.token)) ctx.addIssue({ code: "custom", message: `${a.token} is allowlisted twice` });
+      seen.add(a.token);
+    }
+  });
+
 const ChainConfigSchema = z
   .object({
     chainId: z.number().int().positive(),
@@ -82,6 +133,7 @@ const ChainConfigSchema = z
         }),
       )
       .default([]),
+    treasuryConversion: TreasuryConversionSchema.optional(),
   })
   .superRefine((cfg, ctx) => {
     for (const a of cfg.opsAccounts) {
@@ -94,6 +146,7 @@ const ChainConfigSchema = z
 
 export type ChainConfig = z.infer<typeof ChainConfigSchema>;
 export type GasBudget = z.infer<typeof GasBudgetSchema>;
+export type TreasuryConversionConfig = z.infer<typeof TreasuryConversionSchema>;
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** src/config -> ../../config (also dist/config -> ../../config). */

@@ -17,6 +17,7 @@ import { toCsv } from "./csv.js";
 import { queuedAcceptOwnership } from "./alerts.js";
 import { prepareExecuteOperation, RECORDED_ACCEPT_OWNERSHIP_OPERATIONS, safeAppUrl, type ExecuteOperationPayload } from "./safeTx.js";
 import { groupTimelockOperations, type TimelockEventRow } from "./timelockOps.js";
+import type { TreasuryAlertRow, TreasuryService } from "./treasury/service.js";
 
 /**
  * Every read the admin panel makes. Postgres only (plus ReadService's USD
@@ -59,7 +60,20 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly read: ReadService,
+    private readonly treasury: TreasuryService | null = null,
   ) {}
+
+  private treasuryAlertCache = new Map<number, { at: number; rows: TreasuryAlertRow[] }>();
+
+  /** Treasury "conversion available" inputs: chain reads, cached 60 s per chain so /alerts and /overview do not re-quote on every load. */
+  private async treasuryAlertRows(chainId: number): Promise<TreasuryAlertRow[]> {
+    if (!this.treasury) return [];
+    const hit = this.treasuryAlertCache.get(chainId);
+    if (hit && Date.now() - hit.at < 60_000) return hit.rows;
+    const rows = await Promise.race([this.treasury.alertRows(chainId), new Promise<TreasuryAlertRow[]>((r) => setTimeout(() => r([]), 15_000))]).catch(() => []);
+    this.treasuryAlertCache.set(chainId, { at: Date.now(), rows });
+    return rows;
+  }
 
   deployment(chainId: number): LatchDeployment {
     const d = getDeployment(chainId);
@@ -82,11 +96,11 @@ export class AdminService {
      Alerts and overview
      ------------------------------------------------------------------------- */
 
-  async alertInputs(chainId: number): Promise<AlertInputs> {
+  async alertInputs(chainId: number, opts: { treasury?: boolean } = {}): Promise<AlertInputs> {
     const d = this.deployment(chainId);
     const cfg = chainConfig(chainId);
     const since = new Date(Date.now() - 7 * 86_400_000);
-    const [cp, ownership, pending, ops, feeds, stockLatest, stockChanges, tlRows, recs, listings] = await Promise.all([
+    const [cp, ownership, pending, ops, feeds, stockLatest, stockChanges, tlRows, recs, listings, treasuryConversions] = await Promise.all([
       this.prisma.indexerCheckpoint.findUnique({ where: { chainId } }),
       this.prisma.ownershipSnapshot.findMany({ where: { chainId } }),
       this.prisma.pendingConfigHazard.findMany({ where: { chainId } }),
@@ -97,6 +111,7 @@ export class AdminService {
       this.prisma.timelockEvent.findMany({ where: { chainId }, orderBy: [{ blockNumber: "asc" }, { logIndex: "asc" }] }),
       this.prisma.reconciliation.findMany({ where: { chainId, status: "MISMATCH" } }),
       this.prisma.listingSubmission.count({ where: { status: "PENDING" } }),
+      opts.treasury === false ? Promise.resolve([]) : this.treasuryAlertRows(chainId),
     ]);
     const tokens = await this.tokenMap(chainId, stockLatest.map((s) => s.token));
     return {
@@ -122,6 +137,7 @@ export class AdminService {
       timelockOps: groupTimelockOperations(tlRows.map(timelockRow)).operations,
       reconciliationMismatches: recs.map((r) => ({ chainId: r.chainId, kind: r.kind, subject: r.subject, detail: r.detail, atBlock: r.atBlock.toString() })),
       pendingListings: listings,
+      treasuryConversions,
     };
   }
 
@@ -387,7 +403,7 @@ export class AdminService {
 
   async ownership(chainId: number) {
     const d = this.deployment(chainId);
-    const [rows, inputs] = await Promise.all([this.prisma.ownershipSnapshot.findMany({ where: { chainId }, orderBy: [{ contractKey: "asc" }, { check: "asc" }] }), this.alertInputs(chainId)]);
+    const [rows, inputs] = await Promise.all([this.prisma.ownershipSnapshot.findMany({ where: { chainId }, orderBy: [{ contractKey: "asc" }, { check: "asc" }] }), this.alertInputs(chainId, { treasury: false })]);
     const alerts = computeAlerts({ ...inputs, pendingConfigs: [], opsBalances: [], feeds: [], stockTokens: [], reconciliationMismatches: [], pendingListings: 0, chains: [], timelockOps: [] });
     const contracts = new Map<string, { contractKey: string; address: string; expectedTier: string; expectedAddress: string | null; owner: unknown; pendingOwner: unknown; alert: unknown }>();
     for (const r of rows) {

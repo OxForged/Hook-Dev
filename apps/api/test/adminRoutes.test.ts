@@ -5,6 +5,14 @@ import type { AdminRole } from "../src/admin/roles.js";
 import { RECORDED_ACCEPT_OWNERSHIP_OPERATIONS } from "../src/admin/safeTx.js";
 import type { Simulator } from "../src/admin/simulate.js";
 import { buildAdminApp, ORIGIN, signIn, type Seed } from "./helpers/adminApp.js";
+import { enumerateRoutes } from "../src/admin/treasury/route.js";
+import { baseState, fakeTreasuryClient, poolRow, USDG, WETH } from "./helpers/treasuryChain.js";
+
+// Treasury conversion fixture: pools and a chain on which USDG has a Latch route to native.
+const TREASURY = baseState();
+const TREASURY_POOLS = TREASURY.pools.map(poolRow);
+const TREASURY_ROUTE = enumerateRoutes({ pools: TREASURY_POOLS, token: USDG, weth: WETH, latchClPoolManager: "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66" }).candidates.find((c) => c.end === "native")!;
+const treasuryClient = () => fakeTreasuryClient(baseState());
 
 /**
  * Every /v1/admin data route: auth required (401), wrong role (403), CSRF on
@@ -55,6 +63,9 @@ export const ROUTES: RouteCase[] = [
   { method: "post", path: "/v1/admin/safe/fee-controller/collect", role: "admin", body: { poolManager: "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66", currency: "0x2A21c0826848f2D597B7C87A4B931dE1407958A6", amount: "0" }, audit: "safe.prepare.collect" },
   { method: "post", path: "/v1/admin/safe/fee-controller/sweep", role: "admin", body: { poolManager: "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66", currency: "0x2A21c0826848f2D597B7C87A4B931dE1407958A6" }, audit: "safe.prepare.sweep" },
   { method: "post", path: "/v1/admin/timelock/execute", role: "viewer", body: { operationId: RECORDED_ACCEPT_OWNERSHIP_OPERATIONS.operations[0].id }, audit: "timelock.prepare.execute" },
+  { method: "get", path: "/v1/admin/treasury", role: "viewer" },
+  { method: "get", path: `/v1/admin/treasury/route?token=${USDG}`, role: "viewer" },
+  { method: "post", path: "/v1/admin/treasury/convert/prepare", role: "admin", body: { token: USDG, amount: "1000000000", routeId: TREASURY_ROUTE.id, quotedAt: new Date().toISOString() }, audit: "safe.prepare.treasury-convert" },
   { method: "post", path: "/v1/admin/registry/listing", role: "curator", body: { hook: "0x1111111111111111111111111111111111111111", action: "flag", reason: "drains swaps via hookDelta" }, audit: "registry.prepare.flag" },
 ];
 
@@ -82,6 +93,7 @@ function liveSeed(): Seed {
     timelockEvent: tl,
     listingSubmission: [{ id: LISTING_ID, kind: "PROJECT", chainId: null, name: "Example", description: "d", websiteUrl: "https://example.org", status: "PENDING", iconAssetRef: null, contactPrivate: "ops@example.org", uses: ["rev-share"], chains: [4663], createdAt: now, updatedAt: now }],
     apiAccount: [{ id: ACCOUNT_ID, name: "Acme", plan: "pro", createdAt: now, updatedAt: now }],
+    pool: TREASURY_POOLS,
     apiKey: [{ id: KEY_ID, accountId: ACCOUNT_ID, name: "old", prefix: "abcdefghijkl", secretHash: "f".repeat(64), scopes: ["public:read"], rateLimitPerMinute: 600, monthlyQuota: 1000, status: "ACTIVE", createdAt: now }],
   };
 }
@@ -111,7 +123,7 @@ describe("every admin route enforces its role", () => {
     const lower = LOWER[c.role];
     if (!lower) continue;
     it(`${c.method.toUpperCase()} ${c.path} -> 403 for ${lower}`, async () => {
-      const { app, tables } = buildAdminApp({ roles: [lower], seed: liveSeed() });
+      const { app, tables } = buildAdminApp({ roles: [lower], seed: liveSeed(), treasuryClient: treasuryClient() });
       const s = await signIn(app);
       const res = await send(app, c, { Cookie: s.cookie, Origin: ORIGIN, "X-CSRF-Token": s.csrf });
       expect(res.status).toBe(403);
@@ -125,7 +137,7 @@ describe("every admin route enforces its role", () => {
 describe("every mutation enforces CSRF and writes an audit row", () => {
   for (const c of ROUTES.filter((r) => r.method === "post")) {
     it(`POST ${c.path}: CSRF missing/wrong/foreign origin -> 403; correct -> ${c.okStatus ?? 200} + audit ${c.audit}`, async () => {
-      const { app, tables } = buildAdminApp({ roles: [c.role], seed: liveSeed(), simulator: okSimulator });
+      const { app, tables } = buildAdminApp({ roles: [c.role], seed: liveSeed(), simulator: okSimulator, treasuryClient: treasuryClient() });
       const s = await signIn(app);
       expect((await send(app, c, { Cookie: s.cookie, Origin: ORIGIN })).status).toBe(403);
       expect((await send(app, c, { Cookie: s.cookie, Origin: ORIGIN, "X-CSRF-Token": "wrong-token" })).status).toBe(403);
@@ -145,7 +157,7 @@ describe("every mutation enforces CSRF and writes an audit row", () => {
 describe("every read route answers its role, never publicly cached", () => {
   for (const c of ROUTES.filter((r) => r.method === "get")) {
     it(`GET ${c.path} as ${c.role}`, async () => {
-      const { app } = buildAdminApp({ roles: [c.role], seed: liveSeed() });
+      const { app } = buildAdminApp({ roles: [c.role], seed: liveSeed(), treasuryClient: treasuryClient() });
       const s = await signIn(app);
       const res = await send(app, c, { Cookie: s.cookie });
       // Revenue/protocol read the indexer checkpoint; with none they are NOT_INDEXED (the UI's not-configured state).

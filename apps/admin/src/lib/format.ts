@@ -42,3 +42,26 @@ export function amount(units: string | null | undefined, symbol: string | null |
   if (raw) return `${group(raw)} raw units (decimals unread)`
   return '—'
 }
+
+/** Raw integer string -> exact decimal string at `decimals` (no float, trailing zeros trimmed). */
+export function units(raw: string | null | undefined, decimals: number): string {
+  if (raw === null || raw === undefined || !/^-?\d+$/.test(raw)) return '—'
+  const neg = raw.startsWith('-')
+  const digits = (neg ? raw.slice(1) : raw).padStart(decimals + 1, '0')
+  const whole = digits.slice(0, digits.length - decimals)
+  const frac = decimals > 0 ? digits.slice(digits.length - decimals).replace(/0+$/, '') : ''
+  return `${neg ? '-' : ''}${whole.replace(/^0+(?=\d)/, '')}${frac ? `.${frac}` : ''}`
+}
+
+/** A decimal string typed by an operator -> raw integer string, or null when it is not an exact amount at `decimals`. */
+export function parseUnits(input: string, decimals: number): string | null {
+  const m = /^(\d+)(?:\.(\d+))?$/.exec(input.trim())
+  if (!m) return null
+  const frac = m[2] ?? ''
+  if (frac.length > decimals) return null
+  const raw = (m[1]! + frac.padEnd(decimals, '0')).replace(/^0+(?=\d)/, '')
+  return raw
+}
+
+/** Basis points -> "0.31%". */
+export const bps = (n: number) => `${(n / 100).toFixed(2)}%`

@@ -83,3 +83,112 @@ export interface TxPayload {
   decoded: DecodedCall | null
   warnings: string[]
 }
+
+/* ---- treasury conversion (apps/api/src/admin/treasury/service.ts) ---- */
+
+export interface TreasuryPolicy {
+  maxPriceImpactBps: number
+  slippageBps: number
+  minValueWei: string
+  deadlineSeconds: number
+  maxQuoteAgeSeconds: number
+}
+
+export type TreasuryView =
+  | { chainId: number; configured: false; message: string }
+  | {
+      chainId: number
+      configured: true
+      safe: string
+      safeAppUrl: string | null
+      target: { currency: string; symbol: string; name: string; balance: { wei: string; units: string } | null; balanceError: string | null }
+      policy: TreasuryPolicy
+      venue: string
+      readAtBlock: string | null
+      readAt: string | null
+      inflowsProvenance: string
+      indexed: boolean
+      allowlistNote: string
+      tokens: {
+        token: string
+        symbol: string
+        decimals: number
+        rationale: string
+        alertBalanceRaw: string | null
+        balance: { raw: string; units: string; onChainSymbol: string | null; onChainDecimals: number; mismatch: string | null } | null
+        balanceError: string | null
+        inflows: { raw: string; units: string; entries: number; bySource: { source: string; raw: string; entries: number }[] }
+        usd: null | { usdPerToken: string | null; reason?: string; source?: string; feed?: string; feedUpdatedAt?: string; readAt?: string; method?: string }
+      }[]
+    }
+
+export type HookVerdict = { ok: true; hook: string | null; basis: string; warnings: string[] } | { ok: false; hook: string; reason: string }
+
+export interface RouteCandidateView {
+  routeId: string
+  end: 'native' | 'weth'
+  hops: { poolId: string; currencyIn: string; currencyOut: string; zeroForOne: boolean; hooks: string | null; fee: number; hook: HookVerdict; slot0: { sqrtPriceX96: string; tick: number; protocolFee: number; lpFee: number } | { error: string } | null }[]
+  quote: { amountOut: string; gasEstimate: string } | null
+  impact: { midOut: string; feeAdjustedMidOut: string; priceImpactBps: number; totalCostBps: number; swapFeesPips: number[] } | null
+  refusals: string[]
+}
+
+export interface RouteView {
+  chainId: number
+  token: string
+  symbol: string
+  decimals: number
+  status: 'route' | 'no-route' | 'no-acceptable-route' | 'unavailable'
+  message: string
+  amountIn: string
+  amountInUnits: string
+  amountSource: 'requested' | 'safe-balance' | 'probe-one-token'
+  safeBalance: string | null
+  readAtBlock: string | null
+  quotedAt: string | null
+  contractClock: { contractBlockNumber: string; method: string } | null
+  consideredPools: number
+  best: (RouteCandidateView & { minOut: string; minOutUnits: string; blockers: string[] }) | null
+  candidates: RouteCandidateView[]
+  policy: TreasuryPolicy
+  venue: string
+}
+
+export interface ConversionInnerCall {
+  index: number
+  label: string
+  to: string
+  value: string
+  operation: number
+  data: string
+  decoded: DecodedCall | null
+  router: { deadline: string | null; steps: { command: string; commandByte: string; actions?: { action: string; actionByte: string; params: Record<string, unknown> }[]; params?: Record<string, string> }[] } | null
+}
+
+export interface ConversionSimulation {
+  method: string
+  status: 'success' | 'reverted' | 'unavailable'
+  from: string
+  blockNumber: string
+  simulatedAt: string
+  nativeBalanceBefore: string | null
+  nativeBalanceAfter: string | null
+  nativeReceived: string | null
+  meetsMinOut: boolean | null
+  revert: { name: string | null; args: string[]; raw: string | null; message: string } | null
+  error: string | null
+  safe: { version: string | null; guard: string | null; error: string | null }
+  simulated: string[]
+  notSimulated: string[]
+  steps: { index: number; status: string; detail: string }[] | null
+}
+
+export interface ConversionPrepared {
+  payload: TxPayload & { innerCalls: ConversionInnerCall[] }
+  route: RouteView
+  quote: { amountIn: string; amountOut: string; minOut: string; minOutUnits: string; slippageBps: number; priceImpactBps: number; totalCostBps: number; readAtBlock: string; quotedAt: string; deadline: string; deadlineAt: string }
+  simulation: ConversionSimulation
+  multiSendCallOnly: { address: string; version: string; codeHash: string; verifiedAtBlock: string }
+  safeAppUrl: string | null
+  note: string
+}

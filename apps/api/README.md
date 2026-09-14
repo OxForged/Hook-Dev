@@ -330,6 +330,9 @@ npm run admin -- usage:show --period 2026-09
 | POST | `timelock/execute` | viewer | `execute(target, value, payload, predecessor, salt)` for a READY queued single-call operation, salt from `CallSalt`, refused unless it re-hashes to the id; `isOperationReady` + `eth_call` result (audited) |
 | POST | `safe/fee-controller/collect` · `…/sweep` | admin | Safe payloads for `LatchProtocolFeeControllerV2`, simulated from the Safe (audited) |
 | POST | `registry/listing` | curator | `setListing(hook, Malicious|Active, reason)` as a DIRECT call from the curator's key, simulated from it (audited) |
+| GET | `treasury` | viewer | allowlisted Safe balances (read on chain), ledger inflows per token, optional Chainlink USD with source and time, target native ETH (§7e) |
+| GET | `treasury/route?token=&amount=` | viewer | best acceptable Latch route to native ETH: quote, price impact vs mid, min-out, blockers; or `no-route` / `no-acceptable-route` / `unavailable` with reasons (§7e) |
+| POST | `treasury/convert/prepare` | admin | the Safe MultiSendCallOnly batch (exact approve → exact Permit2.approve → UniversalRouter.execute), simulated, returned and never sent (audited `safe.prepare.treasury-convert`) |
 | GET | `moderation/listings`, `…/:id`, `…/:id/icon` | curator | queue (no contact), detail (with private contact), processed icon |
 | POST | `moderation/listings/:id/approve` · `reject` · `request-changes` | curator | review with reason; conditional update so two reviewers cannot double-apply (audited) |
 | GET/POST | `keys/accounts` | admin | list / create API accounts (audited) |
@@ -521,10 +524,77 @@ admin.latch.guru {
 `TRUST_PROXY` must name the proxy's subnet once Caddy fronts it, or the per-IP admin
 and submission limits see every request as coming from Caddy.
 
+### 7e. Treasury conversion (allowlisted tokens → native ETH, Latch pools only)
+
+CLAUDE.md "Treasury conversion, owner decision 2026-09-14". Code: `src/admin/treasury/`.
+
+- **The allowlist is config, not an HTTP write.** `config/chains/<id>.json`
+  `treasuryConversion.allowlist` (token, symbol, decimals, optional alert size, a
+  required rationale) changes only through a reviewed commit. No route writes it, and a
+  test fails if one appears. A token not on the list is refused by every route, however
+  good its route. Launch-token and memecoin revenue is never on it. The 4663 entries
+  (USDG, NVDA) were proposed with this change; the owner confirms or removes them in review.
+- **Policy** (same block): `target: "native"`, `maxPriceImpactBps` (100), `slippageBps`
+  (50), `minValueWei` (compared with the guaranteed min-out), `deadlineSeconds`,
+  `maxQuoteAgeSeconds`, and the Safe `MultiSendCallOnly` address and code hash.
+- **Routes: Latch pools only.** Candidates come from indexed pools on the SDK's
+  CLPoolManager (direct, or through one intermediate Latch pool) ending in native or WETH.
+  Pools on any other manager are dropped first. No Latch route → `no-route`; nothing else
+  is ever tried.
+- **Quotes** come from the SDK's CLQuoter by `eth_call` (the quoter executes the swap,
+  so hook deltas are included). **Price impact** = shortfall of the quote against the
+  pools' mid price after each pool's declared swap fee (slot0 LP fee + protocol fee), so a
+  hook's cut counts as impact; rounded up.
+- **Hook policy, per pool:** Malicious in LatchRegistry → refused (own hooks included);
+  not registered → refused unless the SDK names it as Latch's own (RevShareHook current or
+  retired, LaunchGuardHook); unreadable registry → refused; a RevShare proposal that is
+  ARMED, or queued and maturing before the deadline, or unreadable → refused. Pending
+  configs are decoded by the shape the SDK records for that hook address (or inferred with
+  `CLOCK_MODE()` for an unknown hook) and judged on that hook's clock via
+  `readContractClock`. A refused pool is never quoted.
+- **The batch** (`operation = 1`, DELEGATECALL to MultiSendCallOnly v1.4.1, whose code hash
+  is re-read and compared on every build): `token.approve(Permit2, amountIn)` (exact) →
+  `Permit2.approve(token, UniversalRouter, amountIn, now + deadlineSeconds)` (exact) →
+  `UniversalRouter.execute(commands, inputs, now + deadlineSeconds)` with
+  `INFI_SWAP[CL_SWAP_EXACT_IN(_SINGLE)(minOut), SETTLE_ALL(token, amountIn), TAKE(native → Safe)]`,
+  or for a WETH route `TAKE(WETH → router)` then `UNWRAP_WETH(Safe, minOut)`. Encoded
+  against the FORK's router and periphery source (no `minHopPriceX36` field exists there);
+  the golden calldata in `test/fixtures/treasury-golden.json` was produced independently
+  with `cast`. min-out = ceil(quote × (10000 − slippageBps) / 10000). "now" is chain time.
+- **Refusals (409):** impact above max, amount above the Safe balance, min-out below
+  `minValueWei`, a reviewed quote older than `maxQuoteAgeSeconds`, a best route that
+  changed since review, a chain head older than `maxQuoteAgeSeconds`, a MultiSend code hash
+  mismatch.
+- **Simulation:** one `eth_call` to the Safe's address with its code replaced (state
+  override, that call only) by a 70-byte stub that DELEGATECALLs MultiSendCallOnly exactly
+  as `execTransaction` does and returns the Safe's native balance before and after. Real
+  Safe storage, balances, allowances, Permit2, router, Vault, managers and hooks. NOT
+  simulated: signatures, threshold, nonce, a transaction guard (the guard slot is read and
+  reported), the `SafeReceived` event, signed gas, and state changes before execution.
+  MultiSendCallOnly reverts with empty data, so a reverting batch is re-simulated by prefix
+  to name the failing call. If the RPC refuses state overrides, calls 0 and 1 are simulated
+  individually and the swap is reported as not simulated.
+- **Alert:** INFO "conversion available" when an allowlisted token's Safe balance exceeds
+  its `alertBalanceRaw` AND a route was read and accepted (cached 60 s per chain).
+- Chain reads for all of this use the admin client and are gated by
+  `ADMIN_SIMULATION_ENABLED`; with it off, every treasury read answers `unavailable`.
+- **Live state, 2026-09-14:** the only pool on either Latch manager on 4663 is LTT1/LTT2
+  (`0xcb1f…50e8`, hook `0x23CE…E446`); no Latch pool holds native ETH or WETH, so **no token
+  has a Latch route to ETH**. Checked against the deployed router with state overrides: an
+  LTT1→LTT2 batch built by this code passes approve, Permit2, INFI_SWAP and SETTLE_ALL and
+  reverts at `UNWRAP_WETH` with `InsufficientETH()` (expected: the output is not WETH);
+  without the unwrap it succeeds; with min-out = quote it succeeds and with quote + 1 it
+  reverts.
+
 ---
 
 ## 11. Known limits and open questions
 
+- Treasury conversion: the 4663 allowlist (USDG, NVDA) is a proposal awaiting the owner;
+  WETH itself is not offered (unwrapping is not a Latch-pool conversion); Bin pools are not
+  routed; a third-party RevShare-style hook not in the address book is judged by an
+  inferred shape; min-out is rounded UP (protective) where the SDK's `applySlippage` rounds
+  down.
 - Tier pricing (anonymous and key limits, quotas) is config, not decided.
 - Domain for the API and admin UI (`latch.guru` is recorded as provisional).
 - Where DEX Screener submission happens (their docs route it to Discord) and the

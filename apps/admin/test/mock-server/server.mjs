@@ -12,7 +12,13 @@
 // A request whose Referer contains `signedout` gets 401 from /auth/session, to
 // render the sign-in screen.
 import { createServer } from 'node:http'
+import { readFileSync } from 'node:fs'
 import { fixtures } from './fixtures.mjs'
+
+// Treasury conversion: real apps/api responses computed over the API's test fixture
+// chain (LAYOUT pools and balances; see the _note inside). The route answer is the
+// one computed for the fixture amount, whatever amount is asked for.
+const treasury = JSON.parse(readFileSync(new URL('./treasury.json', import.meta.url), 'utf8'))
 
 const PORT = Number(process.env.MOCK_PORT ?? 5189)
 
@@ -47,6 +53,12 @@ const server = createServer((req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/csv', 'X-Latch-Fixture': 'test/mock-server' })
         return res.end('chainId,source,token\r\n')
       }
+      if (path === '/treasury') return send(res, 200, treasury.view)
+      if (path === '/treasury/route') {
+        const r = treasury.routes[String(url.searchParams.get('token') ?? '').toLowerCase()]
+        if (!r) return send(res, 400, { error: { code: 'BAD_REQUEST', message: 'token is not on the treasury conversion allowlist for this chain' } })
+        return send(res, 200, r)
+      }
       const m = /^\/moderation\/listings\/([a-z0-9]+)(\/icon)?$/.exec(path)
       if (m) return m[2] ? send(res, 404, { error: { code: 'NOT_FOUND', message: 'Icon not found' } }) : send(res, 200, fixtures.listingDetail)
       const key = path.replace(/^\//, '')
@@ -63,6 +75,7 @@ const server = createServer((req, res) => {
       if (path === '/safe/fee-controller/collect') return send(res, 200, fixtures.collect)
       if (path === '/safe/fee-controller/sweep') return send(res, 200, fixtures.collect)
       if (path === '/registry/listing') return send(res, 200, fixtures.flag)
+      if (path === '/treasury/convert/prepare') return send(res, 200, treasury.prepared)
       if (/\/moderation\/listings\/[a-z0-9]+\/(approve|reject|request-changes)$/.test(path)) return send(res, 200, { status: 'APPROVED' })
       if (path === '/keys') return send(res, 201, { key: { prefix: 'latchk_mockmockmock_…' }, secret: 'latchk_mockmockmock_THIS-IS-A-FIXTURE-NOT-A-KEY-0000000000000' })
       if (path === '/keys/accounts') return send(res, 201, { id: 'cmockaccount000000000001' })

@@ -3,6 +3,7 @@ import { createPublicClient, type PublicClient } from "viem";
 import { latchTransport } from "@latchprotocol/sdk";
 import { OnChainRoleResolver } from "./admin/roles.js";
 import { RpcSimulator } from "./admin/simulate.js";
+import type { TreasuryClient } from "./admin/treasury/chain.js";
 import { disabledCaptcha, turnstileVerifier } from "./admin/turnstile.js";
 import { createApp } from "./app.js";
 import { keyCacheKey, PrismaKeyResolver, RedisUsageCounter } from "./auth/identity.js";
@@ -11,6 +12,19 @@ import { apiKeyPepper, env, trustProxySetting } from "./config/env.js";
 import { logger } from "./config/logger.js";
 import { disconnectDatabase, pingDatabase, prisma } from "./db/prisma.js";
 import { FallbackRateLimitStore, RedisRateLimitStore } from "./ratelimit/limiter.js";
+
+/** One read-only public client per chain, reusing the admin client for the role chain. */
+function treasuryClients(roleClient: PublicClient, roleChainId: number) {
+  const made = new Map<number, PublicClient>([[roleChainId, roleClient]]);
+  return (chainId: number) => {
+    let c = made.get(chainId);
+    if (!c) {
+      c = createPublicClient({ transport: latchTransport(chainId, { env: process.env, timeout: 15_000 }) }) as PublicClient;
+      made.set(chainId, c);
+    }
+    return c as unknown as TreasuryClient;
+  };
+}
 
 /**
  * API process. Serves reads from Postgres + Redis. It does NOT index (that is
@@ -33,6 +47,9 @@ async function main(): Promise<void> {
       rate,
       // eth_call only. There is no account, key or wallet client anywhere in this process.
       simulator: env.ADMIN_SIMULATION_ENABLED ? new RpcSimulator(client) : null,
+      // Treasury conversion reads (balances, CLQuoter, getSlot0, registry, eth_call
+      // simulation with a state override). Same gate, same read-only client type.
+      treasuryClient: env.ADMIN_SIMULATION_ENABLED ? treasuryClients(client, env.ADMIN_ROLE_CHAIN_ID) : null,
       keys: {
         pepper: apiKeyPepper(),
         defaultRpm: env.KEY_DEFAULT_RATE_LIMIT_PER_MINUTE,

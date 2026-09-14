@@ -6,6 +6,8 @@ import { z } from "zod";
 import { hasRole, roleGrants, type AdminRole, type RoleResolver } from "../admin/roles.js";
 import { AdminService } from "../admin/service.js";
 import type { Simulator } from "../admin/simulate.js";
+import type { TreasuryClient } from "../admin/treasury/chain.js";
+import { TreasuryService } from "../admin/treasury/service.js";
 import { ReadService } from "../services/read.js";
 import { registerAdminDataRoutes, type AdminDataDeps } from "./adminRoutes.js";
 import {
@@ -44,6 +46,8 @@ export interface AdminDeps {
   rate: RateLimitStore;
   /** eth_call simulation of prepared payloads. null = payloads are returned unsimulated, labelled so. */
   simulator: Simulator | null;
+  /** Read-only chain client per chain for treasury conversion (balances, quotes, simulation). null = those reads answer "unavailable". */
+  treasuryClient?: ((chainId: number) => TreasuryClient | null) | null;
   /** API-key minting from the panel (admin role). The pepper never leaves this process. */
   keys: AdminDataDeps["keys"];
   config: {
@@ -245,7 +249,11 @@ export function adminRouter(deps: AdminDeps): Router {
   // --- data routes: every one names its role (src/http/adminRoutes.ts) ----------
   registerAdminDataRoutes(
     r,
-    { prisma: deps.prisma, service: new AdminService(deps.prisma, new ReadService(deps.prisma)), simulator: deps.simulator, roleChainId: cfg.roleChainId, keys: deps.keys },
+    (() => {
+      const read = new ReadService(deps.prisma);
+      const treasury = new TreasuryService(deps.prisma, read, deps.treasuryClient ?? null);
+      return { prisma: deps.prisma, service: new AdminService(deps.prisma, read, deps.treasuryClient ? treasury : null), treasury, simulator: deps.simulator, roleChainId: cfg.roleChainId, keys: deps.keys };
+    })(),
     { requireSession, requireRole },
   );
 

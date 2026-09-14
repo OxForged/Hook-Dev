@@ -106,10 +106,10 @@ export function StateView<T>({ state, reload, empty, isEmpty, children }: { stat
   }
 }
 
-export function Table({ caption, children }: { caption: string; children: ReactNode }) {
+export function Table({ caption, children, stackOnPhone = false }: { caption: string; children: ReactNode; stackOnPhone?: boolean }) {
   return (
     <div className="table-wrap" tabIndex={0} role="region" aria-label={caption}>
-      <table className="table">
+      <table className={`table${stackOnPhone ? " table--stack" : ""}`}>
         <caption className="sr-only">{caption}</caption>
         {children}
       </table>

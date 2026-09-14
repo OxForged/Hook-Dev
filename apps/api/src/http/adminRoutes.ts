@@ -12,6 +12,7 @@ import { writeAudit } from "../admin/session.js";
 import { AdminService, ADMIN_WINDOWS, type RevenueQuery } from "../admin/service.js";
 import { prepareCollectProtocolFees, prepareRegistryListing, prepareSweep } from "../admin/safeTx.js";
 import type { Simulator, SimulationResult } from "../admin/simulate.js";
+import type { TreasuryService } from "../admin/treasury/service.js";
 import { TIMELOCK_FUNCTIONS_ABI } from "../chain/abis.js";
 import { encodeFunctionData } from "viem";
 import { validate } from "./middleware.js";
@@ -24,7 +25,7 @@ import { validate } from "./middleware.js";
  *
  *   viewer   reads
  *   curator  moderation, registry flag/unflag payloads
- *   admin    API keys, audit log, Safe payloads (collect, sweep)
+ *   admin    API keys, audit log, Safe payloads (collect, sweep, treasury conversion)
  *
  * Every non-GET is CSRF-checked by the session guard and writes an audit row.
  */
@@ -32,6 +33,7 @@ import { validate } from "./middleware.js";
 export interface AdminDataDeps {
   prisma: PrismaClient;
   service: AdminService;
+  treasury: TreasuryService;
   simulator: Simulator | null;
   roleChainId: number;
   keys: { pepper: string; defaultRpm: number; defaultQuota: number; invalidate: (secretHash: string) => Promise<void> };
@@ -120,6 +122,42 @@ export function registerAdminDataRoutes(r: Router, deps: AdminDataDeps, g: Guard
   r.get("/governance/roles", S, R("viewer"), validate({ query: chainQ }), h(async (_q, res) => json(res, await service.roles(chainOf(res)))));
   r.get("/safety", S, R("viewer"), validate({ query: chainQ }), h(async (_q, res) => json(res, await service.safety(chainOf(res)))));
   r.get("/safe/context", S, R("viewer"), validate({ query: chainQ }), h(async (_q, res) => json(res, service.safeContext(chainOf(res)))));
+
+  /* ---- treasury conversion ----------------------------------------------- */
+  // Allowlisted tokens -> native ETH through Latch pools only. Reads are viewer;
+  // the payload is admin and audited. The allowlist is config: there is no route
+  // that writes it.
+
+  const treasuryQ = chainQ.extend({ usd: z.enum(["true", "false"]).default("false").transform((x) => x === "true") });
+  r.get("/treasury", S, R("viewer"), validate({ query: treasuryQ }), h(async (_q, res) => json(res, await deps.treasury.view(chainOf(res), v<z.infer<typeof treasuryQ>>(res, "query").usd))));
+
+  const rawAmount = z.string().regex(/^[1-9][0-9]{0,38}$/, "raw integer units, greater than zero");
+  const routeQ = chainQ.extend({ token: address, amount: rawAmount.optional() });
+  r.get(
+    "/treasury/route",
+    S,
+    R("viewer"),
+    validate({ query: routeQ }),
+    h(async (_q, res) => {
+      const q = v<z.infer<typeof routeQ>>(res, "query");
+      const { _internal: _drop, ...view } = await deps.treasury.route(q.chainId, q.token, q.amount ? BigInt(q.amount) : null);
+      json(res, view);
+    }),
+  );
+
+  const convertBody = z.object({ chainId: z.number().int().refine((id) => isLatchChainId(id)).default(deps.roleChainId), token: address, amount: rawAmount, routeId: hex32, quotedAt: z.string().datetime() });
+  r.post(
+    "/treasury/convert/prepare",
+    S,
+    R("admin"),
+    validate({ body: convertBody }),
+    h(async (req, res) => {
+      const b = v<z.infer<typeof convertBody>>(res, "body");
+      const out = await deps.treasury.preparePayload(b.chainId, { token: b.token, amount: BigInt(b.amount), routeId: b.routeId, quotedAt: b.quotedAt });
+      await audit(prisma, req, res, "safe.prepare.treasury-convert", { type: "treasury_conversion", id: b.token }, undefined, { to: out.payload.to, operation: out.payload.operation, data: out.payload.data, amountIn: out.quote.amountIn, minOut: out.quote.minOut, routeId: out.route.best?.routeId ?? null, deadline: out.quote.deadline, simulation: out.simulation.status });
+      json(res, out);
+    }),
+  );
 
   /* ---- moderation (curator) ---------------------------------------------- */
 

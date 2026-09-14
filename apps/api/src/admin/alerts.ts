@@ -57,6 +57,8 @@ export interface AlertInputs {
   timelockOps: TimelockOperation[];
   reconciliationMismatches: { chainId: number; kind: string; subject: string; detail: string | null; atBlock: string }[];
   pendingListings: number;
+  /** Allowlisted Safe balances above their configured size, each with the Latch route read for it. Optional: absent when chain reads are off. */
+  treasuryConversions?: { chainId: number; token: string; symbol: string; balanceRaw: string; balanceUnits: string; thresholdRaw: string; routeStatus: string; blockers: string[]; minOutWei: string | null; readAtBlock: string | null; readAt: string | null }[];
 }
 
 const ACCEPT_OWNERSHIP = "0x79ba5097";
@@ -277,6 +279,24 @@ export function computeAlerts(i: AlertInputs): Alert[] {
 
   if (i.pendingListings > 0) {
     push({ id: "moderation:pending", severity: "INFO", category: "moderation", chainId: null, title: `${i.pendingListings} listing submission(s) awaiting review`, detail: "Submitted through POST /v1/listings. Nothing is public until approved.", subject: null, provenance: "listing_submissions", action: { label: "Moderation", page: "moderation" } });
+  }
+
+  // --- treasury conversion ------------------------------------------------
+  // INFO only, and only on a route that was actually read and accepted. A balance
+  // with no Latch route raises nothing: "no route" is the normal state, not news.
+  for (const t of i.treasuryConversions ?? []) {
+    if (t.routeStatus !== "route") continue;
+    push({
+      id: `treasury:${t.chainId}:${t.token}:conversion-available`,
+      severity: "INFO",
+      category: "revenue",
+      chainId: t.chainId,
+      title: `Conversion available: ${t.balanceUnits} ${t.symbol} in the Safe`,
+      detail: `The Safe holds more ${t.symbol} than its configured alert size (${t.thresholdRaw} raw) and a Latch route to native ETH exists${t.minOutWei ? `, min-out ${t.minOutWei} wei for the full balance` : ""}.${t.blockers.length ? ` Converting the full balance is currently refused: ${t.blockers.join("; ")}.` : ""} Nothing converts unless the Safe owners sign a prepared batch.`,
+      subject: t.token,
+      provenance: `balanceOf + CLQuoter eth_call @ block ${t.readAtBlock ?? "?"}, ${t.readAt ?? "?"}`,
+      action: { label: "Treasury", page: "treasury" },
+    });
   }
 
   const rank = (s: Severity) => SEVERITIES.indexOf(s);
