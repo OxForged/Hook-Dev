@@ -981,15 +981,23 @@ only 2-of-3 Safe signatures with **no 48-hour public delay**. This is the exact 
 the deployment order warns about: "A transfer that was proposed and never accepted leaves the EOA
 in place and looks fine on a block explorer." (Here it left the Safe, not an EOA.)
 
-**The fix is one queued batch, prepared and simulated (nothing sent):** the Safe calls
-`scheduleBatch` on the custody timelock with targets `[Vault, CLPoolManagerOwner,
-BinPoolManagerOwner]`, values `[0,0,0]`, payloads `acceptOwnership()` ×3, predecessor `0x0`, salt
-`keccak256("latch:accept-ownership:vault-and-pool-manager-owners:2026-09-13")`
-= `0xfdd6…ae74`, delay `172800`. Operation id `0x2254…9bd1`. After 48 h anyone calls
-`executeBatch` with the same arguments (the executor is `address(0)`). Simulated: schedule from
-the Safe succeeds; `acceptOwnership()` from the timelock succeeds on all three and reverts
-`OwnableUnauthorizedAccount` for anyone else. Then re-read `owner()` on every row — that read, not
-the queued operation, is the proof.
+**The fix is ALREADY QUEUED — do not schedule it again.** Three separate operations, one per
+contract, each `acceptOwnership()` (`0x79ba5097`), were scheduled on the custody timelock at
+block 61,325,176 with delay 172,800 s, predecessor `0x0`. None is cancelled. **Executable from
+2026-09-14 18:40 UTC (unix 1789411243).** The executor is `address(0)`, so once ready ANYONE calls
+`execute(target, 0, 0x79ba5097, 0x0, salt)` on `0x3aE3…e119`:
+
+| Target | Operation id | Salt |
+|---|---|---|
+| Vault `0x78e8…fB6c` | `0xb04e05ca…f33d` | `0xe17bfec589d6a2594c2d59f7a1455e637425f2d5a4cbbcdf9062e39fad16e555` |
+| CLPoolManagerOwner `0x5D71…9a67` | `0xab9c8f8e…bf00` | `0xb0ecc7113374d7c91a718f0d7a67a59bbf2efaaaf0f6c3a209b541cb4e3de097` |
+| BinPoolManagerOwner `0x9892…2665` | `0x700f7b00…4f6e` | `0x4787d44da9b61fa3107ab9bd0ef45f807be8debdaa46b66a2ae96ceb458a62c1` |
+
+Ids were recomputed with `hashOperation` and match the scheduled ones. Simulated beforehand:
+`acceptOwnership()` from the timelock succeeds on all three and reverts
+`OwnableUnauthorizedAccount` for anyone else. **After executing, re-read `owner()` on every row —
+that read, not the queued operation, is the proof.** (A batch proposed earlier in this file, salt
+`0xfdd6…ae74`, was never sent and would now DUPLICATE these — discard it.)
 
 The policy timelock holds only the descriptor and has **no CANCELLER_ROLE** for the canceller
 (the custody timelock does). Low impact — the descriptor is cosmetic — but either move the
