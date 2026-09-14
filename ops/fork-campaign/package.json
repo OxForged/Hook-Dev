@@ -1,0 +1,18 @@
+{
+  "name": "@latchprotocol/fork-campaign",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Exercises every state-changing function of every deployed Latch contract on a LOCAL anvil fork of Robinhood Chain (4663). Refuses to talk to anything that is not a localhost anvil fork.",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "verify-code": "node src/run.mjs --only verify",
+    "campaign": "node src/run.mjs",
+    "fork": "node scripts/start-fork.mjs"
+  },
+  "dependencies": {
+    "viem": "2.56.3"
+  }
+}

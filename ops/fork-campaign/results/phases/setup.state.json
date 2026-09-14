@@ -1,0 +1,45 @@
+{
+  "createdAt": "2026-09-14T08:37:14.005Z",
+  "forkBlock": 62540000,
+  "snapshot": "0x61",
+  "state": {
+    "tokens": {
+      "TKA": "0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2",
+      "TKB": "0x987e855776C03A4682639eEb14e65b3089EE6310",
+      "TKC": "0xb932C8342106776E73E39D695F3FFC3A9624eCE0",
+      "TKD": "0xE8F7d98bE6722d42F29b50500B0E318EF2be4fc8",
+      "TKE": "0xe38b6847E611e942E6c80eD89aE867F522402e80",
+      "TKF": "0x2c8ED11fd7A058096F2e5828799c68BE88744E2F",
+      "USD6": "0x7580708993de7CA120E957A62f26A5dDD4b3D8aC"
+    },
+    "actor": "0x75c68e69775fa3e9dd38ea32e554f6bf259c1135",
+    "actor2": "0xa82ed5224ba72f2f776e09b11dc99e30ee65da8d",
+    "mockLaunchpad": "0x572316ac11cb4bc5daf6bdae68f43ea3cce3ae0e",
+    "baseCL": {
+      "key": {
+        "currency0": "0x987e855776C03A4682639eEb14e65b3089EE6310",
+        "currency1": "0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2",
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "poolManager": "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
+        "fee": 3000,
+        "parameters": "0x00000000000000000000000000000000000000000000000000000000003c0000"
+      },
+      "id": "0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594",
+      "tokenId": {
+        "$big": "1"
+      }
+    },
+    "baseBin": {
+      "key": {
+        "currency0": "0x987e855776C03A4682639eEb14e65b3089EE6310",
+        "currency1": "0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2",
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "poolManager": "0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979",
+        "fee": 3000,
+        "parameters": "0x00000000000000000000000000000000000000000000000000000000000a0000"
+      },
+      "id": "0x9a1edf22dbb09adc5a7998e746570b2f7ef48a2aa2630a886c2d203699877950"
+    },
+    "setupDone": true
+  }
+}

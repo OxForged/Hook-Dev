@@ -1,0 +1,94 @@
+{
+  "registry": "0xe10b6f6B275de231345c20D14Ab812db62151b00",
+  "pauseRole": "0xe95e22ec6dbf4c911d1fae59680a3e9cb71dd35b3a1c697d232e4b01a8ff30a2",
+  "roleCheckedBy": "Stock.pause() -> ACCESS_CONTROLLED_REGISTRY.hasRole(0xe95e…30a2, msg.sender), found with debug_traceCall on the fork",
+  "source": "read-only eth_getLogs over the registry's full history (274 logs, all in L2 blocks 7,662-657,134) from rpc.mainnet.chain.robinhood.com; RoleGranted minus RoleRevoked",
+  "holders": [
+    {
+      "role": "0xe95e22ec6dbf4c911d1fae59680a3e9cb71dd35b3a1c697d232e4b01a8ff30a2",
+      "account": "0xfccf56b674113d9c4eb0f9b3370930ced9e6ab23",
+      "grantedAtL2Block": 7844,
+      "tx": "0x8d28c52311db695f47127c611114b6a101e055adee945b29dcfa26bf368f961b"
+    }
+  ],
+  "allCurrentRoleHolders": [
+    {
+      "role": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "account": "0xd6f8378f8e440c65f8382f5f2728c78dfd55b66d",
+      "grantedAtL2Block": 7802,
+      "tx": "0x3fd2a4dbe8ffdd07b26d89ec519897a9471199d033470e2c4c6218b02442b441"
+    },
+    {
+      "role": "0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6",
+      "account": "0x2b94105fff37630f98e1f24811dad588fc5c3a87",
+      "grantedAtL2Block": 7817,
+      "tx": "0xbba130b3a605048f8869f072f95835d0c3f2ae66e79312775b4f26769e61e1ca"
+    },
+    {
+      "role": "0x3c11d16cbaffd01df69ce1c404f6340ee057498f5f00246190ea54220576a848",
+      "account": "0x6e40b50a40c1db42a85a0e8fe8ff7d9cbfc2d8c1",
+      "grantedAtL2Block": 7820,
+      "tx": "0x9777426177f407dd0ff88a072b29a2b7aeffb52a659af919a72d07a173ba5c17"
+    },
+    {
+      "role": "0x25e7ebc863fa4efd16243c82323b71f247c0cf439aca64c51b84a74afb738936",
+      "account": "0x957b6de6525c63349f7619743ef1e0ad93cd74d4",
+      "grantedAtL2Block": 7828,
+      "tx": "0xd3bb4ee7cb2b078223fd1fb37c50177624b3e4b37a22544a0494325a377680a5"
+    },
+    {
+      "role": "0x65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a",
+      "account": "0xe7bcb188254bc6ebbff63014dfed4cd4a024f22a",
+      "grantedAtL2Block": 7833,
+      "tx": "0xcf8905f426f616a77d5269158bac2336932eead5a1de6d113b59b1ee0c7abf03"
+    },
+    {
+      "role": "0xe95e22ec6dbf4c911d1fae59680a3e9cb71dd35b3a1c697d232e4b01a8ff30a2",
+      "account": "0xfccf56b674113d9c4eb0f9b3370930ced9e6ab23",
+      "grantedAtL2Block": 7844,
+      "tx": "0x8d28c52311db695f47127c611114b6a101e055adee945b29dcfa26bf368f961b"
+    },
+    {
+      "role": "0x155fc2c2b00b801014447f9d3a1522625740f8e592e4c0b0bb7c5867c150aa11",
+      "account": "0x7369d100c00f28e45d779ac9d4b1c7afa61e4abc",
+      "grantedAtL2Block": 8638,
+      "tx": "0x561274c10a0637484b930f4d66d56431b8ec31c358eb71585c1254e56d0dbabb"
+    },
+    {
+      "role": "0x5f077d4e72bed5b3b14877559c782788e60c3fbb27bf29d3586097d8fa36bbeb",
+      "account": "0x5516b3451d4d6c9f63353fe7bc9537477ecce000",
+      "grantedAtL2Block": 8643,
+      "tx": "0x9ee141e3c6744bb70cf6eecacddd066285aca7e55c4dd3f8b2995b7c834b39bc"
+    },
+    {
+      "role": "0x5ab8bd28475e0dc8d5764e9ce50f85ffe2f14ec40c5b74e45f541485ad510c39",
+      "account": "0xcd8c6182e7c6ca3b5156d6a90a67719d7e2be094",
+      "grantedAtL2Block": 8646,
+      "tx": "0xa4322772905c45cf8e4ae7323aafe04048bfdf496f258e59d0f17ccd6d2d1b1f"
+    },
+    {
+      "role": "0xb4e5de7340a2fee2ff9be79f5ec0e8feae4b633bc8cc663711520e08f24984f8",
+      "account": "0x697e774d60c1a3769f2ed0b919aacf17be0ae553",
+      "grantedAtL2Block": 8654,
+      "tx": "0x970ef355ada9c9705b6568867cc42e3c3f46a30eb51cd282972b2913ee5df925"
+    },
+    {
+      "role": "0x7158cf42e4a4f01c5456c8d75cdbd375748d45e9db7e812f5bcd18844122b615",
+      "account": "0x92905e8d0e2301ba143215b8d86d63ffd4188143",
+      "grantedAtL2Block": 8675,
+      "tx": "0x75ee6f5d1b6b28031117739afea65158df1a854dc0b26b03fff1a56dbb47df2d"
+    },
+    {
+      "role": "0x7f5260842512b02356ff92de24be96e7e1aac2e234d9371b076ac2b4cddda61e",
+      "account": "0xcba16c2b9048af033c5b34e43dd1d47d1358524a",
+      "grantedAtL2Block": 8682,
+      "tx": "0x2687522d8e2b0827182c9d0e9349e4574bcf8ebe9fa21e1a2ab031e5a522125b"
+    },
+    {
+      "role": "0x8f2e0057cd5e35397007bcc8f5418f73dd64cc6e4073a0276563f247c3079037",
+      "account": "0x913ca87347391218e5de2c17c5a0aeba8b0b28fd",
+      "grantedAtL2Block": 8687,
+      "tx": "0x73109d294b946bf6e96395293aac792a9a3887f4207c0baaa2b2e454438f7064"
+    }
+  ]
+}

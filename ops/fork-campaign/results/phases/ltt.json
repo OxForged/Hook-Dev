@@ -1,0 +1,711 @@
+{
+  "schema": "latch-fork-campaign/v1",
+  "generatedAt": "2026-09-14T08:39:24.835Z",
+  "meta": {
+    "phase": "ltt",
+    "rpc": "http://127.0.0.1:8547",
+    "forkUrl": "https://rpc.ordofi.network",
+    "forkBlock": 62540000,
+    "chainId": 4663,
+    "clientVersion": "anvil/v1.8.1",
+    "headAtStart": {
+      "number": "62540412",
+      "timestamp": "1789365533"
+    },
+    "broadcastToRealNetwork": false,
+    "devAccountCodeClearedOnFork": [],
+    "seconds": 13
+  },
+  "codeVerification": [],
+  "calls": [
+    {
+      "seq": 1,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "transfer",
+      "role": "setup",
+      "from": "0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9",
+      "to": "0x2A21c0826848f2D597B7C87A4B931dE1407958A6",
+      "args": "[\"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\",\"10000000000000000000000\"]",
+      "value": "0",
+      "txHash": "0x88bdff7f0553ae3c90a17a95f82818d18293fbbed9152af506e4ba8e8876e8d7",
+      "block": 62540195,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 51211,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Transfer"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 2,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "to": "0x2A21c0826848f2D597B7C87A4B931dE1407958A6",
+      "args": "[\"0x000000000022D473030F116dDEE9F6B43aC78BA3\",\"115792089237316195423570985008687907853269984665640564039457584007913129639935\"]",
+      "value": "0",
+      "txHash": "0x367fa228351dc002a1379059ed233f80867d6a5fd064c897499a44f2907c3332",
+      "block": 62540196,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 46146,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Approval"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 3,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "Permit2",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "to": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "args": "[\"0x2A21c0826848f2D597B7C87A4B931dE1407958A6\",\"0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c\",\"1461501637330902918203684832716283019655932542975\",281474976710655]",
+      "value": "0",
+      "txHash": "0x29004d64fd849c894a792a609df900d6818b1c5cbb07f7083d37cf01d3d1918d",
+      "block": 62540197,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 47818,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "(unknown 0xda9fa7c1)"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 4,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "transfer",
+      "role": "setup",
+      "from": "0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9",
+      "to": "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4",
+      "args": "[\"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\",\"10000000000000000000000\"]",
+      "value": "0",
+      "txHash": "0x35e4155beca94e1dd0aae63fceb80df4a90762be27fc6fe6ad9fb14b3ddfbf57",
+      "block": 62540198,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 51211,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Transfer"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 5,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "to": "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4",
+      "args": "[\"0x000000000022D473030F116dDEE9F6B43aC78BA3\",\"115792089237316195423570985008687907853269984665640564039457584007913129639935\"]",
+      "value": "0",
+      "txHash": "0xd61ee19bfd321471ac962100e79031da98e590835f977be8f00f6e845fed9deb",
+      "block": 62540199,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 46146,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Approval"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 6,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "Permit2",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "to": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "args": "[\"0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4\",\"0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c\",\"1461501637330902918203684832716283019655932542975\",281474976710655]",
+      "value": "0",
+      "txHash": "0xf7b2b1cebdc013e84baad6e007395b0b02ad7d3e1affcde3e269d03efebbdfb8",
+      "block": 62540200,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 47818,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "(unknown 0xda9fa7c1)"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 7,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "transfer",
+      "role": "setup",
+      "from": "0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9",
+      "to": "0x2A21c0826848f2D597B7C87A4B931dE1407958A6",
+      "args": "[\"0x70997970C51812dc3A010C7d01b50e0d17dc79C8\",\"10000000000000000000000\"]",
+      "value": "0",
+      "txHash": "0x28584e508a3fd79ec2ef25750e1ac3436d618a1e55430b940b0424c58b54ba04",
+      "block": 62540201,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 51211,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Transfer"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 8,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "to": "0x2A21c0826848f2D597B7C87A4B931dE1407958A6",
+      "args": "[\"0x000000000022D473030F116dDEE9F6B43aC78BA3\",\"115792089237316195423570985008687907853269984665640564039457584007913129639935\"]",
+      "value": "0",
+      "txHash": "0xe06f39ce6528efbe3dddd4c98007d65e05865b0cb0c14898b72c1d121b18ca38",
+      "block": 62540202,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 46146,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Approval"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 9,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "Permit2",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "to": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "args": "[\"0x2A21c0826848f2D597B7C87A4B931dE1407958A6\",\"0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c\",\"1461501637330902918203684832716283019655932542975\",281474976710655]",
+      "value": "0",
+      "txHash": "0x83cafd8e66ba4c498fde9f27eddbebddc6c4bc0018dff947c478b9dd703ea3d4",
+      "block": 62540203,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 47818,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "(unknown 0xda9fa7c1)"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 10,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "transfer",
+      "role": "setup",
+      "from": "0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9",
+      "to": "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4",
+      "args": "[\"0x70997970C51812dc3A010C7d01b50e0d17dc79C8\",\"10000000000000000000000\"]",
+      "value": "0",
+      "txHash": "0x3c5e7954e819b299826e1b8df1352759233a16358fcebf09baa08d10eb0ba596",
+      "block": 62540204,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 51211,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Transfer"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 11,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "to": "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4",
+      "args": "[\"0x000000000022D473030F116dDEE9F6B43aC78BA3\",\"115792089237316195423570985008687907853269984665640564039457584007913129639935\"]",
+      "value": "0",
+      "txHash": "0x4ad6ae98d4a104e52da43c7109a283547db5bc148728303c696aff3aa6c01bee",
+      "block": 62540205,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 46146,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Approval"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 12,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "Permit2",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "to": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "args": "[\"0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4\",\"0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c\",\"1461501637330902918203684832716283019655932542975\",281474976710655]",
+      "value": "0",
+      "txHash": "0x9aa0d651ac1790289d60d86cf709b6990926af744fb827e1350ae2f62a76f505",
+      "block": 62540206,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 47818,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "(unknown 0xda9fa7c1)"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 13,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "transfer",
+      "role": "setup",
+      "from": "0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9",
+      "to": "0x2A21c0826848f2D597B7C87A4B931dE1407958A6",
+      "args": "[\"0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC\",\"10000000000000000000000\"]",
+      "value": "0",
+      "txHash": "0x20db85a412de3f96340bc7e9ba7c87364b6a53d5335877cffcc4453b38d4f789",
+      "block": 62540207,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 51199,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Transfer"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 14,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "to": "0x2A21c0826848f2D597B7C87A4B931dE1407958A6",
+      "args": "[\"0x000000000022D473030F116dDEE9F6B43aC78BA3\",\"115792089237316195423570985008687907853269984665640564039457584007913129639935\"]",
+      "value": "0",
+      "txHash": "0xee2f35bab0b551b92e8298de317bab850228cf6126bd64d930819f7b182fadcc",
+      "block": 62540208,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 46146,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Approval"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 15,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "Permit2",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "to": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "args": "[\"0x2A21c0826848f2D597B7C87A4B931dE1407958A6\",\"0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c\",\"1461501637330902918203684832716283019655932542975\",281474976710655]",
+      "value": "0",
+      "txHash": "0x0f7d78d4f121c8eedbd44c725455b25ede419ff19aa0ccf191c68a394e85b555",
+      "block": 62540209,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 47818,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "(unknown 0xda9fa7c1)"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 16,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "transfer",
+      "role": "setup",
+      "from": "0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9",
+      "to": "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4",
+      "args": "[\"0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC\",\"10000000000000000000000\"]",
+      "value": "0",
+      "txHash": "0xd9feaf52d74f40248935029d003dbc8b6f6ad5ff0ff46d3fb2d9289bbd71dd9f",
+      "block": 62540210,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 51199,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Transfer"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 17,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "LTT",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "to": "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4",
+      "args": "[\"0x000000000022D473030F116dDEE9F6B43aC78BA3\",\"115792089237316195423570985008687907853269984665640564039457584007913129639935\"]",
+      "value": "0",
+      "txHash": "0xb1f50dd1f09cef6b0bce41b3828e2521d5f6daa4c2a86ee7d3b32e38382c0f93",
+      "block": 62540211,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 46146,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "Approval"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 18,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "Permit2",
+      "fn": "approve",
+      "role": "setup",
+      "from": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "to": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "args": "[\"0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4\",\"0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c\",\"1461501637330902918203684832716283019655932542975\",281474976710655]",
+      "value": "0",
+      "txHash": "0xe6da0207fb2917cc200d06912d0fcc7915f223e355987d464fd81e3e26c7d08b",
+      "block": 62540212,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 47818,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": null,
+      "events": [
+        "(unknown 0xda9fa7c1)"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 19,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "UniversalRouter",
+      "fn": "execute(bytes,bytes[],uint256)",
+      "role": "authorized",
+      "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "to": "0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c",
+      "args": "[\"0x10\",[\"0x000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003060c0f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000000600000…",
+      "value": "0",
+      "txHash": "0xb7978f41f3f8d036f2b738006cc89ed75286d9e34fa3616b6f2b6373a7ba35c8",
+      "block": 62540213,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 576541,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": "LTT1/LTT2: LTT1 -> LTT2 exact in 100",
+      "events": [
+        "Swap",
+        "LpDonationSkipped",
+        "Transfer",
+        "RevShareTaken",
+        "Transfer",
+        "Transfer"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 20,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "UniversalRouter",
+      "fn": "execute(bytes,bytes[],uint256)",
+      "role": "authorized",
+      "from": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "to": "0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c",
+      "args": "[\"0x10\",[\"0x000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003060c0f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000000600000…",
+      "value": "0",
+      "txHash": "0xb1af65ea1d2f7ceb9bfa591b27ae84b1aacbea51399cd19df75f2ee989ba4c79",
+      "block": 62540214,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 921683,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": "LTT1/LTT2: LTT2 -> LTT1 exact in 250",
+      "events": [
+        "Swap",
+        "LpDonationSkipped",
+        "Transfer",
+        "RevShareTaken",
+        "Transfer",
+        "Transfer"
+      ],
+      "contractAddress": null
+    },
+    {
+      "seq": 21,
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "contract": "UniversalRouter",
+      "fn": "execute(bytes,bytes[],uint256)",
+      "role": "authorized",
+      "from": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "to": "0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c",
+      "args": "[\"0x10\",[\"0x000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003080c0f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000000600000…",
+      "value": "0",
+      "txHash": "0x5b9441961a7a79fbd6c4dd4e12a855d7f59f34ef24a89c23dde507d0c57ea6e0",
+      "block": 62540215,
+      "status": "success",
+      "error": null,
+      "errorName": null,
+      "gasUsed": 537525,
+      "expect": "success",
+      "expectError": null,
+      "pass": true,
+      "note": "LTT1/LTT2: LTT1 -> LTT2 exact out 50",
+      "events": [
+        "Swap",
+        "Donate",
+        "Transfer",
+        "RevShareTaken",
+        "Transfer",
+        "Transfer"
+      ],
+      "contractAddress": null
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "MUST ltt1-ltt2-swaps",
+      "description": "Three router swaps on the live LTT1/LTT2 pool: 0->1 exact-in, 1->0 exact-in, 0->1 exact-out",
+      "startedCallIndex": 0,
+      "asserts": [
+        {
+          "what": "LTT pool key hooks == 0x23CE",
+          "actual": "0x23CE34E8199927DD270dddd8579c947542bDE446",
+          "expected": "0x23CE34E8199927DD270dddd8579c947542bDE446",
+          "ok": true
+        },
+        {
+          "what": "LTT1 -> LTT2 exact in 100: RevShareTaken emitted",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "LTT1 -> LTT2 exact in 100: beneficiary pot grew (beneficiaryBps 8000)",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "LTT1 -> LTT2 exact in 100: LP leg skipped (range exhausted, active liquidity 0) so the whole taken cut is the beneficiary leg",
+          "actual": "70929609355433439",
+          "expected": "70929609355433439",
+          "ok": true
+        },
+        {
+          "what": "LTT2 -> LTT1 exact in 250: RevShareTaken emitted",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "LTT2 -> LTT1 exact in 250: beneficiary pot grew (beneficiaryBps 8000)",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "LTT2 -> LTT1 exact in 250: LP leg skipped (range exhausted, active liquidity 0) so the whole taken cut is the beneficiary leg",
+          "actual": "144014398212119824",
+          "expected": "144014398212119824",
+          "ok": true
+        },
+        {
+          "what": "LTT1 -> LTT2 exact out 50: RevShareTaken emitted",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "LTT1 -> LTT2 exact out 50: beneficiary pot grew (beneficiaryBps 8000)",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "LTT1 -> LTT2 exact out 50: beneficiary share == 80% of the cut (floor rounding on both legs)",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "LTT pool protocolFee is 0 (created before the V2 controller; never synced)",
+          "actual": 0,
+          "expected": 0,
+          "ok": true
+        }
+      ],
+      "outcome": null
+    }
+  ],
+  "hazards": [],
+  "unexpected": [],
+  "notExercised": [],
+  "notes": [
+    {
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "text": "LTT1/LTT2 live state at fork",
+      "data": {
+        "sqrtPriceX96": "79228241189331887887281041477",
+        "tick": 0,
+        "protocolFee": 0,
+        "lpFee": 3000,
+        "liquidity": "1000000000000000000000",
+        "revShareConfig": {
+          "owner": "0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9",
+          "feePips": 3000,
+          "lpDonateBps": 2000,
+          "beneficiaryBps": 8000,
+          "distributorBps": 0,
+          "enabled": true,
+          "frozen": false
+        }
+      }
+    },
+    {
+      "scenario": "MUST ltt1-ltt2-swaps",
+      "text": "Informational: 'exact in 100 LTT1' consumed only part of the input and did not revert - the pool's liquidity is one narrow range and CL swaps stop at the range edge when amountOutMinimum is 0. Any UI quoting this pool must set amountOutMinimum from a quote.",
+      "data": null
+    }
+  ],
+  "extra": {
+    "lttSwaps": [
+      {
+        "note": "LTT1 -> LTT2 exact in 100",
+        "lpDonationSkipped": true,
+        "activeLiquidityAfter": "0",
+        "txHash": "0xb7978f41f3f8d036f2b738006cc89ed75286d9e34fa3616b6f2b6373a7ba35c8",
+        "gasUsed": 576541,
+        "cutCurrency": "0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4",
+        "cut": "70929609355433439",
+        "toBeneficiaries": "70929609355433439",
+        "trader0Delta": "-30545618248632666270",
+        "trader1Delta": "29483074288741833024"
+      },
+      {
+        "note": "LTT2 -> LTT1 exact in 250",
+        "lpDonationSkipped": true,
+        "activeLiquidityAfter": "0",
+        "txHash": "0xb1af65ea1d2f7ceb9bfa591b27ae84b1aacbea51399cd19df75f2ee989ba4c79",
+        "gasUsed": 921683,
+        "cutCurrency": "0x2A21c0826848f2D597B7C87A4B931dE1407958A6",
+        "cut": "144014398212119824",
+        "toBeneficiaries": "144014398212119824",
+        "trader0Delta": "59861984856837807017",
+        "trader1Delta": "-60186558931845463234"
+      },
+      {
+        "note": "LTT1 -> LTT2 exact out 50",
+        "lpDonationSkipped": false,
+        "activeLiquidityAfter": "1000000000000000000000",
+        "txHash": "0x5b9441961a7a79fbd6c4dd4e12a855d7f59f34ef24a89c23dde507d0c57ea6e0",
+        "gasUsed": 537525,
+        "cutCurrency": "0x2A21c0826848f2D597B7C87A4B931dE1407958A6",
+        "cut": "148915924873316257",
+        "toBeneficiaries": "119132739898653006",
+        "trader0Delta": "-49787557549312068771",
+        "trader1Delta": "50000000000000000000"
+      }
+    ],
+    "priceBefore": "79228241189331887887281041477",
+    "priceAfter": "77679488700642939430967788752",
+    "protocolFeeOnPool": 0
+  }
+}

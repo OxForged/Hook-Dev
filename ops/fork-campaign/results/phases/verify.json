@@ -1,0 +1,537 @@
+{
+  "schema": "latch-fork-campaign/v1",
+  "generatedAt": "2026-09-14T08:36:44.552Z",
+  "meta": {
+    "phase": "verify",
+    "rpc": "http://127.0.0.1:8547",
+    "forkUrl": "https://rpc.ordofi.network",
+    "forkBlock": 62540000,
+    "chainId": 4663,
+    "clientVersion": "anvil/v1.8.1",
+    "headAtStart": {
+      "number": "62540001",
+      "timestamp": "1789361712"
+    },
+    "broadcastToRealNetwork": false,
+    "devAccountCodeClearedOnFork": [
+      {
+        "account": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "code": "0xef01008a5b10eb2faf57665f63709ec4b3943a3b005df6"
+      },
+      {
+        "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "code": "0xef01008a5b10eb2faf57665f63709ec4b3943a3b005df6"
+      },
+      {
+        "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "code": "0xef01008a5b10eb2faf57665f63709ec4b3943a3b005df6"
+      },
+      {
+        "account": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+        "code": "0xef01008a5b10eb2faf57665f63709ec4b3943a3b005df6"
+      },
+      {
+        "account": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+        "code": "0xef01008a5b10eb2faf57665f63709ec4b3943a3b005df6"
+      },
+      {
+        "account": "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",
+        "code": "0xef01008a5b10eb2faf57665f63709ec4b3943a3b005df6"
+      },
+      {
+        "account": "0x976EA74026E726554dB657fA54763abd0C3a0aa9",
+        "code": "0xef01008a5b10eb2faf57665f63709ec4b3943a3b005df6"
+      },
+      {
+        "account": "0x14dC79964da2C08b23698B3D3cc7Ca32193d9955",
+        "code": "0xef01008a5b10eb2faf57665f63709ec4b3943a3b005df6"
+      },
+      {
+        "account": "0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f",
+        "code": "0xef01008a5b10eb2faf57665f63709ec4b3943a3b005df6"
+      },
+      {
+        "account": "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720",
+        "code": "0xef01008a5b10eb2faf57665f63709ec4b3943a3b005df6"
+      }
+    ],
+    "seconds": 1
+  },
+  "codeVerification": [
+    {
+      "contract": "Vault",
+      "address": "0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c",
+      "artifact": "Vault",
+      "source": "packages/core src/Vault.sol (nested repo da08be0), default profile",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 9161,
+      "artifactBytes": 9161,
+      "onchainCodeHash": "0x5b3c3cc73f4cc6cd504421a31b69f3c08959c81b5f8f7d5d8f387101dd8754b6",
+      "maskedHashOnchain": "0x5b3c3cc73f4cc6cd504421a31b69f3c08959c81b5f8f7d5d8f387101dd8754b6",
+      "maskedHashArtifact": "0x5b3c3cc73f4cc6cd504421a31b69f3c08959c81b5f8f7d5d8f387101dd8754b6",
+      "immutableRanges": 0,
+      "match": true
+    },
+    {
+      "contract": "CLPoolManager",
+      "address": "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
+      "artifact": "CLPoolManager",
+      "source": "packages/core src/pool-cl/CLPoolManager.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 20885,
+      "artifactBytes": 20885,
+      "onchainCodeHash": "0x412e2857ee5d067f9d29408dead1d3ea477ac8dd6b3760d28854063ddb7e5534",
+      "maskedHashOnchain": "0x1a8fb9f851123112306426ad8fa6eb4218f40d802306ee933224f902369f5b38",
+      "maskedHashArtifact": "0x1a8fb9f851123112306426ad8fa6eb4218f40d802306ee933224f902369f5b38",
+      "immutableRanges": 5,
+      "match": true
+    },
+    {
+      "contract": "BinPoolManager",
+      "address": "0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979",
+      "artifact": "BinPoolManager",
+      "source": "packages/core src/pool-bin/BinPoolManager.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 23865,
+      "artifactBytes": 23865,
+      "onchainCodeHash": "0x0a810a89fd59fe292405c3c1dd113af87da9667b036d4a8ec25cba8b7d5c617c",
+      "maskedHashOnchain": "0x9c0a8ec9c7c0e0b49848799ba359b80a1e5e8ac8024b80bf4fac68ae6ffe26b9",
+      "maskedHashArtifact": "0x9c0a8ec9c7c0e0b49848799ba359b80a1e5e8ac8024b80bf4fac68ae6ffe26b9",
+      "immutableRanges": 5,
+      "match": true
+    },
+    {
+      "contract": "CLPoolManagerOwner",
+      "address": "0x5D7111d6c624e9a08aE63d342E4baE5878989a67",
+      "artifact": "CLPoolManagerOwner",
+      "source": "packages/core src/pool-cl/CLPoolManagerOwner.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 2686,
+      "artifactBytes": 2686,
+      "onchainCodeHash": "0x6890365434f594ae6cbe7a0e11218d7b0ab139935ae860b6b008a8c1337adce9",
+      "maskedHashOnchain": "0x34acbabe7d6efe7a784432f124c9ee933b5730c1fb6a6c549b5b4b25390be059",
+      "maskedHashArtifact": "0x34acbabe7d6efe7a784432f124c9ee933b5730c1fb6a6c549b5b4b25390be059",
+      "immutableRanges": 5,
+      "match": true
+    },
+    {
+      "contract": "BinPoolManagerOwner",
+      "address": "0x98920e33313257Ffd942f94379A7ced216462665",
+      "artifact": "BinPoolManagerOwner",
+      "source": "packages/core src/pool-bin/BinPoolManagerOwner.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 3098,
+      "artifactBytes": 3098,
+      "onchainCodeHash": "0x84e3fa6a0127f145fa99a5406b6db9b20e902c093d696e3804aa9a8489c8fdf3",
+      "maskedHashOnchain": "0xf3a5dc9f7adf77513fe555fc76ca220a96bda4532730505e5658f4bf7fb6bb95",
+      "maskedHashArtifact": "0xf3a5dc9f7adf77513fe555fc76ca220a96bda4532730505e5658f4bf7fb6bb95",
+      "immutableRanges": 7,
+      "match": true
+    },
+    {
+      "contract": "CLProtocolFeeController",
+      "address": "0xb1cC5BDBADD19a2430131EaE332afD72fF6be64B",
+      "artifact": "ProtocolFeeController",
+      "source": "packages/core src/ProtocolFeeController.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 3368,
+      "artifactBytes": 3368,
+      "onchainCodeHash": "0x61ea719156a41440501b1f04c826641fb61b1555023100bf6c5016d595fe7a5e",
+      "maskedHashOnchain": "0x3bca6f0696dacdaa5c3311c7f4ab747b366ba5d5d8d6f568447750f82e2849be",
+      "maskedHashArtifact": "0x3bca6f0696dacdaa5c3311c7f4ab747b366ba5d5d8d6f568447750f82e2849be",
+      "immutableRanges": 4,
+      "match": true
+    },
+    {
+      "contract": "BinProtocolFeeController",
+      "address": "0x320feB54e940741AeB037E3944F2C95afAEE84af",
+      "artifact": "ProtocolFeeController",
+      "source": "packages/core src/ProtocolFeeController.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 3368,
+      "artifactBytes": 3368,
+      "onchainCodeHash": "0xbced8e3bffa000e615fb580bb577373f978f8f949e8dd5d600a42db1993a1235",
+      "maskedHashOnchain": "0x3bca6f0696dacdaa5c3311c7f4ab747b366ba5d5d8d6f568447750f82e2849be",
+      "maskedHashArtifact": "0x3bca6f0696dacdaa5c3311c7f4ab747b366ba5d5d8d6f568447750f82e2849be",
+      "immutableRanges": 4,
+      "match": true
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "address": "0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB",
+      "artifact": "LatchProtocolFeeControllerV2",
+      "source": "packages/fees src/LatchProtocolFeeControllerV2.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 6557,
+      "artifactBytes": 6557,
+      "onchainCodeHash": "0x1f3622ac8b90a92f1eddcae8c40c3c37516deb7a6070a2a30ea7b18e18d9f7c5",
+      "maskedHashOnchain": "0x1f3622ac8b90a92f1eddcae8c40c3c37516deb7a6070a2a30ea7b18e18d9f7c5",
+      "maskedHashArtifact": "0x1f3622ac8b90a92f1eddcae8c40c3c37516deb7a6070a2a30ea7b18e18d9f7c5",
+      "immutableRanges": 0,
+      "match": true
+    },
+    {
+      "contract": "Create3Factory",
+      "address": "0x6ffDf9A3df7e9dD55Bad2E60C7405Cd181005633",
+      "artifact": "Create3Factory",
+      "source": "packages/core Create3Factory",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 4131,
+      "artifactBytes": 4131,
+      "onchainCodeHash": "0xbe50ab997d395e23a36e76b7dab192e3534a31c1c95b45d1f6f8f7178c21d12a",
+      "maskedHashOnchain": "0xbe50ab997d395e23a36e76b7dab192e3534a31c1c95b45d1f6f8f7178c21d12a",
+      "maskedHashArtifact": "0xbe50ab997d395e23a36e76b7dab192e3534a31c1c95b45d1f6f8f7178c21d12a",
+      "immutableRanges": 0,
+      "match": true
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "address": "0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
+      "artifact": "LatchTimelock",
+      "source": "packages/governance src/LatchTimelock.sol (custody 0x3aE3)",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 7260,
+      "artifactBytes": 7260,
+      "onchainCodeHash": "0x2d45c6e326e9691d41718a99049d0ac4cf4c2693c88d98e18567c6a24503d128",
+      "maskedHashOnchain": "0x2d45c6e326e9691d41718a99049d0ac4cf4c2693c88d98e18567c6a24503d128",
+      "maskedHashArtifact": "0x2d45c6e326e9691d41718a99049d0ac4cf4c2693c88d98e18567c6a24503d128",
+      "immutableRanges": 3,
+      "match": true
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "address": "0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A",
+      "artifact": "LatchTimelock_policy",
+      "source": "git show f5a68a2:packages/governance/src/LatchTimelock.sol (pre-CANCELLER constructor), default profile",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 6963,
+      "artifactBytes": 6963,
+      "onchainCodeHash": "0xa2c6d0b3e837f0ba7d530ee796dd362dc906a987b88876e8ad316ac904ab65b2",
+      "maskedHashOnchain": "0x08a1a5ceaa734496e5a82054f80f3683e9490805481f3f25a72ab58c65cb496e",
+      "maskedHashArtifact": "0x08a1a5ceaa734496e5a82054f80f3683e9490805481f3f25a72ab58c65cb496e",
+      "immutableRanges": 2,
+      "match": true
+    },
+    {
+      "contract": "LatchRegistry",
+      "address": "0xb2c8BB7473A09b0906f192D69e30D7362fA988CC",
+      "artifact": "LatchRegistry",
+      "source": "packages/registry src/LatchRegistry.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 17732,
+      "artifactBytes": 17732,
+      "onchainCodeHash": "0xcccb14cd40acab387b2caa5b76eb51db7d46cb09d14689f58b2232f43961c88b",
+      "maskedHashOnchain": "0x47443053c72d15728a87bc58ee62d9c38da442a53d25793db287269c73316cca",
+      "maskedHashArtifact": "0x47443053c72d15728a87bc58ee62d9c38da442a53d25793db287269c73316cca",
+      "immutableRanges": 2,
+      "match": true
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "address": "0x6D10B4CeDb53aD50c5A1D83f27fcE9c5C3b15c94",
+      "artifact": "LatchLaunchRegistry",
+      "source": "packages/registry src/LatchLaunchRegistry.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 21159,
+      "artifactBytes": 21159,
+      "onchainCodeHash": "0x867fa731db91b96ce11820a6fd4ea6825c50fc3b187bea9b492b7078e5a35280",
+      "maskedHashOnchain": "0x6d9fc76393cf4c20ce538bc7d647320cd3170d82c43004bc889cde1f370e376a",
+      "maskedHashArtifact": "0x6d9fc76393cf4c20ce538bc7d647320cd3170d82c43004bc889cde1f370e376a",
+      "immutableRanges": 8,
+      "match": true
+    },
+    {
+      "contract": "UniversalRouter",
+      "address": "0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c",
+      "artifact": "UniversalRouter",
+      "source": "packages/router src/UniversalRouter.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 23542,
+      "artifactBytes": 23542,
+      "onchainCodeHash": "0xeb5ad360438048d2fff9717bae7b099ccc28bd24149eb5f12cab5029312e2da7",
+      "maskedHashOnchain": "0xabb71da2b33ec08541ec5e3dfcff9389050e13104514ca476af5581e326af140",
+      "maskedHashArtifact": "0xabb71da2b33ec08541ec5e3dfcff9389050e13104514ca476af5581e326af140",
+      "immutableRanges": 33,
+      "match": true
+    },
+    {
+      "contract": "CLPositionManager",
+      "address": "0x957cC13b24A563CC92253213d9d5E6954c8dB6A7",
+      "artifact": "CLPositionManager",
+      "source": "packages/periphery src/pool-cl/CLPositionManager.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 24004,
+      "artifactBytes": 24004,
+      "onchainCodeHash": "0xd3e2687a7e8629f74643da634964414097fd3f2fda692fbe12998127a0245223",
+      "maskedHashOnchain": "0xb1aee89699d07cafedd3f9fa6b3619ea7e74353372237db69f40ec9cb5eea137",
+      "maskedHashArtifact": "0xb1aee89699d07cafedd3f9fa6b3619ea7e74353372237db69f40ec9cb5eea137",
+      "immutableRanges": 38,
+      "match": true
+    },
+    {
+      "contract": "BinPositionManager",
+      "address": "0x990f395003C35A0Ab390E10b003972407f882399",
+      "artifact": "BinPositionManager",
+      "source": "packages/periphery src/pool-bin/BinPositionManager.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 17641,
+      "artifactBytes": 17641,
+      "onchainCodeHash": "0x8eedc5ff1972c3bdf956fe011804fa62e98a630adc7361d9b5fddaededf4f166",
+      "maskedHashOnchain": "0xa9cc2ba4b9fae0faf31a6b9b933e84274d187f8602ec1c47fff813adea7866d5",
+      "maskedHashArtifact": "0xa9cc2ba4b9fae0faf31a6b9b933e84274d187f8602ec1c47fff813adea7866d5",
+      "immutableRanges": 24,
+      "match": true
+    },
+    {
+      "contract": "CLQuoter",
+      "address": "0xDFD14247f87D1E4fC82f0f441Fb43bC8aA466114",
+      "artifact": "CLQuoter",
+      "source": "packages/periphery src/pool-cl/lens/CLQuoter.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 6998,
+      "artifactBytes": 6998,
+      "onchainCodeHash": "0x98167db48fb7a62739bad8cad57d67495c9780e84bd06a4fb3741b7d7a40977f",
+      "maskedHashOnchain": "0x4af4cd8cc6fa689356309e00e8dc251d1c3153348118a023c8d5410e2fbc1b64",
+      "maskedHashArtifact": "0x4af4cd8cc6fa689356309e00e8dc251d1c3153348118a023c8d5410e2fbc1b64",
+      "immutableRanges": 5,
+      "match": true
+    },
+    {
+      "contract": "BinQuoter",
+      "address": "0xbee22c7EdF206b3f24FA0e86cCdd2F35738EB28c",
+      "artifact": "BinQuoter",
+      "source": "packages/periphery src/pool-bin/lens/BinQuoter.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 6839,
+      "artifactBytes": 6839,
+      "onchainCodeHash": "0x20f04baae5805baad92f41dad056838968c080ac5cf13255625b56228512fc03",
+      "maskedHashOnchain": "0x7066416017ab10e5d913bcec10e8a25a1ab804ef983518ad3561615bb9217608",
+      "maskedHashArtifact": "0x7066416017ab10e5d913bcec10e8a25a1ab804ef983518ad3561615bb9217608",
+      "immutableRanges": 5,
+      "match": true
+    },
+    {
+      "contract": "CLPositionDescriptorOffChain",
+      "address": "0x0aF03bEe134Ce66Ee12425EE05A50f32C72644EB",
+      "artifact": "CLPositionDescriptorOffChain",
+      "source": "packages/periphery src/pool-cl/CLPositionDescriptorOffChain.sol",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 2958,
+      "artifactBytes": 2958,
+      "onchainCodeHash": "0x8b69840dffd6a4505f036653587b46539448cae35326856f67051bc4e0cfbdfd",
+      "maskedHashOnchain": "0x8b69840dffd6a4505f036653587b46539448cae35326856f67051bc4e0cfbdfd",
+      "maskedHashArtifact": "0x8b69840dffd6a4505f036653587b46539448cae35326856f67051bc4e0cfbdfd",
+      "immutableRanges": 0,
+      "match": true
+    },
+    {
+      "contract": "LaunchpadKit",
+      "address": "0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7",
+      "artifact": "LaunchpadKit",
+      "source": "packages/launchpad src/LaunchpadKit.sol as compiled before the concurrent edits (snapshot proven against 0x2a4C runtime code)",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 18143,
+      "artifactBytes": 18143,
+      "onchainCodeHash": "0x2f5f29e6b806bf09278369f8a0833a1c772dfe0643ffe5137c6eba879f8a5706",
+      "maskedHashOnchain": "0xc237be9feb98ca3d74d74a14fefe83ac13b86f2c638f352405c38644125bb393",
+      "maskedHashArtifact": "0xc237be9feb98ca3d74d74a14fefe83ac13b86f2c638f352405c38644125bb393",
+      "immutableRanges": 25,
+      "match": true
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "address": "0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c",
+      "artifact": "LaunchGuardHook",
+      "source": "packages/hooks src/launch/LaunchGuardHook.sol compiled under the launchpad profile (1,000,000 runs), git fcd591a; proven against 0x8b4F runtime",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 7737,
+      "artifactBytes": 7737,
+      "onchainCodeHash": "0x09e90523dcf647f006a4de5499f25310b7c7822a7f96e9b81915af6c1e60ed1f",
+      "maskedHashOnchain": "0xda5583673ff48cd9326d1bd50414c098fbbac5cf44c219d86f132dca1211f5e0",
+      "maskedHashArtifact": "0xda5583673ff48cd9326d1bd50414c098fbbac5cf44c219d86f132dca1211f5e0",
+      "immutableRanges": 14,
+      "match": true
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "address": "0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2",
+      "artifact": "RevShareHook_fC00",
+      "source": "git show fcd591a:packages/hooks-revshare/src/RevShareHook.sol (== HEAD bce2172), default profile",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 18862,
+      "artifactBytes": 18862,
+      "onchainCodeHash": "0xb28161563fc5a85624714e5c12e14c9e14db88589c72a9c62b797eb0f2be87d4",
+      "maskedHashOnchain": "0xa02663dce6aca227913d3ca452f485c6b769e708f9ce7877b61fb7f8560285ea",
+      "maskedHashArtifact": "0xa02663dce6aca227913d3ca452f485c6b769e708f9ce7877b61fb7f8560285ea",
+      "immutableRanges": 27,
+      "match": true
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "address": "0x23CE34E8199927DD270dddd8579c947542bDE446",
+      "artifact": "RevShareHook_23CE",
+      "source": "git show 3c6edc8:packages/hooks-revshare/src/RevShareHook.sol, default profile",
+      "compiler": "0.8.26+commit.8a97fa7a",
+      "onchainBytes": 17909,
+      "artifactBytes": 17909,
+      "onchainCodeHash": "0x6847724fb505dc5d206c573bb4d09a00aa379d880fccee214df7ccb506f0910d",
+      "maskedHashOnchain": "0xb0c707085a8c3762481b350f3d69dcb50208861a455f2c60062685205b1d028c",
+      "maskedHashArtifact": "0xb0c707085a8c3762481b350f3d69dcb50208861a455f2c60062685205b1d028c",
+      "immutableRanges": 20,
+      "match": true
+    }
+  ],
+  "calls": [],
+  "scenarios": [
+    {
+      "name": "verify-bytecode",
+      "description": "Runtime code on the fork vs snapshot artifact, immutables masked",
+      "startedCallIndex": 0,
+      "asserts": [
+        {
+          "what": "bytecode Vault @ 0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode CLPoolManager @ 0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode BinPoolManager @ 0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode CLPoolManagerOwner @ 0x5D7111d6c624e9a08aE63d342E4baE5878989a67",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode BinPoolManagerOwner @ 0x98920e33313257Ffd942f94379A7ced216462665",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode CLProtocolFeeController @ 0xb1cC5BDBADD19a2430131EaE332afD72fF6be64B",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode BinProtocolFeeController @ 0x320feB54e940741AeB037E3944F2C95afAEE84af",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode LatchProtocolFeeControllerV2 @ 0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode Create3Factory @ 0x6ffDf9A3df7e9dD55Bad2E60C7405Cd181005633",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode LatchTimelock_custody @ 0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode LatchTimelock_policy @ 0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode LatchRegistry @ 0xb2c8BB7473A09b0906f192D69e30D7362fA988CC",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode LatchLaunchRegistry @ 0x6D10B4CeDb53aD50c5A1D83f27fcE9c5C3b15c94",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode UniversalRouter @ 0x2220dF8ec6CABC7f2074bC1e56DA092B765f736c",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode CLPositionManager @ 0x957cC13b24A563CC92253213d9d5E6954c8dB6A7",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode BinPositionManager @ 0x990f395003C35A0Ab390E10b003972407f882399",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode CLQuoter @ 0xDFD14247f87D1E4fC82f0f441Fb43bC8aA466114",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode BinQuoter @ 0xbee22c7EdF206b3f24FA0e86cCdd2F35738EB28c",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode CLPositionDescriptorOffChain @ 0x0aF03bEe134Ce66Ee12425EE05A50f32C72644EB",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode LaunchpadKit @ 0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode LaunchGuardHook @ 0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode RevShareHook_fC00 @ 0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        },
+        {
+          "what": "bytecode RevShareHook_23CE @ 0x23CE34E8199927DD270dddd8579c947542bDE446",
+          "actual": true,
+          "expected": true,
+          "ok": true
+        }
+      ],
+      "outcome": null
+    }
+  ],
+  "hazards": [],
+  "unexpected": [],
+  "notExercised": [],
+  "notes": []
+}

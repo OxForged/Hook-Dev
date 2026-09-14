@@ -1,0 +1,2177 @@
+{
+  "schema": "latch-fork-campaign/v1",
+  "generatedAt": "2026-09-14T09:22:57.661Z",
+  "meta": {
+    "phase": "views",
+    "rpc": "http://127.0.0.1:8547",
+    "forkUrl": "https://rpc.ordofi.network",
+    "forkBlock": 62540000,
+    "chainId": 4663,
+    "clientVersion": "anvil/v1.8.1",
+    "headAtStart": {
+      "number": "62540217",
+      "timestamp": "1789387068"
+    },
+    "broadcastToRealNetwork": false,
+    "devAccountCodeClearedOnFork": [],
+    "seconds": 12
+  },
+  "codeVerification": [],
+  "calls": [],
+  "scenarios": [
+    {
+      "name": "views",
+      "description": "one call per view/pure function",
+      "startedCallIndex": 0,
+      "asserts": [],
+      "outcome": null
+    }
+  ],
+  "hazards": [],
+  "unexpected": [],
+  "notExercised": [],
+  "notes": [
+    {
+      "scenario": "views",
+      "text": "view calls: 351, answered 322, reverted 29",
+      "data": null
+    }
+  ],
+  "views": [
+    {
+      "contract": "Vault",
+      "fn": "allowance(address,address,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "Vault",
+      "fn": "appCurrencyDeficit(address,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "Vault",
+      "fn": "balanceOf(address,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "Vault",
+      "fn": "currencyDelta(address,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "Vault",
+      "fn": "getAppDeficitCount()",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "Vault",
+      "fn": "getLocker()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "Vault",
+      "fn": "getUnsettledDeltasCount()",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "Vault",
+      "fn": "getVaultReserve()",
+      "ok": true,
+      "result": "[\"0x0000000000000000000000000000000000000000\",\"0\"]"
+    },
+    {
+      "contract": "Vault",
+      "fn": "isAppRegistered(address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "Vault",
+      "fn": "isOperator(address,address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "Vault",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x715a6176946aDbD22c1B2021d321Fb3767ca3432\""
+    },
+    {
+      "contract": "Vault",
+      "fn": "pendingOwner()",
+      "ok": true,
+      "result": "\"0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119\""
+    },
+    {
+      "contract": "Vault",
+      "fn": "reservesOfApp(address,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "Vault",
+      "fn": "supportsInterface(bytes4)",
+      "ok": true,
+      "result": "true"
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "extsload(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "extsload(bytes32[])",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "getFeeGrowthGlobals(bytes32)",
+      "ok": true,
+      "result": "[\"0\",\"0\"]"
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "getLiquidity(bytes32,address,int24,int24,bytes32)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "getLiquidity(bytes32)",
+      "ok": true,
+      "result": "\"1000000000000000000000000\""
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "getPoolBitmapInfo(bytes32,int16)",
+      "ok": true,
+      "result": "\"1267650600228229401496703205376\""
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "getPoolTickInfo(bytes32,int24)",
+      "ok": true,
+      "result": "{\"liquidityGross\":\"0\",\"liquidityNet\":\"0\",\"feeGrowthOutside0X128\":\"0\",\"feeGrowthOutside1X128\":\"0\"}"
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "getPosition(bytes32,address,int24,int24,bytes32)",
+      "ok": true,
+      "result": "{\"liquidity\":\"0\",\"feeGrowthInside0LastX128\":\"0\",\"feeGrowthInside1LastX128\":\"0\"}"
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "getSlot0(bytes32)",
+      "ok": true,
+      "result": "[\"79228162514264337593543950336\",0,4092903,3000]"
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x5D7111d6c624e9a08aE63d342E4baE5878989a67\""
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "paused()",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "poolIdToPoolKey(bytes32)",
+      "ok": true,
+      "result": "[\"0x987e855776C03A4682639eEb14e65b3089EE6310\",\"0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2\",\"0x0000000000000000000000000000000000000000\",\"0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66\",3000,\"0x00000000000"
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "protocolFeeController()",
+      "ok": true,
+      "result": "\"0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB\""
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "protocolFeesAccrued(address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "CLPoolManager",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "MIN_BIN_STEP()",
+      "ok": true,
+      "result": "1"
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "extsload(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "extsload(bytes32[])",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "getBin(bytes32,uint24)",
+      "ok": true,
+      "result": "[\"0\",\"0\",\"0\",\"0\"]"
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "getNextNonEmptyBin(bytes32,bool,uint24)",
+      "ok": true,
+      "result": "16777215"
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "getPosition(bytes32,address,uint24,bytes32)",
+      "ok": true,
+      "result": "{\"share\":\"0\"}"
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "getSlot0(bytes32)",
+      "ok": true,
+      "result": "[0,0,0]"
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "maxBinStep()",
+      "ok": true,
+      "result": "100"
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "minBinShareForDonate()",
+      "ok": true,
+      "result": "\"340282366920938463463374607431768211456\""
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x98920e33313257Ffd942f94379A7ced216462665\""
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "paused()",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "poolIdToPoolKey(bytes32)",
+      "ok": true,
+      "result": "[\"0x0000000000000000000000000000000000000000\",\"0x0000000000000000000000000000000000000000\",\"0x0000000000000000000000000000000000000000\",\"0x0000000000000000000000000000000000000000\",0,\"0x00000000000000"
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "pools(bytes32)",
+      "ok": true,
+      "result": "[\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"0x0000000000000000000000000000000000000000000000000000000000000000\"]"
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "protocolFeeController()",
+      "ok": true,
+      "result": "\"0x9c2c09EFBDb1726d3563B3f92F9912C9134f54aB\""
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "protocolFeesAccrued(address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "BinPoolManager",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    },
+    {
+      "contract": "CLPoolManagerOwner",
+      "fn": "hasPausableRole(address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "CLPoolManagerOwner",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x715a6176946aDbD22c1B2021d321Fb3767ca3432\""
+    },
+    {
+      "contract": "CLPoolManagerOwner",
+      "fn": "pendingOwner()",
+      "ok": true,
+      "result": "\"0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119\""
+    },
+    {
+      "contract": "CLPoolManagerOwner",
+      "fn": "pendingPoolManagerOwner()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "CLPoolManagerOwner",
+      "fn": "poolManager()",
+      "ok": true,
+      "result": "\"0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66\""
+    },
+    {
+      "contract": "BinPoolManagerOwner",
+      "fn": "hasPausableRole(address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "BinPoolManagerOwner",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x715a6176946aDbD22c1B2021d321Fb3767ca3432\""
+    },
+    {
+      "contract": "BinPoolManagerOwner",
+      "fn": "pendingOwner()",
+      "ok": true,
+      "result": "\"0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119\""
+    },
+    {
+      "contract": "BinPoolManagerOwner",
+      "fn": "pendingPoolManagerOwner()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "BinPoolManagerOwner",
+      "fn": "poolManager()",
+      "ok": true,
+      "result": "\"0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979\""
+    },
+    {
+      "contract": "CLProtocolFeeController",
+      "fn": "defaultProtocolFeeForDynamicFeePool()",
+      "ok": true,
+      "result": "300"
+    },
+    {
+      "contract": "CLProtocolFeeController",
+      "fn": "getLPFeeFromTotalFee(uint24)",
+      "ok": true,
+      "result": "2011"
+    },
+    {
+      "contract": "CLProtocolFeeController",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x715a6176946aDbD22c1B2021d321Fb3767ca3432\""
+    },
+    {
+      "contract": "CLProtocolFeeController",
+      "fn": "pendingOwner()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "CLProtocolFeeController",
+      "fn": "poolManager()",
+      "ok": true,
+      "result": "\"0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66\""
+    },
+    {
+      "contract": "CLProtocolFeeController",
+      "fn": "protocolFeeForPool((address,address,address,address,uint24,bytes32))",
+      "ok": true,
+      "result": "6043075"
+    },
+    {
+      "contract": "CLProtocolFeeController",
+      "fn": "protocolFeeSplitRatio()",
+      "ok": true,
+      "result": "\"330000\""
+    },
+    {
+      "contract": "BinProtocolFeeController",
+      "fn": "defaultProtocolFeeForDynamicFeePool()",
+      "ok": true,
+      "result": "300"
+    },
+    {
+      "contract": "BinProtocolFeeController",
+      "fn": "getLPFeeFromTotalFee(uint24)",
+      "ok": true,
+      "result": "2011"
+    },
+    {
+      "contract": "BinProtocolFeeController",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x715a6176946aDbD22c1B2021d321Fb3767ca3432\""
+    },
+    {
+      "contract": "BinProtocolFeeController",
+      "fn": "pendingOwner()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "BinProtocolFeeController",
+      "fn": "poolManager()",
+      "ok": true,
+      "result": "\"0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979\""
+    },
+    {
+      "contract": "BinProtocolFeeController",
+      "fn": "protocolFeeForPool((address,address,address,address,uint24,bytes32))",
+      "ok": false,
+      "revert": "InvalidPoolManager()",
+      "args": "[{\"currency0\":\"0x987e855776C03A4682639eEb14e65b3089EE6310\",\"currency1\":\"0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2\",\"hooks\":\"0x0000000000000000000000000000000000000000\",\"poolManager\":\"0xf4A28fA4CFeCAE"
+    },
+    {
+      "contract": "BinProtocolFeeController",
+      "fn": "protocolFeeSplitRatio()",
+      "ok": true,
+      "result": "\"330000\""
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "DEFAULT_SPLIT_RATIO()",
+      "ok": true,
+      "result": "\"250000\""
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "DYNAMIC_FEE_PIPS()",
+      "ok": true,
+      "result": "999"
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "MAX_PROTOCOL_FEE()",
+      "ok": true,
+      "result": "4000"
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "ONE_HUNDRED_PERCENT_RATIO()",
+      "ok": true,
+      "result": "\"1000000\""
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "accrued(address,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "dynamicFee()",
+      "ok": true,
+      "result": "[true,999,999]"
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "feeForLpFee(uint24)",
+      "ok": true,
+      "result": "999"
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "feesDisabled()",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "guardian()",
+      "ok": true,
+      "result": "\"0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9\""
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x715a6176946aDbD22c1B2021d321Fb3767ca3432\""
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "packFee(uint16,uint16)",
+      "ok": true,
+      "result": "0"
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "pendingOwner()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "poolFee(bytes32)",
+      "ok": true,
+      "result": "[false,0,0]"
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "protocolFeeForPool((address,address,address,address,uint24,bytes32))",
+      "ok": true,
+      "result": "4092903"
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "protocolFeeSplitRatio()",
+      "ok": true,
+      "result": "\"250000\""
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "renounceOwnership()",
+      "ok": false,
+      "revert": "RenounceDisabled()",
+      "args": "[]"
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "tierFee(uint24)",
+      "ok": true,
+      "result": "[false,0,0]"
+    },
+    {
+      "contract": "LatchProtocolFeeControllerV2",
+      "fn": "treasury()",
+      "ok": true,
+      "result": "\"0x715a6176946aDbD22c1B2021d321Fb3767ca3432\""
+    },
+    {
+      "contract": "Create3Factory",
+      "fn": "computeAddress(bytes32)",
+      "ok": true,
+      "result": "\"0xBE6d1274Cf5f2eBD3505c1118836FB675F205c15\""
+    },
+    {
+      "contract": "Create3Factory",
+      "fn": "isUserWhitelisted(address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "Create3Factory",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9\""
+    },
+    {
+      "contract": "Create3Factory",
+      "fn": "pendingOwner()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "CANCELLER_ROLE()",
+      "ok": true,
+      "result": "\"0xfd643c72710c63c0180259aba6b2d05451e3591a24e58b62239378085726f783\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "CUSTODY_MIN_DELAY()",
+      "ok": true,
+      "result": "\"172800\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "DEFAULT_ADMIN_ROLE()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "EXECUTOR_ROLE()",
+      "ok": true,
+      "result": "\"0xd8aa0f3194971a2a116679f7c2090f6939c8d4e01a2a8d7e41d55e5351469e63\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "POLICY_MIN_DELAY()",
+      "ok": true,
+      "result": "\"21600\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "PROPOSER_ROLE()",
+      "ok": true,
+      "result": "\"0xb09aa5aeb3702cfd50b6b62bc4532604938f21248a27a1d5ca736082b6819cc1\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "getMinDelay()",
+      "ok": true,
+      "result": "\"172800\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "getOperationState(bytes32)",
+      "ok": true,
+      "result": "0"
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "getRoleAdmin(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "getTimestamp(bytes32)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "hasRole(bytes32,address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "hashOperation(address,uint256,bytes,bytes32,bytes32)",
+      "ok": true,
+      "result": "\"0xe598f559a1d144b1149cbfb5359efe3d0b02ade7bc7c50763fda70ac65d3dd8f\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "hashOperationBatch(address[],uint256[],bytes[],bytes32,bytes32)",
+      "ok": true,
+      "result": "\"0x7f9ae4e601a7d833a70e5747d383a9661bb140557ec5e798e4a8dfc47517aaf3\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "isOperation(bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "isOperationDone(bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "isOperationPending(bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "isOperationReady(bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "minDelayFloor()",
+      "ok": true,
+      "result": "\"172800\""
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "supportsInterface(bytes4)",
+      "ok": true,
+      "result": "true"
+    },
+    {
+      "contract": "LatchTimelock_custody",
+      "fn": "tier()",
+      "ok": true,
+      "result": "0"
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "CANCELLER_ROLE()",
+      "ok": true,
+      "result": "\"0xfd643c72710c63c0180259aba6b2d05451e3591a24e58b62239378085726f783\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "CUSTODY_MIN_DELAY()",
+      "ok": true,
+      "result": "\"172800\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "DEFAULT_ADMIN_ROLE()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "EXECUTOR_ROLE()",
+      "ok": true,
+      "result": "\"0xd8aa0f3194971a2a116679f7c2090f6939c8d4e01a2a8d7e41d55e5351469e63\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "POLICY_MIN_DELAY()",
+      "ok": true,
+      "result": "\"21600\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "PROPOSER_ROLE()",
+      "ok": true,
+      "result": "\"0xb09aa5aeb3702cfd50b6b62bc4532604938f21248a27a1d5ca736082b6819cc1\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "getMinDelay()",
+      "ok": true,
+      "result": "\"21600\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "getOperationState(bytes32)",
+      "ok": true,
+      "result": "0"
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "getRoleAdmin(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "getTimestamp(bytes32)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "hasRole(bytes32,address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "hashOperation(address,uint256,bytes,bytes32,bytes32)",
+      "ok": true,
+      "result": "\"0xe598f559a1d144b1149cbfb5359efe3d0b02ade7bc7c50763fda70ac65d3dd8f\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "hashOperationBatch(address[],uint256[],bytes[],bytes32,bytes32)",
+      "ok": true,
+      "result": "\"0x7f9ae4e601a7d833a70e5747d383a9661bb140557ec5e798e4a8dfc47517aaf3\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "isOperation(bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "isOperationDone(bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "isOperationPending(bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "isOperationReady(bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "minDelayFloor()",
+      "ok": true,
+      "result": "\"21600\""
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "supportsInterface(bytes4)",
+      "ok": true,
+      "result": "true"
+    },
+    {
+      "contract": "LatchTimelock_policy",
+      "fn": "tier()",
+      "ok": true,
+      "result": "1"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "CURATOR_ROLE()",
+      "ok": true,
+      "result": "\"0xee370c21921ec63ba017b220c4d0a23a9dc9673251165bc1efc7ae268f4399cd\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "DEFAULT_ADMIN_ROLE()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "GUARDIAN_ROLE()",
+      "ok": true,
+      "result": "\"0x49fc5e373d5dad0f8d8c16d8bb1c7e8286e90ab1d9ac014f71ca1ed01b0530ed\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "MAX_CHAINS()",
+      "ok": true,
+      "result": "\"32\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "MAX_DESCRIPTION_BYTES()",
+      "ok": true,
+      "result": "\"2048\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "MAX_NAME_BYTES()",
+      "ok": true,
+      "result": "\"64\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "MAX_NOTE_BYTES()",
+      "ok": true,
+      "result": "\"512\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "MAX_URI_BYTES()",
+      "ok": true,
+      "result": "\"512\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "PROBE_GAS()",
+      "ok": true,
+      "result": "\"100000\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "PROBE_GAS_FLOOR()",
+      "ok": true,
+      "result": "\"131587\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "adminCount()",
+      "ok": true,
+      "result": "\"1\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "attestationOf(address)",
+      "ok": false,
+      "revert": "LatchNotRegistered(0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2)",
+      "args": "[\"0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "canBlockSwaps(uint16)",
+      "ok": true,
+      "result": "true"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "canTrapLiquidity(uint16)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "classify(uint16)",
+      "ok": true,
+      "result": "1"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "decodePermissions(uint16)",
+      "ok": true,
+      "result": "{\"beforeInitialize\":true,\"afterInitialize\":false,\"beforeAddLiquidity\":false,\"afterAddLiquidity\":false,\"beforeRemoveLiquidity\":false,\"afterRemoveLiquidity\":false,\"beforeSwap\":true,\"afterSwap\":false,\"be"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "effectivePermissions(address)",
+      "ok": false,
+      "revert": "LatchNotRegistered(0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2)",
+      "args": "[\"0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "getLatch(address)",
+      "ok": false,
+      "revert": "LatchNotRegistered(0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2)",
+      "args": "[\"0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "getRoleAdmin(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "hasAttestedPool(address,bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "hasRole(bytes32,address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "isAttested(address)",
+      "ok": false,
+      "revert": "LatchNotRegistered(0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2)",
+      "args": "[\"0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "isAudited(address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "isRegistered(address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "isValidBitmap(uint16)",
+      "ok": true,
+      "result": "true"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "latchAt(uint256)",
+      "ok": false,
+      "revert": "Panic(50)",
+      "args": "[\"0\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "latchCount()",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "listBySubmitter(address,uint256,uint256)",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "listLatches(uint256,uint256)",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "permissionsConcealed(address)",
+      "ok": false,
+      "revert": "LatchNotRegistered(0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2)",
+      "args": "[\"0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "permissionsOf(address)",
+      "ok": false,
+      "revert": "LatchNotRegistered(0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2)",
+      "args": "[\"0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "returnsDelta(uint16)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "riskAssessmentOf(address)",
+      "ok": false,
+      "revert": "LatchNotRegistered(0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2)",
+      "args": "[\"0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "riskClassOf(address)",
+      "ok": false,
+      "revert": "LatchNotRegistered(0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2)",
+      "args": "[\"0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "selfReportedPermissionsOf(address)",
+      "ok": false,
+      "revert": "LatchNotRegistered(0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2)",
+      "args": "[\"0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "statusOf(address)",
+      "ok": false,
+      "revert": "LatchNotRegistered(0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2)",
+      "args": "[\"0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2\"]"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "submittedCount(address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "supportsInterface(bytes4)",
+      "ok": true,
+      "result": "true"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "takesSwapCut(uint16)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchRegistry",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "CURATOR_ROLE()",
+      "ok": true,
+      "result": "\"0xee370c21921ec63ba017b220c4d0a23a9dc9673251165bc1efc7ae268f4399cd\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "GUARDIAN_ROLE()",
+      "ok": true,
+      "result": "\"0x49fc5e373d5dad0f8d8c16d8bb1c7e8286e90ab1d9ac014f71ca1ed01b0530ed\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "MAX_DESCRIPTION_BYTES()",
+      "ok": true,
+      "result": "\"2048\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "MAX_NAME_BYTES()",
+      "ok": true,
+      "result": "\"64\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "MAX_NOTE_BYTES()",
+      "ok": true,
+      "result": "\"512\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "MAX_TOKEN_NAME_BYTES()",
+      "ok": true,
+      "result": "\"128\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "MAX_TOKEN_SYMBOL_BYTES()",
+      "ok": true,
+      "result": "\"32\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "MAX_URI_BYTES()",
+      "ok": true,
+      "result": "\"512\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "PROBE_GAS()",
+      "ok": true,
+      "result": "\"100000\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "PROBE_GAS_FLOOR()",
+      "ok": true,
+      "result": "\"131587\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "creatorLaunchCount(address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "getLaunch(bytes32)",
+      "ok": false,
+      "revert": "LaunchNotRegistered(0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594)",
+      "args": "[\"0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594\"]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "getLaunchpad(address)",
+      "ok": false,
+      "revert": "LaunchpadNotRegistered(0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7)",
+      "args": "[\"0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7\"]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "isCurator(address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "isGuardian(address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "isLaunchRegistered(bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "isLaunchpadAudited(address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "isLaunchpadRegistered(address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "latchRegistry()",
+      "ok": true,
+      "result": "\"0xb2c8BB7473A09b0906f192D69e30D7362fA988CC\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchAt(uint256)",
+      "ok": false,
+      "revert": "Panic(50)",
+      "args": "[\"0\"]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchCount()",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchHookOf(bytes32)",
+      "ok": false,
+      "revert": "LaunchNotRegistered(0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594)",
+      "args": "[\"0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594\"]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchPairOf(bytes32)",
+      "ok": false,
+      "revert": "LaunchNotRegistered(0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594)",
+      "args": "[\"0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594\"]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchTokenInfoOf(bytes32)",
+      "ok": false,
+      "revert": "LaunchNotRegistered(0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594)",
+      "args": "[\"0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594\"]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchesOfCreator(address,uint256,uint256)",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchesOfLaunchpad(address,uint256,uint256)",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchesOfToken(address,uint256,uint256)",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchpadAt(uint256)",
+      "ok": false,
+      "revert": "Panic(50)",
+      "args": "[\"0\"]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchpadCount()",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "launchpadLaunchCount(address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "listLaunches(uint256,uint256)",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "listLaunchpads(uint256,uint256)",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "provenanceOf(bytes32)",
+      "ok": false,
+      "revert": "LaunchNotRegistered(0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594)",
+      "args": "[\"0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594\"]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "tokenCodeHasMoved(bytes32)",
+      "ok": false,
+      "revert": "LaunchNotRegistered(0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594)",
+      "args": "[\"0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594\"]"
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "tokenLaunchCount(address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "LatchLaunchRegistry",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    },
+    {
+      "contract": "UniversalRouter",
+      "fn": "binPoolManager()",
+      "ok": true,
+      "result": "\"0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979\""
+    },
+    {
+      "contract": "UniversalRouter",
+      "fn": "clPoolManager()",
+      "ok": true,
+      "result": "\"0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66\""
+    },
+    {
+      "contract": "UniversalRouter",
+      "fn": "msgSender()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "UniversalRouter",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x715a6176946aDbD22c1B2021d321Fb3767ca3432\""
+    },
+    {
+      "contract": "UniversalRouter",
+      "fn": "paused()",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "UniversalRouter",
+      "fn": "pendingOwner()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "UniversalRouter",
+      "fn": "stableSwapFactory()",
+      "ok": true,
+      "result": "\"0x0DDE5e618CC85435F5800556c4AADFE6c0946684\""
+    },
+    {
+      "contract": "UniversalRouter",
+      "fn": "stableSwapInfo()",
+      "ok": true,
+      "result": "\"0x0DDE5e618CC85435F5800556c4AADFE6c0946684\""
+    },
+    {
+      "contract": "UniversalRouter",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "DOMAIN_SEPARATOR()",
+      "ok": true,
+      "result": "\"0xa8b14405cf2034d06acf39083fcf5986b32321c0f1888965fdbd92e49685ce09\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "WETH9()",
+      "ok": true,
+      "result": "\"0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "balanceOf(address)",
+      "ok": true,
+      "result": "\"1\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "clPoolManager()",
+      "ok": true,
+      "result": "\"0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "getApproved(uint256)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "getPoolAndPositionInfo(uint256)",
+      "ok": true,
+      "result": "[{\"currency0\":\"0x987e855776C03A4682639eEb14e65b3089EE6310\",\"currency1\":\"0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2\",\"hooks\":\"0x0000000000000000000000000000000000000000\",\"poolManager\":\"0xf4A28fA4CFeCAE"
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "getPositionLiquidity(uint256)",
+      "ok": true,
+      "result": "\"1000000000000000000000000\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "isApprovedForAll(address,address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "msgSender()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "name()",
+      "ok": true,
+      "result": "\"Pancakeswap Infinity Positions NFT\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "nextTokenId()",
+      "ok": true,
+      "result": "\"2\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "nonces(address,uint256)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "ownerOf(uint256)",
+      "ok": false,
+      "revert": "Error(NOT_MINTED)",
+      "args": "[\"0\"]"
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "permit2()",
+      "ok": true,
+      "result": "\"0x000000000022D473030F116dDEE9F6B43aC78BA3\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "poolKeys(bytes25)",
+      "ok": true,
+      "result": "[\"0x0000000000000000000000000000000000000000\",\"0x0000000000000000000000000000000000000000\",\"0x0000000000000000000000000000000000000000\",\"0x0000000000000000000000000000000000000000\",0,\"0x00000000000000"
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "positionInfo(uint256)",
+      "ok": true,
+      "result": "\"26105750005872555116364662427173304788907339052946407863751179880103062048768\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "positions(uint256)",
+      "ok": true,
+      "result": "[{\"currency0\":\"0x987e855776C03A4682639eEb14e65b3089EE6310\",\"currency1\":\"0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2\",\"hooks\":\"0x0000000000000000000000000000000000000000\",\"poolManager\":\"0xf4A28fA4CFeCAE"
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "subscriber(uint256)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "supportsInterface(bytes4)",
+      "ok": true,
+      "result": "true"
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "symbol()",
+      "ok": true,
+      "result": "\"PCS-INFINITY-POSM\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "tokenDescriptor()",
+      "ok": true,
+      "result": "\"0x0aF03bEe134Ce66Ee12425EE05A50f32C72644EB\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "tokenURI(uint256)",
+      "ok": true,
+      "result": "\"https://latch.guru/nft/robinhood/1\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "unsubscribeGasLimit()",
+      "ok": true,
+      "result": "\"200000\""
+    },
+    {
+      "contract": "CLPositionManager",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "WETH9()",
+      "ok": true,
+      "result": "\"0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73\""
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "balanceOf(address,uint256)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "balanceOfBatch(address[],uint256[])",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "binPoolManager()",
+      "ok": true,
+      "result": "\"0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979\""
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "isApprovedForAll(address,address)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "msgSender()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "name()",
+      "ok": true,
+      "result": "\"Bin Fungible Token\""
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "permit2()",
+      "ok": true,
+      "result": "\"0x000000000022D473030F116dDEE9F6B43aC78BA3\""
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "positions(uint256)",
+      "ok": false,
+      "revert": "InvalidTokenID()",
+      "args": "[\"1\"]"
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "symbol()",
+      "ok": true,
+      "result": "\"BFT\""
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "totalSupply(uint256)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "BinPositionManager",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    },
+    {
+      "contract": "CLQuoter",
+      "fn": "poolManager()",
+      "ok": true,
+      "result": "\"0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66\""
+    },
+    {
+      "contract": "CLQuoter",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    },
+    {
+      "contract": "BinQuoter",
+      "fn": "poolManager()",
+      "ok": true,
+      "result": "\"0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979\""
+    },
+    {
+      "contract": "BinQuoter",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    },
+    {
+      "contract": "CLPositionDescriptorOffChain",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x1Da3AD33AB8151Af9EE91b90fA23fFdDFf9C0C3A\""
+    },
+    {
+      "contract": "CLPositionDescriptorOffChain",
+      "fn": "tokenURI(address,uint256)",
+      "ok": true,
+      "result": "\"https://latch.guru/nft/robinhood/1\""
+    },
+    {
+      "contract": "CLPositionDescriptorOffChain",
+      "fn": "tokenURIContract()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "EXPECTED_HOOK_BITMAP()",
+      "ok": true,
+      "result": "65"
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "blockTimeCentis()",
+      "ok": true,
+      "result": "10"
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "clPoolManager()",
+      "ok": true,
+      "result": "\"0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66\""
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "computePoolKey(address,address,int24)",
+      "ok": false,
+      "revert": "IdenticalCurrencies(0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2)",
+      "args": "[\"0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2\",\"0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2\",0]"
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "getLaunchRecord(bytes32)",
+      "ok": true,
+      "result": "{\"operator\":\"0x0000000000000000000000000000000000000000\",\"launchTokenIsCurrency0\":false,\"launchToken\":\"0x0000000000000000000000000000000000000000\"}"
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "hook()",
+      "ok": true,
+      "result": "\"0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c\""
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "hookBitmap()",
+      "ok": true,
+      "result": "65"
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "permit2()",
+      "ok": true,
+      "result": "\"0x000000000022D473030F116dDEE9F6B43aC78BA3\""
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "positionManager()",
+      "ok": true,
+      "result": "\"0x957cC13b24A563CC92253213d9d5E6954c8dB6A7\""
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "previewSchedule((address,address,int24,uint160,uint8,uint24,uint24,uint32,bool,uint32,uint128,address,(int24,int24,uint128,uint128,address,uint256),(bool,address,(string,string,string,string,uint256[]))))",
+      "ok": false,
+      "revert": "IdenticalCurrencies(0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2)",
+      "args": "[{\"launchToken\":\"0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2\",\"quoteToken\":\"0xCBBe2A5c3A22BE749D5DDF24e9534f98951983e2\",\"tickSpacing\":0,\"sqrtPriceX96\":\"0\",\"preset\":0,\"initialFeeBips\":3000,\"finalFeeBips"
+    },
+    {
+      "contract": "LaunchpadKit",
+      "fn": "registry()",
+      "ok": true,
+      "result": "\"0xb2c8BB7473A09b0906f192D69e30D7362fA988CC\""
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "FEE_DENOMINATOR()",
+      "ok": true,
+      "result": "1000000"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "MAX_BLOCK_TIME_CENTIS()",
+      "ok": true,
+      "result": "60000"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "MAX_DECAY_BLOCKS()",
+      "ok": true,
+      "result": "26000000"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "MAX_FINAL_FEE()",
+      "ok": true,
+      "result": "100000"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "MAX_INITIAL_FEE()",
+      "ok": true,
+      "result": "500000"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "MAX_LAUNCH_WINDOW_SECONDS()",
+      "ok": true,
+      "result": "\"15552000\""
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "MAX_START_DELAY()",
+      "ok": true,
+      "result": "26000000"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "MIN_LAUNCH_WINDOW_SECONDS()",
+      "ok": true,
+      "result": "\"259200\""
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "blockTimeCentis()",
+      "ok": true,
+      "result": "10"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "currentFee(bytes32)",
+      "ok": false,
+      "revert": "LaunchNotConfigured(0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594)",
+      "args": "[\"0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594\"]"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "feeAt(bytes32,uint256)",
+      "ok": false,
+      "revert": "LaunchNotConfigured(0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594)",
+      "args": "[\"0x39b754b4e6a1d20875eeb31e00dd8d4c48ebc5cc32e0a590560e1433e5126594\",\"62540194\"]"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "getHooksRegistrationBitmap()",
+      "ok": true,
+      "result": "65"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "getLaunch(bytes32)",
+      "ok": true,
+      "result": "{\"owner\":\"0x0000000000000000000000000000000000000000\",\"startBlock\":0,\"decayBlocks\":0,\"enabled\":false,\"initialFeeBips\":0,\"finalFeeBips\":0,\"maxBuyPerTx\":\"0\",\"launchTokenIsCurrency0\":false,\"launched\":fal"
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "launchOwner(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "LaunchGuardHook",
+      "fn": "poolManager()",
+      "ok": true,
+      "result": "\"0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "CONFIG_DELAY_BLOCKS()",
+      "ok": true,
+      "result": "432000"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "CONFIG_PROPOSAL_TTL_BLOCKS()",
+      "ok": true,
+      "result": "2592000"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "CONFIG_PROPOSAL_TTL_SECONDS()",
+      "ok": true,
+      "result": "\"259200\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "MAX_BENEFICIARIES()",
+      "ok": true,
+      "result": "\"8\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "MAX_BENEFICIARIES_CEILING()",
+      "ok": true,
+      "result": "\"32\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "MAX_BLOCK_TIME_CENTIS()",
+      "ok": true,
+      "result": "60000"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "MAX_CONFIG_DELAY_SECONDS()",
+      "ok": true,
+      "result": "\"1209600\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "MAX_FEE_PIPS()",
+      "ok": true,
+      "result": "100000"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "MAX_TOTAL_WEIGHT()",
+      "ok": true,
+      "result": "\"1000000000000000000\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "MIN_CONFIG_DELAY_SECONDS()",
+      "ok": true,
+      "result": "\"43200\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "PIPS_DENOMINATOR()",
+      "ok": true,
+      "result": "1000000"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "SPLIT_DENOMINATOR()",
+      "ok": true,
+      "result": "10000"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "backing(address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "blockTimeCentis()",
+      "ok": true,
+      "result": "10"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "claimable(address,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "distributorOf(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "getBeneficiaries(bytes32)",
+      "ok": true,
+      "result": "[]"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "getConfig(bytes32)",
+      "ok": true,
+      "result": "{\"owner\":\"0x0000000000000000000000000000000000000000\",\"feePips\":0,\"lpDonateBps\":0,\"beneficiaryBps\":0,\"distributorBps\":0,\"enabled\":false,\"frozen\":false}"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "getHooksRegistrationBitmap()",
+      "ok": true,
+      "result": "2177"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "getPendingConfig(bytes32)",
+      "ok": true,
+      "result": "{\"effectiveBlock\":0,\"expiryBlock\":0,\"params\":{\"feePips\":0,\"lpDonateBps\":0,\"beneficiaryBps\":0,\"distributorBps\":0,\"distributor\":\"0x0000000000000000000000000000000000000000\",\"enabled\":false}}"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "guardian()",
+      "ok": true,
+      "result": "\"0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "hasKey(bytes32)",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "keyOf(bytes32)",
+      "ok": true,
+      "result": "{\"currency0\":\"0x0000000000000000000000000000000000000000\",\"currency1\":\"0x0000000000000000000000000000000000000000\",\"hooks\":\"0x0000000000000000000000000000000000000000\",\"poolManager\":\"0x000000000000000"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x715a6176946aDbD22c1B2021d321Fb3767ca3432\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "paused()",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "pendingBeneficiary(bytes32,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "pendingDistributor(bytes32,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "pendingDistributorShare(bytes32,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "pendingOwner()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "pendingPoolOwner(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "poolManager()",
+      "ok": true,
+      "result": "\"0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "poolOwner(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "renounceOwnership()",
+      "ok": false,
+      "revert": "RenounceDisabled()",
+      "args": "[]"
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "totalOwed(address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "totalTaken(bytes32,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "totalWeight(bytes32)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_fC00",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "CONFIG_DELAY_BLOCKS()",
+      "ok": true,
+      "result": "3600"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "MAX_BENEFICIARIES()",
+      "ok": true,
+      "result": "\"8\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "MAX_FEE_PIPS()",
+      "ok": true,
+      "result": "100000"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "MAX_TOTAL_WEIGHT()",
+      "ok": true,
+      "result": "\"1000000000000000000\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "PIPS_DENOMINATOR()",
+      "ok": true,
+      "result": "1000000"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "SPLIT_DENOMINATOR()",
+      "ok": true,
+      "result": "10000"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "backing(address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "claimable(address,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "distributorOf(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "getBeneficiaries(bytes32)",
+      "ok": true,
+      "result": "[{\"recipient\":\"0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9\",\"weight\":\"1\"}]"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "getConfig(bytes32)",
+      "ok": true,
+      "result": "{\"owner\":\"0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9\",\"feePips\":3000,\"lpDonateBps\":2000,\"beneficiaryBps\":8000,\"distributorBps\":0,\"enabled\":true,\"frozen\":false}"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "getHooksRegistrationBitmap()",
+      "ok": true,
+      "result": "2177"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "getPendingConfig(bytes32)",
+      "ok": true,
+      "result": "{\"effectiveBlock\":0,\"params\":{\"feePips\":0,\"lpDonateBps\":0,\"beneficiaryBps\":0,\"distributorBps\":0,\"distributor\":\"0x0000000000000000000000000000000000000000\",\"enabled\":false}}"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "guardian()",
+      "ok": true,
+      "result": "\"0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "hasKey(bytes32)",
+      "ok": true,
+      "result": "true"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "keyOf(bytes32)",
+      "ok": true,
+      "result": "{\"currency0\":\"0x2A21c0826848f2D597B7C87A4B931dE1407958A6\",\"currency1\":\"0xa29927045BDFfd61B8F539D491085F1b6f7A8bE4\",\"hooks\":\"0x23CE34E8199927DD270dddd8579c947542bDE446\",\"poolManager\":\"0xf4A28fA4CFeCAEf"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "owner()",
+      "ok": true,
+      "result": "\"0x715a6176946aDbD22c1B2021d321Fb3767ca3432\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "paused()",
+      "ok": true,
+      "result": "false"
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "pendingBeneficiary(bytes32,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "pendingDistributor(bytes32,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "pendingDistributorShare(bytes32,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "pendingOwner()",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "pendingPoolOwner(bytes32)",
+      "ok": true,
+      "result": "\"0x0000000000000000000000000000000000000000\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "poolManager()",
+      "ok": true,
+      "result": "\"0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "poolOwner(bytes32)",
+      "ok": true,
+      "result": "\"0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "totalOwed(address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "totalTaken(bytes32,address)",
+      "ok": true,
+      "result": "\"0\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "totalWeight(bytes32)",
+      "ok": true,
+      "result": "\"1\""
+    },
+    {
+      "contract": "RevShareHook_23CE",
+      "fn": "vault()",
+      "ok": true,
+      "result": "\"0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c\""
+    }
+  ]
+}

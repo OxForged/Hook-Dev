@@ -1,0 +1,27 @@
+[
+ {
+  "name": "helpers/CampaignToken",
+  "from": "ops/fork-campaign/cache/helpers-out/CampaignHelpers.sol/CampaignToken.json",
+  "source": "ops/fork-campaign/contracts/CampaignHelpers.sol (test double, MIT)"
+ },
+ {
+  "name": "helpers/VaultActor",
+  "from": "ops/fork-campaign/cache/helpers-out/CampaignHelpers.sol/VaultActor.json",
+  "source": "ops/fork-campaign/contracts/CampaignHelpers.sol (test double, MIT)"
+ },
+ {
+  "name": "helpers/MockLaunchpad",
+  "from": "ops/fork-campaign/cache/helpers-out/CampaignHelpers.sol/MockLaunchpad.json",
+  "source": "ops/fork-campaign/contracts/CampaignHelpers.sol (test double, MIT)"
+ },
+ {
+  "name": "helpers/BitmapHook",
+  "from": "ops/fork-campaign/cache/helpers-out/CampaignHelpers.sol/BitmapHook.json",
+  "source": "ops/fork-campaign/contracts/CampaignHelpers.sol (test double, MIT)"
+ },
+ {
+  "name": "helpers/CampaignSubscriber",
+  "from": "ops/fork-campaign/cache/helpers-out/CampaignHelpers.sol/CampaignSubscriber.json",
+  "source": "ops/fork-campaign/contracts/CampaignHelpers.sol (test double, MIT)"
+ }
+]

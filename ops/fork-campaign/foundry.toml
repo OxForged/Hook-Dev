@@ -1,0 +1,12 @@
+# Builds ONLY the campaign's own test doubles (contracts/). No remappings, no dependencies.
+# Output goes to a gitignored cache; scripts/build-helpers.mjs snapshots it into artifacts/helpers/.
+[profile.default]
+src = "contracts"
+out = "cache/helpers-out"
+cache_path = "cache/forge-cache"
+libs = []
+solc_version = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+bytecode_hash = "none"
