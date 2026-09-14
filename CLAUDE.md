@@ -243,7 +243,7 @@ only hook-capable AMM on the chain.
 upstream/          Pristine reference clones. Never edit. Used for diffing against upstream.
 packages/core/     LatchProtocol core (fork of pancakeswap/infinity-core)
                    git remote `upstream` -> pancakeswap/infinity-core
-                   fork base tagged `latchprotocol-fork-base` @ d0e8793
+                   fork base tagged `hookprotocol-fork-base` @ d0e8793
 ```
 
 ## Licensing — non-negotiable
@@ -670,6 +670,28 @@ something to hand an autonomous process.
   (auto-wipe on rotation silently deletes legitimate holidays). ~2.1k gas on the swap path for
   session-enabled pools only. Not patchable in place — a hook address is part of pool identity.
   No RWA hook is deployed on any chain, so no live pool is affected.
+- **Slither 0.11.6, all 10 packages at `bce2172` (2026-09-13): no true positives.** Every
+  medium/high/critical hit triaged false positive with a concrete reason; Latch's own fork changes
+  (Vault hardening, both transient backends, MixedQuoterRecorder) produced none. Slither cannot see
+  raw-slot storage, so the lock-exit invariant stays guarded only by `TransientBackendSafety.t.sol`.
+  Reports: session scratchpad `slither/`. Three real issues were found by reading code instead:
+- **Open, MEDIUM — snapshot dividends can be claimed into unrecoverable addresses.** `LatchVotes`
+  auto-delegates to every first receiver, contracts included (the Vault, `RevShareHook` after
+  `redeem`, the distributor itself), and `SnapshotEpochDistributor.claim(epochId, account)` is
+  callable by anyone for any `account`. `claim(e, Vault)` strands that share forever instead of
+  rolling it to real holders; repeatable every epoch for gas. Fix: reject `address(this)`, the
+  hook and its Vault as `account`, or require `msg.sender == account`. Not deployed on Robinhood.
+- **Open, LOW — a distributor repoint hands the new address the old distributor's uncollected
+  pot.** `_writeConfig` overwrites `_distributors[poolId]` and `pullDistributorShare` pays whoever
+  is current; unlike `setBeneficiaries`, nothing settles first. A pool owner can propose their
+  own address and, after the delay, pull everything accrued since the last close. In BOTH live
+  hooks (`0x23CE`, `0xfC00`) but no pool uses a distributor (LTT1/LTT2: `distributorBps = 0`).
+  Fix in the timestamp redeploy: refuse while `pendingDistributor` is non-zero, or escrow it.
+  Procedural on the live hooks: treat any `ConfigProposed` changing a distributor as an incident.
+- **Open, LOW — `CreatorReserve` harvests a rung that is not fully filled** when the launch token
+  is currency1: `currentTick <= tickLower` treats the in-range boundary as cleared (`CLPool.sol:117`),
+  and `withdraw` pays only quote, so the unsold dust strands. Mirror off-by-one in the constructor
+  check. Fix: strict comparisons. Not deployed.
 - **Informational, triaged by design 2026-09-13 — a holiday does not close the previous
   day's overnight tail.** An override on day D governs the session that OPENS on D (the
   module's stated attribution), so on a wrapping schedule D-1's tail still trades into D.
