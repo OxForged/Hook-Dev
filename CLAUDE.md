@@ -964,6 +964,37 @@ never sits on privilege REDUCTION.** Anything whose only power is to make the pr
 pause, or flag danger is an Ops key — a queue on "this Latch is draining people" makes the flag
 useless.
 
+### ⚠ VERIFIED LIVE STATE, 2026-09-13 — the custody tier is NOT in force yet
+
+Read on chain (4663), not assumed:
+
+| Contract | Table says | `owner()` on chain | `pendingOwner()` |
+|---|---|---|---|
+| `Vault` `0x78e8…fB6c` | Custody 48h | **Safe `0x715a…3432` directly** | custody timelock `0x3aE3…e119` |
+| `CLPoolManagerOwner` `0x5D71…9a67` | Custody 48h | **Safe directly** | custody timelock |
+| `BinPoolManagerOwner` `0x9892…2665` | Custody 48h | **Safe directly** | custody timelock |
+| `CLPositionDescriptorOffChain` `0x0af0…44eb` | Safe | policy timelock `0x1Da3…0C3A` | — |
+
+The transfer to the custody timelock was PROPOSED and never ACCEPTED (`Ownable2Step`). So today
+`registerApp` — irreversible, permanent fund access — and pause/fee authority over every pool need
+only 2-of-3 Safe signatures with **no 48-hour public delay**. This is the exact failure step 4 of
+the deployment order warns about: "A transfer that was proposed and never accepted leaves the EOA
+in place and looks fine on a block explorer." (Here it left the Safe, not an EOA.)
+
+**The fix is one queued batch, prepared and simulated (nothing sent):** the Safe calls
+`scheduleBatch` on the custody timelock with targets `[Vault, CLPoolManagerOwner,
+BinPoolManagerOwner]`, values `[0,0,0]`, payloads `acceptOwnership()` ×3, predecessor `0x0`, salt
+`keccak256("latch:accept-ownership:vault-and-pool-manager-owners:2026-09-13")`
+= `0xfdd6…ae74`, delay `172800`. Operation id `0x2254…9bd1`. After 48 h anyone calls
+`executeBatch` with the same arguments (the executor is `address(0)`). Simulated: schedule from
+the Safe succeeds; `acceptOwnership()` from the timelock succeeds on all three and reverts
+`OwnableUnauthorizedAccount` for anyone else. Then re-read `owner()` on every row — that read, not
+the queued operation, is the proof.
+
+The policy timelock holds only the descriptor and has **no CANCELLER_ROLE** for the canceller
+(the custody timelock does). Low impact — the descriptor is cosmetic — but either move the
+descriptor to the Safe per the table or grant the role.
+
 ### Protocol-level — governance owns these
 
 | Contract | Role | Assign to | Why |
@@ -1057,6 +1088,10 @@ possible proof of control and moves nothing. That second one is not ceremony. An
 written down correctly and a key somebody can actually reach are different claims, and only
 the second matters at 3am with a compromised Safe forty-eight hours from executing
 `updateDelay(0)`.
+
+**⚠ Re-read 2026-09-13: the canceller holds 1,183,834,050,000 wei (≈0.0000012 native), not the
+~0.0011 recorded above** — at the observed 78,334,000 wei gas price that buys ~15,000 gas, less
+than one `cancel` call plus its L1 data fee. **It cannot cancel anything today.** Fund it.
 
 Keep gas in it. A canceller that cannot pay for a transaction cannot cancel one, and the
 moment it is needed is the worst moment to discover an empty balance.
