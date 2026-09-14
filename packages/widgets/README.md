@@ -385,13 +385,13 @@ Both emit the same `LiquidityRange` union, so everything above the range editor 
 
 ### Launch
 
-**A Latch launch is not a token sale.** It is a concentrated-liquidity pool with `LaunchGuardHook` named in its `PoolKey`, a dynamic LP fee, and a fee that decays from `initialFeeBips` to `finalFeeBips` over `decayBlocks` blocks starting at `startBlock`. There is no `buy`, no soft cap, no hard cap, no allocation and no claim. **Buying into a launch is an ordinary swap.**
+**A Latch launch is not a token sale.** It is a concentrated-liquidity pool with `LaunchGuardHook` named in its `PoolKey`, a dynamic LP fee, and a fee that decays from `initialFeeBips` to `finalFeeBips` over a window starting at the launch start — `startTime`/`decaySeconds` (seconds of `block.timestamp`) on the current hook, `startBlock`/`decayBlocks` (contract blocks) on the block-numbered hook still deployed on Robinhood. Every decoded `LaunchGuard` carries its `durationClock`; the live adapter picks the matching ABI from `contracts.launchGuardHookClock`, the SDK address book, or the hook's own `CLOCK_MODE()`. There is no `buy`, no soft cap, no hard cap, no allocation and no claim. **Buying into a launch is an ordinary swap.**
 
 So `<LaunchWidget />` is a launch-aware swap panel. It reads, from `LaunchGuardHook`, keyed by pool id:
 
 | Read | From |
 |---|---|
-| the whole schedule — `startBlock`, `decayBlocks`, `enabled`, the owner | `getLaunch(poolId)` |
+| the whole schedule — start, window (`startTime`/`decaySeconds` or `startBlock`/`decayBlocks`), `enabled`, the owner | `getLaunch(poolId)` |
 | the fee being charged **right now** | `currentFee(poolId)` |
 | the block those two were true at | `eth_blockNumber` |
 

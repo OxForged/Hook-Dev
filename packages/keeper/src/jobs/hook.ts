@@ -11,7 +11,9 @@
    that "succeeds" by doing nothing is not a reason to send.
 
    `applyPendingConfig` is the opposite shape and worth understanding: a config
-   change sits behind CONFIG_DELAY_BLOCKS and then needs SOMEBODY to apply it.
+   change sits behind the hook's delay (CONFIG_DELAY_BLOCKS on the deployed
+   block-numbered hooks, CONFIG_DELAY_SECONDS on the timestamp build) and then
+   needs SOMEBODY to apply it.
    The pool owner can, but so can anyone — which is deliberate, so a proposal
    cannot be silently stranded by an owner who proposed it and walked away.
    ============================================================================ */
@@ -20,7 +22,8 @@ import { encodeFunctionData } from 'viem'
 import { GET_PENDING_CONFIG_ABI, REV_SHARE_HOOK_ABI } from '../abi.js'
 import type { PoolKeyConfig, WatchTarget } from '../config.js'
 import { pendingPhase } from '../clock.js'
-import { decodePendingConfig } from '../decode.js'
+import { decodePendingConfig, returnedWords, type PendingConfig } from '../decode.js'
+import { probeClockMode, resolvePendingShape } from '../pendingShape.js'
 import { revertReason, sendGuarded } from './send.js'
 import { failed, notDue, type Job, type JobVerdict } from './types.js'
 
@@ -98,17 +101,24 @@ export function settleBeneficiariesJob(targets: readonly WatchTarget[]): Job {
   }
 }
 
+/** A stored point, in its own unit, for a log line. */
+function describePoint(p: PendingConfig, value: bigint): string {
+  return p.durationClock === 'timestamp'
+    ? `${new Date(Number(value) * 1000).toISOString()} (block.timestamp ${value})`
+    : `contract block ${value}`
+}
+
 export function applyPendingConfigJob(targets: readonly WatchTarget[]): Job {
   return {
     id: 'apply-pending-config',
-    describes: 'apply a config change whose timelock delay has elapsed',
+    describes: 'apply a config change whose delay has elapsed',
     async run(ctx) {
       const out: JobVerdict[] = []
       for (const t of targets) {
         const label = `${t.label} applyPendingConfig`
         try {
-          // Called RAW and decoded by length. Two struct shapes exist on chain
-          // and a typed ABI is right on exactly one of them; see decode.ts.
+          // Called RAW. Three struct shapes exist on chain and two share a length,
+          // so the shape is RESOLVED first and the bytes are decoded as that shape.
           const { data } = await ctx.publicClient.call({
             to: t.hook,
             data: encodeFunctionData({ abi: GET_PENDING_CONFIG_ABI, functionName: 'getPendingConfig', args: [t.poolId] }),
@@ -117,36 +127,44 @@ export function applyPendingConfigJob(targets: readonly WatchTarget[]): Job {
             out.push(failed(`${label}: getPendingConfig returned no data — is ${t.hook} a RevShareHook on this chain?`))
             continue
           }
-          const pending = decodePendingConfig(data)
+          const resolved = await resolvePendingShape({
+            chainId: ctx.chainId,
+            hook: t.hook,
+            configured: t.pendingShape,
+            words: returnedWords(data),
+            probe: () => probeClockMode(ctx.publicClient, t.hook),
+          })
+          if (!resolved.ok) {
+            // Never a guess: an unidentified layout is skipped and reported, every tick.
+            out.push(failed(`${label}: ${resolved.reason}`))
+            continue
+          }
+          const pending = decodePendingConfig(data, resolved.shape)
 
-          // Judged on the CONTRACT clock. `effectiveBlock` and `expiryBlock`
-          // were written from the hook's `block.number`, which on Robinhood is
-          // Ethereum's (~26M) while `ctx.blockNumber` is the L2 head (~62M).
-          // Against the L2 number every live proposal read as expired and was
-          // never applied. See clock.ts.
-          const phase = pendingPhase(pending, ctx.contractBlockNumber)
+          // Judged on the clock the hook STORED: `block.timestamp` for the timestamp
+          // build, the CONTRACT block number for the block builds. On Robinhood the
+          // latter is Ethereum's (~26M) while `ctx.blockNumber` is the L2 head (~62M);
+          // against the L2 number every live proposal read as expired. See clock.ts.
+          const phase = pendingPhase(pending, { timestamp: ctx.now, contractBlockNumber: ctx.contractBlockNumber })
           if (phase === 'none') {
             out.push(notDue(`${label}: no proposal outstanding`))
             continue
           }
           if (phase === 'not-due') {
-            out.push(
-              notDue(
-                `${label}: proposal lands at contract block ${pending.effectiveBlock}, ` +
-                  `${pending.effectiveBlock - ctx.contractBlockNumber} contract block(s) to go`,
-              ),
-            )
+            const toGo =
+              pending.durationClock === 'timestamp'
+                ? `${pending.effective - ctx.now} second(s) to go`
+                : `${pending.effective - ctx.contractBlockNumber} contract block(s) to go`
+            out.push(notDue(`${label}: proposal lands at ${describePoint(pending, pending.effective)}, ${toGo}`))
             continue
           }
-          // On the current hook a proposal has a WINDOW, not a deadline. Past
-          // `expiryBlock` the call reverts `PendingConfigExpired`, so simulating
-          // would still be safe - but it would be a permanent, pointless
-          // simulation on every tick for a proposal nobody can ever apply.
-          // The legacy hook has no expiry (expiryBlock === null): there a
-          // matured proposal stays armed until applied or retracted.
+          // A proposal with an expiry has a WINDOW, not a deadline. Past it the call
+          // reverts `PendingConfigExpired`: simulating every tick would be pointless.
+          // The block-no-expiry hook has none (`expiry === null`): a matured proposal
+          // there stays armed until applied or retracted.
           if (phase === 'expired') {
             out.push(
-              notDue(`${label}: proposal expired at contract block ${pending.expiryBlock}; the owner has to propose again`),
+              notDue(`${label}: proposal expired at ${describePoint(pending, pending.expiry ?? 0n)}; the owner has to propose again`),
             )
             continue
           }
@@ -155,7 +173,7 @@ export function applyPendingConfigJob(targets: readonly WatchTarget[]): Job {
             await sendGuarded(
               ctx,
               { address: t.hook, abi: REV_SHARE_HOOK_ABI, functionName: 'applyPendingConfig', args: [tuple(t.poolKey)] },
-              `${label} (${pending.shape} hook)`,
+              `${label} (${pending.shape} hook, shape from ${resolved.source})`,
             ),
           )
         } catch (e) {

@@ -7,8 +7,10 @@
  *
  * Neither reverts. Both produce a launch that is not the one the launcher
  * described. Everything else here is a local restatement of a contract check,
- * and is tested to name the right field and cite the right custom error, since
- * a validator that says "invalid" is barely better than the revert.
+ * tested to name the right field and cite the right custom error.
+ *
+ * Two kit generations are exercised: the timestamp kit (Option B) and the
+ * block-numbered kit still deployed on Robinhood, whose windows run 120x long.
  */
 import { describe, expect, it } from "vitest";
 
@@ -18,9 +20,11 @@ import {
   assertLaunchParams,
   buildLaunchParams,
   describeLaunch,
+  launchParamsToBlockTuple,
   launchParamsToTuple,
   sqrtPriceForLaunch,
   validateLaunchParams,
+  type BlockLaunchLimits,
   type LaunchLimits,
   type LaunchParams,
   type SeedParams,
@@ -30,23 +34,16 @@ const LAUNCH = "0x1111111111111111111111111111111111111111" as const;
 const QUOTE = "0x2222222222222222222222222222222222222222" as const;
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
-/**
- * A correctly configured deployment: the kit's declared block time equals the
- * real contract cadence, so declared and real durations agree.
- */
-const LIMITS: LaunchLimits = {
-  blockTimeCentis: 10,
-  contractBlockTimeCentis: 10,
-  maxDecayBlocks: 2_592_000n, // 3 days at 0.10s
-  maxStartDelayBlocks: 2_592_000n,
-};
+/** The timestamp kit: nothing about the chain's cadence is declared. */
+const LIMITS: LaunchLimits = { durationClock: "timestamp" };
 
 /**
  * The LIVE Robinhood kit and hook as read on 2026-09-13: they declare 10 centis
  * (0.1 s) and MAX_DECAY_BLOCKS 26,000,000, but the hook's block.number is
  * Ethereum's (~12 s). Every window runs 120x longer than declared.
  */
-const ROBINHOOD_LIVE: LaunchLimits = {
+const ROBINHOOD_LIVE: BlockLaunchLimits = {
+  durationClock: "contract-block",
   blockTimeCentis: 10,
   contractBlockTimeCentis: 1200,
   maxDecayBlocks: 26_000_000n,
@@ -74,8 +71,11 @@ function params(over: Partial<LaunchParams> = {}): LaunchParams {
   return { ...base, ...over };
 }
 
-const errorsOf = (p: LaunchParams) =>
-  validateLaunchParams(p, LIMITS).filter((i) => i.severity === "error");
+const custom = (over: Partial<LaunchParams> = {}): LaunchParams =>
+  params({ preset: PRESET.Custom, initialFeeBips: 100_000, finalFeeBips: 3_000, decaySeconds: 300, enabled: true, ...over });
+
+const errorsOf = (p: LaunchParams, l: LaunchLimits = LIMITS) =>
+  validateLaunchParams(p, l).filter((i) => i.severity === "error");
 const fieldsOf = (p: LaunchParams) => validateLaunchParams(p, LIMITS).map((i) => i.field);
 
 describe("the zero-value trap", () => {
@@ -87,14 +87,7 @@ describe("the zero-value trap", () => {
   });
 
   it("a coherent Custom is accepted", () => {
-    const p = params({
-      preset: PRESET.Custom,
-      initialFeeBips: 100_000,
-      finalFeeBips: 3_000,
-      decayBlocks: 3_000,
-      enabled: true,
-    });
-    expect(errorsOf(p)).toHaveLength(0);
+    expect(errorsOf(custom())).toHaveLength(0);
   });
 
   it("buildLaunchParams refuses Custom without a schedule at construction time", () => {
@@ -115,12 +108,11 @@ describe("the zero-value trap", () => {
     const issues = validateLaunchParams(p, LIMITS);
     const warn = issues.find((i) => i.severity === "warning" && i.field === "preset");
     expect(warn?.message).toContain("OVERWRITES");
-    // The chain does not reject this, so it must not be an error here either.
     expect(errorsOf(p)).toHaveLength(0);
   });
 });
 
-describe("checks that mirror a contract revert", () => {
+describe("checks that mirror a contract revert (timestamp kit)", () => {
   it("AntiSniperAggressive without a cap cites MaxBuyRequiredByPreset", () => {
     const p = params({ preset: PRESET.AntiSniperAggressive, maxBuyPerTx: 0n });
     const issue = errorsOf(p).find((i) => i.field === "maxBuyPerTx");
@@ -128,8 +120,7 @@ describe("checks that mirror a contract revert", () => {
   });
 
   it("AntiSniperAggressive with a cap passes", () => {
-    const p = params({ preset: PRESET.AntiSniperAggressive, maxBuyPerTx: 10n ** 6n });
-    expect(errorsOf(p)).toHaveLength(0);
+    expect(errorsOf(params({ preset: PRESET.AntiSniperAggressive, maxBuyPerTx: 10n ** 6n }))).toHaveLength(0);
   });
 
   it("a native launch token is refused", () => {
@@ -143,13 +134,11 @@ describe("checks that mirror a contract revert", () => {
   });
 
   it("an inverted tick range is refused", () => {
-    const p = params({ seed: { ...SEED, tickLower: 60, tickUpper: -60 } });
-    expect(errorsOf(p).some((i) => i.field === "seed.tickLower")).toBe(true);
+    expect(errorsOf(params({ seed: { ...SEED, tickLower: 60, tickUpper: -60 } })).some((i) => i.field === "seed.tickLower")).toBe(true);
   });
 
   it("ticks off the spacing grid are refused", () => {
-    const p = params({ seed: { ...SEED, tickLower: -61, tickUpper: 60 } });
-    expect(errorsOf(p).some((i) => i.field === "seed.tickLower")).toBe(true);
+    expect(errorsOf(params({ seed: { ...SEED, tickLower: -61, tickUpper: 60 } })).some((i) => i.field === "seed.tickLower")).toBe(true);
   });
 
   it("a sqrtPriceX96 outside TickMath's range is refused", () => {
@@ -157,77 +146,41 @@ describe("checks that mirror a contract revert", () => {
   });
 
   it("a fee schedule that rises instead of decaying is refused", () => {
-    const p = params({
-      preset: PRESET.Custom,
-      initialFeeBips: 3_000,
-      finalFeeBips: 100_000,
-      decayBlocks: 3_000,
-      enabled: true,
-    });
-    const issue = errorsOf(p).find((i) => i.field === "initialFeeBips");
+    const issue = errorsOf(custom({ initialFeeBips: 3_000, finalFeeBips: 100_000 })).find((i) => i.field === "initialFeeBips");
     expect(issue?.contractError).toBe("InvalidFeeSchedule(uint24,uint24)");
   });
 
   it("fees above the hook's ceilings are refused", () => {
-    const p = params({
-      preset: PRESET.Custom,
-      initialFeeBips: 600_000,
-      finalFeeBips: 200_000,
-      decayBlocks: 3_000,
-      enabled: true,
-    });
-    const fields = errorsOf(p).map((i) => i.field);
+    const fields = errorsOf(custom({ initialFeeBips: 600_000, finalFeeBips: 200_000 })).map((i) => i.field);
     expect(fields).toContain("initialFeeBips");
     expect(fields).toContain("finalFeeBips");
   });
 
-  it("a decay window past this deployment's immutable is refused", () => {
-    const p = params({
-      preset: PRESET.Custom,
-      initialFeeBips: 100_000,
-      finalFeeBips: 3_000,
-      decayBlocks: 9_000_000,
-      enabled: true,
-    });
-    const issue = errorsOf(p).find((i) => i.field === "decayBlocks");
-    expect(issue?.contractError).toBe("DecayWindowTooLong(uint256)");
+  it("a decay window under the 60 s sequencer-skew floor is refused", () => {
+    const issue = errorsOf(custom({ decaySeconds: 59 })).find((i) => i.field === "decaySeconds");
+    expect(issue?.contractError).toBe("InvalidDecaySeconds(uint32)");
+    expect(errorsOf(custom({ decaySeconds: 60 }))).toHaveLength(0);
   });
 
-  it("a start delay past this deployment's immutable is refused", () => {
-    const p = params({ startDelaySeconds: 30 * 86_400 });
-    const issue = errorsOf(p).find((i) => i.field === "startDelaySeconds");
+  it("a decay window over 30 days is refused", () => {
+    const issue = errorsOf(custom({ decaySeconds: 30 * 86_400 + 1 })).find((i) => i.field === "decaySeconds");
+    expect(issue?.contractError).toBe("InvalidDecaySeconds(uint32)");
+  });
+
+  it("a start delay past MAX_START_DELAY_SECONDS is refused", () => {
+    const issue = errorsOf(params({ startDelaySeconds: 30 * 86_400 + 1 })).find((i) => i.field === "startDelaySeconds");
     expect(issue?.contractError).toBe("StartDelayTooLong(uint256)");
+    expect(errorsOf(params({ startDelaySeconds: 30 * 86_400 }))).toHaveLength(0);
   });
 });
 
-describe("warnings the chain will not give you", () => {
-  it("warns that decayBlocks is BLOCKS when the window is implausibly short", () => {
-    const p = params({
-      preset: PRESET.Custom,
-      initialFeeBips: 100_000,
-      finalFeeBips: 3_000,
-      decayBlocks: 300, // reads like "5 minutes"; it is 30 seconds here
-      enabled: true,
-    });
-    const warn = validateLaunchParams(p, LIMITS).find((i) => i.field === "decayBlocks");
-    expect(warn?.severity).toBe("warning");
-    expect(warn?.message).toContain("BLOCKS, not seconds");
-  });
-
+describe("the block-numbered kit still deployed on Robinhood", () => {
   it("warns when a named preset's window is stretched by a clock mismatch", () => {
     const warns = validateLaunchParams(params({ preset: PRESET.FairLaunch }), ROBINHOOD_LIVE).filter(
       (i) => i.severity === "warning" && i.field === "preset",
     );
     expect(warns.some((w) => w.message.includes("really lasts 10h") && w.message.includes("120x longer"))).toBe(true);
-    // The chain accepts it, so it stays a warning.
-    expect(validateLaunchParams(params(), ROBINHOOD_LIVE).filter((i) => i.severity === "error")).toHaveLength(0);
-  });
-
-  it("stays quiet about clocks when declared and real agree", () => {
-    const warns = validateLaunchParams(params({ startDelaySeconds: 60 }), LIMITS).filter(
-      (i) => i.message.includes("declared"),
-    );
-    expect(warns).toHaveLength(0);
+    expect(errorsOf(params(), ROBINHOOD_LIVE)).toHaveLength(0);
   });
 
   it("warns that a start delay really opens later on a mismatched clock", () => {
@@ -238,16 +191,29 @@ describe("warnings the chain will not give you", () => {
     expect(warn?.message).toContain("really opens after 2h");
   });
 
-  it("warns that a Custom decayBlocks is very long in real time", () => {
-    const p = params({ preset: PRESET.Custom, initialFeeBips: 100_000, finalFeeBips: 3_000, decayBlocks: 216_000, enabled: true });
-    const warn = validateLaunchParams(p, ROBINHOOD_LIVE).find((i) => i.field === "decayBlocks");
-    expect(warn?.message).toContain("30d");
+  it("a Custom window past that hook's immutable is refused", () => {
+    // 3 days at the declared 0.1 s is 2,592,000 blocks; cap it below that.
+    const issue = errorsOf(custom({ decaySeconds: 3 * 86_400 }), { ...ROBINHOOD_LIVE, maxDecayBlocks: 1_000_000n }).find(
+      (i) => i.field === "decaySeconds",
+    );
+    expect(issue?.contractError).toBe("InvalidDecayBlocks(uint32)");
   });
 
+  it("stays quiet about clocks on a timestamp kit", () => {
+    const warns = validateLaunchParams(params({ startDelaySeconds: 60 }), LIMITS).filter((i) => i.message.includes("declared"));
+    expect(warns).toHaveLength(0);
+  });
+
+  it("launchParamsToBlockTuple converts at the kit's DECLARED block time, like the kit does", () => {
+    const tuple = launchParamsToBlockTuple(custom({ decaySeconds: 300 }), ROBINHOOD_LIVE);
+    expect(tuple.decayBlocks).toBe(3_000);
+    expect(tuple).not.toHaveProperty("decaySeconds");
+  });
+});
+
+describe("warnings the chain will not give you", () => {
   it("warns that maxBuyPerTx is per transaction, not per wallet", () => {
-    const warn = validateLaunchParams(params({ maxBuyPerTx: 1n }), LIMITS).find(
-      (i) => i.field === "maxBuyPerTx",
-    );
+    const warn = validateLaunchParams(params({ maxBuyPerTx: 1n }), LIMITS).find((i) => i.field === "maxBuyPerTx");
     expect(warn?.message).toContain("not one wallet");
   });
 
@@ -256,35 +222,30 @@ describe("warnings the chain will not give you", () => {
   });
 
   it("warns when the seed adds no liquidity", () => {
-    const p = params({ seed: { ...SEED, launchTokenAmount: 0n, quoteTokenAmount: 0n } });
-    expect(fieldsOf(p)).toContain("seed");
+    expect(fieldsOf(params({ seed: { ...SEED, launchTokenAmount: 0n, quoteTokenAmount: 0n } }))).toContain("seed");
   });
 });
 
 describe("describeLaunch", () => {
-  it("reports the window in wall clock, not blocks", () => {
-    const s = describeLaunch(params({ preset: PRESET.FairLaunch }), LIMITS);
+  it("on a timestamp kit the preset is exactly its label", () => {
+    const s = describeLaunch(params({ preset: PRESET.FairLaunch, startDelaySeconds: 120 }), LIMITS);
     expect(s.preset).toBe("FairLaunch");
+    expect(s.durationClock).toBe("timestamp");
     expect(s.initialFee).toBe("10%");
     expect(s.finalFee).toBe("0.3%");
+    expect(s.decaySeconds).toBe(300);
+    expect(s.decayBlocks).toBeNull();
     expect(s.decayWindow).toBe("5m");
-    expect(s.decayBlocks).toBe(3_000n); // 300s at 0.10s
+    expect(s.declaredDecayWindow).toBe("5m");
+    expect(s.opensAfter).toBe("2m");
+    expect(s.clockStretch).toBeNull();
     expect(s.gated).toBe(true);
     expect(s.doesNotProtectAgainst).not.toBe("");
   });
 
-  it("the same preset is a different block count on a 12s chain", () => {
-    const s = describeLaunch(params({ preset: PRESET.FairLaunch }), {
-      blockTimeCentis: 1200,
-      contractBlockTimeCentis: 1200,
-    });
-    expect(s.decayWindow).toBe("5m");
-    expect(s.decayBlocks).toBe(25n);
-    expect(s.clockStretch).toBeNull();
-  });
-
-  it("on the live Robinhood kit the FairLaunch 5m window really lasts 10h", () => {
+  it("on the live Robinhood block kit the FairLaunch 5m window really lasts 10h", () => {
     const s = describeLaunch(params({ preset: PRESET.FairLaunch, startDelaySeconds: 60 }), ROBINHOOD_LIVE);
+    expect(s.durationClock).toBe("contract-block");
     expect(s.decayBlocks).toBe(3_000n);
     expect(s.declaredDecayWindow).toBe("5m");
     expect(s.decayWindow).toBe("10h");
@@ -292,11 +253,8 @@ describe("describeLaunch", () => {
     expect(s.clockStretch).toBe(120);
   });
 
-  it("a Custom window is judged at the real cadence, not the declared one", () => {
-    const s = describeLaunch(
-      params({ preset: PRESET.Custom, initialFeeBips: 100_000, finalFeeBips: 3_000, decayBlocks: 3_000, enabled: true }),
-      ROBINHOOD_LIVE,
-    );
+  it("a Custom window on a block kit is judged at the real cadence", () => {
+    const s = describeLaunch(custom({ decaySeconds: 300 }), ROBINHOOD_LIVE);
     expect(s.declaredDecayWindow).toBe("5m");
     expect(s.decayWindow).toBe("10h");
   });
@@ -348,6 +306,7 @@ describe("end to end, the way an integrator would use it", () => {
     expect(tuple.sqrtPriceX96).toBe(price.sqrtPriceX96);
     expect(tuple.seed.launchTokenAmount).toBe(SEED.launchTokenAmount);
     expect(tuple.listing.register).toBe(false);
+    expect(tuple).toHaveProperty("decaySeconds");
     expect(Object.keys(tuple)).toHaveLength(14);
   });
 });

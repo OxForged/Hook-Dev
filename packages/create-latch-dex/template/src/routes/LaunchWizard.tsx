@@ -5,12 +5,15 @@
  * Three things this screen refuses to do, each for a reason that cost somebody
  * real money the last time it was not refused:
  *
- *   * **It does not guess the bounds.** `MAX_DECAY_BLOCKS`, `MAX_START_DELAY`
- *     and the fee ceilings are read off the deployed hook. They are block
- *     counts, so their wall-clock meaning depends entirely on the chain's block
- *     time — a million blocks is about 139 days at 12 seconds and about 28
- *     hours at a tenth of a second. A wizard that assumed one of those would
- *     offer schedules the contract rejects.
+ *   * **It does not guess the bounds, or the unit.** The decay and start-delay
+ *     ceilings and the fee ceilings are read off the deployed hook. A
+ *     timestamp kit (`CLOCK_MODE() == "mode=timestamp"`) takes the decay window
+ *     in SECONDS, within `MIN_DECAY_SECONDS`..`MAX_DECAY_SECONDS`. The retired
+ *     block-numbered kit takes it in HOOK BLOCKS, whose wall-clock meaning
+ *     depends on how fast the hook's `block.number` advances — ~12 s on
+ *     Robinhood, where that is Ethereum's block number. The input's unit
+ *     follows the kit the app is pointed at, and the draft carries that unit so
+ *     a number typed as seconds can never be encoded as blocks.
  *
  *   * **It does not send without simulating.** Every guard in the kit is a
  *     revert, which makes `simulateContract` a complete and free pre-flight.
@@ -31,6 +34,7 @@ import { resolveConfig } from "../config/resolve";
 import { explorerTx } from "../lib/client";
 import { buildCreateLaunch, type LaunchDraft } from "../lib/createLaunch";
 import { formatDuration, blocksToSeconds, PRESETS, readLaunchBounds } from "../lib/launches";
+import type { LaunchBounds } from "../lib/launches";
 import { formatPips } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 
@@ -44,7 +48,7 @@ interface FormState {
   preset: number;
   initialFeeBips: string;
   finalFeeBips: string;
-  decayBlocks: string;
+  decayWindow: string;
   startDelaySeconds: string;
   maxBuyPerTx: string;
   seedLaunchTokenAmount: string;
@@ -59,7 +63,9 @@ const EMPTY: FormState = {
   preset: 0,
   initialFeeBips: "100000",
   finalFeeBips: "3000",
-  decayBlocks: "1000",
+  /* 300 is the FairLaunch window in seconds on a timestamp kit; on a block kit
+     it is 300 hook blocks, which the readout beside the input converts. */
+  decayWindow: "300",
   startDelaySeconds: "0",
   maxBuyPerTx: "0",
   seedLaunchTokenAmount: "0",
@@ -102,7 +108,7 @@ export function LaunchWizard(): ReactElement {
     setPhase({ kind: "idle" });
   }
 
-  function draftFrom(): LaunchDraft {
+  function draftFrom(limits: LaunchBounds): LaunchDraft {
     return {
       launchToken: form.launchToken as Address,
       quoteToken: form.quoteToken as Address,
@@ -113,7 +119,8 @@ export function LaunchWizard(): ReactElement {
       preset: form.preset,
       initialFeeBips: Number(form.initialFeeBips),
       finalFeeBips: Number(form.finalFeeBips),
-      decayBlocks: Number(form.decayBlocks),
+      decayWindow: Number(form.decayWindow),
+      durationClock: limits.durationClock,
       startDelaySeconds: Number(form.startDelaySeconds),
       maxBuyPerTx: parseUnits(form.maxBuyPerTx || "0", decimals.quote),
       operator: (address ?? "0x0000000000000000000000000000000000000000") as Address,
@@ -130,9 +137,14 @@ export function LaunchWizard(): ReactElement {
       setPhase({ kind: "failed", message: "Connect a wallet first." });
       return;
     }
+    if (bounds.state.status !== "ready") {
+      setPhase({ kind: "failed", message: "The kit's limits have not loaded yet." });
+      return;
+    }
+    const limits = bounds.state.data;
     setPhase({ kind: "simulating" });
     try {
-      const call = await buildCreateLaunch(draftFrom());
+      const call = await buildCreateLaunch(draftFrom(limits));
       /* A raw `call` rather than `simulateContract`, so what is simulated is
          byte-identical to what would be sent. Simulating a re-encoded version of
          the same intent is how a wizard passes its own check and reverts on chain. */
@@ -153,9 +165,11 @@ export function LaunchWizard(): ReactElement {
 
   async function onSend(): Promise<void> {
     if (walletClient === undefined || address === undefined) return;
+    if (bounds.state.status !== "ready") return;
+    const limits = bounds.state.data;
     setPhase({ kind: "sending" });
     try {
-      const call = await buildCreateLaunch(draftFrom());
+      const call = await buildCreateLaunch(draftFrom(limits));
       const hash = await walletClient.sendTransaction({
         to: call.to,
         data: call.data,
@@ -297,25 +311,46 @@ export function LaunchWizard(): ReactElement {
                     <small>{formatPips(Number(form.finalFeeBips) || 0)} once decay ends</small>
                   </label>
 
-                  <label>
-                    Decay window, in blocks (max {limits.maxDecayBlocks.toLocaleString()})
-                    <input
-                      type="number"
-                      min={1}
-                      max={limits.maxDecayBlocks}
-                      value={form.decayBlocks}
-                      onChange={(e) => set("decayBlocks", e.target.value)}
-                    />
-                    <small>
-                      about{" "}
-                      {formatDuration(
-                        blocksToSeconds(Number(form.decayBlocks) || 0, limits.contractBlockTimeCentis),
-                      )}{" "}
-                      of real time: the hook&rsquo;s block advances every ~
-                      {limits.contractBlockTimeCentis / 100}s on this chain. The contract counts
-                      blocks, not seconds.
-                    </small>
-                  </label>
+                  {limits.durationClock === "timestamp" ? (
+                    <label>
+                      Decay window, in seconds ({formatDuration(limits.minDecaySeconds)} to{" "}
+                      {formatDuration(limits.maxDecaySeconds)})
+                      <input
+                        type="number"
+                        min={limits.minDecaySeconds}
+                        max={limits.maxDecaySeconds}
+                        value={form.decayWindow}
+                        onChange={(e) => set("decayWindow", e.target.value)}
+                      />
+                      <small>
+                        {formatDuration(Number(form.decayWindow) || 0)}. The hook measures the
+                        window on <code>block.timestamp</code>, so this is real time. It refuses a
+                        window shorter than {limits.minDecaySeconds}s: below that the
+                        sequencer&rsquo;s timestamp granularity is a meaningful share of the
+                        schedule.
+                      </small>
+                    </label>
+                  ) : (
+                    <label>
+                      Decay window, in blocks (max {limits.maxDecayBlocks.toLocaleString()})
+                      <input
+                        type="number"
+                        min={1}
+                        max={limits.maxDecayBlocks}
+                        value={form.decayWindow}
+                        onChange={(e) => set("decayWindow", e.target.value)}
+                      />
+                      <small>
+                        about{" "}
+                        {formatDuration(
+                          blocksToSeconds(Number(form.decayWindow) || 0, limits.contractBlockTimeCentis),
+                        )}{" "}
+                        of real time: the hook&rsquo;s block advances every ~
+                        {limits.contractBlockTimeCentis / 100}s on this chain. This kit is the
+                        retired block-numbered build, and it counts blocks, not seconds.
+                      </small>
+                    </label>
+                  )}
                 </>
               ) : (
                 <p className="state-hint">
@@ -332,18 +367,27 @@ export function LaunchWizard(): ReactElement {
                   value={form.startDelaySeconds}
                   onChange={(e) => set("startDelaySeconds", e.target.value)}
                 />
-                <small>
-                  Converted to a block count by the kit at its configured{" "}
-                  {limits.blockTimeCentis / 100}s per block
-                  {limits.contractBlockTimeCentis !== limits.blockTimeCentis
-                    ? `, but the hook's block really takes ~${limits.contractBlockTimeCentis / 100}s, so trading opens about ${
-                        limits.contractBlockTimeCentis / limits.blockTimeCentis
-                      }x later than the seconds you enter`
-                    : ""}
-                  . Its ceiling is {limits.maxStartDelay.toString()} blocks, about{" "}
-                  {formatDuration(blocksToSeconds(limits.maxStartDelay, limits.contractBlockTimeCentis))}{" "}
-                  of real time.
-                </small>
+                {limits.durationClock === "timestamp" ? (
+                  <small>
+                    Trading opens this many seconds after the launch transaction lands, on{" "}
+                    <code>block.timestamp</code>. The ceiling is{" "}
+                    {limits.maxStartDelaySeconds.toString()}s (
+                    {formatDuration(Number(limits.maxStartDelaySeconds))}).
+                  </small>
+                ) : (
+                  <small>
+                    Converted to a block count by the kit at its configured{" "}
+                    {limits.blockTimeCentis / 100}s per block
+                    {limits.contractBlockTimeCentis !== limits.blockTimeCentis
+                      ? `, but the hook's block really takes ~${limits.contractBlockTimeCentis / 100}s, so trading opens about ${
+                          limits.contractBlockTimeCentis / limits.blockTimeCentis
+                        }x later than the seconds you enter`
+                      : ""}
+                    . Its ceiling is {limits.maxStartDelay.toString()} blocks, about{" "}
+                    {formatDuration(blocksToSeconds(limits.maxStartDelay, limits.contractBlockTimeCentis))}{" "}
+                    of real time.
+                  </small>
+                )}
               </label>
 
               <label>

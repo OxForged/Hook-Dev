@@ -50,11 +50,28 @@
  * normal state most of the time.
  */
 
-import { encodeFunctionData, type Address, type Hex } from "viem";
-import { readContractBlockNumber } from "@latchprotocol/sdk";
+import {
+  BaseError,
+  CallExecutionError,
+  ContractFunctionRevertedError,
+  ExecutionRevertedError,
+  decodeAbiParameters,
+  encodeFunctionData,
+  type Address,
+  type Hex,
+} from "viem";
+import {
+  CLOCK_MODE_CALLDATA,
+  decodeRevSharePendingConfig,
+  inferRevSharePendingShape,
+  readContractClock,
+  revShareHookRecord,
+  revShareProposalStatus,
+  type DurationClock,
+  type RevSharePendingShape,
+} from "@latchprotocol/sdk";
 
 import {
-  decodePendingConfig,
   DISTRIBUTOR_ABI,
   EPOCH_FIELD,
   GET_PENDING_CONFIG_ABI,
@@ -574,15 +591,59 @@ async function settleBeneficiaries(
   );
 }
 
+/** A contract-level revert, as opposed to the endpoint failing to answer. */
+function isExecutionRevert(e: unknown): boolean {
+  if (!(e instanceof BaseError)) return false;
+  return (
+    e.walk(
+      (x) =>
+        x instanceof ExecutionRevertedError ||
+        x instanceof ContractFunctionRevertedError ||
+        (x instanceof CallExecutionError && /revert/i.test(x.shortMessage)),
+    ) !== null
+  );
+}
+
+/**
+ * The `getPendingConfig` shape of `hook`: the SDK address book first, then a
+ * `CLOCK_MODE()` probe (only the timestamp build answers; a REVERT means a block
+ * build). A transport failure on the probe is thrown, never read as a revert.
+ * `undefined` means no known build matches: the caller refuses to decode.
+ */
+async function resolveShape(
+  ctx: LatchContext,
+  hook: Address,
+  words: number,
+): Promise<{ shape: RevSharePendingShape; source: string } | undefined> {
+  const known = revShareHookRecord(ctx.chainId, hook);
+  if (known !== undefined) return { shape: known.pendingShape, source: "the SDK address book" };
+  let mode: string | null;
+  try {
+    const { data } = await ctx.publicClient.call({ to: hook, data: CLOCK_MODE_CALLDATA });
+    mode = data === undefined || data === "0x" ? null : decodeAbiParameters([{ type: "string" }], data)[0];
+  } catch (e) {
+    if (!isExecutionRevert(e)) throw e;
+    mode = null;
+  }
+  const shape = inferRevSharePendingShape(mode, words);
+  return shape === undefined ? undefined : { shape, source: "a CLOCK_MODE() probe" };
+}
+
+/** A stored point in its own unit. Timestamps as UTC; blocks as contract blocks. */
+function point(clock: DurationClock, v: bigint): string {
+  return clock === "timestamp"
+    ? `${new Date(Number(v) * 1000).toISOString()} (block.timestamp ${v})`
+    : `contract block ${v}`;
+}
+
 async function applyPendingConfig(
   ctx: LatchContext,
   hook: Address,
   poolId: Hex,
   poolKey: PoolKeyInput,
 ): Promise<Outcome> {
-  // Called RAW and decoded by length. Two struct shapes exist on chain - 7 words
-  // on the hooks deployed before proposal expiry, 8 on the current source - and
-  // a typed ABI is right on exactly one of them. See `decodePendingConfig`.
+  // Called RAW. Three struct shapes exist on chain and two share a length, so the
+  // shape is resolved first and the bytes are decoded AS that shape.
   const { data } = await ctx.publicClient.call({
     to: hook,
     data: encodeFunctionData({
@@ -603,11 +664,18 @@ async function applyPendingConfig(
     };
   }
 
-  // Throws on an unrecognised length; the handler reports that as a tool error
-  // rather than guessing at a layout.
-  const { shape, effectiveBlock, expiryBlock } = decodePendingConfig(data);
+  const bytes = (data.length - 2) / 2;
+  const resolved = bytes % 32 === 0 ? await resolveShape(ctx, hook, bytes / 32) : undefined;
+  if (resolved === undefined) {
+    // Reported as a tool error by the handler: an unidentified layout is never guessed.
+    throw new Error(
+      `${hook} returned a ${bytes}-byte getPendingConfig that matches no known RevShareHook build ` +
+        "(neither the SDK address book nor a CLOCK_MODE() probe identifies it). Refusing to decode.",
+    );
+  }
+  const pending = decodeRevSharePendingConfig(data, resolved.shape);
 
-  if (effectiveBlock === 0n) {
+  if (pending.effective === 0n) {
     return {
       action: "applyPendingConfig",
       target: hook,
@@ -618,13 +686,25 @@ async function applyPendingConfig(
     };
   }
 
-  // The CONTRACT clock, not `getBlockNumber()`. `effectiveBlock` and `expiryBlock` were
-  // written from the hook's `block.number`, which on an Arbitrum Nitro chain (Robinhood,
-  // 4663) is Ethereum's block number (~26M) while the RPC head is the L2 block (~62M).
-  // Against the RPC head every queued proposal reads as expired. See the SDK's
-  // `chains/clock.ts`; it throws rather than substitute the wrong clock.
-  const blockNumber = await readContractBlockNumber(ctx.publicClient, ctx.chainId);
-  if (blockNumber < effectiveBlock) {
+  // One read gives both clocks: `timestamp` for a timestamp hook, the CONTRACT
+  // block number for a block hook. Never `getBlockNumber()`: on an Arbitrum Nitro
+  // chain (Robinhood, 4663) that is the L2 head, a different clock from the
+  // hook's `block.number`. The SDK throws rather than substitute the wrong clock.
+  const clock = await readContractClock(ctx.publicClient, ctx.chainId);
+  const status = revShareProposalStatus(pending, {
+    timestamp: clock.timestamp,
+    contractBlockNumber: clock.contractBlockNumber,
+  });
+  const unit =
+    pending.durationClock === "timestamp"
+      ? "compared with block.timestamp"
+      : "compared with block.number as the hook sees it, which is not eth_blockNumber on every chain";
+
+  if (status === "queued") {
+    const toGo =
+      pending.durationClock === "timestamp"
+        ? `${pending.effective - clock.timestamp} second(s) to go`
+        : `${pending.effective - clock.contractBlockNumber} contract block(s) to go`;
     return {
       action: "applyPendingConfig",
       target: hook,
@@ -632,28 +712,25 @@ async function applyPendingConfig(
       wouldSucceed: false,
       sent: false,
       reason:
-        `the pending config takes effect at contract block ${effectiveBlock}; ${effectiveBlock - blockNumber} contract block(s) to go ` +
-        `(block.number as the hook sees it, which is not eth_blockNumber on every chain).` +
-        (shape === "legacy"
-          ? " This hook returns the legacy 7-word PendingConfig, which has no expiry: once matured the proposal stays armed, applicable by anyone, until the owner cancels or freezes."
-          : ` It expires after contract block ${expiryBlock}.`),
+        `the pending config takes effect at ${point(pending.durationClock, pending.effective)}; ${toGo} (${unit}; ` +
+        `layout ${pending.shape}, from ${resolved.source}).` +
+        (pending.expiry === null
+          ? " This hook's PendingConfig has no expiry: once matured the proposal stays armed, applicable by anyone, until the owner cancels or freezes."
+          : ` It expires after ${point(pending.durationClock, pending.expiry)}.`),
     };
   }
 
-  // On the current hook a proposal has a WINDOW, not a deadline: past `expiryBlock` it is
-  // dead and the owner has to propose again and wait the full delay again. Reported as
-  // not-due rather than left to a simulation, so a reader is told WHY nothing will happen.
-  //
-  // The legacy shape has no expiry at all (`expiryBlock === null`). A matured proposal there
-  // stays armed indefinitely, so it is never treated as expired - it goes to simulation.
-  if (expiryBlock !== null && blockNumber > expiryBlock) {
+  // A proposal with an expiry has a WINDOW, not a deadline: past it the proposal is
+  // dead and the owner has to propose again. The no-expiry shape never expires, so a
+  // matured proposal there always goes to simulation.
+  if (status === "expired") {
     return {
       action: "applyPendingConfig",
       target: hook,
       due: false,
       wouldSucceed: false,
       sent: false,
-      reason: `the pending config expired at contract block ${expiryBlock}; it can no longer be applied and the pool owner has to propose it again.`,
+      reason: `the pending config expired at ${point(pending.durationClock, pending.expiry ?? 0n)}; it can no longer be applied and the pool owner has to propose it again.`,
     };
   }
 

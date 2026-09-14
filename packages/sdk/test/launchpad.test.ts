@@ -60,11 +60,20 @@ describe("generated launchpad ABI", () => {
     }
   });
 
-  it("exposes the same schedule surface for both pool flavours", () => {
-    expect(names(LAUNCH_GUARD_HOOK_ABI, "function").sort()).toEqual(
+  it("exposes the same schedule surface for both pool flavours, plus the CL pool reservation", () => {
+    // The pool-id reservation for LaunchTokenFactory tokens (owner decision 2026-09-14) exists on
+    // the CL hook only, because the kit launches CL pools only. Named here so a reservation member
+    // appearing on Bin, or a schedule member vanishing from either, still fails.
+    const CL_ONLY_FUNCTIONS = ["LAUNCH_TOKEN_FACTORY", "launchClaimerOf", "setLaunchClaimer"];
+    const CL_ONLY_EVENTS = ["LaunchClaimerSet"];
+    const cl = names(LAUNCH_GUARD_HOOK_ABI, "function");
+    for (const n of CL_ONLY_FUNCTIONS) expect(cl).toContain(n);
+    expect(cl.filter((n) => !CL_ONLY_FUNCTIONS.includes(n)).sort()).toEqual(
       names(BIN_LAUNCH_GUARD_HOOK_ABI, "function").sort(),
     );
-    expect(names(LAUNCH_GUARD_HOOK_ABI, "event").sort()).toEqual(
+    const clEvents = names(LAUNCH_GUARD_HOOK_ABI, "event");
+    for (const n of CL_ONLY_EVENTS) expect(clEvents).toContain(n);
+    expect(clEvents.filter((n) => !CL_ONLY_EVENTS.includes(n)).sort()).toEqual(
       names(BIN_LAUNCH_GUARD_HOOK_ABI, "event").sort(),
     );
   });

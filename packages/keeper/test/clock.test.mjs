@@ -58,27 +58,37 @@ test('a native chain uses the header number and does not probe', async () => {
   assert.equal(c.calls.length, 0)
 })
 
-/* A proposal made on the live RevShareHook (delay 432,000, TTL 2,592,000 contract blocks). */
+/* A proposal made on the live block-numbered RevShareHook 0xfC00 (delay 432,000, TTL 2,592,000 contract blocks). */
 const effective = L1_AT_HEAD + 432_000n
 const expiry = effective + 2_592_000n
+const block = (e, x) => ({ durationClock: 'contract-block', effective: e, expiry: x })
+const at = (contractBlockNumber, timestamp = TS) => ({ timestamp, contractBlockNumber })
 
-test('pendingPhase: a queued proposal is not-due on the contract clock', () => {
-  assert.equal(pendingPhase({ effectiveBlock: effective, expiryBlock: expiry }, L1_AT_HEAD), 'not-due')
+test('pendingPhase: a queued block proposal is not-due on the contract clock', () => {
+  assert.equal(pendingPhase(block(effective, expiry), at(L1_AT_HEAD)), 'not-due')
 })
 
 test('pendingPhase: the same proposal reads EXPIRED against the L2 head — the bug being fixed', () => {
-  assert.equal(pendingPhase({ effectiveBlock: effective, expiryBlock: expiry }, L2_HEAD), 'expired')
+  assert.equal(pendingPhase(block(effective, expiry), at(L2_HEAD)), 'expired')
 })
 
 test('pendingPhase: window is [effective, expiry] inclusive, like applyPendingConfig', () => {
-  const p = { effectiveBlock: effective, expiryBlock: expiry }
-  assert.equal(pendingPhase(p, effective - 1n), 'not-due')
-  assert.equal(pendingPhase(p, effective), 'applicable')
-  assert.equal(pendingPhase(p, expiry), 'applicable')
-  assert.equal(pendingPhase(p, expiry + 1n), 'expired')
+  const p = block(effective, expiry)
+  assert.equal(pendingPhase(p, at(effective - 1n)), 'not-due')
+  assert.equal(pendingPhase(p, at(effective)), 'applicable')
+  assert.equal(pendingPhase(p, at(expiry)), 'applicable')
+  assert.equal(pendingPhase(p, at(expiry + 1n)), 'expired')
 })
 
-test('pendingPhase: legacy shape has no expiry; zero effective means nothing pending', () => {
-  assert.equal(pendingPhase({ effectiveBlock: 3_600n, expiryBlock: null }, 10n ** 12n), 'applicable')
-  assert.equal(pendingPhase({ effectiveBlock: 0n, expiryBlock: null }, L1_AT_HEAD), 'none')
+test('pendingPhase: block-no-expiry has no expiry; zero effective means nothing pending', () => {
+  assert.equal(pendingPhase(block(3_600n, null), at(10n ** 12n)), 'applicable')
+  assert.equal(pendingPhase(block(0n, null), at(L1_AT_HEAD)), 'none')
+})
+
+test('pendingPhase: a timestamp proposal is judged on block.timestamp, never the block number', () => {
+  const p = { durationClock: 'timestamp', effective: TS + 43_200n, expiry: TS + 43_200n + 259_200n }
+  assert.equal(pendingPhase(p, at(10n ** 15n, TS)), 'not-due', 'a huge block number must not mature it')
+  assert.equal(pendingPhase(p, at(0n, TS + 43_200n)), 'applicable')
+  assert.equal(pendingPhase(p, at(0n, TS + 43_200n + 259_200n)), 'applicable')
+  assert.equal(pendingPhase(p, at(0n, TS + 43_200n + 259_201n)), 'expired')
 })

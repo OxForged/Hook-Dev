@@ -261,7 +261,7 @@ export interface RemoveLiquidityQuote {
  *
  * Not a token sale. A launch is a concentrated-liquidity pool with
  * `LaunchGuardHook` named in its `PoolKey` and a fee that decays from
- * `initialFeePips` to `finalFeePips` over `decayBlocks` blocks. Everything the
+ * `initialFeePips` to `finalFeePips` over `guard.window`. Everything the
  * hook knows is keyed by `PoolId`, and every field below is read from it or
  * from the pool key — there is no sale record, no cap, no allocation and no
  * per-account state to read, because none of those exist.
@@ -285,16 +285,17 @@ export interface LaunchInfo {
    * `currentFee(poolId)` as the hook answered it, in pips.
    *
    * Read from chain rather than derived, so the number on screen is the number
-   * the contract will charge. {@link ../callpath/launch.js | launchFeeAtBlock}
+   * the contract will charge. {@link ../callpath/launch.js | launchFeeAt}
    * reproduces the same maths locally for the projected schedule.
    */
   readonly currentFeePips: number;
   /**
-   * `block.number` as the launch hook sees it when the reads above were taken —
-   * the clock `startBlock` and `decayBlocks` are on. NOT `eth_blockNumber`: on
-   * an Arbitrum chain the two differ (Ethereum's block vs the L2 block).
+   * "Now" on the hook's own clock when the reads above were taken
+   * (`guard.durationClock`): the latest `block.timestamp` for the timestamp
+   * build, or `block.number` as the hook sees it for the block-numbered one —
+   * NOT `eth_blockNumber`, which on an Arbitrum chain is the L2 block.
    */
-  readonly readAtBlock: bigint;
+  readonly readAt: bigint;
   readonly source: DataSource;
 }
 

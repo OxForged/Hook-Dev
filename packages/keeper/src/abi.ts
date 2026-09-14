@@ -28,10 +28,12 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   'function totalWeight(bytes32 poolId) view returns (uint256)',
   'function distributorOf(bytes32 poolId) view returns (address)',
   // `getPendingConfig` is deliberately NOT typed here. The struct it returns has
-  // two shapes in the wild — 7 words on the hooks deployed before proposal expiry
-  // existed (Robinhood 0x23CE…, Sepolia 0x1C86…), 8 words on the current source —
-  // and they are not interchangeable. The job calls it raw and
-  // `decodePendingConfig` switches on the returned length. See decode.ts.
+  // THREE shapes — 7 words block-numbered with no expiry (Robinhood 0x23CE…,
+  // Sepolia 0x1C86…), 8 words block-numbered with expiry (Robinhood 0xfC00…), and
+  // 8 words in unix seconds (the timestamp build). The two 8-word shapes have an
+  // identical layout, so length cannot tell them apart: the job resolves the shape
+  // first (config, built-in table, or CLOCK_MODE() probe) and then decodes AS that
+  // shape. See decode.ts and pendingShape.ts.
 ])
 
 /**
@@ -41,6 +43,15 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
  */
 export const GET_PENDING_CONFIG_ABI = parseAbi([
   'function getPendingConfig(bytes32 poolId) view returns (bytes)',
+])
+
+/**
+ * ERC-6372 `CLOCK_MODE()`, a view. Only the timestamp builds implement it
+ * ("mode=timestamp"); the block-numbered hooks revert. Called raw, like
+ * `getPendingConfig`, so a revert and a transport failure can be told apart.
+ */
+export const CLOCK_MODE_ABI = parseAbi([
+  'function CLOCK_MODE() view returns (string)',
 ])
 
 /**

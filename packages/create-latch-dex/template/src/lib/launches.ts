@@ -7,8 +7,8 @@
  * ---------------------------------------------------------------------------
  *
  * There is no sale contract, no soft cap, no allocation and no claim. A launch
- * is a POOL with a hook attached whose LP fee starts high and decays, block by
- * block, to a final rate — plus an optional per-transaction buy cap while it
+ * is a POOL with a hook attached whose LP fee starts high and decays, over a
+ * window, to a final rate — plus an optional per-transaction buy cap while it
  * decays. The tax is an LP-fee override, so it accrues to in-range liquidity
  * providers through core rather than to the launchpad, the hook, or you.
  *
@@ -16,18 +16,55 @@
  * against a hard cap, because there is no cap to progress toward. What exists
  * is a schedule, a current fee, and whether the first swap has happened.
  *
- * `@latchprotocol/widgets` also exports a `LaunchWidget`. It USED to be bound
- * to a proposed sale interface that no deployed Latch contract implements,
- * which is why this file exists. That has since been fixed — the widget now
- * reads LaunchGuardHook directly — so a tenant who wants the packaged surface
- * can use it, and this module stays as the unpackaged version for anyone who
- * wants to render the schedule their own way. Everything below is against the real
- * `LAUNCHPAD_KIT_ABI` and `LAUNCH_GUARD_HOOK_ABI` from `@latchprotocol/sdk`.
+ * ---------------------------------------------------------------------------
+ * TWO HOOK GENERATIONS, TWO CLOCKS
+ * ---------------------------------------------------------------------------
+ *
+ * The first kit and hook deployed on Robinhood Chain count durations in
+ * `block.number` (`startBlock`, `decayBlocks`). On an Arbitrum chain that is
+ * Ethereum's block number, ~12 s a block, not the ~0.1 s L2 block the RPC
+ * shows, so every block-denominated window runs on a clock the kit's own
+ * `blockTimeCentis` misdescribed. The redeployed pair counts in
+ * `block.timestamp` (`startTime`, `decaySeconds`) and answers ERC-6372
+ * `CLOCK_MODE()` with `"mode=timestamp"`.
+ *
+ * A tenant may point `chain.launchpadKit` at either, so this module resolves
+ * the clock per kit — from the SDK address book when the kit is Latch's own,
+ * otherwise by probing `CLOCK_MODE()` (a REVERT means the block-numbered
+ * build; a transport failure is thrown, never read as a revert) — and then
+ * reads through the matching ABI. The two `LaunchCreated` events have
+ * different topics, so reading one generation through the other's ABI finds
+ * no logs rather than wrong ones; the struct reads are what would silently
+ * reinterpret, and the clock is resolved before any of them.
+ *
+ * `@latchprotocol/widgets` also exports a `LaunchWidget` that reads
+ * LaunchGuardHook directly; this module is the unpackaged version for anyone
+ * who wants to render the schedule their own way. Everything below is against
+ * the real ABIs from `@latchprotocol/sdk`.
  */
 
-import { LAUNCHPAD_KIT_ABI, LAUNCH_GUARD_HOOK_ABI, readContractClock } from "@latchprotocol/sdk";
+import {
+  CLOCK_MODE_CALLDATA,
+  LAUNCHPAD_KIT_ABI,
+  LAUNCHPAD_KIT_BLOCK_ABI,
+  LAUNCH_GUARD_HOOK_ABI,
+  LAUNCH_GUARD_HOOK_BLOCK_ABI,
+  TIMESTAMP_CLOCK_MODE,
+  readContractClock,
+  type DurationClock,
+} from "@latchprotocol/sdk";
 import type { TokenInfo } from "@latchprotocol/widgets";
-import { getAbiItem, type Address, type Hex } from "viem";
+import {
+  BaseError,
+  CallExecutionError,
+  ContractFunctionRevertedError,
+  ExecutionRevertedError,
+  decodeAbiParameters,
+  getAbiItem,
+  isAddressEqual,
+  type Address,
+  type Hex,
+} from "viem";
 
 import { resolveConfig } from "../config/resolve";
 import { publicClient } from "./client";
@@ -68,16 +105,80 @@ export function presetLabel(index: number): string {
 
 export type LaunchPhase = "scheduled" | "decaying" | "settled";
 
+/** Thrown by `readLaunches` when `chain.launchpadKit` is null. */
+export class LaunchpadNotConfiguredError extends Error {
+  constructor() {
+    super(
+      "No LaunchpadKit is configured. Set chain.launchpadKit in latch.config.ts, " +
+        "or turn features.launchpad off.",
+    );
+    this.name = "LaunchpadNotConfiguredError";
+  }
+}
+
+/** Thrown when a kit reports a `CLOCK_MODE()` this template does not understand. */
+export class UnknownKitClockError extends Error {
+  constructor(kit: Address, mode: string) {
+    super(
+      `LaunchpadKit ${kit} reports CLOCK_MODE "${mode}", which is neither the timestamp ` +
+        "build nor the block-numbered one. Refusing to read its schedule through a guessed ABI.",
+    );
+    this.name = "UnknownKitClockError";
+  }
+}
+
+function isRevert(error: unknown): boolean {
+  if (!(error instanceof BaseError)) return false;
+  return (
+    error.walk(
+      (x) =>
+        x instanceof ExecutionRevertedError ||
+        x instanceof ContractFunctionRevertedError ||
+        (x instanceof CallExecutionError && /revert/i.test(x.shortMessage)),
+    ) !== null
+  );
+}
+
+/**
+ * The duration clock of `kit` (and therefore of the hook it is welded to —
+ * the timestamp kit's constructor refuses a hook whose `CLOCK_MODE()` differs).
+ *
+ * The SDK address book is authoritative for Latch's own kit. Any other kit is
+ * probed: only the timestamp build answers `CLOCK_MODE()`.
+ */
+export async function resolveKitClock(kit: Address): Promise<DurationClock> {
+  const cfg = resolveConfig();
+  const known = cfg.core.launchpadKit;
+  if (known !== null && isAddressEqual(known, kit)) {
+    const recorded = cfg.core.durationClocks.launchpadKit;
+    if (recorded !== null) return recorded;
+  }
+  try {
+    const { data } = await publicClient().call({ to: kit, data: CLOCK_MODE_CALLDATA });
+    if (data === undefined || data === "0x") return "contract-block";
+    const [mode] = decodeAbiParameters([{ type: "string" }], data);
+    if (mode === TIMESTAMP_CLOCK_MODE) return "timestamp";
+    throw new UnknownKitClockError(kit, mode);
+  } catch (error) {
+    if (isRevert(error)) return "contract-block";
+    throw error;
+  }
+}
+
 export interface LaunchRecord {
   readonly poolId: Hex;
   readonly launchToken: Address;
   readonly quoteToken: Address;
   readonly launchTokenMeta: TokenInfo | null;
   readonly quoteTokenMeta: TokenInfo | null;
-  /** Sole holder of `reconfigureLaunch`, and only until `startBlock`. */
+  /** Sole holder of `reconfigureLaunch`, and only until the launch starts. */
   readonly operator: Address;
-  readonly startBlock: bigint;
-  readonly decayBlocks: number;
+  /** Which clock `start`, `window` and `remaining` are on. */
+  readonly durationClock: DurationClock;
+  /** `startTime` (unix seconds) on a timestamp kit; `startBlock` (hook block) on a block kit. */
+  readonly start: bigint;
+  /** `decaySeconds` on a timestamp kit; `decayBlocks` on a block kit. */
+  readonly window: number;
   readonly initialFeeBips: number;
   readonly finalFeeBips: number;
   /** Zero means uncapped. */
@@ -94,27 +195,92 @@ export interface LaunchRecord {
   /** True once the first swap has happened; the config is frozen from then on. */
   readonly launched: boolean;
   readonly phase: LaunchPhase;
-  /** HOOK blocks until the decay finishes, or null once it has. */
-  readonly blocksRemaining: bigint | null;
+  /** Seconds (timestamp kit) or HOOK blocks (block kit) until the decay finishes; null once it has. */
+  readonly remaining: bigint | null;
 }
 
 export interface LaunchScan {
   readonly launches: readonly LaunchRecord[];
   /** Log-scan range start, on the RPC (log) clock. */
   readonly fromBlock: bigint;
-  /** `eth_blockNumber` when scanned — the log clock. Not comparable to `startBlock`. */
+  /** `eth_blockNumber` when scanned — the log clock. Not comparable to any schedule value. */
   readonly atBlock: bigint;
+  /** The clock every record's schedule is on. */
+  readonly durationClock: DurationClock;
   /**
-   * `block.number` as `LaunchGuardHook` sees it. `startBlock` and `decayBlocks`
-   * are on this clock. On Robinhood it is Ethereum's block number, not the L2
-   * head, and comparing against the L2 head showed every launch as settled.
+   * "Now" on that clock: `block.timestamp` for a timestamp kit, the hook's
+   * `block.number` for a block kit. On Robinhood the latter is Ethereum's
+   * block number, not the L2 head; comparing against the L2 head showed every
+   * launch as settled.
    */
+  readonly now: bigint;
+  /** `block.number` as the hook sees it, for provenance. */
   readonly contractBlockNumber: bigint;
   /** The hook the configured kit is welded to. Read off the kit, not assumed. */
   readonly hook: Address;
 }
 
 const LAUNCH_CREATED = getAbiItem({ abi: LAUNCHPAD_KIT_ABI, name: "LaunchCreated" });
+const LAUNCH_CREATED_BLOCK = getAbiItem({ abi: LAUNCHPAD_KIT_BLOCK_ABI, name: "LaunchCreated" });
+
+/** A creation event normalised across both generations. */
+interface CreatedLaunch {
+  readonly poolId: Hex;
+  readonly launchToken: Address;
+  readonly quoteToken: Address;
+  readonly operator: Address;
+  readonly start: bigint;
+  readonly window: number;
+  readonly initialFeeBips: number;
+  readonly finalFeeBips: number;
+  readonly maxBuyPerTx: bigint;
+  readonly preset: number;
+  readonly createdAtBlock: bigint;
+}
+
+async function readCreated(
+  kit: Address,
+  clock: DurationClock,
+  fromBlock: bigint,
+): Promise<CreatedLaunch[]> {
+  const client = publicClient();
+  if (clock === "timestamp") {
+    const logs = await client.getLogs({ address: kit, event: LAUNCH_CREATED, fromBlock, toBlock: "latest" });
+    return logs.map((log) => ({
+      poolId: log.args.poolId as Hex,
+      launchToken: log.args.launchToken as Address,
+      quoteToken: log.args.quoteToken as Address,
+      operator: log.args.operator as Address,
+      start: BigInt(log.args.startTime ?? 0),
+      window: Number(log.args.decaySeconds ?? 0),
+      initialFeeBips: Number(log.args.initialFeeBips ?? 0),
+      finalFeeBips: Number(log.args.finalFeeBips ?? 0),
+      maxBuyPerTx: BigInt(log.args.maxBuyPerTx ?? 0n),
+      preset: Number(log.args.preset ?? 0),
+      createdAtBlock: log.blockNumber,
+    }));
+  }
+  const logs = await client.getLogs({ address: kit, event: LAUNCH_CREATED_BLOCK, fromBlock, toBlock: "latest" });
+  return logs.map((log) => ({
+    poolId: log.args.poolId as Hex,
+    launchToken: log.args.launchToken as Address,
+    quoteToken: log.args.quoteToken as Address,
+    operator: log.args.operator as Address,
+    start: BigInt(log.args.startBlock ?? 0),
+    window: Number(log.args.decayBlocks ?? 0),
+    initialFeeBips: Number(log.args.initialFeeBips ?? 0),
+    finalFeeBips: Number(log.args.finalFeeBips ?? 0),
+    maxBuyPerTx: BigInt(log.args.maxBuyPerTx ?? 0n),
+    preset: Number(log.args.preset ?? 0),
+    createdAtBlock: log.blockNumber,
+  }));
+}
+
+/** `launchPhase` on either clock: `start`, `end` and `now` must all be on the same one. */
+export function launchPhase(start: bigint, window: number, now: bigint): LaunchPhase {
+  const end = start + BigInt(window);
+  return now < start ? "scheduled" : now < end ? "decaying" : "settled";
+}
 
 /**
  * Every launch the configured kit has created.
@@ -132,71 +298,61 @@ export async function readLaunches(): Promise<LaunchScan> {
   const client = publicClient();
   const fromBlock = cfg.core.deployedAtBlock;
 
-  const [hook, logs, clock] = await Promise.all([
+  const durationClock = await resolveKitClock(kit);
+  const [hook, created, clock] = await Promise.all([
+    /* `hook()` has the same selector and return in both generations. */
     client.readContract({ address: kit, abi: LAUNCHPAD_KIT_ABI, functionName: "hook" }),
-    client.getLogs({ address: kit, event: LAUNCH_CREATED, fromBlock, toBlock: "latest" }),
-    /* Both clocks. Logs are indexed by the RPC's block; the hook's schedule is
-       on the EVM's `block.number`, which differs on Arbitrum chains. */
+    readCreated(kit, durationClock, fromBlock),
+    /* Every clock at once. Logs are indexed by the RPC's block; a timestamp
+       schedule is on block.timestamp; a block schedule is on the EVM's
+       block.number, which differs from the RPC block on Arbitrum chains. */
     readContractClock(client, cfg.core.chainId),
   ]);
-  const atBlock = clock.rpcBlockNumber;
-  const contractBlock = clock.contractBlockNumber;
+  const now = durationClock === "timestamp" ? clock.timestamp : clock.contractBlockNumber;
 
   const launches = await Promise.all(
-    logs.map(async (log): Promise<LaunchRecord> => {
-      const poolId = log.args.poolId as Hex;
-      const launchToken = log.args.launchToken as Address;
-      const quoteToken = log.args.quoteToken as Address;
-      const startBlock = BigInt(log.args.startBlock ?? 0n);
-      const decayBlocks = Number(log.args.decayBlocks ?? 0);
-      const endBlock = startBlock + BigInt(decayBlocks);
-
+    created.map(async (c): Promise<LaunchRecord> => {
       const [launchTokenMeta, quoteTokenMeta, live, currentFeePips] = await Promise.all([
-        readTokenMeta(launchToken),
-        readTokenMeta(quoteToken),
-        readHookLaunch(hook, poolId),
-        readCurrentFee(hook, poolId),
+        readTokenMeta(c.launchToken),
+        readTokenMeta(c.quoteToken),
+        readHookLaunch(hook, c.poolId, durationClock),
+        readCurrentFee(hook, c.poolId),
       ]);
-
-      const phase: LaunchPhase =
-        contractBlock < startBlock ? "scheduled" : contractBlock < endBlock ? "decaying" : "settled";
-
+      const phase = launchPhase(c.start, c.window, now);
       return {
-        poolId,
-        launchToken,
-        quoteToken,
+        poolId: c.poolId,
+        launchToken: c.launchToken,
+        quoteToken: c.quoteToken,
         launchTokenMeta,
         quoteTokenMeta,
-        operator: log.args.operator as Address,
-        startBlock,
-        decayBlocks,
-        initialFeeBips: Number(log.args.initialFeeBips ?? 0),
-        finalFeeBips: Number(log.args.finalFeeBips ?? 0),
-        maxBuyPerTx: BigInt(log.args.maxBuyPerTx ?? 0n),
-        preset: Number(log.args.preset ?? 0),
-        createdAtBlock: log.blockNumber,
+        operator: c.operator,
+        durationClock,
+        start: c.start,
+        window: c.window,
+        initialFeeBips: c.initialFeeBips,
+        finalFeeBips: c.finalFeeBips,
+        maxBuyPerTx: c.maxBuyPerTx,
+        preset: c.preset,
+        createdAtBlock: c.createdAtBlock,
         currentFeePips,
         enabled: live?.enabled ?? false,
         launched: live?.launched ?? false,
         phase,
-        blocksRemaining: phase === "settled" ? null : endBlock - contractBlock,
+        remaining: phase === "settled" ? null : c.start + BigInt(c.window) - now,
       };
     }),
   );
 
   launches.sort((a, b) => Number(b.createdAtBlock - a.createdAtBlock));
-  return { launches, fromBlock, atBlock, contractBlockNumber: contractBlock, hook };
-}
-
-/** Thrown by `readLaunches` when `chain.launchpadKit` is null. */
-export class LaunchpadNotConfiguredError extends Error {
-  constructor() {
-    super(
-      "No LaunchpadKit is configured. Set chain.launchpadKit in latch.config.ts, " +
-        "or turn features.launchpad off.",
-    );
-    this.name = "LaunchpadNotConfiguredError";
-  }
+  return {
+    launches,
+    fromBlock,
+    atBlock: clock.rpcBlockNumber,
+    durationClock,
+    now,
+    contractBlockNumber: clock.contractBlockNumber,
+    hook,
+  };
 }
 
 interface HookLaunch {
@@ -204,14 +360,25 @@ interface HookLaunch {
   readonly launched: boolean;
 }
 
-async function readHookLaunch(hook: Address, poolId: Hex): Promise<HookLaunch | null> {
+async function readHookLaunch(hook: Address, poolId: Hex, clock: DurationClock): Promise<HookLaunch | null> {
   try {
-    const launch = await publicClient().readContract({
-      address: hook,
-      abi: LAUNCH_GUARD_HOOK_ABI,
-      functionName: "getLaunch",
-      args: [poolId],
-    });
+    /* The two `Launch` structs share a word layout, so either ABI would decode
+       either struct without error. The ABI is chosen by the resolved clock
+       anyway, so the field names always mean what they say. */
+    const launch =
+      clock === "timestamp"
+        ? await publicClient().readContract({
+            address: hook,
+            abi: LAUNCH_GUARD_HOOK_ABI,
+            functionName: "getLaunch",
+            args: [poolId],
+          })
+        : await publicClient().readContract({
+            address: hook,
+            abi: LAUNCH_GUARD_HOOK_BLOCK_ABI,
+            functionName: "getLaunch",
+            args: [poolId],
+          });
     return { enabled: launch.enabled, launched: launch.launched };
   } catch {
     return null;
@@ -220,6 +387,7 @@ async function readHookLaunch(hook: Address, poolId: Hex): Promise<HookLaunch | 
 
 async function readCurrentFee(hook: Address, poolId: Hex): Promise<number | null> {
   try {
+    /* `currentFee(bytes32)` is identical in both generations. */
     const fee = await publicClient().readContract({
       address: hook,
       abi: LAUNCH_GUARD_HOOK_ABI,
@@ -232,72 +400,103 @@ async function readCurrentFee(hook: Address, poolId: Hex): Promise<number | null
   }
 }
 
-/**
- * The kit's own bounds, read off the deployed contract.
- *
- * These are NOT hardcoded here, and the reason is specific: `MAX_DECAY_BLOCKS`
- * and `MAX_START_DELAY` are block counts, so their wall-clock meaning depends
- * entirely on how fast the HOOK's `block.number` advances. That is not always
- * the block time the RPC shows: on Robinhood Chain (Arbitrum) the hook sees
- * Ethereum's block number, ~12 s per block, while the RPC's own blocks are
- * ~0.1 s. The live kit declares 0.1 s, so its caps and presets run 120x longer
- * in real time than the kit believes.
- */
-export interface LaunchBounds {
-  readonly maxDecayBlocks: number;
-  readonly maxStartDelay: bigint;
+interface FeeBounds {
   readonly maxInitialFeeBips: number;
   readonly maxFinalFeeBips: number;
-  /**
-   * Hundredths of a second per block, AS THE KIT WAS CONFIGURED. The kit uses it
-   * to turn seconds into blocks. Not a fact about the chain.
-   */
+}
+
+/** Bounds of a timestamp kit. Every duration is in seconds of `block.timestamp`. */
+export interface TimestampLaunchBounds extends FeeBounds {
+  readonly durationClock: "timestamp";
+  /** `MIN_DECAY_SECONDS`: the shortest enabled decay window the hook accepts. */
+  readonly minDecaySeconds: number;
+  /** `MAX_DECAY_SECONDS`. */
+  readonly maxDecaySeconds: number;
+  /** `MAX_START_DELAY_SECONDS`. */
+  readonly maxStartDelaySeconds: bigint;
+}
+
+/**
+ * Bounds of a block-numbered kit. `MAX_DECAY_BLOCKS` and `MAX_START_DELAY` are
+ * block counts, so their wall-clock meaning depends on how fast the HOOK's
+ * `block.number` advances — on Robinhood Chain (Arbitrum) that is Ethereum's
+ * block number, ~12 s per block, while the RPC's own blocks are ~0.1 s.
+ */
+export interface BlockLaunchBounds extends FeeBounds {
+  readonly durationClock: "contract-block";
+  readonly maxDecayBlocks: number;
+  /** In hook blocks. */
+  readonly maxStartDelay: bigint;
+  /** Hundredths of a second per block AS THE KIT WAS CONFIGURED. Not a fact about the chain. */
   readonly blockTimeCentis: number;
-  /**
-   * Hundredths of a second per block as the hook REALLY experiences it, from the
-   * SDK address book (`contractBlockTimeCentis`). Every real-time figure uses this.
-   */
+  /** Hundredths of a second per block as the hook REALLY experiences it (SDK address book). */
   readonly contractBlockTimeCentis: number;
 }
 
+export type LaunchBounds = TimestampLaunchBounds | BlockLaunchBounds;
+
+/** The kit's own bounds, read off the deployed contracts — never hardcoded here. */
 export async function readLaunchBounds(): Promise<LaunchBounds> {
   const cfg = resolveConfig();
   if (cfg.launchpadKit === null) throw new LaunchpadNotConfiguredError();
+  const kit = cfg.launchpadKit;
   const client = publicClient();
 
-  const hook = await client.readContract({
-    address: cfg.launchpadKit,
-    abi: LAUNCHPAD_KIT_ABI,
-    functionName: "hook",
-  });
+  const [durationClock, hook] = await Promise.all([
+    resolveKitClock(kit),
+    client.readContract({ address: kit, abi: LAUNCHPAD_KIT_ABI, functionName: "hook" }),
+  ]);
+  const [maxInitialFee, maxFinalFee] = await Promise.all([
+    client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_ABI, functionName: "MAX_INITIAL_FEE" }),
+    client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_ABI, functionName: "MAX_FINAL_FEE" }),
+  ]);
+  const fees = { maxInitialFeeBips: Number(maxInitialFee), maxFinalFeeBips: Number(maxFinalFee) };
 
-  const [maxDecayBlocks, maxStartDelay, maxInitialFee, maxFinalFee, blockTimeCentis] =
-    await Promise.all([
-      client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_ABI, functionName: "MAX_DECAY_BLOCKS" }),
-      client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_ABI, functionName: "MAX_START_DELAY" }),
-      client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_ABI, functionName: "MAX_INITIAL_FEE" }),
-      client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_ABI, functionName: "MAX_FINAL_FEE" }),
-      client.readContract({
-        address: cfg.launchpadKit,
-        abi: LAUNCHPAD_KIT_ABI,
-        functionName: "blockTimeCentis",
-      }),
+  if (durationClock === "timestamp") {
+    const [minDecay, maxDecay, maxStartDelay] = await Promise.all([
+      client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_ABI, functionName: "MIN_DECAY_SECONDS" }),
+      client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_ABI, functionName: "MAX_DECAY_SECONDS" }),
+      client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_ABI, functionName: "MAX_START_DELAY_SECONDS" }),
     ]);
+    return {
+      durationClock,
+      ...fees,
+      minDecaySeconds: Number(minDecay),
+      maxDecaySeconds: Number(maxDecay),
+      maxStartDelaySeconds: BigInt(maxStartDelay),
+    };
+  }
 
+  const [maxDecayBlocks, maxStartDelay, blockTimeCentis] = await Promise.all([
+    client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_BLOCK_ABI, functionName: "MAX_DECAY_BLOCKS" }),
+    client.readContract({ address: hook, abi: LAUNCH_GUARD_HOOK_BLOCK_ABI, functionName: "MAX_START_DELAY" }),
+    client.readContract({ address: kit, abi: LAUNCHPAD_KIT_BLOCK_ABI, functionName: "blockTimeCentis" }),
+  ]);
   return {
+    durationClock,
+    ...fees,
     maxDecayBlocks: Number(maxDecayBlocks),
     maxStartDelay: BigInt(maxStartDelay),
-    maxInitialFeeBips: Number(maxInitialFee),
-    maxFinalFeeBips: Number(maxFinalFee),
     blockTimeCentis: Number(blockTimeCentis),
     contractBlockTimeCentis: cfg.core.contractBlockTimeCentis,
   };
 }
 
 /**
- * Blocks converted to a rough duration. Pass `contractBlockTimeCentis` for real
- * time; pass the kit's `blockTimeCentis` only to show what the kit believes.
+ * A schedule value converted to real seconds. On a timestamp kit the value is
+ * already seconds. On a block kit pass `contractBlockTimeCentis` for real time;
+ * pass the kit's `blockTimeCentis` only to show what the kit believes.
  */
+export function windowToSeconds(
+  value: number | bigint,
+  bounds: LaunchBounds,
+  centis: number = bounds.durationClock === "contract-block" ? bounds.contractBlockTimeCentis : 100,
+): number {
+  if (bounds.durationClock === "timestamp") return Number(value);
+  return blocksToSeconds(value, centis);
+}
+
+/** Blocks converted to a rough duration at `blockTimeCentis` hundredths of a second each. */
 export function blocksToSeconds(blocks: number | bigint, blockTimeCentis: number): number {
   return (Number(blocks) * blockTimeCentis) / 100;
 }

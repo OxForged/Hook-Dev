@@ -9,6 +9,11 @@
    refused, forever, to apply any proposal on 4663. Measured and proven against
    mined state on 2026-09-13; see `packages/sdk/src/chains/clock.ts`.
 
+   The block-numbered hooks are the ones DEPLOYED. The timestamp builds (Option
+   B) store unix seconds instead and are compared against `block.timestamp`;
+   `pendingPhase` below picks the clock from the resolved shape, never from how
+   big the number looks.
+
    WHY A COPY AND NOT AN IMPORT. The keeper image builds from this package
    directory alone (see Dockerfile) and does not depend on `@latchprotocol/sdk`.
    This file mirrors `readContractClock` from `packages/sdk/src/chains/clock.ts`
@@ -125,23 +130,34 @@ export async function readContractClock(client: ContractClockClient, chainId: nu
 
 export type PendingPhase = 'none' | 'not-due' | 'applicable' | 'expired'
 
+/** "Now" on both clocks a RevShareHook may store. */
+export interface ClockNow {
+  /** `block.timestamp` of the latest block. For `timestamp` proposals. */
+  readonly timestamp: bigint
+  /** `block.number` as a contract sees it, from `readContractClock`. For `contract-block` proposals. */
+  readonly contractBlockNumber: bigint
+}
+
 /**
- * Mirrors `RevShareHook.applyPendingConfig`'s own guards:
- *   effectiveBlock == 0                       NoPendingConfig
- *   block.number <  effectiveBlock            PendingConfigNotDue
- *   block.number >  expiryBlock               PendingConfigExpired   (current shape only)
+ * Mirrors `RevShareHook.applyPendingConfig`'s own guards, on the clock the
+ * proposal was STORED on:
+ *   effective == 0             NoPendingConfig
+ *   now <  effective           PendingConfigNotDue
+ *   now >  expiry              PendingConfigExpired   (window is inclusive; no expiry on block-no-expiry)
  *
- * `contractBlockNumber` MUST come from `readContractClock`. Passing the L2
- * number is the bug this file exists to prevent, and the test pins it.
+ * `durationClock` comes from the resolved shape, never from the number's size.
+ * For a `contract-block` proposal `now.contractBlockNumber` MUST come from
+ * `readContractClock`: passing the L2 number is the bug this file exists to
+ * prevent, and the test pins it. A `timestamp` proposal is never compared with
+ * a block number, and vice versa.
  */
 export function pendingPhase(
-  pending: { readonly effectiveBlock: bigint; readonly expiryBlock: bigint | null },
-  contractBlockNumber: bigint,
+  pending: { readonly durationClock: 'timestamp' | 'contract-block'; readonly effective: bigint; readonly expiry: bigint | null },
+  now: ClockNow,
 ): PendingPhase {
-  if (pending.effectiveBlock === 0n) return 'none'
-  if (contractBlockNumber < pending.effectiveBlock) return 'not-due'
-  if (pending.expiryBlock !== null && pending.expiryBlock !== 0n && contractBlockNumber > pending.expiryBlock) {
-    return 'expired'
-  }
+  if (pending.effective === 0n) return 'none'
+  const n = pending.durationClock === 'timestamp' ? now.timestamp : now.contractBlockNumber
+  if (n < pending.effective) return 'not-due'
+  if (pending.expiry !== null && n > pending.expiry) return 'expired'
   return 'applicable'
 }

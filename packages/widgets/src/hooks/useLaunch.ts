@@ -112,7 +112,7 @@ export function useLaunch(poolId: PoolId | null): AsyncResource<LaunchInfo | nul
 /** Everything a launch UI needs, derived from one read. Pure. */
 export interface LaunchView {
   readonly launch: LaunchInfo;
-  /** The schedule as of the block the launch was read at. */
+  /** The schedule as of the point (on the hook's clock) the launch was read at. */
   readonly schedule: LaunchSchedule;
   /**
    * Where the fee the hook is charging sits between `initialFeePips` and
@@ -124,7 +124,7 @@ export interface LaunchView {
    * `currentFeePips` (read from the hook) minus the locally projected fee for
    * the same block.
    *
-   * Expected to be exactly `0`: {@link ../callpath/launch.js | launchFeeAtBlock}
+   * Expected to be exactly `0`: {@link ../callpath/launch.js | launchFeeAt}
    * reproduces `LaunchGuardHook.feeAt` including its rounding. Anything else
    * means the two disagree, and a UI should show the chain's number and say the
    * projection is off rather than quietly preferring one.
@@ -134,7 +134,7 @@ export interface LaunchView {
 
 /** Derives the presentational view of a launch. Pure. */
 export function buildLaunchView(launch: LaunchInfo): LaunchView {
-  const schedule = launchScheduleAt(launch.guard, launch.readAtBlock);
+  const schedule = launchScheduleAt(launch.guard, launch.readAt);
   const { initialFeePips, finalFeePips } = launch.guard;
   const span = initialFeePips - finalFeePips;
   const feeSpanProgressBps =
@@ -165,7 +165,7 @@ export interface UseLaunchBuyParams {
 
 /** Result of {@link useLaunchBuy}. */
 export interface UseLaunchBuyResult {
-  /** The hook's gates, evaluated against the block the launch was read at. */
+  /** The hook's gates, evaluated against the point the launch was read at. */
   readonly gate: LaunchBuyGate;
   /** Swap quote breakdown, or `null` while there is nothing to quote. */
   readonly breakdown: QuoteBreakdown | null;
@@ -201,7 +201,7 @@ export function useLaunchBuy(params: UseLaunchBuyParams): UseLaunchBuyResult {
     }
     return evaluateLaunchBuy({
       guard: launch.guard,
-      blockNumber: launch.readAtBlock,
+      now: launch.readAt,
       amountIn,
     });
   }, [launch, amountIn]);

@@ -16,7 +16,7 @@
  * It sends nothing. Every call here is `eth_call` or `eth_getCode`.
  */
 
-import { createPublicClient, erc20Abi, http, fallback, parseAbi, getAddress } from "viem";
+import { createPublicClient, decodeAbiParameters, erc20Abi, http, fallback, parseAbi, getAddress } from "viem";
 
 import { bad, dim, heading, line, loadConfig, ok } from "./lib/config.mjs";
 
@@ -38,8 +38,26 @@ const KIT_ABI = parseAbi([
   "function registry() view returns (address)",
   "function hookBitmap() view returns (uint16)",
   "function EXPECTED_HOOK_BITMAP() view returns (uint16)",
-  "function blockTimeCentis() view returns (uint32)",
 ]);
+/* Only the block-numbered (retired) kit has this getter. */
+const BLOCK_KIT_ABI = parseAbi(["function blockTimeCentis() view returns (uint32)"]);
+/* ERC-6372 `CLOCK_MODE()`. Only the timestamp-clocked kit and hook answer it. */
+const CLOCK_MODE_CALLDATA = "0x4bf5d7e9";
+
+/** "timestamp", "contract-block" (reverted), "unknown:<mode>", or null on a transport failure. */
+async function probeClock(client, address) {
+  try {
+    const { data } = await client.call({ to: address, data: CLOCK_MODE_CALLDATA });
+    if (data === undefined || data === "0x") return "contract-block";
+    const [mode] = decodeAbiParameters([{ type: "string" }], data);
+    return mode === "mode=timestamp" ? "timestamp" : `unknown:${mode}`;
+  } catch (err) {
+    for (let e = err; e; e = e.cause) {
+      if (/revert/i.test(String(e.shortMessage ?? e.message ?? ""))) return "contract-block";
+    }
+    return null;
+  }
+}
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 let failures = 0;
@@ -211,7 +229,7 @@ async function main() {
     }
   } else {
     const kit = getAddress(config.chain.launchpadKit);
-    const [hook, kitManager, expected, actual, blockTimeCentis] = await Promise.all([
+    const [hook, kitManager, expected, actual, kitClock] = await Promise.all([
       client.readContract({ address: kit, abi: KIT_ABI, functionName: "hook" }).catch(() => null),
       client
         .readContract({ address: kit, abi: KIT_ABI, functionName: "clPoolManager" })
@@ -220,9 +238,7 @@ async function main() {
         .readContract({ address: kit, abi: KIT_ABI, functionName: "EXPECTED_HOOK_BITMAP" })
         .catch(() => null),
       client.readContract({ address: kit, abi: KIT_ABI, functionName: "hookBitmap" }).catch(() => null),
-      client
-        .readContract({ address: kit, abi: KIT_ABI, functionName: "blockTimeCentis" })
-        .catch(() => null),
+      probeClock(client, kit),
     ]);
 
     if (hook === null || kitManager === null) {
@@ -243,12 +259,37 @@ async function main() {
       } else if (expected !== null) {
         pass("launchpad bitmap", `0x${Number(expected).toString(16).padStart(4, "0")}`);
       }
-      if (blockTimeCentis !== null) {
-        const seconds = Number(blockTimeCentis) / 100;
-        pass(
-          "launchpad block time",
-          `${seconds}s per block. A 1,000,000-block decay window is ` +
-            `${(1_000_000 * seconds / 86_400).toFixed(1)} days here — the contract counts blocks, not time.`,
+      const hookClock = await probeClock(client, getAddress(hook));
+      const recorded =
+        contracts.launchpadKit && getAddress(contracts.launchpadKit) === kit
+          ? contracts.durationClocks?.launchpadKit ?? null
+          : null;
+      if (kitClock === null || hookClock === null) {
+        fail("launchpad clock", "the RPC failed the CLOCK_MODE() probe; the kit's duration unit is unverified");
+      } else if (kitClock.startsWith("unknown:") || hookClock.startsWith("unknown:")) {
+        fail("launchpad clock", `unrecognised CLOCK_MODE (kit ${kitClock}, hook ${hookClock})`);
+      } else if (kitClock !== hookClock) {
+        fail("launchpad clock", `the kit counts ${kitClock} but its hook counts ${hookClock}`);
+      } else if (recorded !== null && recorded !== kitClock) {
+        fail(
+          "launchpad clock",
+          `the SDK address book records this kit as ${recorded}, but it answers as ${kitClock}. ` +
+            "Update @latchprotocol/sdk before trusting any schedule this app renders.",
+        );
+      } else if (kitClock === "timestamp") {
+        pass("launchpad clock", "block.timestamp (CLOCK_MODE mode=timestamp) — decay windows are real seconds");
+      } else {
+        const blockTimeCentis = await client
+          .readContract({ address: kit, abi: BLOCK_KIT_ABI, functionName: "blockTimeCentis" })
+          .catch(() => null);
+        warn(
+          "launchpad clock",
+          "block-numbered kit (the retired build): decay windows count the hook's block.number, " +
+            "which on an Arbitrum chain is the parent chain's ~12s block" +
+            (blockTimeCentis !== null
+              ? `, while the kit was configured with ${Number(blockTimeCentis) / 100}s per block.`
+              : ".") +
+            " Prefer a timestamp-clocked kit.",
         );
       }
     }

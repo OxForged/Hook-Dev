@@ -43,7 +43,7 @@
  * ---------------------------------------------------------------------------
  */
 
-import { createPublicClient, fallback, getAddress, http, parseAbi } from "viem";
+import { createPublicClient, decodeAbiParameters, fallback, getAddress, http, parseAbi } from "viem";
 
 import { bad, dim, heading, line, loadConfig, ok, writeChainField } from "./lib/config.mjs";
 
@@ -55,8 +55,33 @@ const KIT_ABI = parseAbi([
   "function registry() view returns (address)",
   "function hookBitmap() view returns (uint16)",
   "function EXPECTED_HOOK_BITMAP() view returns (uint16)",
-  "function blockTimeCentis() view returns (uint32)",
 ]);
+
+/* ERC-6372 `CLOCK_MODE()`. Only the timestamp-clocked kit and hook answer it;
+   the retired block-numbered build reverts. */
+const CLOCK_MODE_CALLDATA = "0x4bf5d7e9";
+
+/**
+ * "timestamp", "contract-block" (the call REVERTED), or throws on a transport
+ * failure — which is never read as a revert, because that would label a
+ * timestamp kit block-numbered whenever the RPC hiccuped.
+ */
+async function probeClock(client, address) {
+  try {
+    const { data } = await client.call({ to: address, data: CLOCK_MODE_CALLDATA });
+    if (data === undefined || data === "0x") return "contract-block";
+    const [mode] = decodeAbiParameters([{ type: "string" }], data);
+    if (mode === "mode=timestamp") return "timestamp";
+    return `unknown:${mode}`;
+  } catch (err) {
+    let e = err;
+    while (e) {
+      if (/revert/i.test(String(e.shortMessage ?? e.message ?? ""))) return "contract-block";
+      e = e.cause;
+    }
+    throw err;
+  }
+}
 
 const HOOK_ABI = parseAbi([
   "function poolManager() view returns (address)",
@@ -199,6 +224,26 @@ async function verifyKit(client, kit, contracts) {
     return [`${kit} does not answer the LaunchpadKit ABI — is it a LaunchpadKit?`];
   }
 
+  /* The clock decides the unit of every schedule this app will read and write.
+     A block-numbered kit still works here — the app reads both — but it is the
+     retired build, whose windows run on the parent chain's block number. */
+  const [kitClock, hookClock] = await Promise.all([probeClock(client, kit), probeClock(client, hook)]);
+  if (kitClock.startsWith("unknown:") || hookClock.startsWith("unknown:")) {
+    problems.push(`unrecognised CLOCK_MODE (kit ${kitClock}, hook ${hookClock})`);
+  } else if (kitClock !== hookClock) {
+    problems.push(`the kit counts ${kitClock} but its hook counts ${hookClock}; schedules would be misread`);
+  } else if (kitClock === "contract-block") {
+    line(
+      "warn",
+      "launchpad clock",
+      "block-numbered kit (no CLOCK_MODE). This is the retired build: its decay windows count the " +
+        "hook's block.number, which on an Arbitrum chain is the parent chain's block. Prefer a " +
+        "timestamp-clocked kit.",
+    );
+  } else {
+    line("ok", "launchpad clock", "block.timestamp (CLOCK_MODE mode=timestamp)");
+  }
+
   /* The single most damaging misconfiguration: a kit wired to a DIFFERENT pool
      manager. It deploys fine, it creates launches fine, and none of them ever
      appear in this app, because this app reads the other manager's logs. */
@@ -242,16 +287,27 @@ function printStateOfPlay(config, contracts) {
     process.stdout.write(dim("\n  Run `npm run latch:verify` to check it against the chain.\n"));
   } else {
     line("warn", "launchpadKit", "not configured");
+    if (contracts.launchpadKit) {
+      const clock = contracts.durationClocks?.launchpadKit ?? "unknown";
+      process.stdout.write(
+        dim(
+          `\n  The SDK address book records a Latch LaunchpadKit on this chain at\n` +
+            `  ${contracts.launchpadKit} (duration clock: ${clock}).` +
+            (clock === "contract-block"
+              ? " That is the block-numbered\n  build, whose windows count the parent chain's block number; a\n  timestamp-clocked redeploy supersedes it.\n"
+              : "\n") +
+            "  Pointing at it is `npm run latch:deploy -- --kit <address>`, which verifies it first.\n",
+        ),
+      );
+    }
     process.stdout.write(
       dim(
-        "\n  Latch has no shared LaunchpadKit deployed on any chain as of this template's\n" +
-          "  release — the mainnet deploy script has only ever been dry-run. So there are\n" +
-          "  two honest options today:\n\n" +
+        "\n  Your options:\n\n" +
           "    1. Ship without the launchpad. Set features.launchpad to false and the\n" +
           "       launch screens disappear rather than sitting there broken.\n" +
           "    2. Deploy your own instance. `npm run latch:deploy -- --own-kit`\n" +
           "       prints exactly how, then feed the address back with `--kit 0x…`.\n\n" +
-          "  When Latch ships a shared instance, pointing at it is one `--kit` away and\n" +
+          "  Pointing at a shared instance, where one exists, is one `--kit` away and\n" +
           "  costs you nothing.\n",
       ),
     );
@@ -292,24 +348,32 @@ function printOwnKitInstructions(core, config) {
       "       cd <that repo>/packages/launchpad\n" +
       "       forge build\n" +
       "\n" +
-      "  2. Deploy the hook. It is `LaunchGuardHook(ICLPoolManager)` — one argument,\n" +
-      "     and it must be the SHARED manager below or your launches will not appear\n" +
-      "     in any app reading Latch's core:\n" +
+      "  2. Deploy the hook. It is `LaunchGuardHook(ICLPoolManager, ILaunchTokenOrigin)`.\n" +
+      "     The pool manager must be the SHARED one below or your launches will not\n" +
+      "     appear in any app reading Latch's core. The second argument is the\n" +
+      "     LaunchTokenFactory whose tokens get front-run-proof launch pools; deploy\n" +
+      "     one first, or pass the zero address to opt out of that reservation for\n" +
+      "     the life of the hook. The script lists the hook in the registry in the\n" +
+      "     same session and hands the listing to your steward:\n" +
       "\n" +
       `       export CL_POOL_MANAGER=${core.clPoolManager}\n` +
-      "       export PRIVATE_KEY=...           # never commit this, never echo it\n" +
+      "       export LAUNCH_TOKEN_FACTORY=0x...   # your LaunchTokenFactory, or 0x0 to opt out\n" +
+      `       export LAUNCH_GUARD_REGISTRY=${config.chain.registry ?? "0x..."}\n` +
+      "       export LAUNCH_GUARD_STEWARD=0x...   # the key that should own the listing metadata\n" +
+      "       export PRIVATE_KEY=...              # never commit this, never echo it\n" +
       "       forge script script/DeployLaunchGuardHookMainnet.s.sol \\\n" +
       "         --rpc-url $RPC_URL --broadcast --verify\n" +
       "\n" +
       "  3. Deploy the kit. Its constructor is\n" +
       "     `(ICLPoolManager, LaunchGuardHook, ICLPositionManager, IAllowanceTransfer,\n" +
-      "       IHookRegistryListing, uint32 blockTimeCentis)`:\n" +
+      "       IHookRegistryListing)`. There is no block-time argument: every duration\n" +
+      "     is seconds of block.timestamp, and the script refuses a hook that is not\n" +
+      "     timestamp-clocked:\n" +
       "\n" +
       `       export LAUNCH_GUARD_HOOK=0x...   # from step 2\n` +
       `       export CL_POSITION_MANAGER=${core.clPositionManager}\n` +
       `       export PERMIT2=${core.permit2}\n` +
       `       export LAUNCHPAD_REGISTRY=${config.chain.registry ?? "0x0000000000000000000000000000000000000000"}\n` +
-      `       export LAUNCHPAD_BLOCK_TIME_CENTIS=${blockTimeHint(core.chainId)}\n` +
       "       forge script script/DeployLaunchpadKitMainnet.s.sol \\\n" +
       "         --rpc-url $RPC_URL --broadcast --verify\n" +
       "\n" +
@@ -334,17 +398,6 @@ function printOwnKitInstructions(core, config) {
   );
 
   process.stdout.write(dim("Nothing was run and no transaction was sent.\n"));
-}
-
-/**
- * A block-time starting point, stated as a hint rather than a value to trust.
- *
- * Deliberately not presented as authoritative: block times drift, and this
- * number is welded into the kit forever. The instructions say to measure it.
- */
-function blockTimeHint(chainId) {
-  if (chainId === 11155111) return "1200 # ~12s, Ethereum Sepolia — MEASURE IT";
-  return "10 # ~0.1s on Robinhood Chain — MEASURE IT, this is welded in forever";
 }
 
 main().catch((err) => {

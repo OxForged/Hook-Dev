@@ -52,6 +52,14 @@ export interface ContractAddresses {
    * not a fallback.
    */
   readonly launchGuardHook?: Address;
+  /**
+   * How `launchGuardHook` measures time: `"timestamp"` for the current build,
+   * `"contract-block"` for the block-numbered one still deployed on Robinhood.
+   * Take it from `LatchDeployment.durationClocks.launchGuardHook` in the SDK.
+   * When omitted, the live adapter uses the SDK record if the address matches it,
+   * and otherwise asks the hook (`CLOCK_MODE()`), never guessing.
+   */
+  readonly launchGuardHookClock?: "timestamp" | "contract-block";
 }
 
 /** Everything the widgets need to know about the chain they are pointed at. */

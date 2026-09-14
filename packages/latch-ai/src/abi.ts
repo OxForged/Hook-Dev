@@ -69,11 +69,12 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   "function settleBeneficiaries((address,address,address,address,uint24,bytes32) key, address currency)",
   "function applyPendingConfig((address,address,address,address,uint24,bytes32) key)",
   "function pendingBeneficiary(bytes32 poolId, address currency) view returns (uint256)",
-  // `getPendingConfig` is deliberately NOT typed here. It has two shapes in the
-  // wild - 7 words on the hooks deployed before proposal expiry existed
-  // (Robinhood 0x23CE..E446, Sepolia 0x1C86..BE28), 8 words on the current
-  // source - and a typed ABI is right on exactly one of them. It is called raw
-  // through `GET_PENDING_CONFIG_ABI` and decoded by `decodePendingConfig`.
+  // `getPendingConfig` is deliberately NOT typed here. It has THREE shapes: 7 words
+  // block-numbered with no expiry (Robinhood 0x23CE..E446, Sepolia 0x1C86..BE28),
+  // 8 words block-numbered with expiry (Robinhood 0xfC00..2aD2) and 8 words in unix
+  // seconds (the timestamp build). The two 8-word shapes have identical layouts, so
+  // the shape comes from the SDK address book or a CLOCK_MODE() probe and the bytes
+  // are decoded with the SDK's `decodeRevSharePendingConfig`. See tools/maintenance.ts.
   "function distributorOf(bytes32 poolId) view returns (address)",
 ]);
 
@@ -86,59 +87,6 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
 export const GET_PENDING_CONFIG_ABI = parseAbi([
   "function getPendingConfig(bytes32 poolId) view returns (bytes)",
 ]);
-
-/** Which `PendingConfig` struct layout a hook returned. */
-export type PendingConfigShape = "legacy" | "current";
-
-export interface DecodedPendingConfig {
-  readonly shape: PendingConfigShape;
-  /** `0` means no proposal outstanding. */
-  readonly effectiveBlock: bigint;
-  /**
-   * `null` on the legacy shape, which has NO expiry: a matured proposal there
-   * stays armed, applicable by anyone, forever. Never substitute a number.
-   */
-  readonly expiryBlock: bigint | null;
-}
-
-const WORD_BYTES = 32;
-/** (uint48 effectiveBlock, ConfigParams{uint24,uint16,uint16,uint16,address,bool}). */
-const LEGACY_PENDING_WORDS = 7;
-/** (uint48 effectiveBlock, uint48 expiryBlock, ConfigParams{...}). */
-const CURRENT_PENDING_WORDS = 8;
-
-/**
- * Decode `getPendingConfig` by the LENGTH of what came back, not by an ABI
- * chosen in advance. Byte-for-byte the rule `decodePendingConfig` in
- * `@latchprotocol/keeper` applies.
- *
- * The 7-word legacy return through the 8-field ABI throws in viem, so a typed
- * read can never apply (or even see) a matured proposal on the old hooks. The
- * 8-word return through the 7-field ABI decodes WITHOUT error and puts
- * `expiryBlock` into `feePips`. Switching on length is right on both, and any
- * other length is refused rather than guessed at.
- */
-export function decodePendingConfig(data: Hex): DecodedPendingConfig {
-  if (!/^0x([0-9a-fA-F]{2})*$/.test(data)) {
-    throw new Error("getPendingConfig returned data that is not whole bytes of hex");
-  }
-  const bytes = (data.length - 2) / 2;
-  if (bytes % WORD_BYTES !== 0) {
-    throw new Error(`getPendingConfig returned ${bytes} bytes, which is not a whole number of words`);
-  }
-  const words = bytes / WORD_BYTES;
-  const word = (i: number): bigint =>
-    BigInt(`0x${data.slice(2 + i * WORD_BYTES * 2, 2 + (i + 1) * WORD_BYTES * 2)}`);
-  if (words === LEGACY_PENDING_WORDS) {
-    return { shape: "legacy", effectiveBlock: word(0), expiryBlock: null };
-  }
-  if (words === CURRENT_PENDING_WORDS) {
-    return { shape: "current", effectiveBlock: word(0), expiryBlock: word(1) };
-  }
-  throw new Error(
-    `getPendingConfig returned ${words} words; only the 7-word (legacy) and 8-word (current) shapes are known. Refusing to guess at a struct layout that has not been seen.`,
-  );
-}
 
 /**
  * The epoch distributors. `SnapshotEpochDistributor` and `MerkleEpochDistributor`

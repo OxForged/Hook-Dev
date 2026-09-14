@@ -38,6 +38,12 @@ export interface ResolvedConfig {
   readonly contracts: CoreDeployment;
   readonly registry: Address | null;
   readonly launchpadKit: Address | null;
+  /**
+   * The `LaunchGuardHook` the launch widget reads. Its duration clock (timestamp
+   * or the retired block-numbered build) is resolved by the widget from the SDK
+   * address book, else by a `CLOCK_MODE()` probe — never assumed.
+   */
+  readonly launchGuardHook: Address | null;
   readonly rpcUrls: readonly string[];
   readonly fee: {
     readonly wallet: Address;
@@ -192,6 +198,7 @@ export function resolveConfig(input: LatchDexConfig = config): ResolvedConfig {
 
   const registry = checkAddress(input.chain.registry, "chain.registry", problems);
   const launchpadKit = checkAddress(input.chain.launchpadKit, "chain.launchpadKit", problems);
+  const launchGuardHook = checkAddress(input.chain.launchGuardHook, "chain.launchGuardHook", problems);
 
   if (input.features.launchpad && launchpadKit === null) {
     problems.push({
@@ -226,6 +233,7 @@ export function resolveConfig(input: LatchDexConfig = config): ResolvedConfig {
     nativeCurrency: NATIVE_CURRENCY[chainId],
     registry,
     launchpadKit,
+    launchGuardHook,
     rpcUrls: input.chain.rpcUrls ?? [],
     fee: resolveFee(input.fee, problems),
     tokens: resolveTokens(input.tokens, problems),

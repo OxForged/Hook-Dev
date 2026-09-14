@@ -114,6 +114,55 @@ export interface TokenInfo {
   readonly isTestToken: boolean;
 }
 
+/* ============================================================================
+   DURATION CLOCKS — how a deployed Latch contract measures time.
+
+   DECIDED 2026-09-13 (Option B): every duration in Latch contracts moves to
+   `block.timestamp`. The contracts already on chain were built earlier and
+   measure in `block.number`, which on Arbitrum Nitro (Robinhood, 4663) is the
+   PARENT chain's block, not the L2 block the RPC reports. Both kinds are live at
+   once, and the old ones do not go away when the address book moves on: a pool
+   is bound to its hook's address forever.
+
+   So the clock is recorded HERE, per contract, and no consumer infers it:
+
+     "timestamp"       stored times are unix seconds; compare with
+                       `block.timestamp` (the latest block's `timestamp`).
+     "contract-block"  stored times are the EVM's `block.number`; compare with
+                       `readContractBlockNumber` from `chains/clock`, NEVER with
+                       `eth_blockNumber`.
+
+   There is no decode-time test that tells the two apart. `RevShareHook`'s
+   8-word `getPendingConfig` has the same layout in both the block-numbered
+   `0xfC00…` and the timestamp source, and `LaunchGuardHook`'s `Launch` struct
+   lines up word for word. The wrong reading returns a 1970 date or a far-future
+   block, not an error. Look the address up; never guess.
+   ============================================================================ */
+
+/** How a contract measures and stores durations. See the block above. */
+export type DurationClock = "timestamp" | "contract-block";
+
+/**
+ * The on-chain layout of `RevShareHook.getPendingConfig(poolId)`.
+ *
+ * - `block-no-expiry` — 7 words, `(uint48 effectiveBlock, ConfigParams)`. No
+ *   expiry at all: a matured proposal stays armed until cancelled or frozen.
+ * - `block-with-expiry` — 8 words, `(uint48 effectiveBlock, uint48 expiryBlock, ConfigParams)`.
+ * - `timestamp-with-expiry` — 8 words, `(uint40 effectiveAt, uint40 expiresAt, ConfigParams)`.
+ */
+export type RevSharePendingShape = "block-no-expiry" | "block-with-expiry" | "timestamp-with-expiry";
+
+/** One `RevShareHook` this address book knows, current or retired, with its shape. */
+export interface RevShareHookRecord {
+  readonly address: Address;
+  readonly durationClock: DurationClock;
+  readonly pendingShape: RevSharePendingShape;
+  /** `current` is the one `LatchDeployment.revShareHook` names. Exactly one per chain. */
+  readonly status: "current" | "retired";
+  /** Why it is here. Pools bound to a retired hook still exist and still trade. */
+  readonly note: string;
+}
+
 export interface NativeCurrency {
   readonly name: string;
   readonly symbol: string;
@@ -332,6 +381,26 @@ export interface LatchDeployment {
   readonly launchpadKit: Address | null;
   readonly launchGuardHook: Address | null;
 
+  /* -- duration clocks ----------------------------------------------------- */
+
+  /**
+   * How each redeployable time-bounded contract in THIS record measures time.
+   * `null` exactly where the contract itself is `null`. Consumers branch on this
+   * — the landing preset curve, the dapp proposal banner, the keeper — and it
+   * moves in the same edit as the address it describes.
+   */
+  readonly durationClocks: {
+    readonly revShareHook: DurationClock;
+    readonly launchpadKit: DurationClock | null;
+    readonly launchGuardHook: DurationClock | null;
+  };
+  /**
+   * Every `RevShareHook` a surface may meet on this chain: the current one and
+   * each retired one that still hosts pools. Look a hook up with
+   * `revShareHookRecord`; an address not listed here has an UNKNOWN shape.
+   */
+  readonly revShareHooks: readonly RevShareHookRecord[];
+
   /* -- tokens and reference pool ------------------------------------------ */
 
   /**
@@ -427,6 +496,37 @@ timelockCustody: "0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
     launchRegistry: "0x6D10B4CeDb53aD50c5A1D83f27fcE9c5C3b15c94",
     launchpadKit: "0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7",
     launchGuardHook: "0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c",
+
+    /* All three live launch/revenue contracts are the BLOCK-NUMBERED builds, and
+       all three were sized for the wrong clock (CLAUDE.md 3b): the kit and hook
+       declare 10 centis where the contract clock is 1200, so windows run ~120x
+       long. Their timestamp replacements are built and tested but NOT deployed.
+       When they are, change the address AND the clock below in the same edit. */
+    durationClocks: {
+      revShareHook: "contract-block",
+      launchpadKit: "contract-block",
+      launchGuardHook: "contract-block",
+    },
+    revShareHooks: [
+      {
+        address: "0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2",
+        durationClock: "contract-block",
+        pendingShape: "block-with-expiry",
+        status: "current",
+        note:
+          "432,000-block delay declared at 0.1 s; on the real ~12 s contract clock that is ~60 days, " +
+          "and its proposal TTL ~360 days. No pools.",
+      },
+      {
+        address: "0x23CE34E8199927DD270dddd8579c947542bDE446",
+        durationClock: "contract-block",
+        pendingShape: "block-no-expiry",
+        status: "retired",
+        note:
+          "Hosts the LTT1/LTT2 pool for as long as it exists. 3,600-block (~12 h) delay and NO expiry: " +
+          "a matured proposal stays armed until cancelled or frozen.",
+      },
+    ],
 
     tokens: [
       {
@@ -552,6 +652,21 @@ timelockCustody: "0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
     launchRegistry: null,
     launchpadKit: null,
     launchGuardHook: null,
+
+    durationClocks: {
+      revShareHook: "contract-block",
+      launchpadKit: null,
+      launchGuardHook: null,
+    },
+    revShareHooks: [
+      {
+        address: "0x1C86dc775FF3FDADCCF87F132de7a4eb60B6bE28",
+        durationClock: "contract-block",
+        pendingShape: "block-no-expiry",
+        status: "current",
+        note: "Predates proposal expiry. An L1, so the contract block clock is the RPC one (12 s).",
+      },
+    ],
 
     tokens: [
       {
@@ -723,6 +838,36 @@ export function tokenByAddress(
 ): TokenInfo | undefined {
   const wanted = address.toLowerCase();
   return LATCH_DEPLOYMENTS[chainId].tokens.find((t) => t.address.toLowerCase() === wanted);
+}
+
+/**
+ * The record for a `RevShareHook` at `address` on `chainId`, current or retired,
+ * or `undefined` when the address book does not know it.
+ *
+ * `undefined` is a real answer. A tenant's own hook, or a hook deployed after
+ * this build of the SDK, has an unknown shape: render "unrecognised hook"
+ * rather than decoding it through a layout that might be wrong.
+ */
+export function revShareHookRecord(chainId: number, address: string): RevShareHookRecord | undefined {
+  const d = getDeployment(chainId);
+  if (d === undefined) return undefined;
+  const wanted = address.toLowerCase();
+  return d.revShareHooks.find((h) => h.address.toLowerCase() === wanted);
+}
+
+/**
+ * The duration clock of one of a deployment's time-bounded contracts, or a
+ * thrown error when that contract is not deployed on this chain.
+ */
+export function requireDurationClock(
+  deployment: LatchDeployment,
+  key: keyof LatchDeployment["durationClocks"],
+): DurationClock {
+  const clock = deployment.durationClocks[key];
+  if (clock === null) {
+    throw new Error(`${key} is not deployed on ${deployment.name} (${deployment.chainId}), so it has no clock.`);
+  }
+  return clock;
 }
 
 export function explorerTxUrl(chainId: LatchChainId, hash: string): string {

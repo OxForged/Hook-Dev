@@ -29,7 +29,7 @@ import {
   evaluateLaunchBuy,
   hopIsLaunchBuy,
   isLaunchConfigured,
-  launchFeeAtBlock,
+  launchFeeAt,
   launchScheduleAt,
   type LaunchGuard,
 } from "../src/callpath/launch.js";
@@ -383,9 +383,10 @@ describe("buildUniformBinDistribution", () => {
 describe("launch schedule", () => {
   function guard(overrides: Partial<LaunchGuard> = {}): LaunchGuard {
     return {
+      durationClock: "contract-block",
       owner: OWNER,
-      startBlock: 1_000n,
-      decayBlocks: 100,
+      start: 1_000n,
+      window: 100,
       enabled: true,
       initialFeePips: 250_000,
       finalFeePips: 3_000,
@@ -396,58 +397,90 @@ describe("launch schedule", () => {
     };
   }
 
-  it("decodes the struct as the ABI returns it, widening startBlock", () => {
-    const decoded = decodeLaunchGuard({
-      owner: OWNER,
-      startBlock: 1_000,
-      decayBlocks: 100,
-      enabled: true,
-      initialFeeBips: 250_000,
-      finalFeeBips: 3_000,
-      maxBuyPerTx: 5n,
-      launchTokenIsCurrency0: false,
-      launched: true,
-    });
-    expect(decoded.startBlock).toBe(1_000n);
+  it("decodes the block-numbered struct as that ABI returns it, widening startBlock", () => {
+    const decoded = decodeLaunchGuard(
+      {
+        owner: OWNER,
+        startBlock: 1_000,
+        decayBlocks: 100,
+        enabled: true,
+        initialFeeBips: 250_000,
+        finalFeeBips: 3_000,
+        maxBuyPerTx: 5n,
+        launchTokenIsCurrency0: false,
+        launched: true,
+      },
+      "contract-block",
+    );
+    expect(decoded.start).toBe(1_000n);
+    expect(decoded.durationClock).toBe("contract-block");
     // Named for the unit the contract's FEE_DENOMINATOR actually implies.
     expect(decoded.initialFeePips).toBe(250_000);
     expect(decoded.finalFeePips).toBe(3_000);
   });
 
+  it("decodes the timestamp struct, and refuses a record decoded with the other generation's ABI", () => {
+    const raw = {
+      owner: OWNER,
+      startTime: 1_789_346_507,
+      decaySeconds: 300,
+      enabled: true,
+      initialFeeBips: 100_000,
+      finalFeeBips: 3_000,
+      maxBuyPerTx: 0n,
+      launchTokenIsCurrency0: true,
+      launched: false,
+    };
+    const decoded = decodeLaunchGuard(raw, "timestamp");
+    expect(decoded.durationClock).toBe("timestamp");
+    expect(decoded.start).toBe(1_789_346_507n);
+    expect(decoded.window).toBe(300);
+    expect(() => decodeLaunchGuard(raw, "contract-block")).toThrow(/other hook generation/);
+  });
+
+  it("schedules a timestamp launch in seconds: FairLaunch is five minutes", () => {
+    const g = guard({ durationClock: "timestamp", start: 1_789_346_507n, window: 300, initialFeePips: 100_000 });
+    expect(launchScheduleAt(g, 1_789_346_507n - 1n).untilOpen).toBe(1n);
+    expect(launchScheduleAt(g, 1_789_346_507n + 299n).phase).toBe("decaying");
+    const done = launchScheduleAt(g, 1_789_346_507n + 300n);
+    expect(done.phase).toBe("settled");
+    expect(done.durationClock).toBe("timestamp");
+  });
+
   it("treats the zero owner as an unclaimed pool, not a launch at zero fee", () => {
     const unclaimed = guard({ owner: ZERO });
     expect(isLaunchConfigured(unclaimed)).toBe(false);
-    expect(launchFeeAtBlock(unclaimed, 1_050n)).toBeNull();
+    expect(launchFeeAt(unclaimed, 1_050n)).toBeNull();
     expect(launchScheduleAt(unclaimed, 1_050n).phase).toBe("unclaimed");
   });
 
   it("reproduces LaunchGuardHook._decayedFee at the boundaries", () => {
     const g = guard();
     // elapsed == 0 -> exactly the initial fee.
-    expect(launchFeeAtBlock(g, 1_000n)).toBe(250_000);
+    expect(launchFeeAt(g, 1_000n)).toBe(250_000);
     // elapsed == decayBlocks -> exactly the final fee; the window is half-open.
-    expect(launchFeeAtBlock(g, 1_100n)).toBe(3_000);
-    expect(launchFeeAtBlock(g, 1_101n)).toBe(3_000);
+    expect(launchFeeAt(g, 1_100n)).toBe(3_000);
+    expect(launchFeeAt(g, 1_101n)).toBe(3_000);
     // The last taxed block is strictly above the final fee.
-    expect(launchFeeAtBlock(g, 1_099n)).toBeGreaterThan(3_000);
+    expect(launchFeeAt(g, 1_099n)).toBeGreaterThan(3_000);
   });
 
   it("rounds the fee UP, toward the LPs and away from the sniper", () => {
     // spread 10, window 3: the floored discount keeps the fee above the exact
     // linear value at every interior block.
-    const g = guard({ initialFeePips: 10, finalFeePips: 0, decayBlocks: 3 });
-    expect(launchFeeAtBlock(g, 1_000n)).toBe(10);
+    const g = guard({ initialFeePips: 10, finalFeePips: 0, window: 3 });
+    expect(launchFeeAt(g, 1_000n)).toBe(10);
     // exact linear would be 6.67 and 3.33; flooring the discount gives 7 and 4.
-    expect(launchFeeAtBlock(g, 1_001n)).toBe(7);
-    expect(launchFeeAtBlock(g, 1_002n)).toBe(4);
-    expect(launchFeeAtBlock(g, 1_003n)).toBe(0);
+    expect(launchFeeAt(g, 1_001n)).toBe(7);
+    expect(launchFeeAt(g, 1_002n)).toBe(4);
+    expect(launchFeeAt(g, 1_003n)).toBe(0);
   });
 
   it("never leaves the [finalFee, initialFee] range and never increases", () => {
     const g = guard();
     let previous = Number.POSITIVE_INFINITY;
     for (let block = 995n; block <= 1_110n; block += 1n) {
-      const fee = launchFeeAtBlock(g, block)!;
+      const fee = launchFeeAt(g, block)!;
       expect(fee).toBeLessThanOrEqual(250_000);
       expect(fee).toBeGreaterThanOrEqual(3_000);
       if (block >= 1_000n) expect(fee).toBeLessThanOrEqual(previous);
@@ -467,12 +500,12 @@ describe("launch schedule", () => {
   it("walks pending -> decaying -> settled", () => {
     const g = guard({ maxBuyPerTx: 500n });
     expect(launchScheduleAt(g, 990n).phase).toBe("pending");
-    expect(launchScheduleAt(g, 990n).blocksUntilOpen).toBe(10n);
+    expect(launchScheduleAt(g, 990n).untilOpen).toBe(10n);
     expect(launchScheduleAt(g, 990n).tradingOpen).toBe(false);
 
     const mid = launchScheduleAt(g, 1_050n);
     expect(mid.phase).toBe("decaying");
-    expect(mid.blocksRemaining).toBe(50n);
+    expect(mid.remaining).toBe(50n);
     expect(mid.decayProgressBps).toBe(5_000);
     expect(mid.maxBuyPerTxEnforced).toBe(true);
 
@@ -486,9 +519,10 @@ describe("launch schedule", () => {
 describe("launch gates", () => {
   function guard(overrides: Partial<LaunchGuard> = {}): LaunchGuard {
     return {
+      durationClock: "contract-block",
       owner: OWNER,
-      startBlock: 1_000n,
-      decayBlocks: 100,
+      start: 1_000n,
+      window: 100,
       enabled: true,
       initialFeePips: 250_000,
       finalFeePips: 3_000,
@@ -500,14 +534,14 @@ describe("launch gates", () => {
   }
 
   it("names the revert a blocked buy would produce", () => {
-    expect(evaluateLaunchBuy({ guard: guard(), blockNumber: 900n, amountIn: 1n }).revert).toBe(
+    expect(evaluateLaunchBuy({ guard: guard(), now: 900n, amountIn: 1n }).revert).toBe(
       "TradingNotOpen",
     );
     expect(
-      evaluateLaunchBuy({ guard: guard(), blockNumber: 1_050n, amountIn: 501n }).revert,
+      evaluateLaunchBuy({ guard: guard(), now: 1_050n, amountIn: 501n }).revert,
     ).toBe("BuyExceedsMaxPerTx");
     expect(
-      evaluateLaunchBuy({ guard: guard({ owner: ZERO }), blockNumber: 1_050n, amountIn: 1n })
+      evaluateLaunchBuy({ guard: guard({ owner: ZERO }), now: 1_050n, amountIn: 1n })
         .revert,
     ).toBe("LaunchNotConfigured");
   });
@@ -515,22 +549,22 @@ describe("launch gates", () => {
   it("allows a buy at exactly the cap, which is what the contract allows", () => {
     // `if (amountIn > maxBuyPerTx) revert` - strictly greater.
     expect(
-      evaluateLaunchBuy({ guard: guard(), blockNumber: 1_050n, amountIn: 500n }).reason,
+      evaluateLaunchBuy({ guard: guard(), now: 1_050n, amountIn: 500n }).reason,
     ).toBeNull();
   });
 
   it("stops enforcing the cap once the window has elapsed", () => {
     expect(
-      evaluateLaunchBuy({ guard: guard(), blockNumber: 1_100n, amountIn: 10_000n }).reason,
+      evaluateLaunchBuy({ guard: guard(), now: 1_100n, amountIn: 10_000n }).reason,
     ).toBeNull();
   });
 
   it("checks the schedule even with no amount entered", () => {
-    expect(evaluateLaunchBuy({ guard: guard(), blockNumber: 900n, amountIn: null }).reason).toBe(
+    expect(evaluateLaunchBuy({ guard: guard(), now: 900n, amountIn: null }).reason).toBe(
       "trading-not-open",
     );
     expect(
-      evaluateLaunchBuy({ guard: guard(), blockNumber: 1_050n, amountIn: null }).reason,
+      evaluateLaunchBuy({ guard: guard(), now: 1_050n, amountIn: null }).reason,
     ).toBeNull();
   });
 });
@@ -559,9 +593,10 @@ describe("launch buy call path", () => {
   };
 
   const GUARD: LaunchGuard = {
+    durationClock: "contract-block",
     owner: OWNER,
-    startBlock: 1_000n,
-    decayBlocks: 100,
+    start: 1_000n,
+    window: 100,
     enabled: true,
     initialFeePips: 250_000,
     finalFeePips: 3_000,
@@ -575,7 +610,7 @@ describe("launch buy call path", () => {
       router: ROUTER,
       hop: BUY_HOP,
       guard: GUARD,
-      blockNumber: 1_050n,
+      now: 1_050n,
       amountIn: 100n,
       minAmountOutGross: 90n,
       minAmountOutNet: 90n,
@@ -635,7 +670,7 @@ describe("launch buy call path", () => {
   });
 
   it("refuses to encode a buy the hook would revert", () => {
-    expect(() => buildLaunchBuyCall(args({ blockNumber: 900n }))).toThrowError(
+    expect(() => buildLaunchBuyCall(args({ now: 900n }))).toThrowError(
       /TradingNotOpen/,
     );
     expect(() => buildLaunchBuyCall(args({ amountIn: 501n }))).toThrowError(
@@ -733,7 +768,8 @@ describe("launch reads and the four states", () => {
     const adapter = createMockAdapter({ chain: LAUNCH_CHAIN, account: OWNER });
     const launch = (await adapter.listLaunches())[0]!;
     const view = buildLaunchView(launch);
-    expect(view.schedule.blockNumber).toBe(launch.readAtBlock);
+    expect(view.schedule.now).toBe(launch.readAt);
+    expect(view.schedule.durationClock).toBe("timestamp");
     // The chain read and the local projection of the same block must agree.
     expect(view.feeProjectionDriftPips).toBe(0);
   });

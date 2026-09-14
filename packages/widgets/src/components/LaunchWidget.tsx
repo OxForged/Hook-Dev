@@ -3,14 +3,15 @@
  * Drop-in launch widget: a launch-aware swap panel.
  *
  * A Latch launch is a pool with `LaunchGuardHook` attached and an LP fee that
- * decays from `initialFeePips` to `finalFeePips` over `decayBlocks` blocks.
+ * decays from `initialFeePips` to `finalFeePips` over the launch window (seconds
+ * on the timestamp hook, contract blocks on the block-numbered one).
  * Buying into one is an ordinary swap, so the bottom half of this component is
  * the swap path — the same router, the same plan, the same integrator fee step.
  *
  * The top half is the only part that is launch-specific, and it exists because
  * the thing a buyer needs to know before pressing Buy is *when* they are:
  *
- * - Trading may not be open. Before `startBlock` every swap reverts.
+ * - Trading may not be open. Before the start every swap reverts.
  * - The fee right now may be enormous. That is the sniper tax working as
  *   designed, and quoting it as though it were the pool's normal fee would
  *   invite people to pay 25% without noticing.
@@ -35,11 +36,25 @@ import {
   parseAmount,
   shortAddress,
 } from "../core/format.js";
+import { humanDuration } from "@latchprotocol/sdk";
 import {
-  launchFeeAtBlock,
+  launchFeeAt,
+  type DurationClock,
   type LaunchGuard,
   type LaunchSchedule,
 } from "../callpath/launch.js";
+
+/** A span on the hook's clock, in words: exact seconds, or contract blocks. */
+function clockSpan(clock: DurationClock, units: bigint | number): string {
+  return clock === "timestamp" ? humanDuration(Number(units)) : `${units.toLocaleString()} blocks`;
+}
+
+/** A point on the hook's clock: a UTC time with its raw value, or a contract block. */
+function pointOnClock(clock: DurationClock, value: bigint): string {
+  return clock === "timestamp"
+    ? `${new Date(Number(value) * 1000).toISOString().replace("T", " ").slice(0, 19)} UTC`
+    : `block ${value.toLocaleString()}`;
+}
 import {
   buildLaunchView,
   resolveLaunchDataState,
@@ -334,7 +349,7 @@ export function LaunchUnavailable(props: {
   }
 }
 
-/** Block-denominated schedule, exactly as the hook stores it. */
+/** The schedule, in the unit the hook stores it in. */
 export function LaunchSchedulePanel(props: { readonly view: LaunchView }): JSX.Element {
   const { launch, schedule, feeSpanProgressBps, feeProjectionDriftPips } = props.view;
 
@@ -352,30 +367,32 @@ export function LaunchSchedulePanel(props: { readonly view: LaunchView }): JSX.E
           value={
             schedule.initialFeePips === null || schedule.finalFeePips === null
               ? "unknown"
-              : `${formatPercentFromPips(schedule.initialFeePips)} → ${formatPercentFromPips(schedule.finalFeePips)} over ${launch.guard.decayBlocks.toLocaleString()} blocks`
+              : `${formatPercentFromPips(schedule.initialFeePips)} → ${formatPercentFromPips(schedule.finalFeePips)} over ${clockSpan(schedule.durationClock, launch.guard.window)}`
           }
         />
         <SummaryRow
-          label="Opens at block"
-          value={
-            schedule.startBlock === null ? "unknown" : schedule.startBlock.toLocaleString()
+          label="Opens at"
+          value={schedule.start === null ? "unknown" : pointOnClock(schedule.durationClock, schedule.start)}
+          title={
+            schedule.durationClock === "timestamp"
+              ? "Every swap before this block.timestamp reverts TradingNotOpen."
+              : "Every swap before this contract block reverts TradingNotOpen."
           }
-          title="Every swap before this block reverts TradingNotOpen."
         />
         <SummaryRow
-          label={schedule.blocksUntilOpen !== null ? "Blocks until open" : "Blocks left in decay"}
+          label={schedule.untilOpen !== null ? "Until open" : "Left in decay"}
           value={
-            schedule.blocksUntilOpen !== null
-              ? `${schedule.blocksUntilOpen.toLocaleString()} blocks`
-              : schedule.blocksRemaining !== null
-                ? `${schedule.blocksRemaining.toLocaleString()} blocks`
+            schedule.untilOpen !== null
+              ? clockSpan(schedule.durationClock, schedule.untilOpen)
+              : schedule.remaining !== null
+                ? clockSpan(schedule.durationClock, schedule.remaining)
                 : "none — the fee has settled"
           }
         />
         <SummaryRow
           label="Launch owner"
           value={shortAddress(launch.guard.owner)}
-          title="Claimed by first call to configureLaunch. Non-transferable, and powerless from startBlock on."
+          title="Claimed by first call to configureLaunch. Non-transferable, and powerless from the start on."
         />
       </SummaryList>
 
@@ -386,7 +403,8 @@ export function LaunchSchedulePanel(props: { readonly view: LaunchView }): JSX.E
           <div className="latch-meta">
             <span>{(feeSpanProgressBps / 100).toFixed(1)}% of the way to the final fee</span>
             <span className="latch-meta-value">
-              read at hook block {launch.readAtBlock.toLocaleString()}
+              read at {launch.guard.durationClock === "timestamp" ? "block.timestamp" : "hook block"}{" "}
+              {launch.readAt.toLocaleString()}
             </span>
           </div>
         </div>
@@ -466,7 +484,7 @@ export function MaxBuyNotice(props: {
 /**
  * The fee decay, plotted by evaluating the hook's own function.
  *
- * Each sample is {@link ../callpath/launch.js | launchFeeAtBlock}, an exact
+ * Each sample is {@link ../callpath/launch.js | launchFeeAt}, an exact
  * mirror of `LaunchGuardHook.feeAt` including its integer flooring — so this is
  * the schedule, not an impression of it. No axis implies a price and no point
  * is a prediction: every value is what the contract will charge in that block.
@@ -481,11 +499,11 @@ export function FeeDecayChart(props: {
   const samples = 48;
 
   const points = useMemo(() => {
-    if (guard.decayBlocks <= 0) return [];
+    if (guard.window <= 0) return [];
     const values: number[] = [];
     for (let i = 0; i <= samples; i += 1) {
-      const block = guard.startBlock + (BigInt(guard.decayBlocks) * BigInt(i)) / BigInt(samples);
-      values.push(launchFeeAtBlock(guard, block) ?? guard.finalFeePips);
+      const at = guard.start + (BigInt(guard.window) * BigInt(i)) / BigInt(samples);
+      values.push(launchFeeAt(guard, at) ?? guard.finalFeePips);
     }
     return values;
   }, [guard]);
@@ -510,7 +528,7 @@ export function FeeDecayChart(props: {
   const markerX = (Math.max(0, Math.min(10_000, progressBps)) / 10_000) * width;
   const caption =
     `${formatPercentFromPips(guard.initialFeePips)} at the open, ` +
-    `${formatPercentFromPips(guard.finalFeePips)} after ${guard.decayBlocks.toLocaleString()} blocks`;
+    `${formatPercentFromPips(guard.finalFeePips)} after ${clockSpan(guard.durationClock, guard.window)}`;
 
   return (
     <figure style={{ margin: 0 }}>

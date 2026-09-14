@@ -15,12 +15,12 @@
  * is a revert, which makes a simulation a free and complete pre-flight.
  */
 
-import { LAUNCHPAD_KIT_ABI } from "@latchprotocol/sdk";
+import { LAUNCHPAD_KIT_ABI, LAUNCHPAD_KIT_BLOCK_ABI, type DurationClock } from "@latchprotocol/sdk";
 import { encodeFunctionData, type Address, type Hex } from "viem";
 
 import { resolveConfig } from "../config/resolve";
 import { publicClient } from "./client";
-import { LaunchpadNotConfiguredError } from "./launches";
+import { LaunchpadNotConfiguredError, resolveKitClock } from "./launches";
 
 /** Concentrated-liquidity tick bounds. Fixed by core's price range, not policy. */
 export const MIN_TICK = -887272;
@@ -39,7 +39,18 @@ export interface LaunchDraft {
   readonly preset: number;
   readonly initialFeeBips: number;
   readonly finalFeeBips: number;
-  readonly decayBlocks: number;
+  /**
+   * The decay window, in the unit of `durationClock`: seconds of
+   * `block.timestamp` on a timestamp kit, hook blocks on a block-numbered kit.
+   */
+  readonly decayWindow: number;
+  /**
+   * The clock the wizard showed the user. `buildCreateLaunch` re-resolves the
+   * kit's clock and refuses a draft built against the other one, so a number
+   * typed as seconds can never be sent as blocks.
+   */
+  readonly durationClock: DurationClock;
+  /** Seconds in both generations; the block-numbered kit converts at its own declared block time. */
   readonly startDelaySeconds: number;
   /** Raw units. `0n` means uncapped. */
   readonly maxBuyPerTx: bigint;
@@ -157,6 +168,15 @@ export async function buildCreateLaunch(draft: LaunchDraft): Promise<CreateLaunc
   if (cfg.launchpadKit === null) throw new LaunchpadNotConfiguredError();
   const kit = cfg.launchpadKit;
 
+  const clock = await resolveKitClock(kit);
+  if (clock !== draft.durationClock) {
+    throw new Error(
+      `The launch draft's decay window is in ${draft.durationClock === "timestamp" ? "seconds" : "blocks"}, ` +
+        `but kit ${kit} counts ${clock === "timestamp" ? "seconds" : "blocks"}. Reload the wizard.`,
+    );
+  }
+
+  /* `computePoolKey` is identical in both generations. */
   const computed = await publicClient().readContract({
     address: kit,
     abi: LAUNCHPAD_KIT_ABI,
@@ -175,7 +195,7 @@ export async function buildCreateLaunch(draft: LaunchDraft): Promise<CreateLaunc
   const { tickLower, tickUpper } = fullRangeTicks(draft.tickSpacing);
   const deadline = BigInt(Math.floor(Date.now() / 1000) + draft.deadlineSeconds);
 
-  const params = {
+  const common = {
     launchToken: draft.launchToken,
     quoteToken: draft.quoteToken,
     tickSpacing: draft.tickSpacing,
@@ -183,7 +203,6 @@ export async function buildCreateLaunch(draft: LaunchDraft): Promise<CreateLaunc
     preset: draft.preset,
     initialFeeBips: draft.initialFeeBips,
     finalFeeBips: draft.finalFeeBips,
-    decayBlocks: draft.decayBlocks,
     enabled: true,
     startDelaySeconds: draft.startDelaySeconds,
     maxBuyPerTx: draft.maxBuyPerTx,
@@ -209,6 +228,21 @@ export async function buildCreateLaunch(draft: LaunchDraft): Promise<CreateLaunc
     },
   } as const;
 
+  /* Same tuple layout in both generations; only the window field's name (and
+     meaning) differs, and the ABI that names it is the one for this kit. */
+  const data =
+    clock === "timestamp"
+      ? encodeFunctionData({
+          abi: LAUNCHPAD_KIT_ABI,
+          functionName: "createLaunch",
+          args: [{ ...common, decaySeconds: draft.decayWindow }],
+        })
+      : encodeFunctionData({
+          abi: LAUNCHPAD_KIT_BLOCK_ABI,
+          functionName: "createLaunch",
+          args: [{ ...common, decayBlocks: draft.decayWindow }],
+        });
+
   /* The kit reverts unless msg.value is EXACTLY the native side of the seed. */
   const value =
     draft.launchToken === NATIVE
@@ -219,11 +253,7 @@ export async function buildCreateLaunch(draft: LaunchDraft): Promise<CreateLaunc
 
   return {
     to: kit,
-    data: encodeFunctionData({
-      abi: LAUNCHPAD_KIT_ABI,
-      functionName: "createLaunch",
-      args: [params],
-    }),
+    data,
     value,
     launchTokenIsCurrency0,
     poolId,

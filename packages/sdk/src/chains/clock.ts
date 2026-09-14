@@ -21,9 +21,10 @@
    block's `l1BlockNumber` — and `getPastVotes` at the L2 number reverts
    `ERC5805FutureLookup`.
 
-   Every Latch contract that stores a block number (`RevShareHook.effectiveBlock`
-   and `expiryBlock`, `LaunchGuardHook.startBlock`, `LatchLaunchRegistry.
-   registeredAtBlock`) therefore stores an L1-scale number on 4663. Comparing
+   Every BLOCK-NUMBERED Latch contract that stores a block number (the
+   deployed `RevShareHook`s' `effectiveBlock` / `expiryBlock`, the deployed
+   `LaunchGuardHook`'s `startBlock`, `LatchLaunchRegistry.registeredAtBlock`)
+   therefore stores an L1-scale number on 4663. Comparing
    one against `eth_blockNumber` (~62M) makes every future block (~26M) look
    long past: a queued proposal renders "armed", an unopened launch "started",
    and a live proposal "expired" — the last of which made the keeper refuse to
@@ -42,11 +43,16 @@
    `LaunchpadKit`, `LaunchGuardHook` and `RevShareHook` declare 10 (0.1 s) while
    their block.number advances every ~12 s, so each of their windows runs ~120x
    LONGER than the seconds they were derived from.
+
+   THE TIMESTAMP BUILDS (Option B, 2026-09-13) store unix seconds instead, and
+   are compared with `block.timestamp`. Which clock a contract uses is recorded
+   per address in the deployment record (`durationClocks`, `revShareHooks`);
+   `windowPhase` below takes that clock and refuses to compare across clocks.
    ============================================================================ */
 
 import type { Hex } from "viem";
 
-import { LATCH_DEPLOYMENTS, isLatchChainId } from "../deployments/index.js";
+import { LATCH_DEPLOYMENTS, isLatchChainId, type DurationClock } from "../deployments/index.js";
 
 /**
  * Which clock `block.number` follows inside the EVM on a chain.
@@ -278,4 +284,66 @@ export function blockWindowPhase(
   if (contractBlockNumber < startBlock) return "before";
   if (endBlock !== null && contractBlockNumber > endBlock) return "closed";
   return "open";
+}
+
+/**
+ * "Now", on both clocks a Latch contract may use.
+ *
+ * `timestamp` is `block.timestamp` of the latest block (a reading's `timestamp`).
+ * `contractBlockNumber` is `block.number` as a contract sees it
+ * (`readContractBlockNumber`), or `null` when the caller did not read it — which
+ * is fine for timestamp contracts and an error for block-numbered ones.
+ */
+export interface DurationNow {
+  readonly timestamp: bigint;
+  readonly contractBlockNumber: bigint | null;
+}
+
+/** {@link blockWindowPhase} for a window stored in unix seconds. Same inclusive semantics. */
+export function timestampWindowPhase(
+  startSeconds: bigint,
+  endSeconds: bigint | null,
+  nowSeconds: bigint,
+): BlockWindowPhase {
+  return blockWindowPhase(startSeconds, endSeconds, nowSeconds);
+}
+
+/**
+ * Classifies `[start, end]` (inclusive, `start === 0n` meaning no window) on the
+ * clock the contract actually stores. Throws when a block-numbered window is
+ * asked about without a contract block number: substituting the timestamp, or
+ * `eth_blockNumber`, is exactly the cross-clock comparison this module exists
+ * to prevent.
+ */
+export function windowPhase(
+  clock: DurationClock,
+  start: bigint,
+  end: bigint | null,
+  now: DurationNow,
+): BlockWindowPhase {
+  if (clock === "timestamp") return timestampWindowPhase(start, end, now.timestamp);
+  if (now.contractBlockNumber === null) {
+    throw new Error(
+      "this window is on the contract block clock; pass readContractBlockNumber(...) as contractBlockNumber " +
+        "(never eth_blockNumber, never the timestamp)",
+    );
+  }
+  return blockWindowPhase(start, end, now.contractBlockNumber);
+}
+
+/**
+ * Seconds from `now` until `point` on `clock`, or `null` when it cannot be said
+ * honestly. For a block-numbered contract the answer is an ESTIMATE at the
+ * chain's real `contractBlockTimeCentis`; label it as one.
+ */
+export function secondsUntil(
+  clock: DurationClock,
+  point: bigint,
+  now: DurationNow,
+  contractClock: ContractClock | undefined,
+): number | null {
+  if (clock === "timestamp") return Number(point - now.timestamp);
+  if (now.contractBlockNumber === null || contractClock === undefined) return null;
+  const blocks = point - now.contractBlockNumber;
+  return Number((blocks * BigInt(contractClock.contractBlockTimeCentis)) / 100n);
 }

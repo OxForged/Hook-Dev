@@ -16,8 +16,11 @@ import {
   LAUNCHPAD_KIT_ABI,
   LAUNCH_GUARD_HOOK_ABI,
 } from "./generated/abi.js";
+import { LAUNCHPAD_KIT_BLOCK_ABI, LAUNCH_GUARD_HOOK_BLOCK_ABI } from "./legacy/blockAbi.js";
 
 export * from "./generated/abi.js";
+/* Frozen ABIs of the block-numbered kit and hook still deployed on Robinhood. */
+export * from "./legacy/blockAbi.js";
 
 /* The pieces `LaunchpadKit` assumes a caller has. `sqrtPriceForLaunch` is
    named in the contract's own docstring; before this it did not exist. */
@@ -30,4 +33,10 @@ export const LaunchpadAbis = {
   LaunchpadKit: LAUNCHPAD_KIT_ABI,
   LaunchGuardHook: LAUNCH_GUARD_HOOK_ABI,
   BinLaunchGuardHook: BIN_LAUNCH_GUARD_HOOK_ABI,
+} as const;
+
+/** The block-numbered generation, by the same short names. */
+export const LaunchpadBlockAbis = {
+  LaunchpadKit: LAUNCHPAD_KIT_BLOCK_ABI,
+  LaunchGuardHook: LAUNCH_GUARD_HOOK_BLOCK_ABI,
 } as const;

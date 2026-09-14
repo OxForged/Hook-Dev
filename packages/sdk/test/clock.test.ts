@@ -22,6 +22,9 @@ import {
   readContractClock,
   requireContractClock,
   secondsToContractBlocks,
+  secondsUntil,
+  timestampWindowPhase,
+  windowPhase,
   type ContractClockClient,
 } from "../src/index.js";
 
@@ -186,5 +189,32 @@ describe("blockWindowPhase across the clock mismatch", () => {
 
   it("startBlock 0 means no window", () => {
     expect(blockWindowPhase(0n, null, L1_AT_HEAD)).toBe("none");
+  });
+});
+
+describe("timestamp windows (Option B contracts)", () => {
+  const T = 1_789_346_507n;
+
+  it("timestampWindowPhase has the same inclusive semantics as the block form", () => {
+    expect(timestampWindowPhase(0n, null, T)).toBe("none");
+    expect(timestampWindowPhase(T + 1n, T + 10n, T)).toBe("before");
+    expect(timestampWindowPhase(T, T, T)).toBe("open");
+    expect(timestampWindowPhase(T - 10n, T - 1n, T)).toBe("closed");
+  });
+
+  it("windowPhase picks the clock the contract stores and refuses a missing block number", () => {
+    expect(windowPhase("timestamp", T - 1n, T + 1n, { timestamp: T, contractBlockNumber: null })).toBe("open");
+    expect(() => windowPhase("contract-block", 1n, 2n, { timestamp: T, contractBlockNumber: null })).toThrow();
+    expect(windowPhase("contract-block", L1_AT_HEAD + 1n, null, { timestamp: T, contractBlockNumber: L1_AT_HEAD })).toBe(
+      "before",
+    );
+  });
+
+  it("secondsUntil is exact for timestamps and an estimate at the real cadence for blocks", () => {
+    expect(secondsUntil("timestamp", T + 300n, { timestamp: T, contractBlockNumber: null }, undefined)).toBe(300);
+    expect(
+      secondsUntil("contract-block", L1_AT_HEAD + 25n, { timestamp: T, contractBlockNumber: L1_AT_HEAD }, getContractClock(4663)),
+    ).toBe(300);
+    expect(secondsUntil("contract-block", 5n, { timestamp: T, contractBlockNumber: null }, getContractClock(4663))).toBeNull();
   });
 });

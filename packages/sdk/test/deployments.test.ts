@@ -36,6 +36,8 @@ import {
   isLatchChainId,
   requireContract,
   requireDeployment,
+  requireDurationClock,
+  revShareHookRecord,
   tokenByAddress,
   tokenBySymbol,
   type LatchChainId,
@@ -139,6 +141,32 @@ describe("LATCH_DEPLOYMENTS", () => {
         }
       });
 
+      it("records a duration clock exactly where the contract exists", () => {
+        expect(d.durationClocks.revShareHook === null).toBe(false);
+        expect(d.durationClocks.launchpadKit === null).toBe(d.launchpadKit === null);
+        expect(d.durationClocks.launchGuardHook === null).toBe(d.launchGuardHook === null);
+        // A kit drives exactly one hook, and a timestamp kit refuses a block hook on chain.
+        expect(d.durationClocks.launchpadKit).toBe(d.durationClocks.launchGuardHook);
+      });
+
+      it("lists the current RevShareHook exactly once, with the clock the record claims", () => {
+        const current = d.revShareHooks.filter((h) => h.status === "current");
+        expect(current).toHaveLength(1);
+        expect(current[0]?.address.toLowerCase()).toBe(d.revShareHook.toLowerCase());
+        expect(current[0]?.durationClock).toBe(d.durationClocks.revShareHook);
+      });
+
+      it("gives every RevShareHook shape the clock that shape stores", () => {
+        for (const h of d.revShareHooks) {
+          expect(h.address).toMatch(ADDRESS_RE);
+          const expected = h.pendingShape === "timestamp-with-expiry" ? "timestamp" : "contract-block";
+          expect(h.durationClock, `${h.address} shape/clock disagree`).toBe(expected);
+          expect(revShareHookRecord(chainId, h.address.toUpperCase().replace("0X", "0x"))).toEqual(h);
+        }
+        const unique = new Set(d.revShareHooks.map((h) => h.address.toLowerCase()));
+        expect(unique.size).toBe(d.revShareHooks.length);
+      });
+
       it("scans logs from a real block, not from genesis", () => {
         expect(d.deployedAtBlock).toBeTypeOf("bigint");
         expect(d.deployedAtBlock > 0n).toBe(true);
@@ -233,6 +261,23 @@ describe("LATCH_DEPLOYMENTS", () => {
      rewritten to pin the CURRENT split rather than deleted, because "the
      launchpad exists on one chain and not the other" is exactly the state a
      consumer has to branch on. */
+  it("keeps the retired LTT1/LTT2 hook readable: 7-word, block-numbered, no expiry", () => {
+    const old = revShareHookRecord(4663, "0x23CE34E8199927DD270dddd8579c947542bDE446");
+    expect(old?.status).toBe("retired");
+    expect(old?.pendingShape).toBe("block-no-expiry");
+    expect(old?.durationClock).toBe("contract-block");
+  });
+
+  it("returns undefined for a RevShareHook the address book does not know", () => {
+    expect(revShareHookRecord(4663, "0x000000000000000000000000000000000000dEaD")).toBeUndefined();
+    expect(revShareHookRecord(5042, "0x23CE34E8199927DD270dddd8579c947542bDE446")).toBeUndefined();
+  });
+
+  it("requireDurationClock throws for a contract that is not deployed", () => {
+    expect(requireDurationClock(LATCH_DEPLOYMENTS[4663], "launchpadKit")).toBe("contract-block");
+    expect(() => requireDurationClock(LATCH_DEPLOYMENTS[11155111], "launchpadKit")).toThrow(/not deployed/);
+  });
+
   it("has the launchpad on Robinhood and not on Sepolia", () => {
     const rh = LATCH_DEPLOYMENTS[4663];
     expect(rh.launchRegistry).toMatch(/^0x[0-9a-fA-F]{40}$/);

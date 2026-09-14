@@ -93,6 +93,10 @@ export {
   BIN_LAUNCH_GUARD_HOOK_ABI,
   LAUNCHPAD_KIT_ABI,
   LAUNCH_GUARD_HOOK_ABI,
+  /* The block-numbered kit and hook still deployed on Robinhood. Choose by
+     `LatchDeployment.durationClocks`, never by trial decode. */
+  LAUNCHPAD_KIT_BLOCK_ABI,
+  LAUNCH_GUARD_HOOK_BLOCK_ABI,
 } from "./launchpad/index.js";
 /* Price, presets and parameter validation. `sqrtPriceForLaunch` is the
    function `LaunchParams.sqrtPriceX96`'s own docstring tells integrators to
@@ -116,6 +120,7 @@ export {
   describeLaunch,
   formatPips,
   humanDuration,
+  launchParamsToBlockTuple,
   launchParamsToTuple,
   parseDecimal,
   parsePreset,
@@ -132,9 +137,11 @@ export {
 export type {
   HookListingParams,
   LatchMetadataInput,
+  BlockLaunchLimits,
   LaunchIssue,
   LaunchLimits,
   LaunchParams,
+  TimestampLaunchLimits,
   LaunchPrice,
   LaunchPriceInput,
   LaunchSummary,
@@ -209,11 +216,16 @@ export {
   isLatchChainId,
   requireContract,
   requireDeployment,
+  requireDurationClock,
+  revShareHookRecord,
   tokenByAddress,
   tokenBySymbol,
 } from "./deployments/index.js";
 export type {
   ContractKey,
+  DurationClock,
+  RevShareHookRecord,
+  RevSharePendingShape,
   LatchChainId,
   LatchChainKey,
   LatchDeployment,
@@ -222,3 +234,24 @@ export type {
   ReferencePool,
   TokenInfo,
 } from "./deployments/index.js";
+
+// --- RevShareHook pending configuration: three shapes, chosen by address -----
+// `getPendingConfig` has a 7-word block shape, an 8-word block shape and an
+// 8-word TIMESTAMP shape. The last two are indistinguishable by length, so the
+// shape comes from `revShareHookRecord` (or the hook's own `CLOCK_MODE()`).
+export {
+  CLOCK_MODE_CALLDATA,
+  REVSHARE_PENDING_CONFIG_WORDS,
+  REVSHARE_SHAPE_CLOCK,
+  RevSharePendingConfigShapeError,
+  TIMESTAMP_CLOCK_MODE,
+  decodeRevSharePendingConfig,
+  encodeGetPendingConfig,
+  inferRevSharePendingShape,
+  revShareProposalStatus,
+} from "./revshare/pendingConfig.js";
+export type {
+  DecodedRevSharePendingConfig,
+  RevSharePendingParams,
+  RevShareProposalStatus,
+} from "./revshare/pendingConfig.js";

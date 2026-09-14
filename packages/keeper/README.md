@@ -7,7 +7,7 @@ The protocol has four maintenance calls that **somebody** has to make.
 | `closeEpoch()` | Revenue accrues in the distributor and no epoch ever closes. Nobody can claim anything. |
 | `rollover(epochId)` | An expired epoch's unclaimed funds sit stranded instead of returning to the next epoch. |
 | `settleBeneficiaries(key, currency)` | Fees accrue against the pool but never reach the beneficiary roster. **This is what happened on Robinhood**: ~2.39e15 wei of each of LTT1 and LTT2 sat in `pendingBeneficiary` from the first swap until this keeper was configured for chain 4663. |
-| `applyPendingConfig(key)` | A config change waits out its delay and then never takes effect. On the current hook a proposal has a WINDOW: past its `expiryBlock` it is dead and the pool owner has to propose again. On the legacy hook it has no expiry and stays armed. |
+| `applyPendingConfig(key)` | A config change waits out its delay and then never takes effect. On hooks with an expiry a proposal has a WINDOW: past it the proposal is dead and the pool owner has to propose again. On the first hook (`0x23CE…`, block-no-expiry) it has no expiry and stays armed. |
 
 All four are **permissionless** — any address may call them. That is a deliberate design property: it means the protocol cannot be stalled by an owner who proposed something and walked away. It also means this keeper needs no privileged role at all.
 
@@ -79,7 +79,7 @@ Rollover deadlines are not recomputed off chain. On the merkle distributor an ep
 
 ## Two hook shapes on chain
 
-`getPendingConfig` returns a 7-word struct on the hooks deployed before proposal expiry existed (Robinhood `0x23CE…`, Sepolia `0x1C86…`) and an 8-word struct on the current source. The job calls it raw and decodes by returned length; the 7-word shape has no `expiryBlock` and the job says so. Decoding either shape with the other's ABI is wrong — one throws on every tick, the other silently reads `feePips` as `expiryBlock`.
+`getPendingConfig` has THREE layouts: `block-no-expiry` (7 words, Robinhood `0x23CE…`, Sepolia `0x1C86…`), `block-with-expiry` (8 words, Robinhood `0xfC00…`) and `timestamp-with-expiry` (8 words, unix seconds, the Option B build). The two 8-word layouts are identical, so the job no longer decodes by length. It resolves the shape first — the target's optional `"pendingShape"` in config, else the built-in table of deployed hooks, else a `CLOCK_MODE()` probe (answers `"mode=timestamp"` only on the timestamp build; a revert means a block build; a transport error is never read as a revert) — and a target whose shape cannot be established, or whose configured shape contradicts the chain, is skipped with the reason logged. Timestamp proposals are judged against `block.timestamp`, block proposals against the contract block number.
 
 ## Design notes
 

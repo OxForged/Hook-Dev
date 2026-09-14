@@ -35,7 +35,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PRESETS_SOL = join(HERE, "..", "..", "launchpad", "src", "libraries", "LaunchPresets.sol");
 const HOOK_SOL = join(HERE, "..", "..", "hooks", "src", "launch", "LaunchGuardHook.sol");
 
-/** Robinhood Chain's deployed kit: 10 centis = 0.10s per block. */
+/** Robinhood Chain's deployed BLOCK-NUMBERED kit declares 10 centis = 0.10s per block. */
 const ROBINHOOD_CENTIS = 10;
 /** What a 12-second chain would be. Kept as the contrast case. */
 const TWELVE_SECOND_CENTIS = 1200;
@@ -74,7 +74,7 @@ describe("Preset enum", () => {
   });
 });
 
-describe("secondsToBlocks", () => {
+describe("secondsToBlocks (the block-numbered kit only)", () => {
   it("rounds UP, because a window rounded to zero is rejected by the hook", () => {
     expect(secondsToBlocks(1, TWELVE_SECOND_CENTIS)).toBe(1n);
     expect(secondsToBlocks(12, TWELVE_SECOND_CENTIS)).toBe(1n);
@@ -137,8 +137,16 @@ describe("every preset states what it does NOT protect against", () => {
       expect(p.initialFeeBips).toBeLessThanOrEqual(LAUNCH_GUARD_LIMITS.MAX_INITIAL_FEE);
       expect(p.finalFeeBips).toBeLessThanOrEqual(LAUNCH_GUARD_LIMITS.MAX_FINAL_FEE);
       expect(p.initialFeeBips).toBeGreaterThanOrEqual(p.finalFeeBips);
-      expect(p.windowSeconds).toBeGreaterThan(0);
+      expect(p.windowSeconds).toBeGreaterThanOrEqual(LAUNCH_GUARD_LIMITS.MIN_DECAY_SECONDS);
+      expect(p.windowSeconds).toBeLessThanOrEqual(LAUNCH_GUARD_LIMITS.MAX_DECAY_SECONDS);
     }
+  });
+
+  it("the owner-decided windows, in seconds", () => {
+    expect(PRESET_PARAMS.FairLaunch.windowSeconds).toBe(300);
+    expect(PRESET_PARAMS.AntiSniperAggressive.windowSeconds).toBe(1800);
+    expect(PRESET_PARAMS.Stealth.windowSeconds).toBe(120);
+    expect(PRESET_PARAMS.NoTax.windowSeconds).toBe(60);
   });
 });
 
@@ -181,9 +189,8 @@ describe.skipIf(!existsSync(PRESETS_SOL))("PRESET_PARAMS matches LaunchPresets.s
     expect(names).toEqual([...PRESET_NAMES]);
   });
 
-  it("secondsToBlocks matches the Solidity's round-up formula", () => {
-    expect(src).toContain("blocks = (centis + blockTimeCentis - 1) / blockTimeCentis;");
-    expect(src).toContain("if (blocks == 0) blocks = 1;");
+  it("the timestamp kit has no seconds-to-blocks conversion left to mirror", () => {
+    expect(src).not.toContain("secondsToBlocks");
   });
 });
 
@@ -196,11 +203,14 @@ describe.skipIf(!existsSync(HOOK_SOL))("LAUNCH_GUARD_LIMITS matches LaunchGuardH
     expect(Number(final?.replace(/_/g, ""))).toBe(LAUNCH_GUARD_LIMITS.MAX_FINAL_FEE);
   });
 
-  it("MAX_DECAY_BLOCKS is an immutable, so the SDK must NOT hardcode it", () => {
+  it("the three timestamp bounds are constants, transcribed correctly", () => {
     const src = readFileSync(HOOK_SOL, "utf8");
-    expect(src).toContain("uint32 public immutable MAX_DECAY_BLOCKS;");
-    expect(src).toContain("uint48 public immutable MAX_START_DELAY;");
-    expect(LAUNCH_GUARD_LIMITS).not.toHaveProperty("MAX_DECAY_BLOCKS");
-    expect(LAUNCH_GUARD_LIMITS).not.toHaveProperty("MAX_START_DELAY");
+    expect(src).toContain('string public constant CLOCK_MODE = "mode=timestamp";');
+    expect(src).toContain(`uint32 public constant MIN_DECAY_SECONDS = ${LAUNCH_GUARD_LIMITS.MIN_DECAY_SECONDS};`);
+    expect(src).toContain("uint32 public constant MAX_DECAY_SECONDS = 30 days;");
+    expect(src).toContain("uint40 public constant MAX_START_DELAY_SECONDS = 30 days;");
+    expect(LAUNCH_GUARD_LIMITS.MAX_DECAY_SECONDS).toBe(30 * 86_400);
+    expect(LAUNCH_GUARD_LIMITS.MAX_START_DELAY_SECONDS).toBe(30 * 86_400);
+    expect(src).not.toContain("blockTimeCentis;");
   });
 });

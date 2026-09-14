@@ -34,7 +34,7 @@ import { requireContract } from "../config/chain.js";
 import { BIN_DISTRIBUTION_SCALE } from "../callpath/constants.js";
 import {
   isLaunchConfigured,
-  launchFeeAtBlock,
+  launchFeeAt,
   type LaunchGuard,
 } from "../callpath/launch.js";
 import {
@@ -347,9 +347,9 @@ class MockProtocolAdapter implements ProtocolAdapter {
    * that produced a configuration the real hook would reject would train the UI
    * on states that cannot occur.
    *
-   * It opens 60 mock blocks after the adapter is constructed and decays over
-   * 600, so a developer sees `pending`, then `decaying`, then `settled` without
-   * touching anything.
+   * It is a TIMESTAMP-generation record: it opens 60 mock seconds after the
+   * adapter is constructed and decays over 600, so a developer sees `pending`,
+   * then `decaying`, then `settled` without touching anything.
    */
   #seedLaunchGuards(): void {
     const hook = this.chain.contracts.launchGuardHook;
@@ -361,9 +361,10 @@ class MockProtocolAdapter implements ProtocolAdapter {
         ? pool.info.token1.decimals
         : pool.info.token0.decimals;
       this.#launchGuards.set(pool.info.id, {
+        durationClock: "timestamp",
         owner: mockAddress("launch-owner"),
-        startBlock: MOCK_BASE_BLOCK + 60n,
-        decayBlocks: 600,
+        start: MOCK_BASE_BLOCK + 60n,
+        window: 600,
         enabled: true,
         // 25% at the open decaying to 0.30%: a plausible sniper tax, inside the
         // hook's MAX_INITIAL_FEE (500_000) and MAX_FINAL_FEE (100_000) caps.
@@ -750,17 +751,16 @@ class MockProtocolAdapter implements ProtocolAdapter {
   /**
    * The fake launch record.
    *
-   * The schedule advances: `#mockBlockNumber` ticks one block per second of
+   * The schedule advances: `#mockBlockNumber` ticks one unit per second of
    * wall clock from a fixed base, so the fee decay, the countdown and the phase
-   * transitions can all be watched happening. It is a simulation of a block
-   * height, not a block height, which is what `isMock` and `source: "mock"`
-   * exist to say.
+   * transitions can all be watched happening. It is a simulated clock, not a
+   * chain clock, which is what `isMock` and `source: "mock"` exist to say.
    */
   #launchFor(pool: PoolInfo, hook: Address): LaunchInfo | null {
     const guard = this.#launchGuards.get(pool.id);
     if (guard === undefined || !isLaunchConfigured(guard)) return null;
-    const readAtBlock = this.#mockBlockNumber();
-    const feePips = launchFeeAtBlock(guard, readAtBlock);
+    const readAt = this.#mockBlockNumber();
+    const feePips = launchFeeAt(guard, readAt);
     if (feePips === null) return null;
     const [launchToken, quoteToken] = guard.launchTokenIsCurrency0
       ? [pool.token0, pool.token1]
@@ -773,7 +773,7 @@ class MockProtocolAdapter implements ProtocolAdapter {
       quoteToken,
       guard,
       currentFeePips: feePips,
-      readAtBlock,
+      readAt,
       source: "mock",
     };
   }
@@ -800,7 +800,7 @@ class MockProtocolAdapter implements ProtocolAdapter {
         `mock pool ${pool.id} has a dynamic fee and no hook the mock knows how to ask`,
       );
     }
-    return launchFeeAtBlock(guard, this.#mockBlockNumber()) ?? guard.finalFeePips;
+    return launchFeeAt(guard, this.#mockBlockNumber()) ?? guard.finalFeePips;
   }
 
   async sendTransaction(request: WidgetTransactionRequest): Promise<Hex> {

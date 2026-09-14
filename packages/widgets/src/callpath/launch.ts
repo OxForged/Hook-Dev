@@ -8,7 +8,18 @@
  * allocation, no claim, no per-wallet limit. A launch is an ordinary
  * concentrated-liquidity pool with `LaunchGuardHook` named in its `PoolKey`,
  * a **dynamic** LP fee, and a fee schedule that decays from `initialFeeBips`
- * to `finalFeeBips` over `decayBlocks` blocks starting at `startBlock`.
+ * to `finalFeeBips` over a window starting at the launch's start.
+ *
+ * ## Two clocks, two hook generations
+ *
+ * The `LaunchGuardHook` built from current source measures in `block.timestamp`
+ * seconds (`startTime`, `decaySeconds`). The one still deployed on Robinhood
+ * (0x8b4F…575c) measures in the EVM's `block.number` (`startBlock`,
+ * `decayBlocks`), which on Arbitrum Nitro is Ethereum's block, not the RPC's.
+ * Their structs line up word for word, so the wrong ABI returns plausible
+ * numbers rather than an error. Every record here therefore carries its
+ * `durationClock`, and every comparison takes "now" on that same clock: the
+ * latest block's timestamp, or `readContractBlockNumber`.
  *
  * That single design decision is what shapes this file. From the hook's own
  * source (`packages/hooks/src/launch/LaunchGuardHook.sol`):
@@ -37,7 +48,7 @@
  * ```solidity
  * function getLaunch(PoolId poolId) external view returns (Launch memory);
  * function currentFee(PoolId poolId) external view returns (uint24);
- * function feeAt(PoolId poolId, uint256 blockNumber) external view returns (uint24);
+ * function feeAt(PoolId poolId, uint256 timestampOrBlock) external view returns (uint24);
  * ```
  *
  * ## A naming trap worth stating once
@@ -56,7 +67,7 @@
  */
 
 import { isAddressEqual, type Address } from "viem";
-import { LAUNCH_GUARD_HOOK_ABI } from "@latchprotocol/sdk";
+import { LAUNCH_GUARD_HOOK_ABI, LAUNCH_GUARD_HOOK_BLOCK_ABI, type DurationClock } from "@latchprotocol/sdk";
 import {
   buildSwapCall,
   type BuildSwapCallArgs,
@@ -64,8 +75,18 @@ import {
   type SwapHop,
 } from "./swap.js";
 
-/** The hook's ABI, re-exported so callers need not depend on the SDK directly. */
-export { LAUNCH_GUARD_HOOK_ABI };
+/**
+ * The hook's ABIs, re-exported so callers need not depend on the SDK directly.
+ * `LAUNCH_GUARD_HOOK_ABI` is the timestamp generation; `LAUNCH_GUARD_HOOK_BLOCK_ABI`
+ * the block-numbered one still deployed. Select with {@link launchGuardAbiFor}.
+ */
+export { LAUNCH_GUARD_HOOK_ABI, LAUNCH_GUARD_HOOK_BLOCK_ABI };
+export type { DurationClock };
+
+/** The ABI that decodes a hook of this clock correctly. */
+export function launchGuardAbiFor(clock: DurationClock) {
+  return clock === "timestamp" ? LAUNCH_GUARD_HOOK_ABI : LAUNCH_GUARD_HOOK_BLOCK_ABI;
+}
 
 /**
  * `LaunchGuardHook.FEE_DENOMINATOR`. 1_000_000 == 100%.
@@ -78,27 +99,29 @@ export const LAUNCH_FEE_DENOMINATOR = 1_000_000;
 const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
 
 /**
- * A decoded `LaunchGuardHook.Launch` record.
+ * A decoded `LaunchGuardHook.Launch` record, from either hook generation.
  *
- * Field-for-field the struct, with two changes and no additions: `startBlock`
- * is widened to `bigint` so it can be compared with a block number without a
- * lossy cast, and the fee fields are renamed to the unit they are actually in.
+ * Field-for-field the struct, with three changes: the clock is recorded,
+ * `start` / `window` are named for what they are on EITHER clock, and the fee
+ * fields are renamed to the unit they are actually in.
  */
 export interface LaunchGuard {
+  /** `timestamp`: `start` and `window` are seconds. `contract-block`: contract blocks. */
+  readonly durationClock: DurationClock;
   /** Launch owner. The zero address means the pool id has never been claimed. */
   readonly owner: Address;
-  /** First block at which swaps are permitted. */
-  readonly startBlock: bigint;
-  /** Length of the decay window in blocks, from `startBlock`. */
-  readonly decayBlocks: number;
+  /** First point (`startTime` or `startBlock`) at which swaps are permitted. */
+  readonly start: bigint;
+  /** Length of the decay window from `start`, in the clock's unit (`decaySeconds` or `decayBlocks`). */
+  readonly window: number;
   /**
    * When false the hook applies no gate and no tax: it overrides the fee with
    * `finalFeePips` and nothing else. It does NOT mean "no hook".
    */
   readonly enabled: boolean;
-  /** Fee at `startBlock`, in pips. */
+  /** Fee at `start`, in pips. */
   readonly initialFeePips: number;
-  /** Fee at and after `startBlock + decayBlocks`, in pips. */
+  /** Fee at and after `start + window`, in pips. */
   readonly finalFeePips: number;
   /**
    * Per-TRANSACTION cap on the input amount of a buy, in the quote currency.
@@ -107,15 +130,19 @@ export interface LaunchGuard {
   readonly maxBuyPerTx: bigint;
   /** Which side of the pool is the token being launched. */
   readonly launchTokenIsCurrency0: boolean;
-  /** Set by the hook on the first swap at or after `startBlock`. */
+  /** Set by the hook on the first swap at or after `start`. */
   readonly launched: boolean;
 }
 
-/** The tuple shape `getLaunch` returns, as viem decodes it. */
+/** The tuple shape `getLaunch` returns, as viem decodes it, for either generation. */
 export interface RawLaunchGuard {
   readonly owner: Address;
-  readonly startBlock: number | bigint;
-  readonly decayBlocks: number;
+  /** Timestamp generation. */
+  readonly startTime?: number | bigint;
+  readonly decaySeconds?: number;
+  /** Block-numbered generation. */
+  readonly startBlock?: number | bigint;
+  readonly decayBlocks?: number;
   readonly enabled: boolean;
   readonly initialFeeBips: number;
   readonly finalFeeBips: number;
@@ -124,12 +151,26 @@ export interface RawLaunchGuard {
   readonly launched: boolean;
 }
 
-/** Normalises a `getLaunch` result into a {@link LaunchGuard}. */
-export function decodeLaunchGuard(raw: RawLaunchGuard): LaunchGuard {
+/**
+ * Normalises a `getLaunch` result into a {@link LaunchGuard}.
+ *
+ * `clock` must be the clock of the ABI the result was decoded with. A record
+ * whose fields do not match that generation throws rather than defaulting.
+ */
+export function decodeLaunchGuard(raw: RawLaunchGuard, clock: DurationClock): LaunchGuard {
+  const start = clock === "timestamp" ? raw.startTime : raw.startBlock;
+  const window = clock === "timestamp" ? raw.decaySeconds : raw.decayBlocks;
+  if (start === undefined || window === undefined) {
+    throw new Error(
+      `[@latchprotocol/widgets] getLaunch result has no ${clock === "timestamp" ? "startTime/decaySeconds" : "startBlock/decayBlocks"}: ` +
+        "it was decoded with the other hook generation's ABI.",
+    );
+  }
   return {
+    durationClock: clock,
     owner: raw.owner,
-    startBlock: BigInt(raw.startBlock),
-    decayBlocks: raw.decayBlocks,
+    start: BigInt(start),
+    window: Number(window),
     enabled: raw.enabled,
     initialFeePips: raw.initialFeeBips,
     finalFeePips: raw.finalFeeBips,
@@ -151,34 +192,36 @@ export function isLaunchConfigured(guard: LaunchGuard): boolean {
  *   `LaunchNotConfigured`, and the pool could not have been initialized.
  * - `disabled` — `enabled == false`. No gate, no tax; the hook only pins the
  *   fee at `finalFeePips`. Trading is open.
- * - `pending` — `block.number < startBlock`. Every swap reverts
- *   `TradingNotOpen`. The owner may still move `startBlock`.
- * - `decaying` — inside `[startBlock, startBlock + decayBlocks)`. The fee is
+ * - `pending` — now < `start`. Every swap reverts `TradingNotOpen`. The owner
+ *   may still move the start.
+ * - `decaying` — inside `[start, start + window)`. The fee is
  *   above `finalFeePips` and `maxBuyPerTx` is enforced if it is set.
- * - `settled` — at or past `startBlock + decayBlocks`. The fee is exactly
+ * - `settled` — at or past `start + window`. The fee is exactly
  *   `finalFeePips` and the per-transaction cap no longer applies.
  */
 export type LaunchPhase = "unclaimed" | "disabled" | "pending" | "decaying" | "settled";
 
-/** The schedule as of one specific block. Pure; nothing here is interpolated. */
+/** The schedule as of one point on the hook's clock. Pure; nothing here is interpolated. */
 export interface LaunchSchedule {
   readonly phase: LaunchPhase;
-  /** The block this view was computed for. */
-  readonly blockNumber: bigint;
-  readonly startBlock: bigint | null;
-  /** `startBlock + decayBlocks`, the first block at the final fee. */
-  readonly endBlock: bigint | null;
-  /** Blocks until trading opens, or `null` when it already has. */
-  readonly blocksUntilOpen: bigint | null;
-  /** Blocks left in the decay window, or `null` outside it. */
-  readonly blocksRemaining: bigint | null;
+  /** The unit of `now`, `start`, `end`, `untilOpen` and `remaining`. */
+  readonly durationClock: DurationClock;
+  /** The point this view was computed for: a timestamp or a contract block. */
+  readonly now: bigint;
+  readonly start: bigint | null;
+  /** `start + window`, the first point at the final fee. */
+  readonly end: bigint | null;
+  /** Units until trading opens, or `null` when it already has. */
+  readonly untilOpen: bigint | null;
+  /** Units left in the decay window, or `null` outside it. */
+  readonly remaining: bigint | null;
   /** Progress through the decay window in bps, or `null` outside it. */
   readonly decayProgressBps: number | null;
-  /** Fee a swap in this block pays, in pips. `null` when unclaimed. */
+  /** Fee a swap at `now` pays, in pips. `null` when unclaimed. */
   readonly feePips: number | null;
   readonly initialFeePips: number | null;
   readonly finalFeePips: number | null;
-  /** `true` when a swap in this block would be accepted by the hook. */
+  /** `true` when a swap at `now` would be accepted by the hook. */
   readonly tradingOpen: boolean;
   /** The configured cap, or `null` when none is set. */
   readonly maxBuyPerTx: bigint | null;
@@ -187,40 +230,43 @@ export interface LaunchSchedule {
 }
 
 /**
- * The fee a swap in `blockNumber` pays, in pips — an exact mirror of
- * `LaunchGuardHook.feeAt` including its rounding.
+ * The fee a swap at `now` pays, in pips — an exact mirror of
+ * `LaunchGuardHook.feeAt` including its rounding. `now` is on the guard's own
+ * clock: the latest block's timestamp, or the CONTRACT block number.
  *
  * The subtracted discount is floored, so the fee rounds **up**, toward the LPs
  * and away from the sniper. Reproducing that direction matters: a UI that
  * rounded the other way would quote a fee lower than the one charged.
  *
- * Returns `null` for an unclaimed pool, where the contract reverts. For a block
- * before `startBlock` it returns `initialFeePips`, matching the contract —
+ * Returns `null` for an unclaimed pool, where the contract reverts. Before the
+ * start it returns `initialFeePips`, matching the contract —
  * though such a swap would in fact revert, so read that value as "the fee at
  * the open" rather than as a fee anyone can pay.
  */
-export function launchFeeAtBlock(guard: LaunchGuard, blockNumber: bigint): number | null {
+export function launchFeeAt(guard: LaunchGuard, now: bigint): number | null {
   if (!isLaunchConfigured(guard)) return null;
   if (!guard.enabled) return guard.finalFeePips;
-  if (blockNumber < guard.startBlock) return guard.initialFeePips;
-  const decayBlocks = BigInt(guard.decayBlocks);
-  const elapsed = blockNumber - guard.startBlock;
-  if (decayBlocks <= 0n || elapsed >= decayBlocks) return guard.finalFeePips;
+  if (now < guard.start) return guard.initialFeePips;
+  const window = BigInt(guard.window);
+  const elapsed = now - guard.start;
+  if (window <= 0n || elapsed >= window) return guard.finalFeePips;
   const spread = BigInt(guard.initialFeePips - guard.finalFeePips);
-  const discount = (spread * elapsed) / decayBlocks;
+  const discount = (spread * elapsed) / window;
   return guard.initialFeePips - Number(discount);
 }
 
-/** Derives the whole schedule for one block. Pure. */
-export function launchScheduleAt(guard: LaunchGuard, blockNumber: bigint): LaunchSchedule {
+/** Derives the whole schedule at one point on the guard's clock. Pure. */
+export function launchScheduleAt(guard: LaunchGuard, now: bigint): LaunchSchedule {
+  const durationClock = guard.durationClock;
   if (!isLaunchConfigured(guard)) {
     return {
       phase: "unclaimed",
-      blockNumber,
-      startBlock: null,
-      endBlock: null,
-      blocksUntilOpen: null,
-      blocksRemaining: null,
+      durationClock,
+      now,
+      start: null,
+      end: null,
+      untilOpen: null,
+      remaining: null,
       decayProgressBps: null,
       feePips: null,
       initialFeePips: null,
@@ -231,9 +277,9 @@ export function launchScheduleAt(guard: LaunchGuard, blockNumber: bigint): Launc
     };
   }
 
-  const decayBlocks = BigInt(guard.decayBlocks);
-  const endBlock = guard.startBlock + decayBlocks;
-  const feePips = launchFeeAtBlock(guard, blockNumber);
+  const window = BigInt(guard.window);
+  const end = guard.start + window;
+  const feePips = launchFeeAt(guard, now);
   const maxBuyPerTx = guard.maxBuyPerTx === 0n ? null : guard.maxBuyPerTx;
 
   // A disabled launch is not gated and not taxed. `beforeSwap` returns the
@@ -243,11 +289,12 @@ export function launchScheduleAt(guard: LaunchGuard, blockNumber: bigint): Launc
   if (!guard.enabled) {
     return {
       phase: "disabled",
-      blockNumber,
-      startBlock: guard.startBlock,
-      endBlock,
-      blocksUntilOpen: null,
-      blocksRemaining: null,
+      durationClock,
+      now,
+      start: guard.start,
+      end,
+      untilOpen: null,
+      remaining: null,
       decayProgressBps: null,
       feePips,
       initialFeePips: guard.initialFeePips,
@@ -258,14 +305,15 @@ export function launchScheduleAt(guard: LaunchGuard, blockNumber: bigint): Launc
     };
   }
 
-  if (blockNumber < guard.startBlock) {
+  if (now < guard.start) {
     return {
       phase: "pending",
-      blockNumber,
-      startBlock: guard.startBlock,
-      endBlock,
-      blocksUntilOpen: guard.startBlock - blockNumber,
-      blocksRemaining: null,
+      durationClock,
+      now,
+      start: guard.start,
+      end,
+      untilOpen: guard.start - now,
+      remaining: null,
       decayProgressBps: 0,
       feePips,
       initialFeePips: guard.initialFeePips,
@@ -276,16 +324,17 @@ export function launchScheduleAt(guard: LaunchGuard, blockNumber: bigint): Launc
     };
   }
 
-  const elapsed = blockNumber - guard.startBlock;
-  if (decayBlocks > 0n && elapsed < decayBlocks) {
+  const elapsed = now - guard.start;
+  if (window > 0n && elapsed < window) {
     return {
       phase: "decaying",
-      blockNumber,
-      startBlock: guard.startBlock,
-      endBlock,
-      blocksUntilOpen: null,
-      blocksRemaining: decayBlocks - elapsed,
-      decayProgressBps: Number((elapsed * 10_000n) / decayBlocks),
+      durationClock,
+      now,
+      start: guard.start,
+      end,
+      untilOpen: null,
+      remaining: window - elapsed,
+      decayProgressBps: Number((elapsed * 10_000n) / window),
       feePips,
       initialFeePips: guard.initialFeePips,
       finalFeePips: guard.finalFeePips,
@@ -297,11 +346,12 @@ export function launchScheduleAt(guard: LaunchGuard, blockNumber: bigint): Launc
 
   return {
     phase: "settled",
-    blockNumber,
-    startBlock: guard.startBlock,
-    endBlock,
-    blocksUntilOpen: null,
-    blocksRemaining: null,
+    durationClock,
+    now,
+    start: guard.start,
+    end,
+    untilOpen: null,
+    remaining: null,
     decayProgressBps: 10_000,
     feePips,
     initialFeePips: guard.initialFeePips,
@@ -346,10 +396,11 @@ export interface LaunchBuyGate {
  */
 export function evaluateLaunchBuy(args: {
   readonly guard: LaunchGuard;
-  readonly blockNumber: bigint;
+  /** Now, on the guard's own clock. */
+  readonly now: bigint;
   readonly amountIn: bigint | null;
 }): LaunchBuyGate {
-  const schedule = launchScheduleAt(args.guard, args.blockNumber);
+  const schedule = launchScheduleAt(args.guard, args.now);
 
   if (schedule.phase === "unclaimed") {
     return {
@@ -402,8 +453,8 @@ export interface BuildLaunchBuyArgs extends Omit<BuildSwapCallArgs, "hops"> {
   readonly hop: SwapHop;
   /** The launch record read from the hook, used to check the gates. */
   readonly guard: LaunchGuard;
-  /** Block the gates are evaluated against — the latest one read from chain. */
-  readonly blockNumber: bigint;
+  /** Now, on the guard's clock, that the gates are evaluated against — the latest read from chain. */
+  readonly now: bigint;
 }
 
 /**
@@ -448,7 +499,7 @@ export function buildLaunchBuyCall(args: BuildLaunchBuyArgs): EncodedSwapCall {
 
   const gate = evaluateLaunchBuy({
     guard: args.guard,
-    blockNumber: args.blockNumber,
+    now: args.now,
     amountIn: args.amountIn,
   });
   if (gate.reason !== null) {
@@ -458,8 +509,8 @@ export function buildLaunchBuyCall(args: BuildLaunchBuyArgs): EncodedSwapCall {
     );
   }
 
-  const { hop, guard, blockNumber, ...swapArgs } = args;
+  const { hop, guard, now, ...swapArgs } = args;
   void guard;
-  void blockNumber;
+  void now;
   return buildSwapCall({ ...swapArgs, hops: [hop] });
 }

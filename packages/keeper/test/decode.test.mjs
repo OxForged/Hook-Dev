@@ -4,7 +4,15 @@ import assert from 'node:assert/strict'
 import { encodeAbiParameters, parseAbiParameters, keccak256, toHex } from 'viem'
 
 import { DISTRIBUTOR_KIND } from '../dist/abi.js'
-import { decodePendingConfig, derivePoolId, kindFromBytes32 } from '../dist/decode.js'
+import {
+  decodePendingConfig,
+  derivePoolId,
+  inferPendingShape,
+  kindFromBytes32,
+  knownHookShape,
+  returnedWords,
+} from '../dist/decode.js'
+import { resolvePendingShape } from '../dist/pendingShape.js'
 
 /* ---------------------------------------------------------------- kind() */
 
@@ -34,42 +42,94 @@ const LEGACY = parseAbiParameters('uint48,uint24,uint16,uint16,uint16,address,bo
 const CURRENT = parseAbiParameters('uint48,uint48,uint24,uint16,uint16,uint16,address,bool')
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 
-test('decodePendingConfig: 7-word legacy return (Robinhood 0x23CE, Sepolia 0x1C86)', () => {
-  const data = encodeAbiParameters(LEGACY, [61_000_000n, 3000, 2000, 8000, 0, ZERO_ADDR, true])
-  const p = decodePendingConfig(data)
-  assert.equal(p.shape, 'legacy')
-  assert.equal(p.effectiveBlock, 61_000_000n)
-  assert.equal(p.expiryBlock, null)
+test('decodePendingConfig: block-no-expiry (Robinhood 0x23CE, Sepolia 0x1C86)', () => {
+  const data = encodeAbiParameters(LEGACY, [61_000_000, 3000, 10_000, 0, 0, ZERO_ADDR, true])
+  const p = decodePendingConfig(data, 'block-no-expiry')
+  assert.equal(p.shape, 'block-no-expiry')
+  assert.equal(p.durationClock, 'contract-block')
+  assert.equal(p.effective, 61_000_000n)
+  assert.equal(p.expiry, null)
 })
 
-test('decodePendingConfig: 8-word current return', () => {
-  const data = encodeAbiParameters(CURRENT, [61_000_000n, 61_500_000n, 3000, 2000, 8000, 0, ZERO_ADDR, true])
-  const p = decodePendingConfig(data)
-  assert.equal(p.shape, 'current')
-  assert.equal(p.effectiveBlock, 61_000_000n)
-  assert.equal(p.expiryBlock, 61_500_000n)
+test('decodePendingConfig: block-with-expiry (Robinhood 0xfC00)', () => {
+  const data = encodeAbiParameters(CURRENT, [61_000_000, 61_500_000, 3000, 10_000, 0, 0, ZERO_ADDR, true])
+  const p = decodePendingConfig(data, 'block-with-expiry')
+  assert.equal(p.durationClock, 'contract-block')
+  assert.equal(p.effective, 61_000_000n)
+  assert.equal(p.expiry, 61_500_000n)
 })
 
-test('decodePendingConfig: all-zero returns of both widths mean "no proposal"', () => {
-  assert.equal(decodePendingConfig('0x' + '00'.repeat(32 * 7)).effectiveBlock, 0n)
-  assert.equal(decodePendingConfig('0x' + '00'.repeat(32 * 8)).effectiveBlock, 0n)
+test('decodePendingConfig: timestamp-with-expiry is 8 words too, and decodes as seconds', () => {
+  const data = encodeAbiParameters(CURRENT, [1_789_386_279, 1_789_645_479, 3000, 10_000, 0, 0, ZERO_ADDR, true])
+  const p = decodePendingConfig(data, 'timestamp-with-expiry')
+  assert.equal(p.durationClock, 'timestamp')
+  assert.equal(p.effective, 1_789_386_279n)
+  assert.equal(p.expiry - p.effective, 259_200n)
 })
 
-test('decodePendingConfig: the trap this exists to close — feePips must never land in expiryBlock', () => {
-  // A legacy return whose SECOND word is feePips=3000. A 8-field decode would
-  // report expiryBlock=3000, and a keeper at block >3000 would call the
-  // proposal expired forever.
-  const data = encodeAbiParameters(LEGACY, [10n, 3000, 0, 0, 0, ZERO_ADDR, false])
-  const p = decodePendingConfig(data)
-  assert.equal(p.expiryBlock, null)
-  assert.equal(p.effectiveBlock, 10n)
+test('decodePendingConfig: the trap — a 7-word return is never decoded with an expiry', () => {
+  const data = encodeAbiParameters(LEGACY, [10, 3000, 10_000, 0, 0, ZERO_ADDR, true])
+  assert.throws(() => decodePendingConfig(data, 'block-with-expiry'), /returned 7 words but shape block-with-expiry returns 8/)
+  assert.equal(decodePendingConfig(data, 'block-no-expiry').expiry, null)
 })
 
-test('decodePendingConfig refuses widths it has not seen', () => {
-  assert.throws(() => decodePendingConfig('0x' + '00'.repeat(32 * 6)), /knows the 7-word .* and 8-word/)
-  assert.throws(() => decodePendingConfig('0x' + '00'.repeat(32 * 9)), /knows the 7-word .* and 8-word/)
-  assert.throws(() => decodePendingConfig('0x' + '00'.repeat(33)), /whole number of words/)
-  assert.throws(() => decodePendingConfig('0x'), /knows the 7-word .* and 8-word/)
+test('decodePendingConfig refuses a length that contradicts the shape, and an unknown shape', () => {
+  assert.throws(() => decodePendingConfig('0x' + '00'.repeat(32 * 8), 'block-no-expiry'), /refusing to guess/)
+  assert.throws(() => decodePendingConfig('0x' + '00'.repeat(32 * 9), 'timestamp-with-expiry'), /refusing to guess/)
+  assert.throws(() => decodePendingConfig('0x' + '00'.repeat(33), 'block-no-expiry'), /whole number of words/)
+  assert.throws(() => decodePendingConfig('0x' + '00'.repeat(32 * 8), 'current'), /unknown getPendingConfig shape/)
+  assert.equal(returnedWords('0x' + '00'.repeat(32 * 7)), 7)
+})
+
+/* --------------------------------------------------- shape resolution */
+
+const T_HOOK = '0x00000000000000000000000000000000000071e5'
+const fail = () => { throw new Error('probe must not be called') }
+
+test('the built-in table names the three deployed hooks', () => {
+  assert.equal(knownHookShape(4663, '0x23CE34E8199927DD270dddd8579c947542bDE446'), 'block-no-expiry')
+  assert.equal(knownHookShape(4663, '0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2'), 'block-with-expiry')
+  assert.equal(knownHookShape(11155111, '0x1C86dc775FF3FDADCCF87F132de7a4eb60B6bE28'), 'block-no-expiry')
+  assert.equal(knownHookShape(4663, T_HOOK), undefined)
+})
+
+test('inferPendingShape: CLOCK_MODE + word count, and nothing else', () => {
+  assert.equal(inferPendingShape('mode=timestamp', 8), 'timestamp-with-expiry')
+  assert.equal(inferPendingShape(null, 8), 'block-with-expiry')
+  assert.equal(inferPendingShape(null, 7), 'block-no-expiry')
+  assert.equal(inferPendingShape('mode=timestamp', 7), undefined)
+  assert.equal(inferPendingShape('mode=blocknumber&from=default', 8), undefined)
+})
+
+test('resolve: a known hook uses the table and never probes', async () => {
+  const r = await resolvePendingShape({ chainId: 4663, hook: '0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2', configured: undefined, words: 8, probe: fail })
+  assert.deepEqual(r, { ok: true, shape: 'block-with-expiry', source: 'built-in table' })
+})
+
+test('resolve: an 8-word timestamp hook configured as timestamp is NOT read as block-shaped', async () => {
+  const r = await resolvePendingShape({
+    chainId: 4663, hook: T_HOOK, configured: 'timestamp-with-expiry', words: 8,
+    probe: async () => ({ kind: 'mode', mode: 'mode=timestamp' }),
+  })
+  assert.deepEqual(r, { ok: true, shape: 'timestamp-with-expiry', source: 'config' })
+})
+
+test('resolve: config that contradicts the table or the probe is refused, not obeyed', async () => {
+  const a = await resolvePendingShape({ chainId: 4663, hook: '0x23CE34E8199927DD270dddd8579c947542bDE446', configured: 'timestamp-with-expiry', words: 7, probe: fail })
+  assert.equal(a.ok, false)
+  const b = await resolvePendingShape({ chainId: 4663, hook: T_HOOK, configured: 'timestamp-with-expiry', words: 8, probe: async () => ({ kind: 'reverted' }) })
+  assert.equal(b.ok, false)
+  assert.match(b.reason, /block-with-expiry/)
+})
+
+test('resolve: an unknown hook with no resolvable shape is skipped; a transport error is never a revert', async () => {
+  const garbage = await resolvePendingShape({ chainId: 4663, hook: T_HOOK, configured: undefined, words: 9, probe: async () => ({ kind: 'reverted' }) })
+  assert.equal(garbage.ok, false)
+  const flaky = await resolvePendingShape({ chainId: 4663, hook: T_HOOK, configured: undefined, words: 8, probe: async () => ({ kind: 'transport', detail: '429' }) })
+  assert.equal(flaky.ok, false)
+  assert.match(flaky.reason, /Not read as a revert/)
+  const probed = await resolvePendingShape({ chainId: 4663, hook: T_HOOK, configured: undefined, words: 8, probe: async () => ({ kind: 'mode', mode: 'mode=timestamp' }) })
+  assert.deepEqual(probed, { ok: true, shape: 'timestamp-with-expiry', source: 'CLOCK_MODE() probe' })
 })
 
 /* ------------------------------------------------------------- PoolId */

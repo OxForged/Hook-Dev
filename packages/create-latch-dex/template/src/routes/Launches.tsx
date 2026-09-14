@@ -123,27 +123,44 @@ export function Launches(): ReactElement {
                     </dd>
 
                     <dt>Schedule</dt>
-                    <dd>
-                      {formatPips(record.initialFeeBips)} to {formatPips(record.finalFeeBips)} over{" "}
-                      {record.decayBlocks.toLocaleString()} blocks (about{" "}
-                      {formatDuration(blocksToSeconds(record.decayBlocks, bounds.contractBlockTimeCentis))}{" "}
-                      of real time: the hook&rsquo;s block advances every ~
-                      {bounds.contractBlockTimeCentis / 100}s
-                      {bounds.contractBlockTimeCentis !== bounds.blockTimeCentis
-                        ? `, not the ${bounds.blockTimeCentis / 100}s this kit was configured with`
-                        : ""}
-                      )
-                    </dd>
+                    {bounds.durationClock === "timestamp" ? (
+                      <dd>
+                        {formatPips(record.initialFeeBips)} to {formatPips(record.finalFeeBips)} over{" "}
+                        {record.window.toLocaleString()} seconds ({formatDuration(record.window)}, measured
+                        on <code>block.timestamp</code>)
+                      </dd>
+                    ) : (
+                      <dd>
+                        {formatPips(record.initialFeeBips)} to {formatPips(record.finalFeeBips)} over{" "}
+                        {record.window.toLocaleString()} blocks (about{" "}
+                        {formatDuration(blocksToSeconds(record.window, bounds.contractBlockTimeCentis))}{" "}
+                        of real time: the hook&rsquo;s block advances every ~
+                        {bounds.contractBlockTimeCentis / 100}s
+                        {bounds.contractBlockTimeCentis !== bounds.blockTimeCentis
+                          ? `, not the ${bounds.blockTimeCentis / 100}s this kit was configured with`
+                          : ""}
+                        )
+                      </dd>
+                    )}
 
                     <dt>Starts</dt>
-                    <dd className="mono">
-                      hook block {record.startBlock.toString()}
-                      {record.phase === "scheduled"
-                        ? ` · in ~${formatDuration(
-                            blocksToSeconds(record.startBlock - scan.contractBlockNumber, bounds.contractBlockTimeCentis),
-                          )}`
-                        : ""}
-                    </dd>
+                    {bounds.durationClock === "timestamp" ? (
+                      <dd className="mono">
+                        {new Date(Number(record.start) * 1000).toISOString()}
+                        {record.phase === "scheduled"
+                          ? ` · in ${formatDuration(Number(record.start - scan.now))}`
+                          : ""}
+                      </dd>
+                    ) : (
+                      <dd className="mono">
+                        hook block {record.start.toString()}
+                        {record.phase === "scheduled"
+                          ? ` · in ~${formatDuration(
+                              blocksToSeconds(record.start - scan.now, bounds.contractBlockTimeCentis),
+                            )}`
+                          : ""}
+                      </dd>
+                    )}
 
                     <dt>Max buy per tx</dt>
                     <dd>
@@ -178,7 +195,7 @@ export function Launches(): ReactElement {
                   ) : (
                     <p className="state-hint">
                       Not yet traded. The operator can still call <code>reconfigureLaunch</code>{" "}
-                      until the start block.
+                      until the launch starts.
                     </p>
                   )}
                 </article>
@@ -191,12 +208,22 @@ export function Launches(): ReactElement {
               <code>{shortAddress(kit)}</code> since block{" "}
               {scan.fromBlock.toString()}, at block {scan.atBlock.toString()}. Fees and status come
               from the hook at <code>{shortAddress(scan.hook)}</code>, read live rather than from
-              the creation event. Status is judged against the hook&rsquo;s own{" "}
-              <code>block.number</code> ({scan.contractBlockNumber.toString()})
-              {scan.contractBlockNumber !== scan.atBlock
-                ? ", which on this chain is a different clock from the RPC block above"
-                : ""}
-              .
+              the creation event.{" "}
+              {scan.durationClock === "timestamp" ? (
+                <>
+                  Status is judged against <code>block.timestamp</code> ({scan.now.toString()}),
+                  the clock this kit&rsquo;s hook counts in.
+                </>
+              ) : (
+                <>
+                  Status is judged against the hook&rsquo;s own <code>block.number</code> (
+                  {scan.contractBlockNumber.toString()})
+                  {scan.contractBlockNumber !== scan.atBlock
+                    ? ", which on this chain is a different clock from the RPC block above"
+                    : ""}
+                  . This kit is the retired block-numbered build.
+                </>
+              )}
             </Provenance>
           </>
         )}

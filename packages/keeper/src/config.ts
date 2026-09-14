@@ -9,7 +9,12 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { isAddress, zeroAddress, type Address, type Hex } from 'viem'
-import { derivePoolId } from './decode.js'
+import {
+  PENDING_CONFIG_SHAPES,
+  isPendingConfigShape,
+  derivePoolId,
+  type PendingConfigShape,
+} from './decode.js'
 /* Type-only, so this is erased at runtime and cannot create an import cycle with
    jobs/fees.ts, which imports nothing from here. */
 import type { FeeSweepConfig, SweepTarget } from './jobs/fees.js'
@@ -44,6 +49,13 @@ export interface WatchTarget {
   readonly distributor: Address | null
   /** Currencies to settle. Must be drawn from the pool's own two. */
   readonly currencies: readonly Address[]
+  /**
+   * The hook's `getPendingConfig` layout, when the operator states it. Optional:
+   * the three deployed hooks are in a built-in table, and an unknown hook is
+   * identified by a `CLOCK_MODE()` probe. When given, it is CHECKED against both
+   * and a contradiction skips the target rather than decoding. See pendingShape.ts.
+   */
+  readonly pendingShape?: PendingConfigShape
 }
 
 export interface KeeperConfig {
@@ -192,6 +204,16 @@ export function loadConfig(path: string): KeeperConfig {
     }
     const distributor = t['distributor'] === null ? null : assertContract(t['distributor'], `${where}.distributor`)
 
+    let pendingShape: PendingConfigShape | undefined
+    if ('pendingShape' in t) {
+      if (!isPendingConfigShape(t['pendingShape'])) {
+        throw new Error(
+          `${where}.pendingShape: must be one of ${PENDING_CONFIG_SHAPES.join(', ')}, got ${String(t['pendingShape'])}. Omit it to let the keeper identify the hook.`,
+        )
+      }
+      pendingShape = t['pendingShape']
+    }
+
     return {
       label: typeof t['label'] === 'string' ? t['label'] : `target-${i}`,
       poolId: poolId as Hex,
@@ -199,6 +221,7 @@ export function loadConfig(path: string): KeeperConfig {
       poolKey,
       currencies: parsedCurrencies,
       distributor,
+      ...(pendingShape === undefined ? {} : { pendingShape }),
     }
   })
 

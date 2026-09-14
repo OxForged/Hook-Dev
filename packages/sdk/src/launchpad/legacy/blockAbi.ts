@@ -1,8 +1,21 @@
 // SPDX-License-Identifier: MIT
 // -----------------------------------------------------------------------------
-// GENERATED FILE - DO NOT EDIT BY HAND.
-// Produced by scripts/generate-launchpad-abi.mjs from the compiled contract ABIs.
-// Re-run `npm run generate` after the contracts are rebuilt.
+// FROZEN SNAPSHOT - DO NOT REGENERATE, DO NOT EDIT BY HAND.
+//
+// The curated ABIs of the BLOCK-NUMBERED `LaunchpadKit` and `LaunchGuardHook`,
+// exactly as `scripts/generate-launchpad-abi.mjs` emitted them from the compiled
+// artifacts at git 24de311, before every Latch duration moved to
+// `block.timestamp` (Option B, 2026-09-13).
+//
+// They describe bytecode that is STILL DEPLOYED: Robinhood (4663) kit
+// 0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7 and hook
+// 0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c. Their `startBlock` / `decayBlocks`
+// are on the CONTRACT block clock (Ethereum L1 blocks on Nitro), and the kit
+// converts preset seconds at its declared `blockTimeCentis`.
+//
+// Pick an ABI by the deployment record's `durationClock`, never by trying one
+// and falling back: the struct fields line up word for word, so the wrong ABI
+// decodes a block number as a timestamp without an error.
 // -----------------------------------------------------------------------------
 
 import type { Abi } from "viem";
@@ -10,9 +23,9 @@ import type { Abi } from "viem";
 /**
  * `LaunchpadKit` - the one-call launch factory.
  *
- * 25 errors, 4 events, 14 functions - curated from the compiled artifact, not the full ABI.
+ * 26 errors, 4 events, 14 functions - curated from the compiled artifact, not the full ABI.
  */
-export const LAUNCHPAD_KIT_ABI = [
+export const LAUNCHPAD_KIT_BLOCK_ABI = [
   {
     "type": "error",
     "name": "AddressEmptyCode",
@@ -37,19 +50,19 @@ export const LAUNCHPAD_KIT_ABI = [
   },
   {
     "type": "error",
-    "name": "FailedInnerCall",
-    "inputs": []
+    "name": "DecayWindowTooLong",
+    "inputs": [
+      {
+        "name": "blocks",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
-    "name": "HookClockMismatch",
-    "inputs": [
-      {
-        "name": "hookClockMode",
-        "type": "string",
-        "internalType": "string"
-      }
-    ]
+    "name": "FailedInnerCall",
+    "inputs": []
   },
   {
     "type": "error",
@@ -75,6 +88,17 @@ export const LAUNCHPAD_KIT_ABI = [
         "name": "currency",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidBlockTime",
+    "inputs": [
+      {
+        "name": "blockTimeCentis",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ]
   },
@@ -216,7 +240,7 @@ export const LAUNCHPAD_KIT_ABI = [
     "name": "StartDelayTooLong",
     "inputs": [
       {
-        "name": "delaySeconds",
+        "name": "blocks",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -313,13 +337,13 @@ export const LAUNCHPAD_KIT_ABI = [
         "internalType": "address"
       },
       {
-        "name": "startTime",
-        "type": "uint40",
+        "name": "startBlock",
+        "type": "uint48",
         "indexed": false,
-        "internalType": "uint40"
+        "internalType": "uint48"
       },
       {
-        "name": "decaySeconds",
+        "name": "decayBlocks",
         "type": "uint32",
         "indexed": false,
         "internalType": "uint32"
@@ -374,13 +398,13 @@ export const LAUNCHPAD_KIT_ABI = [
         "internalType": "address"
       },
       {
-        "name": "startTime",
-        "type": "uint40",
+        "name": "startBlock",
+        "type": "uint48",
         "indexed": false,
-        "internalType": "uint40"
+        "internalType": "uint48"
       },
       {
-        "name": "decaySeconds",
+        "name": "decayBlocks",
         "type": "uint32",
         "indexed": false,
         "internalType": "uint32"
@@ -457,19 +481,6 @@ export const LAUNCHPAD_KIT_ABI = [
   },
   {
     "type": "function",
-    "name": "CLOCK_MODE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "EXPECTED_HOOK_BITMAP",
     "inputs": [],
     "outputs": [
@@ -477,6 +488,19 @@ export const LAUNCHPAD_KIT_ABI = [
         "name": "",
         "type": "uint16",
         "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "blockTimeCentis",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "stateMutability": "view"
@@ -610,7 +634,7 @@ export const LAUNCHPAD_KIT_ABI = [
             "internalType": "uint24"
           },
           {
-            "name": "decaySeconds",
+            "name": "decayBlocks",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -772,12 +796,12 @@ export const LAUNCHPAD_KIT_ABI = [
             "internalType": "PoolId"
           },
           {
-            "name": "startTime",
-            "type": "uint40",
-            "internalType": "uint40"
+            "name": "startBlock",
+            "type": "uint48",
+            "internalType": "uint48"
           },
           {
-            "name": "decaySeconds",
+            "name": "decayBlocks",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -985,7 +1009,7 @@ export const LAUNCHPAD_KIT_ABI = [
             "internalType": "uint24"
           },
           {
-            "name": "decaySeconds",
+            "name": "decayBlocks",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -1105,12 +1129,12 @@ export const LAUNCHPAD_KIT_ABI = [
         "internalType": "struct LaunchGuardHook.LaunchConfig",
         "components": [
           {
-            "name": "startTime",
-            "type": "uint40",
-            "internalType": "uint40"
+            "name": "startBlock",
+            "type": "uint48",
+            "internalType": "uint48"
           },
           {
-            "name": "decaySeconds",
+            "name": "decayBlocks",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -1191,12 +1215,12 @@ export const LAUNCHPAD_KIT_ABI = [
         "internalType": "struct LaunchGuardHook.LaunchConfig",
         "components": [
           {
-            "name": "startTime",
-            "type": "uint40",
-            "internalType": "uint40"
+            "name": "startBlock",
+            "type": "uint48",
+            "internalType": "uint48"
           },
           {
-            "name": "decaySeconds",
+            "name": "decayBlocks",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -1249,9 +1273,9 @@ export const LAUNCHPAD_KIT_ABI = [
 /**
  * `LaunchGuardHook` - the CL launch hook the kit drives.
  *
- * 19 errors, 4 events, 17 functions - curated from the compiled artifact, not the full ABI.
+ * 18 errors, 3 events, 11 functions - curated from the compiled artifact, not the full ABI.
  */
-export const LAUNCH_GUARD_HOOK_ABI = [
+export const LAUNCH_GUARD_HOOK_BLOCK_ABI = [
   {
     "type": "error",
     "name": "BuyExceedsMaxPerTx",
@@ -1265,17 +1289,6 @@ export const LAUNCH_GUARD_HOOK_ABI = [
         "name": "maxBuyPerTx",
         "type": "uint128",
         "internalType": "uint128"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "CurrencyHasNoCode",
-    "inputs": [
-      {
-        "name": "currency",
-        "type": "address",
-        "internalType": "address"
       }
     ]
   },
@@ -1302,10 +1315,21 @@ export const LAUNCH_GUARD_HOOK_ABI = [
   },
   {
     "type": "error",
-    "name": "InvalidDecaySeconds",
+    "name": "InvalidBlockTime",
     "inputs": [
       {
-        "name": "decaySeconds",
+        "name": "blockTimeCentis",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidDecayBlocks",
+    "inputs": [
+      {
+        "name": "decayBlocks",
         "type": "uint32",
         "internalType": "uint32"
       }
@@ -1329,15 +1353,15 @@ export const LAUNCH_GUARD_HOOK_ABI = [
   },
   {
     "type": "error",
-    "name": "InvalidStartTime",
+    "name": "InvalidStartBlock",
     "inputs": [
       {
-        "name": "startTime",
+        "name": "startBlock",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "currentTime",
+        "name": "currentBlock",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1353,7 +1377,7 @@ export const LAUNCH_GUARD_HOOK_ABI = [
         "internalType": "PoolId"
       },
       {
-        "name": "startTime",
+        "name": "startBlock",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1372,22 +1396,22 @@ export const LAUNCH_GUARD_HOOK_ABI = [
   },
   {
     "type": "error",
-    "name": "LaunchPoolReserved",
+    "name": "LaunchWindowOutOfRange",
     "inputs": [
       {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
+        "name": "realSeconds",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
-        "name": "creator",
-        "type": "address",
-        "internalType": "address"
+        "name": "minSeconds",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
-        "name": "caller",
-        "type": "address",
-        "internalType": "address"
+        "name": "maxSeconds",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },
@@ -1411,22 +1435,6 @@ export const LAUNCH_GUARD_HOOK_ABI = [
     "type": "error",
     "name": "NotPoolManager",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotTokenCreator",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "caller",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
   },
   {
     "type": "error",
@@ -1482,12 +1490,12 @@ export const LAUNCH_GUARD_HOOK_ABI = [
         "internalType": "PoolId"
       },
       {
-        "name": "startTime",
+        "name": "startBlock",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "currentTime",
+        "name": "currentBlock",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1514,31 +1522,6 @@ export const LAUNCH_GUARD_HOOK_ABI = [
   },
   {
     "type": "event",
-    "name": "LaunchClaimerSet",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "creator",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "claimer",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "LaunchConfigured",
     "inputs": [
       {
@@ -1554,13 +1537,13 @@ export const LAUNCH_GUARD_HOOK_ABI = [
         "internalType": "address"
       },
       {
-        "name": "startTime",
-        "type": "uint40",
+        "name": "startBlock",
+        "type": "uint48",
         "indexed": false,
-        "internalType": "uint40"
+        "internalType": "uint48"
       },
       {
-        "name": "decaySeconds",
+        "name": "decayBlocks",
         "type": "uint32",
         "indexed": false,
         "internalType": "uint32"
@@ -1609,7 +1592,7 @@ export const LAUNCH_GUARD_HOOK_ABI = [
         "internalType": "PoolId"
       },
       {
-        "name": "timestamp",
+        "name": "blockNumber",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1619,33 +1602,7 @@ export const LAUNCH_GUARD_HOOK_ABI = [
   },
   {
     "type": "function",
-    "name": "CLOCK_MODE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "LAUNCH_TOKEN_FACTORY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract ILaunchTokenOrigin"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_DECAY_SECONDS",
+    "name": "MAX_DECAY_BLOCKS",
     "inputs": [],
     "outputs": [
       {
@@ -1684,33 +1641,7 @@ export const LAUNCH_GUARD_HOOK_ABI = [
   },
   {
     "type": "function",
-    "name": "MAX_START_DELAY_SECONDS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint40",
-        "internalType": "uint40"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MIN_DECAY_SECONDS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint32",
-        "internalType": "uint32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "clock",
+    "name": "MAX_START_DELAY",
     "inputs": [],
     "outputs": [
       {
@@ -1768,12 +1699,12 @@ export const LAUNCH_GUARD_HOOK_ABI = [
         "internalType": "struct LaunchGuardHook.LaunchConfig",
         "components": [
           {
-            "name": "startTime",
-            "type": "uint40",
-            "internalType": "uint40"
+            "name": "startBlock",
+            "type": "uint48",
+            "internalType": "uint48"
           },
           {
-            "name": "decaySeconds",
+            "name": "decayBlocks",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -1837,7 +1768,7 @@ export const LAUNCH_GUARD_HOOK_ABI = [
         "internalType": "PoolId"
       },
       {
-        "name": "timestamp",
+        "name": "blockNumber",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1886,12 +1817,12 @@ export const LAUNCH_GUARD_HOOK_ABI = [
             "internalType": "address"
           },
           {
-            "name": "startTime",
-            "type": "uint40",
-            "internalType": "uint40"
+            "name": "startBlock",
+            "type": "uint48",
+            "internalType": "uint48"
           },
           {
-            "name": "decaySeconds",
+            "name": "decayBlocks",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -1926,25 +1857,6 @@ export const LAUNCH_GUARD_HOOK_ABI = [
             "internalType": "bool"
           }
         ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "launchClaimerOf",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "claimer",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -1977,656 +1889,6 @@ export const LAUNCH_GUARD_HOOK_ABI = [
         "name": "",
         "type": "address",
         "internalType": "contract ICLPoolManager"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "setLaunchClaimer",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "claimer",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  }
-] as const satisfies Abi;
-
-/**
- * `BinLaunchGuardHook` - the liquidity-book variant, including `beforeMint`.
- *
- * 16 errors, 3 events, 14 functions - curated from the compiled artifact, not the full ABI.
- */
-export const BIN_LAUNCH_GUARD_HOOK_ABI = [
-  {
-    "type": "error",
-    "name": "BuyExceedsMaxPerTx",
-    "inputs": [
-      {
-        "name": "amountIn",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "maxBuyPerTx",
-        "type": "uint128",
-        "internalType": "uint128"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ExactOutputBuyBlockedDuringLaunch",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "HookMismatch",
-    "inputs": [
-      {
-        "name": "declared",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "HookNotImplemented",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidDecaySeconds",
-    "inputs": [
-      {
-        "name": "decaySeconds",
-        "type": "uint32",
-        "internalType": "uint32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidFeeSchedule",
-    "inputs": [
-      {
-        "name": "initialFeeBips",
-        "type": "uint24",
-        "internalType": "uint24"
-      },
-      {
-        "name": "finalFeeBips",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidStartTime",
-    "inputs": [
-      {
-        "name": "startTime",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "currentTime",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "LaunchAlreadyStarted",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "PoolId"
-      },
-      {
-        "name": "startTime",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "LaunchNotConfigured",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "PoolId"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotLaunchOwner",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "PoolId"
-      },
-      {
-        "name": "caller",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotPoolManager",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "PermissionDependencyMissing",
-    "inputs": [
-      {
-        "name": "declared",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "PoolManagerMismatch",
-    "inputs": [
-      {
-        "name": "declared",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "PoolMustUseDynamicFee",
-    "inputs": [
-      {
-        "name": "fee",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ReservedBitsSet",
-    "inputs": [
-      {
-        "name": "declared",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "TradingNotOpen",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "PoolId"
-      },
-      {
-        "name": "startTime",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "currentTime",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "event",
-    "name": "LaunchClaimed",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "PoolId"
-      },
-      {
-        "name": "owner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "LaunchConfigured",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "PoolId"
-      },
-      {
-        "name": "owner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "startTime",
-        "type": "uint40",
-        "indexed": false,
-        "internalType": "uint40"
-      },
-      {
-        "name": "decaySeconds",
-        "type": "uint32",
-        "indexed": false,
-        "internalType": "uint32"
-      },
-      {
-        "name": "initialFeeBips",
-        "type": "uint24",
-        "indexed": false,
-        "internalType": "uint24"
-      },
-      {
-        "name": "finalFeeBips",
-        "type": "uint24",
-        "indexed": false,
-        "internalType": "uint24"
-      },
-      {
-        "name": "maxBuyPerTx",
-        "type": "uint128",
-        "indexed": false,
-        "internalType": "uint128"
-      },
-      {
-        "name": "launchTokenIsCurrency0",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      },
-      {
-        "name": "enabled",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "LaunchStarted",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "PoolId"
-      },
-      {
-        "name": "timestamp",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "function",
-    "name": "CLOCK_MODE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_DECAY_SECONDS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint32",
-        "internalType": "uint32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_FINAL_FEE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_INITIAL_FEE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_START_DELAY_SECONDS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint40",
-        "internalType": "uint40"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MIN_DECAY_SECONDS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint32",
-        "internalType": "uint32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "clock",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint48",
-        "internalType": "uint48"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "configureLaunch",
-    "inputs": [
-      {
-        "name": "key",
-        "type": "tuple",
-        "internalType": "struct PoolKey",
-        "components": [
-          {
-            "name": "currency0",
-            "type": "address",
-            "internalType": "Currency"
-          },
-          {
-            "name": "currency1",
-            "type": "address",
-            "internalType": "Currency"
-          },
-          {
-            "name": "hooks",
-            "type": "address",
-            "internalType": "contract IHooks"
-          },
-          {
-            "name": "poolManager",
-            "type": "address",
-            "internalType": "contract IPoolManager"
-          },
-          {
-            "name": "fee",
-            "type": "uint24",
-            "internalType": "uint24"
-          },
-          {
-            "name": "parameters",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
-      },
-      {
-        "name": "cfg",
-        "type": "tuple",
-        "internalType": "struct BinLaunchGuardHook.LaunchConfig",
-        "components": [
-          {
-            "name": "startTime",
-            "type": "uint40",
-            "internalType": "uint40"
-          },
-          {
-            "name": "decaySeconds",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "initialFeeBips",
-            "type": "uint24",
-            "internalType": "uint24"
-          },
-          {
-            "name": "finalFeeBips",
-            "type": "uint24",
-            "internalType": "uint24"
-          },
-          {
-            "name": "maxBuyPerTx",
-            "type": "uint128",
-            "internalType": "uint128"
-          },
-          {
-            "name": "launchTokenIsCurrency0",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "enabled",
-            "type": "bool",
-            "internalType": "bool"
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "currentFee",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "PoolId"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "feeAt",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "PoolId"
-      },
-      {
-        "name": "timestamp",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getHooksRegistrationBitmap",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "pure"
-  },
-  {
-    "type": "function",
-    "name": "getLaunch",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "PoolId"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct BinLaunchGuardHook.Launch",
-        "components": [
-          {
-            "name": "owner",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "startTime",
-            "type": "uint40",
-            "internalType": "uint40"
-          },
-          {
-            "name": "decaySeconds",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "enabled",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "initialFeeBips",
-            "type": "uint24",
-            "internalType": "uint24"
-          },
-          {
-            "name": "finalFeeBips",
-            "type": "uint24",
-            "internalType": "uint24"
-          },
-          {
-            "name": "maxBuyPerTx",
-            "type": "uint128",
-            "internalType": "uint128"
-          },
-          {
-            "name": "launchTokenIsCurrency0",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "launched",
-            "type": "bool",
-            "internalType": "bool"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "launchOwner",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "PoolId"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "poolManager",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IBinPoolManager"
       }
     ],
     "stateMutability": "view"

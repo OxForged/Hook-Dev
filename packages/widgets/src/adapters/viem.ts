@@ -28,13 +28,22 @@
  */
 
 import {
+  BaseError,
+  ExecutionRevertedError,
+  decodeAbiParameters,
   encodeFunctionData,
   isAddressEqual,
   type Address,
   type Hex,
   type PublicClient,
 } from "viem";
-import { readContractClock, type PoolId } from "@latchprotocol/sdk";
+import {
+  CLOCK_MODE_CALLDATA,
+  TIMESTAMP_CLOCK_MODE,
+  getDeployment,
+  readContractClock,
+  type PoolId,
+} from "@latchprotocol/sdk";
 import type { ChainConfig } from "../config/chain.js";
 import { requireContract } from "../config/chain.js";
 import {
@@ -54,7 +63,8 @@ import {
 import {
   decodeLaunchGuard,
   isLaunchConfigured,
-  LAUNCH_GUARD_HOOK_ABI,
+  launchGuardAbiFor,
+  type DurationClock,
   type RawLaunchGuard,
 } from "../callpath/launch.js";
 import {
@@ -598,30 +608,60 @@ class ViemProtocolAdapter implements ProtocolAdapter {
    * an unclaimed pool id, so calling both in one batch would turn "no launch
    * here" into a read failure.
    */
+  /**
+   * Which generation a launch hook is, by configuration first, then the SDK
+   * address book, then the hook's own `CLOCK_MODE()` (a revert means the
+   * block-numbered build). A transport failure throws; it is never a revert.
+   */
+  async #launchClock(hook: Address): Promise<DurationClock> {
+    const configured = this.chain.contracts.launchGuardHookClock;
+    if (configured !== undefined) return configured;
+    const deployment = getDeployment(this.chain.chainId);
+    if (deployment?.launchGuardHook && isAddressEqual(deployment.launchGuardHook, hook)) {
+      const clock = deployment.durationClocks.launchGuardHook;
+      if (clock !== null) return clock;
+    }
+    try {
+      const { data } = await this.#client.call({ to: hook, data: CLOCK_MODE_CALLDATA });
+      if (data === undefined || data === "0x") return "contract-block";
+      const [mode] = decodeAbiParameters([{ type: "string" }], data);
+      if (mode === TIMESTAMP_CLOCK_MODE) return "timestamp";
+      throw new UnsupportedOperationError("getLaunch", `hook ${hook} reports an unknown CLOCK_MODE "${mode}"`);
+    } catch (error) {
+      if (error instanceof BaseError && error.walk((x: unknown) => x instanceof ExecutionRevertedError) !== null) {
+        return "contract-block";
+      }
+      throw error;
+    }
+  }
+
   async #readLaunch(pool: PoolInfo, hook: Address): Promise<LaunchInfo | null> {
+    const durationClock = await this.#launchClock(hook);
+    const abi = launchGuardAbiFor(durationClock);
     const raw = await this.#client.readContract({
       address: hook,
-      abi: LAUNCH_GUARD_HOOK_ABI,
+      abi,
       functionName: "getLaunch",
       args: [pool.id],
     });
-    const guard = decodeLaunchGuard(raw as unknown as RawLaunchGuard);
+    const guard = decodeLaunchGuard(raw as unknown as RawLaunchGuard, durationClock);
     if (!isLaunchConfigured(guard)) return null;
 
     const [currentFeePips, clock] = await Promise.all([
       this.#client.readContract({
         address: hook,
-        abi: LAUNCH_GUARD_HOOK_ABI,
+        abi,
         functionName: "currentFee",
         args: [pool.id],
       }),
-      /* The HOOK's block.number, not eth_blockNumber. `startBlock` and the decay
-         are on the EVM clock, which on an Arbitrum chain (Robinhood, 4663) is
-         Ethereum's block number while the RPC head is the L2 block. Against
+      /* "Now" on the HOOK's clock. The timestamp build compares with
+         block.timestamp. The block-numbered build compares with the EVM's
+         block.number, which on an Arbitrum chain (Robinhood, 4663) is
+         Ethereum's block number while the RPC head is the L2 block; against
          the RPC head every unopened launch rendered as settled. */
       readContractClock(this.#client, this.chain.chainId),
     ]);
-    const readAtBlock = clock.contractBlockNumber;
+    const readAt = durationClock === "timestamp" ? clock.timestamp : clock.contractBlockNumber;
 
     const [launchToken, quoteToken] = guard.launchTokenIsCurrency0
       ? [pool.token0, pool.token1]
@@ -635,7 +675,7 @@ class ViemProtocolAdapter implements ProtocolAdapter {
       quoteToken,
       guard,
       currentFeePips: Number(currentFeePips),
-      readAtBlock,
+      readAt,
       source: "live",
     };
   }
