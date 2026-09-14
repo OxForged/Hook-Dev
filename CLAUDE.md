@@ -830,7 +830,15 @@ nothing. Until then the UI states the real durations (PresetCurve, ProtocolPool,
 ranges and `deployedAtBlock` stay on the L2 number. Against the L2 head, queued proposals read
 expired or armed, launches read settled, and the keeper never applied a proposal.
 
-**Deploy rule:** the three deploy scripts measure `NUMBER` against `TIMESTAMP` on the live chain
+**DECIDED by the owner, 2026-09-13: Option B.** Every duration in Latch contracts moves to
+`block.timestamp` — `LaunchGuardHook`, `LaunchpadKit`, `RevShareHook`, and any new contract (the
+LP locker and Kit v2 included). No `blockTimeCentis` argument survives, so no chain can be
+configured with the wrong clock. The three affected deployments are redeployed from the
+timestamp source; off-chain readers keep supporting the retired block-based `0x23CE` for as long
+as LTT1/LTT2 lives there. Short windows carry a documented minimum, because the Nitro sequencer
+sets timestamps within bounds and could compress a very short window.
+
+**Deploy rule (until the timestamp redeploy):** the three deploy scripts measure `NUMBER` against `TIMESTAMP` on the live chain
 (`packages/hooks/script/ContractClock.sol`, ~3 minutes of real waiting) and refuse to broadcast a
 `blockTimeCentis` outside 75–105% of the measurement. Robinhood's value is **1200**. The
 preferred redesign moves all durations to `block.timestamp` (sequencer-bounded at −24 h/+1 h on
