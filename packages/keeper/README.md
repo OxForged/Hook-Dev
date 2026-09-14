@@ -98,6 +98,94 @@ npm run typecheck
 
 The tests pin the `kind()` constants byte for byte against the Solidity strings, exercise both `getPendingConfig` shapes including the misread they exist to prevent, reproduce the live Robinhood and Sepolia pool ids from their keys, and drive every config rejection.
 
+## Optional: weekend staleness logger (`latch-feed-watch`)
+
+A second, separate entry point that **only reads**. It polls `latestRoundData()` on a list of Chainlink aggregator proxies every N minutes and appends one JSON line per feed per tick. It exists to measure how stale tokenized-equity feeds actually get out of hours, before anyone chooses a `heartbeat` for `ChainlinkPriceBandAdapter` or a `maxPriceAge` for a pool that halts on staleness.
+
+It is not a keeper job and is not registered in `index.ts`: it reads no key, has no code path that can sign, and its ABI is four view functions (`description`, `decimals`, `aggregator`, `latestRoundData`).
+
+```bash
+npm install && npm run build
+
+# One tick, to prove the config and the RPC work.
+node dist/feeds.js --config feeds.config.robinhood.json --once
+
+# A whole weekend. Start it Friday before 20:00 UTC, stop it Monday after 01:00 UTC.
+node dist/feeds.js --config feeds.config.robinhood.json --interval-minutes 15
+
+# Backfill one past block (needs an archive-capable RPC; see below).
+node dist/feeds.js --config feeds.config.robinhood.json --at-block 61950000 --out logs/backfill.jsonl
+```
+
+Flags: `--config` (default `feeds.config.robinhood.json`), `--once`, `--interval-minutes <n>` (minimum 1, default from config), `--out <path>` (default from config, `logs/feed-staleness.<chainId>.jsonl`), `--at-block <n>` (read one historical block, tag rows `"historical": true`, exit). `logs/` and `*.jsonl` are gitignored.
+
+**Startup refuses to log a feed that is not the one named.** Before the first tick it checks `eth_chainId`, then for every proxy that `description()` equals `expectedDescription` exactly and that `aggregator()` returns an address with code. Robinhood Chain carries at least one contract that answers the AggregatorV3 read shape and checks nothing (a "SequencerUptimeRouter" hardcoded to UP), so a shape-compatible answer is not evidence of a feed.
+
+### One row
+
+```json
+{"ts":"2026-09-14T00:18:38.977Z","chainId":4663,"block":"61950000","blockTimestamp":1789301794,"feed":"SPY/USD","proxy":"0x3197…9f6A","decimals":8,"heartbeatSeconds":86400,"historical":true,"roundId":"18446744073709551742","answer":"76526375000","updatedAt":1789131362,"stalenessSeconds":170432,"heartbeatViolation":true}
+```
+
+- `stalenessSeconds` is `blockTimestamp - updatedAt`, chain time, which is what the adapter compares against. `ts` is the local wall clock, kept so a stalled RPC is visible as a gap between the two.
+- `heartbeatViolation` is `updatedAt + heartbeatSeconds < blockTimestamp`, the same inequality `ChainlinkPriceBandAdapter._read` reverts `AnswerTooOld` on.
+- Every feed is read at the same block in a tick. A failed read still writes a row, with `error` set and the numeric fields `null`, so a hole in the log means the process was down, never that a read failed quietly.
+- `answer` and `roundId` are strings: `int256` and `uint80` do not survive a JSON number.
+
+Summarise a weekend with nothing but Node:
+
+```bash
+node -e 'const rows=require("fs").readFileSync("logs/feed-staleness.4663.jsonl","utf8").trim().split("\n").map(JSON.parse);
+const by={};for(const r of rows){if(r.stalenessSeconds==null)continue;const m=by[r.feed]??={max:0,viol:0,n:0};m.n++;m.max=Math.max(m.max,r.stalenessSeconds);if(r.heartbeatViolation)m.viol++}
+for(const [f,m] of Object.entries(by))console.log(f,"rows",m.n,"max staleness h",(m.max/3600).toFixed(1),"violating rows",m.viol)'
+```
+
+### RPCs: archive, and rate limits
+
+`feeds.config.robinhood.json` lists `robinhood.rpc.blxrbdn.com` and `rpc-robinhood.blockmachine.io` ahead of the canonical `rpc.mainnet.chain.robinhood.com` on purpose. As probed 2026-09-13, the canonical endpoint prunes state within hours (`--at-block` there fails with "metadata is not found", which viem surfaces as "Missing or invalid parameters"), and `rpc.nodeflare.app/robinhood/public` rate-limits keyless callers to one request per ten seconds, which a four-feed tick exceeds. None of these carry a key; never add one that does to a tracked config.
+
+### What the first measurement showed (2026-09-13, block 61950000, Sunday 12:16 UTC)
+
+All four feeds violated their 86,400 s heartbeat: AAPL 40.4 h, NVDA 40.2 h, TSLA 45.4 h, SPY 47.3 h stale, with last rounds between Friday 12:56 and 20:03 UTC. All four resumed at Monday 00:00 UTC (Sunday 20:00 ET). Inside the session they can also be quiet for a long time: SPY's rounds before that were Thursday 13:52 and Friday 06:48 UTC, a 17 h gap under a 0.5 % deviation threshold. So a `maxPriceAge` much tighter than the heartbeat halts a pool during an ordinary quiet session, and the heartbeat alone keeps serving Friday's price until some time on Saturday. The calendar has to close the weekend; staleness cannot do it by itself.
+
+### Running it beside the keeper, on the shared host
+
+**Not deployed anywhere, and not added to `docker-compose.yml`.** This is how it would be added. The host is shared with unrelated production stacks; CLAUDE.md "Deployment: the host is shared" governs: touch only the `latch` project, always `docker compose -p latch …` from `~/latch/keeper`, never stop or reconfigure a neighbour, publish no ports.
+
+The existing image already contains `dist/feeds.js`, so it needs a second service only, appended under `services:` in `docker-compose.yml`:
+
+```yaml
+  feed-watch:
+    container_name: latch-feed-watch
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    entrypoint: ["node", "dist/feeds.js"]
+    command: ["--config", "/config/feeds.config.json", "--interval-minutes", "15", "--out", "/data/feed-staleness.4663.jsonl"]
+    volumes:
+      - ./feeds.config.robinhood.json:/config/feeds.config.json:ro
+      # The one writable path. A named volume, not a bind mount into somebody else's tree.
+      - latch_feed_logs:/data
+    # No environment at all: this service must never see KEEPER_PRIVATE_KEY.
+    networks: [latch_net]
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+```
+
+and at the top level:
+
+```yaml
+volumes:
+  latch_feed_logs:
+    name: latch_feed_logs
+```
+
+Then, from `~/latch/keeper` only: `docker compose -p latch up -d --build feed-watch`. Read it with `docker compose -p latch exec feed-watch tail -n 4 /data/feed-staleness.4663.jsonl`. Size: four rows every 15 minutes is roughly 150 KB a weekend — negligible, but the host disk was at 82 % when last checked, so copy the file off and remove the volume when the measurement is done rather than leaving it to grow. The image runs as uid 1000; a fresh named volume is root-owned, so if the first tick fails with `EACCES`, create the volume owned by `node` rather than running the container as root.
+
 ## What this is not
 
 It is not an AI agent, and it does not need to be. Every decision here is a comparison against on-chain state with an exact answer. See `LatchAI` for the agent-facing surface; a keeper is the boring, reliable half and should stay that way.

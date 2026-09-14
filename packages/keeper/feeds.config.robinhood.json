@@ -1,0 +1,17 @@
+{
+  "chainId": 4663,
+  "notes": "Robinhood tokenized-equity Chainlink feeds. Addresses and heartbeats from Chainlink's reference data (feeds-robinhood-mainnet.json), verified on chain 2026-09-13: description(), decimals()=8, aggregator() -> DualAggregator 1.0.0, phaseId 1. marketHours us_equities_24/5, deviation threshold 0.5%. READ ONLY.",
+  "rpcUrls": [
+    "https://robinhood.rpc.blxrbdn.com",
+    "https://rpc-robinhood.blockmachine.io",
+    "https://rpc.mainnet.chain.robinhood.com"
+  ],
+  "intervalMinutes": 15,
+  "out": "logs/feed-staleness.4663.jsonl",
+  "feeds": [
+    { "label": "AAPL/USD", "proxy": "0x6B22A786bAa607d76728168703a39Ea9C99f2cD0", "heartbeatSeconds": 86400, "expectedDescription": "Robinhood AAPL / USD" },
+    { "label": "TSLA/USD", "proxy": "0x4A1166a659A55625345e9515b32adECea5547C38", "heartbeatSeconds": 86400, "expectedDescription": "RHTSLA / USD" },
+    { "label": "NVDA/USD", "proxy": "0x379EC4f7C378F34a1B47E4F3cbeBCbAC3E8E9F15", "heartbeatSeconds": 86400, "expectedDescription": "RHNVDA / USD" },
+    { "label": "SPY/USD", "proxy": "0x319724394D3A0e3669269846abE664Cd621f9f6A", "heartbeatSeconds": 86400, "expectedDescription": "RHSPY / USD" }
+  ]
+}

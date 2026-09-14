@@ -7,3 +7,7 @@ keeper.config.json
 
 # Deploy-time secret. Read by docker-compose; never committed.
 .env
+
+# Output of latch-feed-watch (read-only staleness logs). Local measurement data, not source.
+logs/
+*.jsonl
