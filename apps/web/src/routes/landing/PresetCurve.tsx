@@ -34,11 +34,12 @@
    WHY BLOCKS ARE SHOWN BESIDE THE SECONDS. `PRESET_PARAMS.windowSeconds` is
    wall clock, but nothing on chain stores wall clock: the kit converts to a
    block count at deploy time and `LaunchGuardHook` compares block numbers
-   forever after. CLAUDE.md records what happens when that conversion is left
-   implicit — this codebase was written assuming 12-second blocks, and every
-   duration expressed in blocks is 118x short on Robinhood Chain. A card that
-   showed "5 minutes" and hid "3,000 blocks" would be reproducing the bug that
-   made `MAX_DECAY_BLOCKS` a constructor argument.
+   forever after. And the block it compares is the CONTRACT's block: on
+   Robinhood Chain (Arbitrum Nitro) `block.number` inside the EVM is Ethereum's
+   block number, ~12 s per block, not the ~0.1 s L2 block the RPC reports. The
+   live kit converted at 0.1 s, so its "5 minute" window is 3,000 contract
+   blocks, which is about TEN HOURS. A card that showed "5 minutes" and hid
+   that would be telling a launcher something false about a deployed contract.
 
    WHY `doesNotProtectAgainst` IS NOT COLLAPSIBLE. It is the sentence that
    decides whether a preset is the right one, and it is the sentence a preset's
@@ -69,47 +70,46 @@ import styles from './presetcurve.module.css'
 import { cx } from './ui'
 
 /* ----------------------------------------------------------------------------
-   THE TWO BLOCK TIMES, AND WHY THERE ARE TWO.
+   THE TWO BLOCK TIMES, AND WHY THEY DISAGREE BY 120x.
 
-   Neither is read from chain — this component makes no RPC call — so both are
-   stated constants with their sources named, which is the standard CLAUDE.md
-   sets for a number that cannot be measured at render time.
+   Neither is read from chain at render time — this component makes no RPC
+   call — so both are stated with their sources named.
 
-   DECLARED is the divisor the deployed contracts actually use. It is a
-   constructor argument, `blockTimeCentis`, fixed at deployment:
-     · packages/launchpad/script/DeployLaunchGuardHookMainnet.s.sol:68
-         LAUNCH_BLOCK_TIME_CENTIS=10
-     · packages/sdk/src/launchpad/presets.ts:180
-         "Robinhood Chain's kit is configured at 10 (0.10s)"
-   Every block count on this card is `secondsToBlocks(windowSeconds, 10)`,
-   which is the arithmetic the kit performs, not an approximation of it.
+   DECLARED is the divisor the deployed KIT uses to turn a preset's seconds
+   into blocks. It is a constructor argument, `blockTimeCentis`, and reads 10
+   (0.1 s) on the live LaunchpadKit 0x2a4C…bcA7 and LaunchGuardHook 0x8b4F…575c
+   (read 2026-09-13). Every block count on this card is
+   `secondsToBlocks(windowSeconds, 10)`, the arithmetic the kit performs.
 
-   MEASURED is the chain's real block time, 0.102 s over 500,000 blocks
-   (LaunchGuardHook.sol:161, restated in CLAUDE.md). The hook's constructor doc
-   is explicit that the declared value must be rounded DOWN — "Robinhood
-   measures 10.2 - declare 10, never 11" - because a smaller declared block
-   time makes the deploy-time safety checks demand MORE blocks for the same
-   window, which errs safe.
+   REAL is how often those blocks actually pass for the hook:
+   `contractBlockTimeCentis` in the SDK address book, 1200 (12 s). Robinhood is
+   Arbitrum Nitro, where `block.number` inside the EVM is Ethereum's block
+   number. Proven against mined state on 2026-09-13 (an ERC20Votes checkpoint
+   written in L2 block 62,356,430 is keyed at 25,971,883, that block's
+   `l1BlockNumber`) and consistent with Arbitrum's documentation. The 0.102 s
+   this card used to call "measured" is the L2 block time — the LOG clock — and
+   says nothing about how fast `LaunchGuardHook`'s windows elapse.
 
-   The gap between them is not noise, it is a systematic 2% under-count of wall
-   clock: a window declared as 300 s is 3,000 blocks, and 3,000 blocks take
-   ~306 s to actually pass. Shown rather than smoothed away, because a launch
-   operator timing an announcement to the end of the window is entitled to the
-   difference.
+   So every live preset window runs 120x its label until the kit and hook are
+   redeployed with the real cadence. Shown, not smoothed: a launcher timing an
+   announcement to the end of the tax is entitled to the truth.
 
-   Both are Robinhood Chain's. `LaunchpadKit` is deployed there and nowhere
-   else (`launchpadKit` reads null on Sepolia in the SDK address book), so
-   labelling the block column with that chain is a fact rather than a default.
+   `LaunchpadKit` is deployed on Robinhood and nowhere else (`launchpadKit`
+   reads null on Sepolia in the SDK address book), so this card describes that
+   chain as a fact rather than a default.
    ---------------------------------------------------------------------------- */
+
+/** The chain this card describes, named from the SDK address book. */
+const CHAIN = DEPLOYMENTS[ROBINHOOD_CHAIN_ID]
 
 /** `blockTimeCentis` as the deployed kit and hook were constructed with it. */
 const BLOCK_TIME_CENTIS_DECLARED = 10
 
-/** Measured block time, in hundredths of a second. Annotation only. */
-const BLOCK_TIME_CENTIS_MEASURED = 10.2
+/** Real cadence of the hook's `block.number` on this chain, from the SDK address book. */
+const CONTRACT_BLOCK_TIME_CENTIS = CHAIN.contractBlockTimeCentis
 
-/** The chain the two constants above describe, named from the SDK address book. */
-const CHAIN = DEPLOYMENTS[ROBINHOOD_CHAIN_ID]
+/** How much longer every window really runs than the kit declared. 120 on Robinhood today. */
+const STRETCH = CONTRACT_BLOCK_TIME_CENTIS / BLOCK_TIME_CENTIS_DECLARED
 
 /* ----------------------------------------------------------------------------
    Which presets are selectable.
@@ -279,11 +279,11 @@ function buildPath(p: PresetParams, decayBlocks: number, f: Frame): Plot {
   return { line, area: close(line), steppedPerBlock }
 }
 
-/** Seconds, at the DECLARED block time — the one the contract divides by. */
+/** Seconds, at the DECLARED block time — what the preset's label promises. */
 const declaredSeconds = (blocks: number): number => (blocks * BLOCK_TIME_CENTIS_DECLARED) / 100
 
-/** Seconds, at the MEASURED block time — the one a wall clock reports. */
-const measuredSeconds = (blocks: number): number => (blocks * BLOCK_TIME_CENTIS_MEASURED) / 100
+/** Seconds, at the REAL contract block cadence — what a wall clock reports on this chain. */
+const realSeconds = (blocks: number): number => (blocks * CONTRACT_BLOCK_TIME_CENTIS) / 100
 
 const int = (n: number): string => Math.round(n).toLocaleString('en-US')
 
@@ -389,13 +389,14 @@ export function PresetCurve() {
   const labelLeft = cursorX > PL + frame.iw * 0.66
 
   const valueText =
-    `${formatPips(fee)} at block +${int(block)}, ${declaredSeconds(block).toFixed(1)}s from the open` +
+    `${formatPips(fee)} at block +${int(block)}, about ${humanDuration(realSeconds(block))} from the open on ${CHAIN.name}` +
     (block >= decayBlocks ? ', past the window, at the floor' : '')
 
   const summary = params.enabled
     ? `${LABELS[selected]} preset: the LP fee decays from ${formatPips(params.initialFeeBips)} at the open ` +
-      `to a floor of ${formatPips(params.finalFeeBips)} over ${humanDuration(params.windowSeconds)}, ` +
-      `which is ${int(decayBlocks)} blocks on ${CHAIN.name}.`
+      `to a floor of ${formatPips(params.finalFeeBips)} over ${int(decayBlocks)} blocks. The preset is labelled ` +
+      `${humanDuration(params.windowSeconds)}, but on the deployed ${CHAIN.name} kit those blocks really take ` +
+      `about ${humanDuration(realSeconds(decayBlocks))}.`
     : `${LABELS[selected]} preset: the gate is off, so the LP fee is a flat ` +
       `${formatPips(params.finalFeeBips)} at every block.`
 
@@ -529,8 +530,9 @@ export function PresetCurve() {
                 </g>
               ) : null}
 
-              {/* X axis: seconds at the DECLARED block time. A disabled preset's
-                  x position carries no information, so it gets a sentence. */}
+              {/* X axis: REAL time on the deployed contracts, at the hook's
+                  actual block cadence. A disabled preset's x position carries
+                  no information, so it gets a sentence. */}
               {params.enabled ? (
                 <>
                   {[0, 0.25, 0.5, 0.75, 1].map((t) => {
@@ -543,12 +545,12 @@ export function PresetCurve() {
                         y={H - PB + 20}
                         textAnchor="middle"
                       >
-                        {Math.round(declaredSeconds(b))}s
+                        {humanDuration(realSeconds(b))}
                       </text>
                     )
                   })}
                   <text className={styles['axisNote']} x={PL + frame.iw / 2} y={H - PB + 38} textAnchor="middle">
-                    seconds from the open, at the declared {BLOCK_TIME_CENTIS_DECLARED / 100}s block
+                    real time from the open on {CHAIN.name} · one hook block ≈ {CONTRACT_BLOCK_TIME_CENTIS / 100}s
                   </text>
                 </>
               ) : (
@@ -592,8 +594,8 @@ export function PresetCurve() {
             <>
               <span className={styles['readFee']}>{formatPips(fee)}</span>
               <span className={styles['readMeta']}>
-                block +{int(block)} · {declaredSeconds(block).toFixed(1)}s declared · ~
-                {measuredSeconds(block).toFixed(1)}s at the measured {BLOCK_TIME_CENTIS_MEASURED / 100}s
+                block +{int(block)} · ~{humanDuration(realSeconds(block))} real · labelled as{' '}
+                {declaredSeconds(block).toFixed(1)}s
                 {block >= decayBlocks ? ' · past the window, at the floor' : ''}
               </span>
             </>
@@ -614,11 +616,13 @@ export function PresetCurve() {
             <dd>{formatPips(params.finalFeeBips)}</dd>
           </div>
           <div className={styles['fact']}>
-            <dt>Window</dt>
+            <dt>Window, really</dt>
             <dd>
-              {params.enabled ? humanDuration(params.windowSeconds) : 'none'}
+              {params.enabled ? `~${humanDuration(realSeconds(decayBlocks))}` : 'none'}
               <span className={styles['factSub']}>
-                {params.enabled ? `${int(params.windowSeconds)}s declared` : 'the gate is off'}
+                {params.enabled
+                  ? `labelled ${humanDuration(params.windowSeconds)} · ${STRETCH}x longer on the live kit`
+                  : 'the gate is off'}
               </span>
             </dd>
           </div>
@@ -628,12 +632,30 @@ export function PresetCurve() {
               {int(decayBlocks)}
               <span className={styles['factSub']}>
                 {params.enabled
-                  ? `~${int(measuredSeconds(decayBlocks))}s at the measured ${BLOCK_TIME_CENTIS_MEASURED / 100}s`
+                  ? `converted at the kit's declared ${BLOCK_TIME_CENTIS_DECLARED / 100}s; elapsing every ~${CONTRACT_BLOCK_TIME_CENTIS / 100}s`
                   : 'exists only because zero is rejected'}
               </span>
             </dd>
           </div>
         </dl>
+
+        {/* Not behind a disclosure, for the same reason as the limit below: it
+            is true of the deployed contracts today and it changes the decision. */}
+        {STRETCH !== 1 ? (
+          <p className={styles['requireOn']}>
+            <strong>
+              The deployed {CHAIN.name} kit runs every preset about {STRETCH}x longer than its label.
+            </strong>{' '}
+            <code>LaunchpadKit</code> converts seconds to blocks at {BLOCK_TIME_CENTIS_DECLARED / 100}s per
+            block, but on this chain <code>LaunchGuardHook</code>&rsquo;s <code>block.number</code> is
+            Ethereum&rsquo;s block number, which advances about every {CONTRACT_BLOCK_TIME_CENTIS / 100}s. A
+            {' '}
+            {humanDuration(params.windowSeconds)} preset therefore taxes for about{' '}
+            {humanDuration(realSeconds(decayBlocks))}, and a start delay waits {STRETCH}x as long as requested.
+            Durations in the preset descriptions, including the sentence below, are the labels, not the live
+            behaviour. This holds until the kit and hook are redeployed with the real block cadence.
+          </p>
+        ) : null}
 
         {/* Not behind a disclosure: it is the sentence that argues with the
             preset's own name, and it renders at full weight, always. */}
@@ -659,8 +681,9 @@ export function PresetCurve() {
               ? 'every block plotted'
               : 'real blocks sampled and joined'}
           . Blocks at the deployed <code>blockTimeCentis = {BLOCK_TIME_CENTIS_DECLARED}</code>; wall
-          clock also shown at the measured {BLOCK_TIME_CENTIS_MEASURED / 100}s. Nothing is read from
-          chain — <code>previewSchedule(params)</code> on the kit is the runtime authority.
+          clock at the hook&rsquo;s real <code>block.number</code> cadence of ~{CONTRACT_BLOCK_TIME_CENTIS / 100}s
+          (SDK <code>contractBlockTimeCentis</code>, measured 2026-09-13). Nothing is read from chain —{' '}
+          <code>previewSchedule(params)</code> on the kit is the runtime authority for the block count.
           {CHAIN.launchGuardHook !== null ? (
             <>
               {' '}

@@ -309,8 +309,11 @@ function feeSides(pool: PoolRecord, swaps: readonly SwapRecord[], holdings: read
   ]
 
   for (const s of swaps) {
-    // The INPUT side is the positive delta: tokens flowing into the pool.
-    const i = s.amount0 > 0n ? 0 : 1
+    // The INPUT side is the NEGATIVE delta. `Swap` emits the caller's side of
+    // the BalanceDelta, so negative = paid in by the caller (verified on 4663,
+    // tx 0x68286e9b…629a: amount0 = -1e18 and 1e18 of currency0 entered the
+    // Vault). The inherited ICLPoolManager docstring has the sign backwards.
+    const i = s.amount0 < 0n ? 0 : 1
     const gross = absBig(i === 0 ? s.amount0 : s.amount1)
     const total = (gross * BigInt(s.feePips)) / 1_000_000n
     const protocol = (gross * BigInt(s.protocolFeePips)) / 1_000_000n

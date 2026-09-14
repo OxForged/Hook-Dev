@@ -62,7 +62,10 @@ async function loadSwapScreen(): Promise<SwapScreenData> {
      panel says those two things differently. */
   const hooked = context.pools.filter((p) => p.hasHook)
   const takes = await Promise.all(
-    hooked.map((p) => readHookTake(p.hooks, p.poolId, context.blockNumber)),
+    /* The hook's own clock, not the RPC head: on Robinhood the hook stores
+       Ethereum block numbers, and against the L2 head every queued proposal
+       read as armed or expired. */
+    hooked.map((p) => readHookTake(p.hooks, p.poolId, context.contractBlockNumber)),
   )
 
   const hooks: Record<string, HookTake> = {}

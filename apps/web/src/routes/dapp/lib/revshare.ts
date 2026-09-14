@@ -66,6 +66,7 @@ import {
   ACTIVE_CHAIN_ID,
   client,
   formatUnits,
+  readContractClockReading,
   scanWindows,
   scanWindowsBackward,
   scanWindowsMulti,
@@ -495,7 +496,13 @@ export interface PoolOverview {
   pendingOwner: Address | null
   paused: boolean
   configDelayBlocks: bigint
+  /** `eth_blockNumber` — the log clock. The L2 head on Robinhood. */
   blockNumber: bigint
+  /**
+   * The hook's own `block.number` — Ethereum's on Robinhood. `pending.effectiveBlock`
+   * and `expiryBlock` are on THIS clock and are only ever compared to it.
+   */
+  contractBlockNumber: bigint
   poolManager: Address
   resolution: KeyResolution | null
   /**
@@ -558,7 +565,7 @@ export async function readPoolOverview(hook: Address, poolId: Hex): Promise<Pool
      `read`. Two struct shapes exist on chain and a typed ABI throws on one and
      silently misreads the other. A failure here throws into the screen's error
      state; it is never caught into "no proposal". */
-  const [pending, rawBeneficiaries, totalWeight, distributorRaw, pendingOwnerRaw, paused, delay, blockNumber, poolManager] =
+  const [pending, rawBeneficiaries, totalWeight, distributorRaw, pendingOwnerRaw, paused, delay, clock, poolManager] =
     await Promise.all([
       readPendingConfig(c, hook, poolId),
       read<readonly Beneficiary[]>('getBeneficiaries', [poolId]),
@@ -567,7 +574,9 @@ export async function readPoolOverview(hook: Address, poolId: Hex): Promise<Pool
       read<Address>('pendingPoolOwner', [poolId]),
       read<boolean>('paused', []),
       read<bigint>('CONFIG_DELAY_BLOCKS', []),
-      c.getBlockNumber(),
+      /* Both clocks in one read. `getBlockNumber()` alone was compared against
+         `effectiveBlock` and is the L2 head on Robinhood — a different clock. */
+      readContractClockReading(REVSHARE_CHAIN_ID),
       read<Address>('poolManager', []),
     ])
 
@@ -620,7 +629,8 @@ export async function readPoolOverview(hook: Address, poolId: Hex): Promise<Pool
       pendingOwner: pendingOwnerRaw === ZERO_ADDRESS ? null : pendingOwnerRaw,
       paused,
       configDelayBlocks: BigInt(delay),
-      blockNumber,
+      blockNumber: clock.rpcBlockNumber,
+      contractBlockNumber: clock.contractBlockNumber,
       poolManager,
       resolution,
       currencies,
@@ -649,9 +659,13 @@ export interface OwnedPools {
   pools: OwnedPool[]
   /** Ids seen in the logs whose current `poolOwner` is someone else. */
   transferredAway: number
+  /** Log-scan range, on the L2 (RPC) clock. */
   fromBlock: bigint
   toBlock: bigint
+  /** `eth_blockNumber` at scan time. Equal to `toBlock`. */
   blockNumber: bigint
+  /** The hook's `block.number`. Pending-proposal status is judged against this, never `blockNumber`. */
+  contractBlockNumber: bigint
 }
 
 /**
@@ -744,7 +758,10 @@ export async function readOwnedPools(hook: Address, owner: Address): Promise<Own
     })
   }
 
-  return { pools, transferredAway, fromBlock, toBlock, blockNumber: toBlock }
+  /* Read AFTER the per-pool reads so no proposal can look older than the clock
+     it is judged against. */
+  const clock = await readContractClockReading(REVSHARE_CHAIN_ID)
+  return { pools, transferredAway, fromBlock, toBlock, blockNumber: toBlock, contractBlockNumber: clock.contractBlockNumber }
 }
 
 /**

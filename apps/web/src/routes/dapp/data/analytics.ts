@@ -303,7 +303,11 @@ function feeSeries(m: ProtocolMetrics, swaps: SwapRecord[]): TokenFeeSeries[] {
   const ascending = [...swaps].sort((a, b) => Number(a.blockNumber - b.blockNumber))
 
   for (const s of ascending) {
-    const side = s.amount0 > 0n ? 0 : 1
+    // `Swap` amounts are the CALLER's delta: negative = paid in. The fee is
+    // charged on the input, so the input side is the NEGATIVE one (verified on
+    // 4663, tx 0x68286e9b…629a: amount0 = -1e18 and 1e18 of currency0 entered
+    // the Vault). The inherited ICLPoolManager docstring has the sign backwards.
+    const side = s.amount0 < 0n ? 0 : 1
     const gross = absBig(side === 0 ? s.amount0 : s.amount1)
     const fee = (gross * BigInt(s.feePips)) / 1_000_000n
     if (fee === 0n) continue

@@ -49,9 +49,9 @@ const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 /**
  * How often the head is re-read.
  *
- * NOT once per block. Robinhood produces a block every 0.102s — the same
- * 118x-faster clock that makes every block-denominated constant in this
- * codebase wrong (CLAUDE.md, `CONFIG_DELAY_BLOCKS`). Polling at chain speed
+ * NOT once per block. Robinhood produces an L2 block every 0.102s. (That is
+ * the RPC/log clock; contracts there see Ethereum's ~12 s block number
+ * instead — see `packages/sdk/src/chains/clock.ts`.) Polling at chain speed
  * would be ten calls a second against endpoints that rate-limit, to animate a
  * digit nobody can read at that rate. The figure shown is the head as of the
  * last poll, and nothing increments it between polls: that would be invented.

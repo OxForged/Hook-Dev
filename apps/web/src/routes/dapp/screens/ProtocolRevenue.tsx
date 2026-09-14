@@ -17,6 +17,7 @@
    ============================================================================ */
 
 import { LatchConnectButton } from '@latchprotocol/connect'
+import { contractBlocksToSeconds, humanDuration } from '@latchprotocol/sdk'
 import { Link } from 'react-router-dom'
 import { useAccount, useSwitchChain } from 'wagmi'
 
@@ -51,27 +52,32 @@ import { dappPath } from '../paths'
 const CHAIN = DEPLOYMENTS[REVSHARE_CHAIN_ID]
 
 /**
- * A pool's outstanding proposal, by where it stands at the head that was read.
+ * A pool's outstanding proposal, by where it stands on the HOOK's clock.
  * Hazard item 5: `armed` is shown as armed — a legacy 7-word hook's matured
  * proposal never expires, so on 0x23CE… it reads armed however old it is.
+ *
+ * `contractBlock` is the hook's `block.number`, not the RPC head: on Robinhood
+ * the first is Ethereum's block number and the second the L2 block, and mixing
+ * them showed queued proposals as armed or expired.
  */
-function PendingBadge({ pool, head }: { pool: OwnedPool; head: bigint }) {
+function PendingBadge({ pool, contractBlock }: { pool: OwnedPool; contractBlock: bigint }) {
   const status = proposalStatus(
     { effectiveBlock: pool.pendingEffectiveBlock, expiryBlock: pool.pendingExpiryBlock },
-    head,
+    contractBlock,
   )
   if (status === 'none') return null
   if (status === 'queued') {
+    const secs = contractBlocksToSeconds(pool.pendingEffectiveBlock - contractBlock, REVSHARE_CHAIN_ID)
     return (
       <span className="dapp-badge dapp-badge--info">
-        change at block {pool.pendingEffectiveBlock.toString()}
+        change at contract block {pool.pendingEffectiveBlock.toString()} · ~{humanDuration(secs)}
       </span>
     )
   }
   if (status === 'expired') {
     return (
       <span className="dapp-badge dapp-badge--mute">
-        proposal expired at block {pool.pendingExpiryBlock?.toString()}
+        proposal expired at contract block {pool.pendingExpiryBlock?.toString()}
       </span>
     )
   }
@@ -208,6 +214,9 @@ export default function ProtocolRevenue() {
               <h3 className="dapp-card__title">Your pools</h3>
               <span className="dapp-badge dapp-badge--mute">
                 head block {state.data.blockNumber.toString()}
+                {state.data.contractBlockNumber !== state.data.blockNumber
+                  ? ` · hook block.number ${state.data.contractBlockNumber.toString()}`
+                  : ''}
               </span>
             </div>
 
@@ -283,7 +292,7 @@ export default function ProtocolRevenue() {
                           {p.config.enabled ? 'enabled' : 'disabled'}
                         </span>{' '}
                         {p.config.frozen && <span className="dapp-badge dapp-badge--info">frozen</span>}{' '}
-                        <PendingBadge pool={p} head={state.data.blockNumber} />
+                        <PendingBadge pool={p} contractBlock={state.data.contractBlockNumber} />
                       </td>
                     </tr>
                   ))}

@@ -171,20 +171,30 @@ export async function readPendingConfig(
 }
 
 /**
- * Where a proposal stands at `atBlock`, on either shape.
+ * Where a proposal stands at `contractBlockNumber`, on either shape.
  *
  *   none      effectiveBlock == 0
- *   queued    effectiveBlock > atBlock
+ *   queued    effectiveBlock > contractBlockNumber
  *   armed     matured and applicable by anyone right now. On the legacy shape
  *             this is permanent until the owner cancels or freezes.
- *   expired   current shape only, atBlock > expiryBlock: `applyPendingConfig`
- *             reverts `PendingConfigExpired`, so it can never land as-is.
+ *   expired   current shape only, contractBlockNumber > expiryBlock:
+ *             `applyPendingConfig` reverts `PendingConfigExpired`.
+ *
+ * `contractBlockNumber` MUST be `block.number` as the hook sees it —
+ * `readContractBlockNumber` from `@latchprotocol/sdk` — and NEVER
+ * `getBlockNumber()`. On Robinhood (Arbitrum Nitro) the hook stores Ethereum
+ * block numbers (~26M) while the RPC head is the L2 block (~62M); against the
+ * RPC head a proposal queued for weeks reads "expired", and a legacy-hook
+ * proposal still queued reads "armed".
  */
 export type ProposalStatus = 'none' | 'queued' | 'armed' | 'expired'
 
-export function proposalStatus(p: Pick<DecodedPendingConfig, 'effectiveBlock' | 'expiryBlock'>, atBlock: bigint): ProposalStatus {
+export function proposalStatus(
+  p: Pick<DecodedPendingConfig, 'effectiveBlock' | 'expiryBlock'>,
+  contractBlockNumber: bigint,
+): ProposalStatus {
   if (p.effectiveBlock === 0n) return 'none'
-  if (atBlock < p.effectiveBlock) return 'queued'
-  if (p.expiryBlock !== null && atBlock > p.expiryBlock) return 'expired'
+  if (contractBlockNumber < p.effectiveBlock) return 'queued'
+  if (p.expiryBlock !== null && contractBlockNumber > p.expiryBlock) return 'expired'
   return 'armed'
 }

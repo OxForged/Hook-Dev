@@ -31,6 +31,7 @@
    ============================================================================ */
 
 import { Link, useParams } from 'react-router-dom'
+import { contractBlocksToSeconds, getContractClock, humanDuration } from '@latchprotocol/sdk'
 
 import { DEPLOYMENTS } from '../../../lib/chain'
 import { proposalStatus } from '../../../lib/pendingConfig'
@@ -203,10 +204,14 @@ function PoolBody({
      (0x23CE…, the LTT1/LTT2 pool) it has no expiry and stays armed until the
      owner cancels or freezes; only the current 8-word hook can say `expired`. */
   const pending = o.pending
-  const status = proposalStatus(pending, o.blockNumber)
+  /* Judged on the hook's OWN clock. `o.blockNumber` is the RPC head — the L2
+     block on Robinhood, ~2.4x the value the hook stored — and against it a
+     queued proposal read as expired (current hook) or armed (legacy hook). */
+  const status = proposalStatus(pending, o.contractBlockNumber)
   const hasPending = status !== 'none'
-  const blocksToGo = status === 'queued' ? pending.effectiveBlock - o.blockNumber : 0n
+  const blocksToGo = status === 'queued' ? pending.effectiveBlock - o.contractBlockNumber : 0n
   const pendingDue = status === 'armed'
+  const parentClock = getContractClock(REVSHARE_CHAIN_ID)?.clock === 'parent-l1'
 
   const lifetimeTotal = (row: { lpDonated: bigint; toBeneficiaries: bigint; toDistributor: bigint }) =>
     row.lpDonated + row.toBeneficiaries + row.toDistributor
@@ -347,15 +352,25 @@ function PoolBody({
                 ? 'armed · applicable by anyone now'
                 : status === 'expired'
                   ? 'expired · cannot be applied'
-                  : `${blocksToGo.toString()} blocks to go`}
+                  : `${blocksToGo.toString()} contract blocks · ~${humanDuration(contractBlocksToSeconds(blocksToGo, REVSHARE_CHAIN_ID))} to go`}
             </span>
           </div>
           <p className="live-note">
             <code>proposeConfig</code> put this change behind {o.configDelayBlocks.toString()} blocks
-            (<code>CONFIG_DELAY_BLOCKS</code>). It becomes applicable at block{' '}
-            {pending.effectiveBlock.toString()}; the head is {o.blockNumber.toString()}. Applying it
-            is <strong>permissionless</strong> — deliberately, so a proposal cannot be stranded by an
-            owner who proposed it and walked away.
+            (<code>CONFIG_DELAY_BLOCKS</code>), which is about{' '}
+            {humanDuration(contractBlocksToSeconds(o.configDelayBlocks, REVSHARE_CHAIN_ID))} of real
+            time here. It becomes applicable at contract block {pending.effectiveBlock.toString()}; the
+            hook&rsquo;s <code>block.number</code> is {o.contractBlockNumber.toString()}
+            {parentClock ? (
+              <>
+                {' '}
+                (this chain&rsquo;s EVM reports Ethereum&rsquo;s block number, advancing about every 12 s;
+                the RPC head, {o.blockNumber.toString()}, is a different clock and is not what the hook
+                compares against)
+              </>
+            ) : null}
+            . Applying it is <strong>permissionless</strong> — deliberately, so a proposal cannot be
+            stranded by an owner who proposed it and walked away.
           </p>
           <p className="live-note dapp-mt-2">
             {pending.expiryBlock === null ? (
@@ -368,13 +383,15 @@ function PoolBody({
               </>
             ) : status === 'expired' ? (
               <>
-                Its window closed at block {pending.expiryBlock.toString()}.{' '}
+                Its window closed at contract block {pending.expiryBlock.toString()}.{' '}
                 <code>applyPendingConfig</code> now reverts <code>PendingConfigExpired</code>, so it
                 cannot land; re-proposing restarts the full delay.
               </>
             ) : (
               <>
-                It stays applicable through block {pending.expiryBlock.toString()} (
+                It stays applicable through contract block {pending.expiryBlock.toString()}, about{' '}
+                {humanDuration(contractBlocksToSeconds(pending.expiryBlock - pending.effectiveBlock, REVSHARE_CHAIN_ID))}{' '}
+                after it matures (
                 <code>expiryBlock</code>), then expires. <code>disable</code> and{' '}
                 <code>reduceFee</code> do not clear it before then.
               </>

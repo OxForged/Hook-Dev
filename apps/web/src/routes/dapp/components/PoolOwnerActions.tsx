@@ -38,6 +38,7 @@
    ============================================================================ */
 
 import { LatchConnectButton } from '@latchprotocol/connect'
+import { contractBlocksToSeconds, humanDuration } from '@latchprotocol/sdk'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Abi, Address } from 'viem'
 import { isAddress } from 'viem'
@@ -508,13 +509,18 @@ function ProposeConfig({
   }, [feePips, lp, ben, dist, distributor, enabled])
 
   const delayBlocks = o.configDelayBlocks
+  /* Real time at the hook's own block cadence — ~12 s per `block.number` on
+     Robinhood, where the hook sees Ethereum's block number. The live hook was
+     sized for 0.1 s blocks, so 432,000 blocks is ~60 days, not 12 hours. */
+  const delayReal = humanDuration(contractBlocksToSeconds(delayBlocks, REVSHARE_CHAIN_ID))
   const raising = parsed.args !== null && parsed.args[0] > c.feePips
 
   return (
     <div className="po-block">
       <h4 className="po-block__title">Propose a configuration change</h4>
       <p className="live-note">
-        Queues the change; it becomes applicable {delayBlocks.toString()} blocks later
+        Queues the change; it becomes applicable {delayBlocks.toString()} blocks later — about{' '}
+        <strong>{delayReal}</strong> of real time on this chain
         (<code>CONFIG_DELAY_BLOCKS</code>), and anyone may then call{' '}
         <code>applyPendingConfig</code> — the delay is the protection, not the caller. Only
         escalation waits: to <em>lower</em> the take use <code>reduceFee</code> below, which applies
@@ -563,13 +569,13 @@ function ProposeConfig({
       {raising && (
         <p className="dp-hint dp-hint--warn">
           This raises the take from {c.feePips} to {parsed.args?.[0]} pips. That is the case the delay
-          exists for — traders get {delayBlocks.toString()} blocks of notice.
+          exists for — traders get {delayBlocks.toString()} blocks (about {delayReal}) of notice.
         </p>
       )}
 
       <OwnerAction
         label="proposeConfig"
-        describes={`Writes the proposal. It cannot be applied for ${delayBlocks.toString()} blocks, and it replaces any proposal already outstanding.`}
+        describes={`Writes the proposal. It cannot be applied for ${delayBlocks.toString()} blocks (about ${delayReal}), and it replaces any proposal already outstanding.`}
         hook={o.hook}
         functionName="proposeConfig"
         args={parsed.args === null ? [] : [keyTuple(poolKey), parsed.args]}

@@ -11,7 +11,9 @@ import {
 import {
   LATCH_DEPLOYMENTS,
   isLatchChainId,
+  readContractClock,
   resolveEndpoints,
+  type ContractClockReading,
   type LatchChainId,
 } from '@latchprotocol/sdk'
 
@@ -1072,8 +1074,12 @@ export async function readProtocolMetrics(
   let lpFees1 = 0n
 
   for (const s of swaps ?? []) {
-    // The INPUT side is the positive delta: tokens flowing into the pool.
-    const inIs0 = s.amount0 > 0n
+    // The INPUT side is the NEGATIVE delta. `Swap` emits the swap's BalanceDelta from the
+    // CALLER's side (negative = owed by the caller = paid in), whatever the inherited
+    // `ICLPoolManager` docstring says about "the pool". Verified 2026-09-13 on 4663: tx
+    // 0x68286e9b…629a emitted amount0 = -1e18 while exactly 1e18 of currency0 moved INTO the
+    // Vault. This line used to read `> 0n` and counted every swap's OUTPUT as its volume.
+    const inIs0 = s.amount0 < 0n
     const gross = inIs0 ? abs(s.amount0) : abs(s.amount1)
 
     const total = (gross * BigInt(s.feePips)) / 1_000_000n
@@ -1448,9 +1454,30 @@ async function readActivityUncached(
   return out.sort((a, b) => Number(b.blockNumber - a.blockNumber)).slice(0, limit)
 }
 
-/** Current head of the chain. Used by the dapp shell's block chip. */
+/**
+ * Current head of the chain — the LOG clock. Used by the dapp shell's block
+ * chip and for `getLogs` ranges. Never compare a contract-stored block number
+ * (`effectiveBlock`, `expiryBlock`, `startBlock`) against this; use
+ * `readContractClockReading`.
+ */
 export async function readBlockNumber(
   chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<bigint> {
   return client(chainId).getBlockNumber()
+}
+
+/**
+ * `block.number` as a CONTRACT sees it, with the RPC head beside it.
+ *
+ * On Robinhood (Arbitrum Nitro) these are different clocks: a contract sees
+ * Ethereum's block number (~26M, ~12 s each) while `eth_blockNumber` is the L2
+ * block (~62M, ~0.1 s). Every block number a Latch contract stores is on the
+ * first. Comparing one against the second made queued proposals render as
+ * expired or armed. Throws rather than substitute the RPC head — see
+ * `packages/sdk/src/chains/clock.ts`.
+ */
+export async function readContractClockReading(
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
+): Promise<ContractClockReading> {
+  return readContractClock(client(chainId), chainId)
 }

@@ -61,6 +61,7 @@
    ============================================================================ */
 
 import { LatchConnectButton } from '@latchprotocol/connect'
+import { getContractClock, humanDuration } from '@latchprotocol/sdk'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Abi, Address, Hex } from 'viem'
 import {
@@ -695,7 +696,7 @@ export function SwapPanel({ context, pool, hook, compact = false, onTraded }: Sw
         </details>
       </div>
 
-      <PendingConfigWarning hook={hook} blockNumber={context.blockNumber} />
+      <PendingConfigWarning hook={hook} chainId={context.chainId} contractBlockNumber={context.contractBlockNumber} />
 
       {/* ---- slippage ---- */}
       <div className="swap-slippage">
@@ -891,7 +892,16 @@ function HookCut({ hook }: { hook: HookTake | null }) {
    The armed proposal. This is the disclosure a trader would otherwise not get.
    --------------------------------------------------------------------------- */
 
-function PendingConfigWarning({ hook, blockNumber }: { hook: HookTake | null; blockNumber: bigint }) {
+function PendingConfigWarning({
+  hook,
+  chainId,
+  contractBlockNumber,
+}: {
+  hook: HookTake | null
+  chainId: number
+  /** The hook's `block.number` — Ethereum's on Robinhood, not the L2 head. */
+  contractBlockNumber: bigint
+}) {
   if (hook === null || !hook.readable || hook.pending === null) return null
   const p = hook.pending
 
@@ -900,7 +910,7 @@ function PendingConfigWarning({ hook, blockNumber }: { hook: HookTake | null; bl
       <p className="swap-pending__head">
         {p.applicable
           ? 'A configuration change is armed and can be applied by anyone, right now'
-          : `A configuration change is queued for block ${p.effectiveBlock}`}
+          : `A configuration change is queued for contract block ${p.effectiveBlock}`}
       </p>
       <p className="swap-pending__body">
         The pool owner has proposed a cut of <strong>{pipsPct(p.feePips)}</strong>
@@ -914,8 +924,14 @@ function PendingConfigWarning({ hook, blockNumber }: { hook: HookTake | null; bl
           </>
         ) : (
           <>
-            {p.blocksRemaining.toString()} blocks remain (head is {blockNumber.toString()}). Once the
-            delay elapses, <code>applyPendingConfig</code> is permissionless and anyone can land it.
+            {p.blocksRemaining.toString()} contract blocks remain, about{' '}
+            {humanDuration(p.secondsRemaining)} (the hook's <code>block.number</code> is{' '}
+            {contractBlockNumber.toString()}
+            {getContractClock(chainId)?.clock === 'parent-l1'
+              ? "; on this chain that is Ethereum's block number, not the L2 head shown in the pool list"
+              : ''}
+            ). Once the delay elapses, <code>applyPendingConfig</code> is permissionless and anyone
+            can land it.
           </>
         )}{' '}
         Your <code>amountOutMinimum</code> is what protects a quote taken before that happens.

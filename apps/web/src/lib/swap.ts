@@ -122,10 +122,13 @@ import {
   type Hex,
 } from 'viem'
 
+import { contractBlocksToSeconds } from '@latchprotocol/sdk'
+
 import {
   ACTIVE_CHAIN_ID,
   DEPLOYMENTS,
   client,
+  readContractClockReading,
   scanWindows,
   type DeployedChainId,
 } from './chain'
@@ -335,10 +338,18 @@ export interface HookTake {
     enabled: boolean
     /** True once the delay has elapsed: anyone can land it in the next block. */
     applicable: boolean
-    /** Blocks still to wait. Zero once applicable. */
+    /** CONTRACT blocks still to wait (the hook's `block.number`). Zero once applicable. */
     blocksRemaining: bigint
+    /**
+     * `blocksRemaining` as real seconds, at the chain's contract block cadence
+     * (12 s on Robinhood). An estimate: the parent-chain number the hook reads
+     * advances with Ethereum's slots, not on a fixed timer.
+     */
+    secondsRemaining: number
   } | null
   configDelayBlocks: bigint | null
+  /** `CONFIG_DELAY_BLOCKS` in real seconds at the contract cadence. Null when the delay was unreadable. */
+  configDelaySeconds: number | null
 }
 
 export interface SwapContext {
@@ -350,7 +361,13 @@ export interface SwapContext {
   controllerWired: boolean
   /** `UniversalRouter.paused()` — a paused router refuses every swap. */
   routerPaused: boolean
+  /** `eth_blockNumber` — the log clock. The L2 head on Robinhood. */
   blockNumber: bigint
+  /**
+   * `block.number` as the hook sees it — Ethereum's block on Robinhood. Every
+   * comparison against a hook-stored block (`effectiveBlock`) uses THIS.
+   */
+  contractBlockNumber: bigint
 }
 
 /* ---------------------------------------------------------------------------
@@ -468,11 +485,11 @@ export async function readSwapPools(): Promise<SwapPool[]> {
 export async function readSwapContext(): Promise<SwapContext> {
   const c = client(SWAP_CHAIN_ID)
 
-  const [pools, controller, routerPaused, blockNumber] = await Promise.all([
+  const [pools, controller, routerPaused, clock] = await Promise.all([
     readSwapPools(),
     c.readContract({ address: CL_POOL_MANAGER, abi: CL_MANAGER_ABI, functionName: 'protocolFeeController' }),
     c.readContract({ address: ROUTER, abi: universalRouterAbi as Abi, functionName: 'paused' }) as Promise<boolean>,
-    c.getBlockNumber(),
+    readContractClockReading(SWAP_CHAIN_ID),
   ])
 
   return {
@@ -482,7 +499,8 @@ export async function readSwapContext(): Promise<SwapContext> {
     protocolFeeController: controller,
     controllerWired: controller !== ZERO,
     routerPaused,
-    blockNumber,
+    blockNumber: clock.rpcBlockNumber,
+    contractBlockNumber: clock.contractBlockNumber,
   }
 }
 
@@ -497,7 +515,8 @@ export async function readSwapContext(): Promise<SwapContext> {
 export async function readHookTake(
   hook: Address,
   poolId: Hex,
-  atBlock: bigint,
+  /** `SwapContext.contractBlockNumber` — NOT `blockNumber`. See `lib/pendingConfig.ts`. */
+  contractBlockNumber: bigint,
 ): Promise<HookTake> {
   const c = client(SWAP_CHAIN_ID)
 
@@ -514,6 +533,7 @@ export async function readHookTake(
     distributorBps: 0,
     pending: null,
     configDelayBlocks: null,
+    configDelaySeconds: null,
   }
 
   /* The pending read keeps its failure as a value rather than collapsing it to
@@ -555,9 +575,10 @@ export async function readHookTake(
      delay — there is nothing armed to warn about. The legacy 7-word hook has
      no expiry, so a matured proposal there is `armed` for as long as it
      stands, however old. */
-  const status = proposalStatus(pending, atBlock)
+  const status = proposalStatus(pending, contractBlockNumber)
   const effectiveBlock = pending.effectiveBlock
   const hasPending = status === 'queued' || status === 'armed'
+  const blocksRemaining = status === 'armed' ? 0n : effectiveBlock - contractBlockNumber
 
   return {
     hook,
@@ -580,10 +601,12 @@ export async function readHookTake(
             distributorBps: pending.params.distributorBps,
             enabled: pending.params.enabled,
             applicable: status === 'armed',
-            blocksRemaining: status === 'armed' ? 0n : effectiveBlock - atBlock,
+            blocksRemaining,
+            secondsRemaining: contractBlocksToSeconds(blocksRemaining, SWAP_CHAIN_ID),
           }
         : null,
     configDelayBlocks: delay === null ? null : BigInt(delay),
+    configDelaySeconds: delay === null ? null : contractBlocksToSeconds(BigInt(delay), SWAP_CHAIN_ID),
   }
 }
 
