@@ -25,7 +25,7 @@ export function useProtocolMetrics(): MetricsState {
   return s
 }
 
-/** Compact token amount: 1295.8542 -> "1,295.85". No currency symbol; these are unpriced testnet tokens. */
+/** Compact token amount: 1295.8542 -> "1,295.85". No currency symbol; nothing here prices these tokens. */
 export function fmtToken(v: bigint, decimals: number, places = 2): string {
   const base = 10n ** BigInt(decimals)
   const whole = v / base

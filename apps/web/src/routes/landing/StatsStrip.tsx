@@ -35,7 +35,7 @@ function StatCell({ value, label }: { value: string; label: string }) {
  * a young deployment actually contains — and a sparse honest number is worth
  * more than an impressive invented one to an audience that will check the chain.
  *
- * No USD figure anywhere. These pairs are unpriced test tokens; a fabricated
+ * No USD figure anywhere. Nothing here prices these tokens; a fabricated
  * price to produce a dollar headline is the exact failure this replaced.
  */
 function cells(m: ProtocolMetrics): { value: string; label: string }[] {

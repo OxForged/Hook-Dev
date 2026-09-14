@@ -565,7 +565,7 @@
   }
 }
 
-/* Phone: one figure per row. Two-up at this width put "0.005993 LTT1" and
+/* Phone: one figure per row. Two-up at this width put "0.005993 TOKEN" and
    its note into a 135px cell, three lines deep. */
 @container (max-width: 440px) {
   .strip {

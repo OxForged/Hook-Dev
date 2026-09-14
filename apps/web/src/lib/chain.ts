@@ -114,6 +114,46 @@ export function isDeployed(chainId: number): chainId is DeployedChainId {
 }
 
 /* ============================================================================
+   TEST TOKENS AND THE POOLS THAT TRADE THEM ARE NOT SHOWCASED.
+
+   Owner decision, 2026-09-14: the protocol's own test-token pool is retired and
+   comes off the landing page and the dapp. Latch is infrastructure with no token
+   of its own, so a showcase surface shows real pools only, and when there are
+   none it says so rather than filling the space.
+
+   The rule is read off the address book's own `isTestToken` flag, never off a
+   pool id, a symbol or the chain: a pool is left out of every showcase reading
+   (pool lists, swap history, vault holdings, protocol totals) when EITHER of its
+   currencies is a token the book marks as a test token. A token the book does
+   not carry is not assumed to be one. The book's `demoPool` record is no longer
+   read by this app at all.
+
+   What this does NOT hide: an address's own LP positions (Portfolio), and the
+   revenue-share governance and claim screens that address a pool by id. Those
+   are a holder's or an owner's business with a pool that still exists, not a
+   showcase of it.
+   ============================================================================ */
+
+/** True only when the address book lists `address` on `chainId` as a test token. */
+export function isTestToken(chainId: DeployedChainId, address: string): boolean {
+  const wanted = address.toLowerCase()
+  return DEPLOYMENTS[chainId].tokens.some((t) => t.isTestToken && t.address.toLowerCase() === wanted)
+}
+
+/** True when either currency of a pool is an address-book test token. */
+export function tradesTestToken(
+  chainId: DeployedChainId,
+  pool: { readonly currency0: string; readonly currency1: string },
+): boolean {
+  return isTestToken(chainId, pool.currency0) || isTestToken(chainId, pool.currency1)
+}
+
+/** The address book's tokens that are NOT test tokens, in book order. */
+export function showcaseTokens(chainId: DeployedChainId) {
+  return DEPLOYMENTS[chainId].tokens.filter((t) => !t.isTestToken)
+}
+
+/* ============================================================================
    RPC ENDPOINTS ARE ALSO NO LONGER RESTATED HERE.
 
    `resolveEndpoints` is the same function the SDK's own transport uses. It puts
@@ -884,17 +924,46 @@ export interface VaultHolding {
 export async function readVaultHoldings(
   chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<VaultHolding[]> {
+  /* There is no on-chain enumeration of "tokens the vault holds", so WHICH
+     tokens to ask about comes from the address book: every token it carries
+     that is not a test token (see `showcaseTokens`). A zero balance here is a
+     real `balanceOf` read, not a default. A chain whose book lists no such token
+     returns an empty list, which the caller renders as "no tracked tokens". */
+  return readVaultBalancesOf(
+    chainId,
+    showcaseTokens(chainId).map((t) => t.address as Address),
+  )
+}
+
+/**
+ * The Vault's balance of each named token, with its symbol, decimals and the CL
+ * pool manager's reserve. `address(0)` is the chain's native currency: its
+ * balance is the Vault's own, and the book's native symbol labels it.
+ */
+export async function readVaultBalancesOf(
+  chainId: DeployedChainId,
+  tokens: readonly Address[],
+): Promise<VaultHolding[]> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
-  /* The demo pool is how this function knows WHICH tokens to ask about; there
-     is no on-chain enumeration of "tokens the vault holds". A chain without one
-     therefore has no known tokens, and an empty list is the truthful answer —
-     not zero balances, which would assert the vault holds nothing. */
-  if (d.demoPool === null) return []
-  const tokens = [d.demoPool.token0, d.demoPool.token1] as const
+  if (tokens.length === 0) return []
 
   return Promise.all(
     tokens.map(async (token) => {
+      if (token.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+        const [balance, clReserve] = await Promise.all([
+          c.getBalance({ address: d.vault }),
+          c.readContract({ address: d.vault, abi: VAULT, functionName: 'reservesOfApp', args: [d.clPoolManager, token] }),
+        ])
+        return {
+          chainId,
+          token,
+          symbol: d.nativeCurrency.symbol,
+          decimals: d.nativeCurrency.decimals,
+          balance,
+          clReserve,
+        }
+      }
       // chainId is captured from the enclosing read, so a holding always knows
       // which chain's vault it came from.
       const [balance, symbol, decimals, clReserve] = await Promise.all([
@@ -951,11 +1020,20 @@ async function readRecentSwapsUncached(
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
 
+  /* Swaps on a test-token pool are dropped INSIDE the window fetch, so the
+     backward walk's `limit` counts only swaps that are shown and keeps walking
+     past hidden ones. A Swap log carries the pool id and not the currencies, so
+     the hidden ids come from the pool list. */
+  const [hidden, head] = await Promise.all([readTestTokenPoolIds(chainId), c.getBlockNumber()])
+
   const logs = await scanWindowsBackward(
     d.deployedAtBlock,
-    await c.getBlockNumber(),
+    head,
     limit,
-    (from, to) => c.getLogs({ address: d.clPoolManager, event: CL_SWAP_EVENT[0], fromBlock: from, toBlock: to }),
+    async (from, to) =>
+      (await c.getLogs({ address: d.clPoolManager, event: CL_SWAP_EVENT[0], fromBlock: from, toBlock: to })).filter(
+        (l) => !hidden.has(String(l.args.id).toLowerCase()),
+      ),
     'recent swaps (CLPoolManager Swap)',
   )
 
@@ -1208,10 +1286,29 @@ export interface PoolRecord {
   createdAtBlock: bigint
 }
 
-/** Every pool ever initialized on the CL manager, from logs. */
+/**
+ * Every pool initialized on the CL manager, from logs, LESS the pools that trade
+ * an address-book test token (see `tradesTestToken`). This is the list every
+ * showcase surface reads; an empty array is a real answer and is rendered as
+ * "no live pools", never padded.
+ */
 export async function readPools(
   chainId: DeployedChainId = ACTIVE_CHAIN_ID,
 ): Promise<PoolRecord[]> {
+  return (await readAllPools(chainId)).filter((p) => !tradesTestToken(chainId, p))
+}
+
+/** The ids (lowercase) of initialized pools that trade an address-book test token. */
+export async function readTestTokenPoolIds(
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
+): Promise<Set<string>> {
+  return new Set(
+    (await readAllPools(chainId)).filter((p) => tradesTestToken(chainId, p)).map((p) => p.id.toLowerCase()),
+  )
+}
+
+/** Every pool ever initialized on the CL manager, test-token pools included. */
+function readAllPools(chainId: DeployedChainId): Promise<PoolRecord[]> {
   return coalesce(`pools:${chainId}`, () => readPoolsUncached(chainId))
 }
 
@@ -1275,20 +1372,34 @@ export interface ProtocolMetrics {
   poolCount: number | null
   hookedPoolCount: number | null
   swapCount: number | null
-  /** Sum of |amount0| across swaps, in token0 units. Testnet tokens have no price. */
-  volume0: bigint | null
-  volume1: bigint | null
-  /** Fee taken by the protocol, in token units, derived from each swap's own pips. */
-  protocolFees0: bigint | null
-  protocolFees1: bigint | null
-  lpFees0: bigint | null
-  lpFees1: bigint | null
+  /**
+   * Volume and fees PER TOKEN, one entry per token that was the input side of a
+   * swap on a shown pool, ordered by swap count (then address-book order). Keyed
+   * by the swap's own pool currencies, never by position — a list indexed
+   * [0]/[1] only described the chain while it had exactly one pool. Empty when
+   * no shown pool has swapped. Token units; nothing here is priced.
+   */
+  tokenFees: TokenFees[] | null
+  /** The shown pools the figures above were computed over (test-token pools excluded). */
+  pools: PoolRecord[] | null
   /** Why the figures above are null, for the UI to show verbatim. */
   logScanError: string | null
 
   /* ---- CHEAP READS. One `eth_call` each, and they always work. ------------- */
   tvl: VaultHolding[]
   latestBlock: bigint
+}
+
+/** One token's side of the protocol's swaps. All amounts in that token's base units. */
+export interface TokenFees {
+  token: Address
+  symbol: string
+  decimals: number
+  /** Swaps on a shown pool in which this token was paid in. */
+  swaps: number
+  volume: bigint
+  protocolFees: bigint
+  lpFees: bigint
 }
 
 const abs = (v: bigint) => (v < 0n ? -v : v)
@@ -1300,8 +1411,11 @@ const abs = (v: bigint) => (v < 0n ? -v : v)
  * than the controller's current default — a fee change would otherwise silently
  * rewrite history.
  *
- * NOTE: no USD anywhere. These are testnet tokens that nothing prices, and inventing
- * a price to make a dashboard look busy would be the exact failure this avoids.
+ * NOTE: no USD anywhere. Nothing here prices these tokens, and inventing a price to
+ * make a dashboard look busy would be the exact failure this avoids.
+ *
+ * Pools and swaps are the SHOWCASE set: `readPools` and `readRecentSwaps` both
+ * leave out pools that trade an address-book test token.
  */
 export async function readProtocolMetrics(
   chainId: DeployedChainId = ACTIVE_CHAIN_ID,
@@ -1346,54 +1460,70 @@ export async function readProtocolMetrics(
     logScanError = e instanceof Error ? e.message : 'the endpoint refused the log scan'
   }
 
-  let volume0 = 0n
-  let volume1 = 0n
-  let protocolFees0 = 0n
-  let protocolFees1 = 0n
-  let lpFees0 = 0n
-  let lpFees1 = 0n
+  let tokenFees: TokenFees[] | null = null
+  if (pools !== null && swaps !== null) {
+    const byId = new Map(pools.map((p) => [p.id.toLowerCase(), p]))
+    const acc = new Map<string, Omit<TokenFees, 'symbol' | 'decimals'>>()
+    for (const s of swaps) {
+      const pool = byId.get(s.poolId.toLowerCase())
+      if (!pool) continue
+      // The INPUT side is the NEGATIVE delta. `Swap` emits the swap's BalanceDelta from the
+      // CALLER's side (negative = owed by the caller = paid in), whatever the inherited
+      // `ICLPoolManager` docstring says about "the pool". Verified 2026-09-13 on 4663: tx
+      // 0x68286e9b…629a emitted amount0 = -1e18 while exactly 1e18 of currency0 moved INTO the
+      // Vault. This line used to read `> 0n` and counted every swap's OUTPUT as its volume.
+      const inIs0 = s.amount0 < 0n
+      const gross = inIs0 ? abs(s.amount0) : abs(s.amount1)
+      const token = inIs0 ? pool.currency0 : pool.currency1
 
-  for (const s of swaps ?? []) {
-    // The INPUT side is the NEGATIVE delta. `Swap` emits the swap's BalanceDelta from the
-    // CALLER's side (negative = owed by the caller = paid in), whatever the inherited
-    // `ICLPoolManager` docstring says about "the pool". Verified 2026-09-13 on 4663: tx
-    // 0x68286e9b…629a emitted amount0 = -1e18 while exactly 1e18 of currency0 moved INTO the
-    // Vault. This line used to read `> 0n` and counted every swap's OUTPUT as its volume.
-    const inIs0 = s.amount0 < 0n
-    const gross = inIs0 ? abs(s.amount0) : abs(s.amount1)
+      const total = (gross * BigInt(s.feePips)) / 1_000_000n
+      const proto = (gross * BigInt(s.protocolFeePips)) / 1_000_000n
+      const lp = total > proto ? total - proto : 0n
 
-    const total = (gross * BigInt(s.feePips)) / 1_000_000n
-    const proto = (gross * BigInt(s.protocolFeePips)) / 1_000_000n
-    const lp = total > proto ? total - proto : 0n
-
-    if (inIs0) {
-      volume0 += gross
-      protocolFees0 += proto
-      lpFees0 += lp
-    } else {
-      volume1 += gross
-      protocolFees1 += proto
-      lpFees1 += lp
+      const k = token.toLowerCase()
+      const row = acc.get(k) ?? { token, swaps: 0, volume: 0n, protocolFees: 0n, lpFees: 0n }
+      row.swaps += 1
+      row.volume += gross
+      row.protocolFees += proto
+      row.lpFees += lp
+      acc.set(k, row)
     }
+    const book = DEPLOYMENTS[chainId].tokens
+    const bookIndex = (a: string) => {
+      const i = book.findIndex((t) => t.address.toLowerCase() === a.toLowerCase())
+      return i === -1 ? Number.MAX_SAFE_INTEGER : i
+    }
+    tokenFees = (await Promise.all([...acc.values()].map(async (r) => ({ ...r, ...(await readTokenLabel(chainId, r.token)) }))))
+      .sort((x, y) => y.swaps - x.swaps || bookIndex(x.token) - bookIndex(y.token))
   }
 
-  /* null, not 0, when the scan did not happen. See the type. */
-  const scanned = pools !== null && swaps !== null
   return {
     chainId,
     poolCount: pools?.length ?? null,
     hookedPoolCount: pools?.filter((p) => p.hasHook).length ?? null,
     swapCount: swaps?.length ?? null,
-    volume0: scanned ? volume0 : null,
-    volume1: scanned ? volume1 : null,
-    protocolFees0: scanned ? protocolFees0 : null,
-    protocolFees1: scanned ? protocolFees1 : null,
-    lpFees0: scanned ? lpFees0 : null,
-    lpFees1: scanned ? lpFees1 : null,
+    tokenFees,
+    pools,
     logScanError,
     tvl,
     latestBlock,
   }
+}
+
+/** Symbol and decimals: the address book first, then the token itself. */
+async function readTokenLabel(chainId: DeployedChainId, token: Address): Promise<{ symbol: string; decimals: number }> {
+  const d = DEPLOYMENTS[chainId]
+  if (token.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+    return { symbol: d.nativeCurrency.symbol, decimals: d.nativeCurrency.decimals }
+  }
+  const known = d.tokens.find((t) => t.address.toLowerCase() === token.toLowerCase())
+  if (known) return { symbol: known.symbol, decimals: known.decimals }
+  const c = client(chainId)
+  const [symbol, decimals] = await Promise.all([
+    c.readContract({ address: token, abi: ERC20, functionName: 'symbol' }),
+    c.readContract({ address: token, abi: ERC20, functionName: 'decimals' }),
+  ])
+  return { symbol, decimals }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1672,7 +1802,12 @@ async function readActivityUncached(
 ): Promise<ActivityEvent[]> {
   const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
-  const head = await c.getBlockNumber()
+  /* Events on a test-token pool are dropped inside each window fetch, so the
+     shared `limit` counts only events that are shown. Every one of these four
+     events carries the pool id. */
+  const [head, hidden] = await Promise.all([c.getBlockNumber(), readTestTokenPoolIds(chainId)])
+  const shown = <L extends { args: { id?: unknown } }>(logs: readonly L[]): L[] =>
+    logs.filter((l) => !hidden.has(String(l.args.id).toLowerCase()))
 
   /* ONE backward walk shared by all four queries, not four walks in parallel.
      Independently, each query stops only when it has found `limit` of its OWN
@@ -1686,7 +1821,7 @@ async function readActivityUncached(
      `l.blockNumber` typed. */
   const out = await scanWindowsBackwardMulti<ActivityEvent>(d.deployedAtBlock, head, limit, [
     async (f, t) =>
-      (await c.getLogs({ address: d.clPoolManager, event: CL_INITIALIZE_EVENT[0], fromBlock: f, toBlock: t })).map(
+      shown(await c.getLogs({ address: d.clPoolManager, event: CL_INITIALIZE_EVENT[0], fromBlock: f, toBlock: t })).map(
         (l): ActivityEvent => {
           const hooks = l.args.hooks as Address
           const hooked = hooks !== '0x0000000000000000000000000000000000000000'
@@ -1700,7 +1835,7 @@ async function readActivityUncached(
         },
       ),
     async (f, t) =>
-      (await c.getLogs({ address: d.clPoolManager, event: CL_SWAP_EVENT[0], fromBlock: f, toBlock: t })).map(
+      shown(await c.getLogs({ address: d.clPoolManager, event: CL_SWAP_EVENT[0], fromBlock: f, toBlock: t })).map(
         (l): ActivityEvent => ({
           chainId,
           kind: 'Swap',
@@ -1710,7 +1845,7 @@ async function readActivityUncached(
         }),
       ),
     async (f, t) =>
-      (await c.getLogs({ address: d.clPoolManager, event: CL_MODIFY_EVENT[0], fromBlock: f, toBlock: t })).map(
+      shown(await c.getLogs({ address: d.clPoolManager, event: CL_MODIFY_EVENT[0], fromBlock: f, toBlock: t })).map(
         (l): ActivityEvent => ({
           chainId,
           kind: (l.args.liquidityDelta as bigint) >= 0n ? 'Add liquidity' : 'Remove liquidity',
@@ -1720,7 +1855,7 @@ async function readActivityUncached(
         }),
       ),
     async (f, t) =>
-      (await c.getLogs({ address: d.clPoolManager, event: CL_DONATE_EVENT[0], fromBlock: f, toBlock: t })).map(
+      shown(await c.getLogs({ address: d.clPoolManager, event: CL_DONATE_EVENT[0], fromBlock: f, toBlock: t })).map(
         (l): ActivityEvent => ({
           chainId,
           kind: 'Donate',

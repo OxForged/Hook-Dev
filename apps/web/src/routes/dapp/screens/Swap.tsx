@@ -23,8 +23,13 @@
    revenue-share surface's vocabulary so the dapp says these four things the
    same way everywhere. None of them shows a number.
 
-   NO DOLLAR FIGURES ANYWHERE. The pools on this chain are unpriced test
-   tokens. Amounts are token units with a symbol.
+   NO DOLLAR FIGURES ANYWHERE. Nothing here prices a pool's tokens. Amounts are
+   token units with a symbol.
+
+   REAL POOLS ONLY, AND NO DEFAULT POOL (owner, 2026-09-14). Pools that trade
+   an address-book test token are left out of the list (`readSwapPools`), and
+   nothing is pre-selected: the trade card asks the reader to pick a pool
+   rather than landing them on one this screen chose for them.
    ============================================================================ */
 
 import { useCallback, useMemo, useState } from 'react'
@@ -42,6 +47,7 @@ import {
   type SwapContext,
   type SwapPool,
 } from '../../../lib/swap'
+import { NoLivePools } from '../components/NoLivePools'
 import { SwapPanel } from '../components/SwapPanel'
 import { Empty, Reading, Unreachable } from '../lib/revshareParts'
 import { useChainRead } from '../lib/useChainRead'
@@ -85,14 +91,12 @@ export default function Swap() {
 
   const data = state.k === 'ready' ? state.data : null
 
-  /* Default to the first pool that can actually be traded, not simply the
-     first pool. Landing on a dead pool and having to work out why is a worse
-     first impression than landing on the one live one. */
+  /* NO DEFAULT. Only the pool the reader picked. A selection that no longer
+     exists in a re-read list (it was hidden, or the read changed) is dropped
+     rather than silently swapped for another pool. */
   const selected: SwapPool | null = useMemo(() => {
-    if (!data) return null
-    const { pools } = data.context
-    if (selectedId !== null) return pools.find((p) => p.poolId === selectedId) ?? null
-    return pools.find((p) => p.liquidity > 0n) ?? pools[0] ?? null
+    if (!data || selectedId === null) return null
+    return data.context.pools.find((p) => p.poolId === selectedId) ?? null
   }, [data, selectedId])
 
   const onSelect = useCallback((id: string) => setSelectedId(id), [])
@@ -111,17 +115,20 @@ export default function Swap() {
 
   if (context.pools.length === 0) {
     return (
-      <Empty title={`No pools have been initialized on ${context.chainName}`}>
-        <p>
-          The CL pool manager has emitted no <code>Initialize</code> events since block{' '}
-          {CHAIN.deployedAtBlock.toString()}. There is nothing to trade — not a zero-volume pool, no
-          pool at all. The router at{' '}
-          <a className="hx-addr" href={explorerAddressUrl(ROUTER)} target="_blank" rel="noopener noreferrer">
-            {shortHex(ROUTER)}
-          </a>{' '}
-          is deployed and waiting.
-        </p>
-      </Empty>
+      <NoLivePools
+        chainName={context.chainName}
+        hiddenTestPools={context.hiddenTestPools}
+        source={
+          <>
+            <code>CLPoolManager.Initialize</code> logs since block {CHAIN.deployedAtBlock.toString()}; the
+            router at{' '}
+            <a className="hx-addr" href={explorerAddressUrl(ROUTER)} target="_blank" rel="noopener noreferrer">
+              {shortHex(ROUTER)}
+            </a>{' '}
+            is deployed and waiting
+          </>
+        }
+      />
     )
   }
 
@@ -144,7 +151,10 @@ export default function Swap() {
         />
       ) : (
         <Empty title="No pool selected">
-          <p>Pick a pool to quote a trade against it.</p>
+          <p>
+            Pick a pool from the list to quote a trade against it. Nothing is pre-selected: the
+            pool you trade is your choice, not this screen&rsquo;s.
+          </p>
         </Empty>
       )}
 
@@ -198,6 +208,9 @@ export default function Swap() {
           Read from <code>CLPoolManager.Initialize</code> logs since block{' '}
           {CHAIN.deployedAtBlock.toString()}, then <code>getSlot0</code> and{' '}
           <code>getLiquidity</code> per pool.
+          {context.hiddenTestPools > 0
+            ? ` ${context.hiddenTestPools} pool${context.hiddenTestPools === 1 ? '' : 's'} trading an address-book test token ${context.hiddenTestPools === 1 ? 'is' : 'are'} not listed.`
+            : ''}
         </p>
         <details className="swap-screen__what-is-l">
           <summary>What L is, and what it is not</summary>

@@ -25,7 +25,7 @@
    EVERY HOOK, NOT THE CURRENT ONE (2026-09-14). `claimable` lives on a hook, and
    a retired hook keeps its own mapping forever. This screen read only the
    address book's current hook — which has never paid anyone — so an address
-   holding a real LTT1/LTT2 balance on the retired 0x23CE… was told there was no
+   holding a real balance on the retired 0x23CE… was told there was no
    currency to check. Path 1 now reads every RevShareHook in the address book
    (or exactly the one `?hook=` pins) and shows each hook's balances under it.
 

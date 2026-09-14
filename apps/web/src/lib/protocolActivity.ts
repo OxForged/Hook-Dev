@@ -10,8 +10,8 @@
      volume          Swap logs from BOTH pool managers, INPUT side only: the
                      negative delta. Verified against a real swap on Robinhood
                      (block 60,244,152: amount0 = -1e18 exactly, an exact-input
-                     1 LTT1). The caller's delta, not the pool's, despite the
-                     interface's doc comment.
+                     swap of 1e18 base units). The caller's delta, not the
+                     pool's, despite the interface's doc comment.
      swap fee        input x the swap's OWN `fee` pips, protocol slice input x
                      its own `protocolFee` — core's formula in CLPool.swap
                      (`(amountIn + feeAmount) * protocolFee / 1e6`). Derived per
@@ -21,11 +21,19 @@
      protocol fees   the Swap-log slice above, plus `protocolFeesAccrued` on
                      both managers for what is still uncollected.
 
-   ONLY LATCH'S OWN RevShareHook DEPLOYMENTS ARE SUMMED for the cut: the one in
-   the address book, and the one the reference pool is bound to (read from
-   `poolIdToPoolKey`, never typed out — on Robinhood that is the retired hook).
-   A third-party hook can emit an event with the same signature and any
-   numbers it likes; counting it would let a stranger write our landing page.
+   ONLY LATCH'S OWN RevShareHook DEPLOYMENTS ARE SUMMED for the cut: every one
+   the address book lists in `revShareHooks`, current and retired (a retired
+   hook still hosts pools). A third-party hook can emit an event with the same
+   signature and any numbers it likes; counting it would let a stranger write
+   our landing page.
+
+   TEST-TOKEN POOLS ARE LEFT OUT. A pool either of whose currencies the address
+   book marks `isTestToken` contributes nothing to any figure here — not its
+   swaps, not its cut, not its tokens — and is counted only in
+   `hiddenTestPools`, so the page can say something was left out. Owner
+   decision, 2026-09-14: showcase surfaces show real pools only. The
+   completeness check on cut logs (check 1) still runs over EVERY log before
+   anything is dropped.
 
    THE SCAN CHECKS ITSELF. `RevShareHook.totalTaken(poolId, currency)` is a
    lifetime counter incremented by exactly `lpDonated + toBeneficiaries +
@@ -74,6 +82,7 @@ import {
   client,
   logRpcsFor,
   scanWindowsMulti,
+  tradesTestToken,
   type DeployedChainId,
 } from './chain'
 
@@ -145,8 +154,6 @@ export interface TokenActivity {
   symbol: string | null
   /** From the address book, then `decimals()`; null means amounts are raw base units. */
   decimals: number | null
-  /** The address book's flag; null for a token the book does not carry. */
-  isTestToken: boolean | null
   /** Swaps in which this token was the INPUT. */
   swapsIn: number
   /** Sum of input amounts. */
@@ -189,6 +196,8 @@ export interface ProtocolActivity {
   poolCount: number
   /** How many of Latch's own RevShareHook deployments were scanned. Zero: none configured. */
   cutHooks: number
+  /** Swapped pools left out because they trade an address-book test token. */
+  hiddenTestPools: number
   cutCheck: CutCheck
   /** Every token that was an input or a cut currency, ordered by address-book position then address. */
   tokens: TokenActivity[]
@@ -349,20 +358,12 @@ async function readAt(
   const d = DEPLOYMENTS[chainId]
   const fromBlock = d.deployedAtBlock
 
-  /* Latch's own RevShareHooks: the address book's, and the reference pool's
-     as the POOL MANAGER records it. */
+  /* Latch's own RevShareHooks: every one the address book lists, current and
+     retired, plus the current pointer in case the list ever lags it. */
   const hooks = new Set<string>()
   if (d.revShareHook.toLowerCase() !== ZERO) hooks.add(d.revShareHook.toLowerCase())
-  if (d.demoPool !== null) {
-    const key = await c.readContract({
-      blockNumber: toBlock,
-      address: d.clPoolManager,
-      abi: POOL_MANAGER,
-      functionName: 'poolIdToPoolKey',
-      args: [d.demoPool.id],
-    })
-    const h = key[2].toLowerCase()
-    if (h !== ZERO) hooks.add(h)
+  for (const h of d.revShareHooks) {
+    if (h.address.toLowerCase() !== ZERO) hooks.add(h.address.toLowerCase())
   }
   const hookList = [...hooks] as Address[]
 
@@ -428,14 +429,14 @@ async function readAt(
     )
   }
 
-  const swaps = logs.flatMap((l) => (l.k === 'swap' ? [l] : []))
-  const cuts = logs.flatMap((l) => (l.k === 'cut' ? [l] : []))
+  const allSwaps = logs.flatMap((l) => (l.k === 'swap' ? [l] : []))
+  const allCuts = logs.flatMap((l) => (l.k === 'cut' ? [l] : []))
 
   /* Completeness check 1: a cut is taken inside a swap, so its transaction
      must carry a Swap log. One that does not means the swap scan came back
      short. */
-  const swapTxs = new Set(swaps.map((s) => s.txHash.toLowerCase()))
-  const orphans = cuts.filter((x) => !swapTxs.has(x.txHash.toLowerCase())).length
+  const swapTxs = new Set(allSwaps.map((s) => s.txHash.toLowerCase()))
+  const orphans = allCuts.filter((x) => !swapTxs.has(x.txHash.toLowerCase())).length
   if (orphans > 0) {
     throw new Error(
       `the log scan is incomplete: ${orphans} RevShareTaken log(s) have no Swap log in the same ` +
@@ -445,8 +446,8 @@ async function readAt(
 
   /* Pool keys, for currencies and for which pools sit on our hooks. */
   const poolRefs = new Map<string, { manager: 'cl' | 'bin'; poolId: Hex }>()
-  for (const s of swaps) poolRefs.set(`${s.manager}:${s.poolId.toLowerCase()}`, { manager: s.manager, poolId: s.poolId })
-  const keys = new Map<string, { currency0: Address; currency1: Address; hooks: Address }>()
+  for (const s of allSwaps) poolRefs.set(`${s.manager}:${s.poolId.toLowerCase()}`, { manager: s.manager, poolId: s.poolId })
+  const allKeys = new Map<string, { currency0: Address; currency1: Address; hooks: Address }>()
   await Promise.all(
     [...poolRefs.entries()].map(async ([k, ref]) => {
       const key = await c.readContract({
@@ -455,9 +456,18 @@ async function readAt(
         functionName: 'poolIdToPoolKey',
         args: [ref.poolId],
       })
-      keys.set(k, { currency0: key[0], currency1: key[1], hooks: key[2] })
+      allKeys.set(k, { currency0: key[0], currency1: key[1], hooks: key[2] })
     }),
   )
+
+  /* Drop test-token pools from everything below. A cut is matched to its pool
+     by id on the CL manager, which is the only manager a RevShareHook serves. */
+  const keys = new Map([...allKeys].filter(([, key]) => !tradesTestToken(chainId, key)))
+  const hiddenIds = new Set(
+    [...allKeys].filter(([, key]) => tradesTestToken(chainId, key)).map(([k]) => k),
+  )
+  const swaps = allSwaps.filter((s) => !hiddenIds.has(`${s.manager}:${s.poolId.toLowerCase()}`))
+  const cuts = allCuts.filter((x) => !hiddenIds.has(`cl:${x.poolId.toLowerCase()}`))
 
   /* Per-token aggregation. */
   const tokens = new Map<string, TokenActivity>()
@@ -469,7 +479,6 @@ async function readAt(
       address,
       symbol: null,
       decimals: null,
-      isTestToken: null,
       swapsIn: 0,
       volumeIn: 0n,
       lpSwapFee: 0n,
@@ -573,14 +582,12 @@ async function readAt(
       if (t.address.toLowerCase() === ZERO) {
         t.symbol = d.nativeCurrency.symbol
         t.decimals = d.nativeCurrency.decimals
-        t.isTestToken = false
         return
       }
       const known = book.find((b) => b.address.toLowerCase() === t.address.toLowerCase())
       if (known) {
         t.symbol = known.symbol
         t.decimals = known.decimals
-        t.isTestToken = known.isTestToken
         return
       }
       const [symbol, decimals] = await Promise.allSettled([
@@ -604,8 +611,9 @@ async function readAt(
     method,
     swapCount: swaps.length,
     swapBlocks: [...new Set(swaps.map((s) => s.blockNumber))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
-    poolCount: poolRefs.size,
+    poolCount: keys.size,
     cutHooks: hookList.length,
+    hiddenTestPools: hiddenIds.size,
     cutCheck,
     tokens: [...tokens.values()].sort(
       (a, b) => bookIndex(a.address) - bookIndex(b.address) || a.address.localeCompare(b.address),

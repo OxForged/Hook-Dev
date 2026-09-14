@@ -259,7 +259,7 @@ function PoolBody({
 
   /* Hazard item 5: a matured proposal is ARMED — applicable by anyone, in the
      next block — whatever `getConfig` says. On the no-expiry hook (0x23CE…, the
-     LTT1/LTT2 pool) it stays armed until the owner cancels or freezes; only the
+     retired test-token pool) it stays armed until the owner cancels or freezes; only the
      hooks with an expiry can say `expired`. */
   const pending = o.pending
   /* Judged on the hook's OWN clock: `block.timestamp` for a timestamp hook, the

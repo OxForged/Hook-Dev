@@ -25,11 +25,12 @@
        same reason.
 
      - "TOP LATCHES BY FEES", in dollars. No hook has ever earned a fee here —
-       no live pool has a hook attached — and testnet tokens have no price. The
+       no live pool has a hook attached — and nothing here prices a token. The
        screen renders that as a labelled empty state instead of a ranking.
 
-   No USD appears anywhere. ltUSD and ltETH are unpriced testnet tokens, and a
-   fabricated price is the exact failure this module exists to avoid.
+   No USD appears anywhere. Nothing here prices the pool tokens, and a
+   fabricated price is the exact failure this module exists to avoid. Pools
+   that trade an address-book test token are left out (`readPools`).
    ============================================================================ */
 
 import {
@@ -211,7 +212,7 @@ function feeSplit(swaps: SwapRecord[]): { segments: DonutSegment[]; configs: Fee
   const configs = [...byConfig.values()].sort((a, b) => b.swaps - a.swaps)
 
   // Weighted by swap COUNT, not by value: the two sides of a swap are in
-  // different tokens and nothing prices testnet tokens, so there is no common
+  // different tokens and nothing here prices either, so there is no common
   // unit to weight by. The screen says so next to the chart.
   let protocolWeighted = 0
   let totalWeighted = 0
@@ -237,37 +238,31 @@ function feeSplit(swaps: SwapRecord[]): { segments: DonutSegment[]; configs: Fee
    ------------------------------------------------------------------------- */
 
 function feeBars(m: ProtocolMetrics): LabelledBar[] {
-  const sides = [
-    { token: m.tvl[0], protocol: m.protocolFees0, lp: m.lpFees0 },
-    { token: m.tvl[1], protocol: m.protocolFees1, lp: m.lpFees1 },
-  ]
+  /* null means the log scan was refused, not that any token earned nothing.
+     Skipping is the honest render: a bar drawn from an unread figure is
+     indistinguishable from one drawn from a real zero. */
+  if (m.tokenFees === null) return []
 
   const bars: LabelledBar[] = []
-  for (const s of sides) {
-    const t = s.token
-    if (!t) continue
-    /* null means the log scan was refused, not that the token earned nothing.
-       Skipping is the honest render: a bar drawn from an unread figure is
-       indistinguishable from one drawn from a real zero. */
-    if (s.protocol === null || s.lp === null) continue
-    const total = s.protocol + s.lp
+  for (const t of m.tokenFees) {
+    const total = t.protocolFees + t.lpFees
     // A token that has never been the input side of a swap earned nothing.
     // Rendering a zero-length bar for it would imply it competed and lost.
     if (total === 0n) continue
     // Bars are a share of THIS token's fees, so both ends of a comparison are
-    // in the same unit. Comparing an ltUSD bar against an ltETH bar by length
+    // in the same unit. Comparing one token's bar against another's by length
     // would need a price neither token has.
     const share = (v: bigint) => Number((v * 10_000n) / total) / 100
     bars.push({
       name: `${t.symbol} · protocol`,
-      value: formatUnits(s.protocol, t.decimals, 6),
-      pct: share(s.protocol),
+      value: formatUnits(t.protocolFees, t.decimals, 6),
+      pct: share(t.protocolFees),
       color: 'primary',
     })
     bars.push({
       name: `${t.symbol} · liquidity providers`,
-      value: formatUnits(s.lp, t.decimals, 6),
-      pct: share(s.lp),
+      value: formatUnits(t.lpFees, t.decimals, 6),
+      pct: share(t.lpFees),
       color: 'violet',
     })
   }
@@ -288,40 +283,42 @@ const absBig = (v: bigint) => (v < 0n ? -v : v)
  * totals cannot disagree. Reusing the controller's current default instead
  * would silently rewrite history the moment a fee changed.
  *
- * Token identity follows the same positional convention as `feeBars`: side 0 of
- * a swap is `metrics.tvl[0]`. That holds while the deployment has one pool,
- * which is what the chain says today; it is stated here rather than assumed
- * silently, because a second pool with different currencies would break it.
+ * Token identity comes from the swap's OWN pool: the input side's currency, read
+ * off the pool list the metrics were computed over, labelled from the metrics'
+ * per-token rows. A swap whose pool is not in that list (a test-token pool) is
+ * not counted.
  */
 function feeSeries(m: ProtocolMetrics, swaps: SwapRecord[]): TokenFeeSeries[] {
-  const tokens = [m.tvl[0], m.tvl[1]]
-  const running = [0n, 0n]
-  const points: FeeSeriesPoint[][] = [[], []]
+  if (m.pools === null || m.tokenFees === null) return []
+  const pools = new Map(m.pools.map((p) => [p.id.toLowerCase(), p]))
+  const labels = new Map(m.tokenFees.map((t) => [t.token.toLowerCase(), t]))
+  const series = new Map<string, TokenFeeSeries & { running: bigint }>()
 
   // readRecentSwaps hands back newest-first for the activity feed; a series
   // reads the other way.
   const ascending = [...swaps].sort((a, b) => Number(a.blockNumber - b.blockNumber))
 
   for (const s of ascending) {
+    const pool = pools.get(s.poolId.toLowerCase())
+    if (!pool) continue
     // `Swap` amounts are the CALLER's delta: negative = paid in. The fee is
     // charged on the input, so the input side is the NEGATIVE one (verified on
     // 4663, tx 0x68286e9b…629a: amount0 = -1e18 and 1e18 of currency0 entered
     // the Vault). The inherited ICLPoolManager docstring has the sign backwards.
-    const side = s.amount0 < 0n ? 0 : 1
-    const gross = absBig(side === 0 ? s.amount0 : s.amount1)
+    const in0 = s.amount0 < 0n
+    const gross = absBig(in0 ? s.amount0 : s.amount1)
     const fee = (gross * BigInt(s.feePips)) / 1_000_000n
     if (fee === 0n) continue
-    running[side] = (running[side] ?? 0n) + fee
-    points[side]?.push({ blockNumber: s.blockNumber, cumulative: running[side] ?? 0n })
+    const key = (in0 ? pool.currency0 : pool.currency1).toLowerCase()
+    const label = labels.get(key)
+    if (!label) continue
+    const row = series.get(key) ?? { symbol: label.symbol, decimals: label.decimals, points: [], running: 0n }
+    row.running += fee
+    row.points.push({ blockNumber: s.blockNumber, cumulative: row.running })
+    series.set(key, row)
   }
 
-  const out: TokenFeeSeries[] = []
-  for (const [i, t] of tokens.entries()) {
-    const pts = points[i]
-    if (!t || !pts || pts.length === 0) continue
-    out.push({ symbol: t.symbol, decimals: t.decimals, points: pts })
-  }
-  return out
+  return [...series.values()].map(({ symbol, decimals, points }) => ({ symbol, decimals, points }))
 }
 
 /* -------------------------------------------------------------------------

@@ -39,7 +39,7 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   'function getConfig(bytes32 poolId) view returns ((address owner, uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, bool enabled, bool frozen))',
   /* `getPendingConfig` is deliberately NOT in this ABI. It has THREE shapes on
      chain — 7 words on the first hooks (Robinhood 0x23CE…E446, which carries
-     the LTT1/LTT2 pool; Sepolia 0x1C86…BE28), 8 block-numbered words on
+     the retired test-token pool; Sepolia 0x1C86…BE28), 8 block-numbered words on
      0xfC00…2aD2, and 8 TIMESTAMP words on the current source — and a typed ABI
      is right on at most one. The two 8-word shapes decode through each other
      without an error. It is called raw and decoded in the hook's own shape, by

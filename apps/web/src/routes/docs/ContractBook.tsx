@@ -98,12 +98,12 @@ function isAddressString(v: unknown): v is Address {
  *
  * WHY IT SCANS EVERY CHAIN AND NOT JUST THIS ONE. A key whose value is `null`
  * on this chain is indistinguishable at runtime from a key that holds an
- * object or a string — `launchpadKit: null` and `demoPool: null` look the same
+ * object or a string — `launchpadKit: null` and any other null field look the same
  * to `typeof`. Union-ing the keys that hold an address on ANY chain in the
  * book recovers the distinction from the data rather than from a hand-written
  * list of field names: `launchpadKit` is an address on Robinhood, so it is an
  * address FIELD everywhere, and its `null` on Sepolia is a not-deployed
- * contract. `demoPool` is an object on both chains and never qualifies.
+ * contract. A key holding an object (the token table, for one) never qualifies.
  *
  * The one thing this cannot see is a key that is `null` on every chain at
  * once — such a contract would be invisible here. None exists today; if one is

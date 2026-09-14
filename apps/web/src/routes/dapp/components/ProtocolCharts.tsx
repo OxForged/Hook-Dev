@@ -188,7 +188,7 @@ export function SwapVolumeCard() {
             valueLabel="swaps so far"
             empty={
               swaps === 0
-                ? 'No swap has been recorded on this deployment.'
+                ? 'No swap on a live pool yet. Pools trading an address-book test token are left out.'
                 : `${n(swaps)} swap${swaps === 1 ? '' : 's'} recorded, in one block. A line needs two readings; nothing is drawn rather than implying a shape from one.`
             }
           />
@@ -260,7 +260,7 @@ export function ActivityMixCard() {
             ? 'Reading contract logs…'
             : state.k === 'error'
               ? `Could not read the chain: ${state.message}.`
-              : 'No protocol events recorded yet.'}
+              : 'No events on a live pool yet (test-token pools are left out).'}
         </p>
       )}
     </section>

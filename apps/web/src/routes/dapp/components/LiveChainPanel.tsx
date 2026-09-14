@@ -226,7 +226,10 @@ function PoolFees({ fees, status }: { fees: ReadState<{ pools: PoolProtocolFee[]
   return (
     <>
       {pools.length === 0 ? (
-        <p className="live-note">No CL pool has been initialized, so no pool charges a protocol fee.</p>
+        <p className="live-note">
+          No live CL pools yet, so no pool shown here charges a protocol fee. Pools trading an
+          address-book test token are not listed.
+        </p>
       ) : (
         <>
           <Gauge
@@ -572,7 +575,7 @@ export function RecentSwapsCard({ swaps }: { swaps: ReadState<SwapRecord[]> }) {
     <LiveCard title="Recent swaps" state={swaps} badge="ON CHAIN">
       {(list) =>
         list.length === 0 || !list[0] ? (
-          <p className="live-note">No swaps recorded on this deployment yet.</p>
+          <p className="live-note">No swaps on a live pool yet. Pools trading an address-book test token are left out.</p>
         ) : (
           <>
             <ul className="lc-rows">

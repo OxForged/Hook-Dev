@@ -6,7 +6,7 @@
    first view; that is decoration over a complete reading, not a trend.
 
    ONE TOKEN PER BAR. Nothing prices these tokens, so there is no rate at which
-   an LTT1 fee and an LTT2 fee could share an axis. Percentages are shares of
+   a fee in one token and a fee in another could share an axis. Percentages are shares of
    this token's OWN total, so both ends of every comparison are in one unit.
 
    Segments with a zero value are not drawn — a zero-width rect is not a

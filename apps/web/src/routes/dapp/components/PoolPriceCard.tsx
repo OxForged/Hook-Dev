@@ -4,15 +4,16 @@
    Two cards, two kinds of number, kept visibly apart:
 
      · LEFT  — the Latch pool price, derived from `sqrtPriceX96` on chain. A
-       RATIO between two testnet tokens; never labelled as money.
+       RATIO between two tokens; never labelled as money. Pools trading an
+       address-book test token are not listed (`readPools`).
      · RIGHT — reference market quotes (CoinGecko, Finnhub). Real, externally
        traded assets in USD, and NOT Latch prices. The card says so in its title.
 
-   When a pool's token symbols map onto a reference asset (ltETH -> ETH against
-   a dollar leg such as ltUSD) the two figures are placed side by side in the
+   When a pool's token symbols map onto a reference asset (WETH -> ETH against
+   a dollar leg such as USDC) the two figures are placed side by side in the
    same orientation — dollars per unit — so a reader can compare them by eye.
    No spread or deviation is computed: a percentage would assert that the
-   testnet ratio IS a dollar price, and it is not.
+   pool's ratio IS a dollar price, and it is not.
 
    Every state the feeds can be in has its own rendering and its own words:
    loading, unreachable, not configured, empty, ready. A price is never shown
@@ -50,7 +51,7 @@ const POLL_SECONDS = Math.round(DEFAULT_POLL_MS / 1000)
 
    A pool token is matched to a reference asset only through this explicit
    table — never by fuzzy string similarity. `lt` is the prefix Latch's own
-   testnet tokens carry (ltUSD, ltETH); it is stripped case-sensitively so a
+   testnet tokens carry; it is stripped case-sensitively so a
    real ticker starting with the letters LT is left alone.
    --------------------------------------------------------------------------- */
 
@@ -183,7 +184,7 @@ function PoolCard({ pools, crypto }: { pools: PoolPriceState; crypto: MarketFeed
 
       {pools.k === 'ready' && pools.pools.length === 0 && (
         <p className="live-note dapp-state--empty" role="status">
-          No initialized CL pools on this deployment. Shown empty rather than with an example.
+          No live pools on this deployment yet. Shown empty rather than with an example.
         </p>
       )}
 
@@ -193,7 +194,7 @@ function PoolCard({ pools, crypto }: { pools: PoolPriceState; crypto: MarketFeed
         ))}
 
       <p className="dapp-note">
-        A ratio between two testnet tokens that nothing prices &mdash; not a USD value. Read from{' '}
+        A ratio between a pool&rsquo;s two tokens &mdash; not a USD value. Read from{' '}
         <code>getSlot0</code> on the{' '}
         <a href={explorerAddress(ACTIVE_CHAIN_ID, d.clPoolManager)} target="_blank" rel="noopener noreferrer" data-hit>
           CL pool manager
@@ -352,8 +353,8 @@ function ReferenceBlock({ pool, crypto }: { pool: PoolPrice; crypto: MarketFeedS
         </div>
       </dl>
       <p className="live-note">
-        {ref.cryptoSymbol} and {ref.dollarSymbol} are testnet tokens. The market quote is context
-        for reading the ratio, not a valuation of the pool.
+        The market quote is context for reading the {ref.cryptoSymbol} / {ref.dollarSymbol} ratio,
+        not a valuation of the pool.
       </p>
     </>
   )

@@ -63,9 +63,8 @@ interface Split {
   dist: number
 }
 
-/* The live demo pool's fee, as a starting point rather than a claim — 3,000
-   pips is `demoPool.lpFee` on both deployments. The reader overwrites it by
-   dragging anything. */
+/* A starting point rather than a claim — 3,000 pips is the common 0.30% tier.
+   The reader overwrites it by dragging anything. */
 const START_FEE_PIPS = 3_000
 const START_SPLIT: Split = { lp: 2_000, ben: 5_000, dist: 3_000 }
 

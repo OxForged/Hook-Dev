@@ -18,9 +18,10 @@
    from the all-in total, so the parts always sum to the total on screen.
 
    THE SIZE IS THE READER'S, AND IT SAYS SO. It is labelled a calculator input,
-   is denominated in token units, and is never converted to dollars: the tokens
-   on the chains Latch is deployed to are test tokens nothing prices
-   (CLAUDE.md, "No dollar figures for unpriced tokens").
+   is denominated in token units, and is never converted to dollars: nothing on
+   this page prices a token (CLAUDE.md, "No dollar figures for unpriced tokens").
+   The unit is "input token", not a symbol — the panel is about a trade the
+   reader imagines, not a pool, and no pool is named or implied.
 
    WHY THERE IS NO FALLBACK TABLE. If the controller cannot be read, the panel
    renders the reason and NO figures.
@@ -45,20 +46,12 @@ import { cx } from './ui'
 const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
 /**
- * The unit: `symbol0` of the chain's reference pool, a real ERC-20 this repo's
- * own scripts created. `null` when there is no reference pool — the honest
- * output is then "input token", never a symbol borrowed from another chain.
+ * The unit. Generic on purpose: this used to borrow the symbol of the address
+ * book's reference pool, a test token, which put a retired test pool's ticker on
+ * the landing page. The calculator prices a size the reader types; it needs no
+ * ticker to do that, and inventing one would imply a pool.
  */
-const UNIT: string | null = CHAIN.demoPool?.symbol0 ?? null
-const UNIT_LABEL = UNIT ?? 'input token'
-
-/** Read off the address book's own `isTestToken` flag, not off `isMainnet`. */
-const UNIT_IS_TEST: boolean =
-  CHAIN.demoPool !== null &&
-  (CHAIN.tokens.find(
-    (t) => t.address.toLowerCase() === CHAIN.demoPool?.token0.toLowerCase(),
-  )?.isTestToken ??
-    false)
+const UNIT_LABEL = 'input token'
 
 /**
  * A token amount, adaptive precision: this panel spans six orders of
@@ -430,9 +423,8 @@ function Calculator({
 
       <p className={styles['provenance']}>
         Rates: <code>feeForLpFee</code> on the {CHAIN.name} controller, composed as{' '}
-        <code>lp + protocol − lp·protocol/10⁶</code>. The size is yours, in token units —{' '}
-        {UNIT_LABEL} {UNIT_IS_TEST ? 'is a test token and ' : ''}has no price here, so nothing is
-        shown in dollars. PancakeSwap&rsquo;s 33% is cited from their source, not measured.
+        <code>lp + protocol − lp·protocol/10⁶</code>. The size is yours, in units of the token
+        you would pay in — nothing is priced here, so nothing is shown in dollars. PancakeSwap&rsquo;s 33% is cited from their source, not measured.
       </p>
     </div>
   )

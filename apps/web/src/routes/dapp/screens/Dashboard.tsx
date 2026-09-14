@@ -25,29 +25,34 @@ import { SwapVolumeCard, ActivityMixCard } from '../components/ProtocolCharts'
  */
 function liveKpis(m: import('../../../lib/chain').ProtocolMetrics): { label: string; value: string; trend: string }[] {
   const t0 = m.tvl[0]
-  const t1 = m.tvl[1]
+  /* The fee tiles name the token most swaps paid in, read off the swap's own
+     pool currencies. They used to take tvl[0]/tvl[1] positionally, which only
+     described the chain while it had exactly one pool. */
+  const top = m.tokenFees?.[0]
+  /* Em dash when the log scan was refused (null); a zero would claim the
+     protocol earned nothing, which is a different statement. A real zero —
+     no swap on any live pool — is shown as 0 and the tile says why. */
+  const noSwaps = m.tokenFees !== null && top === undefined
   return [
     {
       label: `VAULT TVL · ${t0?.symbol ?? 'TOKEN'}`,
-      value: t0 ? fmtToken(t0.balance, t0.decimals, 2) : '0',
-      trend: 'balanceOf(vault)',
+      value: t0 ? fmtToken(t0.balance, t0.decimals, 2) : '—',
+      trend: t0 ? 'balanceOf(vault)' : 'no tracked token',
     },
     {
       label: 'SWAPS EXECUTED',
       value: m.swapCount === null ? '—' : String(m.swapCount),
-      trend: 'all time',
+      trend: m.swapCount === 0 ? 'none yet' : 'live pools',
     },
     {
-      label: `PROTOCOL FEES · ${t0?.symbol ?? 'TOKEN'}`,
-      /* Em dash, not '0'. null means the log scan was refused; a zero would
-         claim the protocol earned nothing, which is a different statement. */
-      value: t0 && m.protocolFees0 !== null ? fmtToken(m.protocolFees0, t0.decimals, 6) : '—',
-      trend: 'summed per swap',
+      label: `PROTOCOL FEES${top ? ` · ${top.symbol}` : ''}`,
+      value: top ? fmtToken(top.protocolFees, top.decimals, 6) : noSwaps ? '0' : '—',
+      trend: noSwaps ? 'no swaps yet' : 'summed per swap',
     },
     {
-      label: `LP FEES · ${t1?.symbol ?? 'TOKEN'}`,
-      value: t1 && m.lpFees1 !== null ? fmtToken(m.lpFees1, t1.decimals, 6) : '—',
-      trend: 'summed per swap',
+      label: `LP FEES${top ? ` · ${top.symbol}` : ''}`,
+      value: top ? fmtToken(top.lpFees, top.decimals, 6) : noSwaps ? '0' : '—',
+      trend: noSwaps ? 'no swaps yet' : 'summed per swap',
     },
   ]
 }

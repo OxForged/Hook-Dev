@@ -39,7 +39,7 @@
                         specific reason (no liquidity / unreadable decimals /
                         router paused)
 
-   6. NO DOLLAR FIGURES. LTT1 and LTT2 are unpriced test tokens. Amounts are
+   6. NO DOLLAR FIGURES. Nothing here prices a pool's tokens. Amounts are
       token units with a symbol, always. No currency symbol and no fiat
       conversion appears on this surface, and none may be added: nothing on
       this chain prices these tokens, so any figure in money would be invented.

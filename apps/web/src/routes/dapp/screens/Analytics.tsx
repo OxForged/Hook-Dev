@@ -127,7 +127,7 @@ const FEE_SERIES = [
  * A token's running fee total, plotted against block height.
  *
  * ONE TOKEN PER CHART, deliberately. Nothing prices these tokens, so there is no
- * rate at which an ltETH fee and an ltUSD fee could be added into one line —
+ * rate at which a fee in one token and a fee in another could be added into one line —
  * the same constraint that keeps the fee bars below per token.
  *
  * `SeriesChart` refuses to draw fewer than two points and says how many there
@@ -289,10 +289,11 @@ export default function Analytics() {
           </>
         ) : (
           <div className="an-empty">
-            <p className="an-empty__title">No protocol events yet</p>
+            <p className="an-empty__title">No live pools yet</p>
             <p className="live-note">
-              The CL pool manager at {chain.clPoolManager.slice(0, 10)}… has emitted nothing since
-              block {n(chain.deployedAtBlock)}.
+              The CL pool manager at {chain.clPoolManager.slice(0, 10)}… has emitted no event for a
+              live pool since block {n(chain.deployedAtBlock)}. Pools trading an address-book test
+              token are left out of every figure on this screen.
             </p>
           </div>
         )}
@@ -369,7 +370,7 @@ export default function Analytics() {
               <Methodology label="What each bar is a share of">
                 <p className="live-note">
                   That token&rsquo;s OWN fees, so both ends of a comparison are in the same unit —
-                  the pool tokens are unpriced, so an ltUSD bar measured against an ltETH bar would
+                  the pool tokens are unpriced, so one token&rsquo;s bar measured against another&rsquo;s would
                   need a rate that does not exist. Apportioned per swap from that swap&rsquo;s own
                   pips.
                 </p>

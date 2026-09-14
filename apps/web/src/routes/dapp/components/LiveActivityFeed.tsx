@@ -79,8 +79,8 @@ export function LiveActivityFeed() {
 
       {state.k === 'ready' && state.events.length === 0 && (
         <p className="live-note dapp-state--empty">
-          Nothing has happened on this deployment yet. Shown empty rather than filled with
-          examples.
+          No activity on a live pool yet (pools trading an address-book test token are left
+          out). Shown empty rather than filled with examples.
         </p>
       )}
 

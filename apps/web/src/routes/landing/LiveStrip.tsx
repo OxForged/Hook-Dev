@@ -15,10 +15,15 @@
                        checked against `RevShareHook.totalTaken`.
    Nothing is typed out, nothing is priced, and no dollar sign appears.
 
-   WHY THERE IS NO TIME SERIES. On Robinhood the protocol's entire swap history
-   is two swaps, 24 blocks apart. A line through two points is a drawing, not a
-   trend, so the chart is a share-of-fees bar and the panel says why in words.
-   The wording is computed from the swap count, so it cannot outlive the fact.
+   WHY THERE IS NO TIME SERIES. A line through a handful of points is a drawing,
+   not a trend, so the chart is a share-of-fees bar and the panel says why in
+   words. The wording is computed from the swap count, so it cannot outlive the
+   fact.
+
+   REAL POOLS ONLY (owner, 2026-09-14). Pools that trade an address-book test
+   token are left out of every figure by `readProtocolActivity`. With nothing
+   left, the panel is an honest empty state that says so and points at how to
+   launch a pool — never a row of zeros dressed as a reading.
 
    THE STATES ARE SEPARATED IN THE TYPE, not just in the copy:
      loading        the read is in flight
@@ -31,6 +36,7 @@
    ========================================================================== */
 
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { ACTIVE_CHAIN_ID, DEPLOYMENTS, readBlockNumber } from '../../lib/chain'
 import {
@@ -39,6 +45,7 @@ import {
   type ProtocolActivity,
   type TokenActivity,
 } from '../../lib/protocolActivity'
+import { LINKS } from './data'
 import { FeeSplit } from './FeeSplit'
 import styles from './livestrip.module.css'
 import { cx, prefersReducedMotion } from './ui'
@@ -106,7 +113,7 @@ function pending(s: Activity): Cell | null {
   if (s.k === 'loading') return { k: 'loading' }
   if (s.k === 'error') return { k: 'error', reason: `${CHAIN.name} logs unreachable — reason below` }
   if (s.a.swapCount === 0 && s.a.tokens.length === 0) {
-    return { k: 'empty', value: '0', reason: `no swaps in blocks ${n(s.a.fromBlock)}–${n(s.a.toBlock)}` }
+    return { k: 'empty', value: '0', reason: 'no live pool has traded yet' }
   }
   return null
 }
@@ -186,7 +193,7 @@ function protocolCell(s: Activity, t: TokenActivity | undefined): Cell {
    Nothing increments between reads. Off under `prefers-reduced-motion`.
    --------------------------------------------------------------------------- */
 
-/** Prefix, a grouped/decimal number, suffix. "0.005994 LTT1" -> "", "0.005994", " LTT1". */
+/** Prefix, a grouped/decimal number, suffix. "0.005994 WETH" -> "", "0.005994", " WETH". */
 const NUMERIC = /^([^0-9]*)(\d[\d,]*(?:\.\d+)?)(.*)$/
 const COUNT_MS = 900
 
@@ -454,9 +461,25 @@ export function LiveStrip() {
           </div>
         ) : token === undefined || unit === null ? (
           <div className={styles['stateCard']} data-state="empty">
+            {/* One span per paragraph: `.stateText` is a flex row (it carries the
+                loading dot), so bare inline children would each become a column. */}
             <p className={styles['stateText']}>
-              No swap has happened on {CHAIN.name} between blocks {n(activity.a.fromBlock)} and{' '}
-              {n(activity.a.toBlock)}, so there are no fees to split.
+              <span>
+                <strong>No live pools yet.</strong> No pool on {CHAIN.name} has traded between blocks{' '}
+                {n(activity.a.fromBlock)} and {n(activity.a.toBlock)}, so there are no fees to split
+                {activity.a.hiddenTestPools > 0
+                  ? ` (${n(activity.a.hiddenTestPools)} test-token pool${activity.a.hiddenTestPools === 1 ? ' is' : 's are'} left out).`
+                  : '.'}
+              </span>
+            </p>
+            <p className={styles['stateText']}>
+              <span>
+                Launching one takes a kit, not a core deployment: see the{' '}
+                <a href={LINKS.promptLaunchpad} target="_blank" rel="noopener noreferrer">
+                  launchpad integration guide
+                </a>{' '}
+                or <Link to={LINKS.docs}>the docs</Link>.
+              </span>
             </p>
           </div>
         ) : (
@@ -468,10 +491,8 @@ export function LiveStrip() {
               chainName={CHAIN.name}
             />
             <p className={styles['series']}>
-              {seriesNote(activity.a)}{' '}
-              {token.isTestToken === true
-                ? `${unit} is a test token nothing prices, so no dollar value is shown.`
-                : 'No dollar value is shown: amounts are in the token’s own units.'}
+              {seriesNote(activity.a)} No dollar value is shown: amounts are in the token’s own
+              units.
             </p>
           </>
         )}
@@ -499,6 +520,14 @@ export function LiveStrip() {
             )}{' '}
             <strong>Uncollected protocol fees</strong>: <code>protocolFeesAccrued</code> on both
             pool managers.
+            {activity.a.hiddenTestPools > 0 ? (
+              <>
+                {' '}
+                <strong>Left out</strong>: {n(activity.a.hiddenTestPools)} pool
+                {activity.a.hiddenTestPools === 1 ? '' : 's'} trading a token the address book marks as
+                a test token.
+              </>
+            ) : null}
           </>
         ) : (
           <>

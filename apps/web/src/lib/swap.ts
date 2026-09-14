@@ -95,7 +95,7 @@
 
    PROVEN AGAINST CHAIN, 2026-09-12, Robinhood Chain (4663)
    --------------------------------------------------------
-   `execute(0x10, [plan], deadline)` simulated from an address holding LTT1 with
+   `execute(0x10, [plan], deadline)` simulated from an address holding a test token with
    no Permit2 allowance reverted `AllowanceExpired(uint256)` — Permit2's
    selector `0xd81b2f2e`. That is the deepest possible failure short of a funded
    allowance: the plan decoded, the swap ran inside the lock, and the only thing
@@ -130,6 +130,7 @@ import {
   client,
   readContractClockReading,
   scanWindows,
+  tradesTestToken,
   type DeployedChainId,
 } from './chain'
 import {
@@ -370,6 +371,8 @@ export interface SwapContext {
   chainId: DeployedChainId
   chainName: string
   pools: SwapPool[]
+  /** Initialized pools left out of `pools` because they trade an address-book test token. */
+  hiddenTestPools: number
   /** `CLPoolManager.protocolFeeController()`. `address(0)` means no fee, anywhere. */
   protocolFeeController: Address
   controllerWired: boolean
@@ -432,8 +435,12 @@ function tickSpacingFromParameters(parameters: Hex): number {
  * A pool with zero liquidity is RETURNED, not filtered out. It is a real pool
  * and the reason it cannot be traded is worth saying; dropping it silently
  * would leave the reader wondering where their pool went.
+ *
+ * A pool that trades an address-book test token IS left out (owner decision,
+ * 2026-09-14: showcase surfaces show real pools only) and counted in
+ * `hiddenTestPools`, so the screen can say something was left out.
  */
-export async function readSwapPools(): Promise<SwapPool[]> {
+export async function readSwapPools(): Promise<{ pools: SwapPool[]; hiddenTestPools: number }> {
   const c = client(SWAP_CHAIN_ID)
 
   /* WINDOWED. This asked for `deployedAtBlock -> 'latest'` in one call, which
@@ -450,8 +457,16 @@ export async function readSwapPools(): Promise<SwapPool[]> {
     'tradeable pools (CLPoolManager Initialize)',
   )
 
-  return Promise.all(
-    logs.map(async (log) => {
+  const shown = logs.filter(
+    (log) =>
+      !tradesTestToken(SWAP_CHAIN_ID, {
+        currency0: log.args.currency0 as Address,
+        currency1: log.args.currency1 as Address,
+      }),
+  )
+
+  const pools = await Promise.all(
+    shown.map(async (log) => {
       const poolId = log.args.id as Hex
       const currency0 = log.args.currency0 as Address
       const currency1 = log.args.currency1 as Address
@@ -495,13 +510,14 @@ export async function readSwapPools(): Promise<SwapPool[]> {
       } satisfies SwapPool
     }),
   )
+  return { pools, hiddenTestPools: logs.length - shown.length }
 }
 
 /** Everything the swap surface needs in one pass, so one render is one round of reads. */
 export async function readSwapContext(): Promise<SwapContext> {
   const c = client(SWAP_CHAIN_ID)
 
-  const [pools, controller, routerPaused, clock] = await Promise.all([
+  const [{ pools, hiddenTestPools }, controller, routerPaused, clock] = await Promise.all([
     readSwapPools(),
     c.readContract({ address: CL_POOL_MANAGER, abi: CL_MANAGER_ABI, functionName: 'protocolFeeController' }),
     c.readContract({ address: ROUTER, abi: universalRouterAbi as Abi, functionName: 'paused' }) as Promise<boolean>,
@@ -512,6 +528,7 @@ export async function readSwapContext(): Promise<SwapContext> {
     chainId: SWAP_CHAIN_ID,
     chainName: D.name,
     pools,
+    hiddenTestPools,
     protocolFeeController: controller,
     controllerWired: controller !== ZERO,
     routerPaused,
@@ -677,8 +694,8 @@ export interface Quote {
  * WHAT THE NUMBER INCLUDES. Everything. The delta the quoter reads back from
  * `poolManager.swap` is the swapper's own delta, already net of the LP fee, the
  * protocol fee and any `hookDelta` the pool's hook took in `afterSwap`.
- * Verified on the live LTT1/LTT2 pool: 0.001 LTT1 in quoted 0.000994009983…
- * LTT2 out, which is 0.997 (LP fee) x 0.997 (RevShareHook's 3000-pip cut on the
+ * Verified on the (since retired) test-token pool: 0.001 token0 in quoted
+ * 0.000994009983… token1 out, which is 0.997 (LP fee) x 0.997 (RevShareHook's 3000-pip cut on the
  * unspecified side) to the wei. There is nothing to add to this figure and
  * nothing to subtract from it.
  *

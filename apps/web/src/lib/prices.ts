@@ -347,7 +347,7 @@ export const finnhubStocks: MarketFeedProvider = {
 
    Derived from `sqrtPriceX96` read off the CL pool manager. No external price
    is consulted here and none may be: falling back to a reference quote would
-   put an invented dollar value on a testnet token.
+   put an invented dollar value on a token nothing here prices.
    =========================================================================== */
 
 const CL_SLOT0 = parseAbi([
@@ -367,7 +367,7 @@ export interface PoolPrice {
   symbol1: string
   /**
    * Units of token1 per 1 token0, from sqrtPriceX96 and the two decimals.
-   * A RATIO between two unpriced testnet tokens. Not USD. Never label it as money.
+   * A RATIO between two tokens nothing here prices. Not USD. Never label it as money.
    */
   price1Per0: number
   tick: number

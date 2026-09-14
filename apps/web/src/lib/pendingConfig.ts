@@ -2,7 +2,7 @@
    RevShareHook.getPendingConfig — THREE struct shapes on chain, chosen by address.
 
      block-no-expiry        7 words  (uint48 effectiveBlock, ConfigParams{6})
-                            Robinhood 0x23CE34E8…E446 (the LTT1/LTT2 pool), Sepolia 0x1C86dc77…BE28
+                            Robinhood 0x23CE34E8…E446 (retired; its test-token pool), Sepolia 0x1C86dc77…BE28
      block-with-expiry      8 words  (uint48 effectiveBlock, uint48 expiryBlock, ConfigParams{6})
                             Robinhood 0xfC00485A…2aD2
      timestamp-with-expiry  8 words  (uint40 effectiveAt, uint40 expiresAt, ConfigParams{6})

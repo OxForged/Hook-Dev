@@ -9,8 +9,14 @@
    All of it is gone. What replaces it is what the chain actually says: the pool
    record from the CL pool manager's own Initialize log, the vault's real token
    balances, and the real swap count. The numbers are small because this is a
-   testnet with one pool and a handful of swaps — that is the honest picture, and
-   Analytics already established that showing it beats showing invented millions.
+   young deployment — that is the honest picture, and Analytics already
+   established that showing it beats showing invented millions.
+
+   NO DEFAULT POOL (owner, 2026-09-14). This screen used to open on the address
+   book's reference pool, a test-token pool since retired. It now shows the pool
+   named in `?id=`, and without one it lists the live pools to pick from — or,
+   with none, says "No live pools yet". Pools that trade an address-book test
+   token are not listed and are not rendered even by id.
 
    THE 24-HOUR FEE SERIES IS NOT REPLACED BY A PRETTIER 24-HOUR FEE SERIES. A
    fee-over-time chart needs time, and time here would have to be inferred from
@@ -22,7 +28,7 @@
    ============================================================================ */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import {
   DEPLOYMENTS,
@@ -30,12 +36,15 @@ import {
   formatUnits,
   readPools,
   readRecentSwaps,
-  readVaultHoldings,
+  readTestTokenPoolIds,
+  readVaultBalancesOf,
+  type DeployedChainId,
   type PoolRecord,
   type SwapRecord,
   type VaultHolding,
 } from '../../../lib/chain'
 import { ChainTag } from '../../../components/ChainTag.tsx'
+import { NoLivePools } from '../components/NoLivePools.tsx'
 import { PoolPriceCard } from '../components/PoolPriceCard.tsx'
 import { Methodology } from '../components/ProtocolCharts.tsx'
 import { SeriesChart, StackedBar, type SeriesPoint } from '../components/series-charts.tsx'
@@ -46,15 +55,15 @@ import { dappPath } from '../paths.ts'
  * `readProtocolMetrics` is deliberately NOT one of these reads any more.
  *
  * Its `swapCount` is protocol-wide, and this screen was printing it under a
- * heading naming one pool. On a one-pool deployment the two agree, which is
- * exactly why it went unnoticed — the second pool would have made every figure
- * on this page quietly wrong. Swap logs carry the pool id, so the count, the
+ * heading naming one pool. Swap logs carry the pool id, so the count, the
  * series and the fee split below are all filtered to THIS pool.
  */
 interface Loaded {
-  readonly pool: PoolRecord | undefined
-  readonly holdings: readonly VaultHolding[]
-  /** Every Swap log on the CL manager. Filtered to this pool by the screen. */
+  /** Live pools: test-token pools already left out by `readPools`. */
+  readonly pools: readonly PoolRecord[]
+  /** Ids (lowercase) of pools left out because they trade a test token. */
+  readonly hidden: ReadonlySet<string>
+  /** Every shown Swap log on the CL manager. Filtered to one pool by the screen. */
   readonly swaps: readonly SwapRecord[]
 }
 
@@ -69,8 +78,23 @@ function pctFromPips(pips: number): string {
   return `${(pips / 10_000).toFixed(2)}%`
 }
 
+const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+
+/** A currency's label WITHOUT a read: the address book's symbol, the native symbol, or the short address. */
+function bookLabel(chainId: DeployedChainId, address: string): string {
+  const d = DEPLOYMENTS[chainId]
+  if (address.toLowerCase() === ZERO) return d.nativeCurrency.symbol
+  return d.tokens.find((t) => t.address.toLowerCase() === address.toLowerCase())?.symbol ?? shortAddr(address)
+}
+
+function poolLink(id: string): string {
+  return `${dappPath('pool')}?id=${id}`
+}
+
 export default function PoolDetail() {
   const { browsingChain } = useDapp()
+  const [params] = useSearchParams()
+  const wanted = params.get('id')?.toLowerCase() ?? null
   const [state, setState] = useState<State>({ k: 'loading' })
 
   useEffect(() => {
@@ -78,21 +102,12 @@ export default function PoolDetail() {
     setState({ k: 'loading' })
     Promise.all([
       readPools(browsingChain),
-      readVaultHoldings(browsingChain),
+      readTestTokenPoolIds(browsingChain),
       readRecentSwaps(browsingChain, 5000),
     ])
-      .then(([pools, holdings, swaps]) => {
+      .then(([pools, hidden, swaps]) => {
         if (off) return
-        // Prefer the deployment's named pool; fall back to the first one that
-        // exists, so this screen is not empty on a chain configured differently.
-        // A chain with no named pool (mainnet, until one is initialised) just
-        // takes whatever the chain actually has — which may be nothing.
-        const named = DEPLOYMENTS[browsingChain].demoPool
-        const target = named === null ? null : named.id.toLowerCase()
-        const pool =
-          (target === null ? undefined : pools.find((p) => p.id.toLowerCase() === target)) ??
-          pools[0]
-        setState({ k: 'ready', d: { pool, holdings, swaps } })
+        setState({ k: 'ready', d: { pools, hidden, swaps } })
       })
       .catch((e) =>
         !off &&
@@ -112,49 +127,131 @@ export default function PoolDetail() {
     return (
       <section className="dapp-card" role="status">
         <h2 className="dapp-card__title">
-          {state.k === 'loading' ? 'Reading the pool…' : 'Could not reach the chain'}
+          {state.k === 'loading' ? 'Reading pools…' : 'Could not reach the chain'}
         </h2>
         <p className={`live-note ${state.k === 'error' ? 'live-note--err' : 'dapp-state--loading'}`}>
           {state.k === 'loading'
-            ? `Reading pool state, vault balances and swap history from ${d.name}.`
+            ? `Reading the pool list and swap history from ${d.name}.`
             : `${state.message}. Nothing shown rather than placeholder figures.`}
         </p>
       </section>
     )
   }
 
-  const { pool, holdings, swaps } = state.d
+  const { pools, hidden, swaps } = state.d
+  const source = (
+    <>
+      the CL pool manager&rsquo;s <code>Initialize</code> logs since block {d.deployedAtBlock.toString()}
+    </>
+  )
+
+  /* No selection: pick from the live pools, or say there are none. Never a
+     default pool chosen on the reader's behalf. */
+  if (wanted === null) {
+    if (pools.length === 0) {
+      return (
+        <section className="dapp-card">
+          <div className="dapp-card__bar">
+            <h2 className="dapp-microlabel">POOL DETAIL</h2>
+            <ChainTag chainId={browsingChain} />
+          </div>
+          <NoLivePools chainName={d.name} source={source} hiddenTestPools={hidden.size} inCard={false} />
+        </section>
+      )
+    }
+    return (
+      <section className="dapp-card">
+        <div className="dapp-card__bar">
+          <h2 className="dapp-microlabel">PICK A POOL</h2>
+          <ChainTag chainId={browsingChain} />
+        </div>
+        <ul className="live-list">
+          {pools.map((p) => (
+            <li key={p.id}>
+              <span>
+                <Link to={poolLink(p.id)}>
+                  {bookLabel(browsingChain, p.currency0)} / {bookLabel(browsingChain, p.currency1)}
+                </Link>{' '}
+                <span className="live-fee">{p.id.slice(0, 10)}…</span>
+              </span>
+              <span className="live-fee">
+                {pctFromPips(p.lpFeePips)} · {p.hasHook ? 'Latch attached' : 'no Latch'} · block{' '}
+                {p.createdAtBlock.toString()}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="live-note">
+          Read from {source}.
+          {hidden.size > 0
+            ? ` ${hidden.size} pool${hidden.size === 1 ? '' : 's'} trading an address-book test token ${hidden.size === 1 ? 'is' : 'are'} not listed.`
+            : ''}
+        </p>
+      </section>
+    )
+  }
+
+  const pool = pools.find((p) => p.id.toLowerCase() === wanted)
 
   if (!pool) {
+    const isHidden = hidden.has(wanted)
     return (
       <section className="dapp-card">
         <div className="dapp-card__bar">
           <h2 className="dapp-microlabel">POOL DETAIL</h2>
           <ChainTag chainId={browsingChain} />
         </div>
-        <div className="an-empty">
-          <p className="an-empty__title">No pools initialized</p>
+        <div className="an-empty" role="status">
+          <p className="an-empty__title">{isHidden ? 'This pool is not shown' : 'No live pool with this id'}</p>
           <p className="live-note">
-            The CL pool manager on {d.name} has emitted no Initialize event since deployment at
-            block {d.deployedAtBlock.toString()}. Shown empty rather than filled with an example
-            pair.
+            {isHidden
+              ? 'It trades a token the address book marks as a test token, and test-token pools are not showcased here.'
+              : `No pool with id ${wanted.slice(0, 10)}… appears in ${d.name}’s CL pool manager Initialize logs since block ${d.deployedAtBlock.toString()}.`}
+          </p>
+          <p className="live-note">
+            <Link to={dappPath('pool')}>{pools.length > 0 ? 'Pick a live pool →' : 'Back to pools →'}</Link>
           </p>
         </div>
       </section>
     )
   }
 
+  return <PoolView pool={pool} swaps={swaps} />
+}
+
+type HoldingsState =
+  | { k: 'loading' }
+  | { k: 'error'; message: string }
+  | { k: 'ready'; holdings: VaultHolding[] }
+
+function PoolView({ pool, swaps }: { pool: PoolRecord; swaps: readonly SwapRecord[] }) {
+  const [hs, setHs] = useState<HoldingsState>({ k: 'loading' })
+
+  /* The Vault's balance of THIS pool's two currencies, with their real symbols
+     and decimals. The Vault custodies every pool's tokens together, so the
+     figure is the Vault's whole balance of that token, and the label says so. */
+  useEffect(() => {
+    let off = false
+    setHs({ k: 'loading' })
+    readVaultBalancesOf(pool.chainId, [pool.currency0, pool.currency1])
+      .then((holdings) => !off && setHs({ k: 'ready', holdings }))
+      .catch((e: unknown) => !off && setHs({ k: 'error', message: e instanceof Error ? e.message : 'unreachable' }))
+    return () => {
+      off = true
+    }
+  }, [pool.chainId, pool.currency0, pool.currency1])
+
   const hooked = pool.hooks !== ZERO
   /* Scoped to THIS pool. Swap logs carry the pool id, so there is no reason to
      show a protocol-wide count under a heading that names one pair. */
-  const poolSwaps = swaps.filter((s) => s.poolId.toLowerCase() === pool.id.toLowerCase())
-  /* Symbols come from the deployment record, which only has them for a named
-     pool. Falling back to the chain's own pool id is honest: it says "this is
-     the pool" without inventing a ticker for tokens nobody has named here. */
-  const pair =
-    d.demoPool === null
-      ? `Pool ${pool.id.slice(0, 10)}…`
-      : `${d.demoPool.symbol0} / ${d.demoPool.symbol1}`
+  const poolSwaps = useMemo(
+    () => swaps.filter((s) => s.poolId.toLowerCase() === pool.id.toLowerCase()),
+    [swaps, pool.id],
+  )
+  const holdings = useMemo(() => (hs.k === 'ready' ? hs.holdings : []), [hs])
+  const labelOf = (address: string) =>
+    holdings.find((h) => h.token.toLowerCase() === address.toLowerCase())?.symbol ?? bookLabel(pool.chainId, address)
+  const pair = `${labelOf(pool.currency0)} / ${labelOf(pool.currency1)}`
 
   return (
     <>
@@ -188,9 +285,9 @@ export default function PoolDetail() {
           </p>
         </div>
 
-        {/* Token units, never dollars: ltUSD and ltETH are unpriced testnet
-            tokens, and inventing a price to produce a dollar headline is the
-            failure this screen replaced. */}
+        {/* Token units, never dollars: nothing here prices these tokens, and
+            inventing a price to produce a dollar headline is the failure this
+            screen replaced. */}
         <dl className="dapp-pool-stats">
           <div className="dapp-pool-stat">
             <dt className="dapp-stat__label">LP FEE</dt>
@@ -200,12 +297,21 @@ export default function PoolDetail() {
             <dt className="dapp-stat__label">SWAPS · THIS POOL</dt>
             <dd className="dapp-pool-stat__value">{poolSwaps.length.toLocaleString('en-US')}</dd>
           </div>
-          {holdings.map((h) => (
-            <div key={h.token} className="dapp-pool-stat">
-              <dt className="dapp-stat__label">VAULT · {h.symbol}</dt>
-              <dd className="dapp-pool-stat__value">{formatUnits(h.balance, h.decimals, 2)}</dd>
+          {hs.k === 'ready' ? (
+            hs.holdings.map((h) => (
+              <div key={h.token} className="dapp-pool-stat">
+                <dt className="dapp-stat__label">VAULT · {h.symbol}</dt>
+                <dd className="dapp-pool-stat__value">{formatUnits(h.balance, h.decimals, 2)}</dd>
+              </div>
+            ))
+          ) : (
+            <div className="dapp-pool-stat">
+              <dt className="dapp-stat__label">VAULT BALANCES</dt>
+              <dd className={`dapp-pool-stat__value${hs.k === 'loading' ? ' dapp-state--loading' : ''}`}>
+                {hs.k === 'loading' ? '·' : '—'}
+              </dd>
             </div>
-          ))}
+          )}
         </dl>
       </section>
 
@@ -236,10 +342,7 @@ export default function PoolDetail() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {d.demoPool === null
-                    ? `${pool.currency0.slice(0, 10)}…`
-                    : d.demoPool.symbol0}{' '}
-                  ↗
+                  {labelOf(pool.currency0)} ↗
                 </a>
               </dd>
             </div>
@@ -251,10 +354,7 @@ export default function PoolDetail() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {d.demoPool === null
-                    ? `${pool.currency1.slice(0, 10)}…`
-                    : d.demoPool.symbol1}{' '}
-                  ↗
+                  {labelOf(pool.currency1)} ↗
                 </a>
               </dd>
             </div>
@@ -263,7 +363,11 @@ export default function PoolDetail() {
             Read from the CL pool manager&rsquo;s own Initialize log — what the pool was created
             with.
           </p>
+          {hs.k === 'error' ? (
+            <p className="live-note live-note--err">Vault balances not read: {hs.message}</p>
+          ) : null}
           <p className="dapp-note">
+            <Link to={dappPath('pool')}>All live pools</Link> ·{' '}
             <Link to={dappPath('analytics')}>Protocol-wide activity →</Link>
           </p>
         </section>
@@ -327,10 +431,8 @@ function feeSides(pool: PoolRecord, swaps: readonly SwapRecord[], holdings: read
   for (const [i, currency] of currencies.entries()) {
     const side = totals[i]
     if (!side || side.protocol + side.lp === 0n) continue
-    /* Matched by ADDRESS, not by position. The holdings list is ordered by the
-       deployment record's demo pool; a different pool's currency0 need not be
-       the same token, and a symbol attached to the wrong balance is worse than
-       no symbol. */
+    /* Matched by ADDRESS, not by position: a symbol attached to the wrong
+       balance is worse than no symbol. */
     const holding = holdings.find((h) => h.token.toLowerCase() === currency.toLowerCase())
     if (!holding) continue
     out.push({ holding, protocol: side.protocol, lp: side.lp })
@@ -446,7 +548,7 @@ function PoolActivityCard({
           Every figure is a <code>Swap</code> log on the CL pool manager, filtered by this
           pool&rsquo;s id, with each swap&rsquo;s fee apportioned from its own <code>fee</code> and{' '}
           <code>protocolFee</code> fields rather than the controller&rsquo;s current default. Token
-          units only — these tokens are unpriced. A Latch with a dynamic fee would move the LP rate
+          units only — nothing here prices these tokens. A Latch with a dynamic fee would move the LP rate
           per swap; this pool {hooked ? 'has one attached, shown above.' : 'has none attached.'}
         </p>
       </Methodology>

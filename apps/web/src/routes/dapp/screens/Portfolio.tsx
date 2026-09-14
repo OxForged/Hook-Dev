@@ -12,8 +12,8 @@
                      would appear here; wallet balances and listed Latches below
 
    Every number on this screen is a token amount in that token's own units,
-   read from chain a moment ago. There is no USD column because nothing prices
-   these testnet tokens, and no "fees over 30 days" because the protocol does
+   read from chain a moment ago. There is no USD column because nothing here
+   prices these tokens, and no "fees over 30 days" because the protocol does
    not record collected fees per address — only the fees a position has earned
    and NOT yet collected can be sourced, so that is the column.
 
@@ -30,7 +30,7 @@
    number. It is one click away instead of in front of the answer.
 
    THE CHARTS ONLY APPEAR WITH SOMETHING TO COMPARE. Bars are drawn per TOKEN,
-   never across tokens: ltUSD and ltETH are unpriced, so a bar putting 100 of one
+   never across tokens: nothing prices one against another, so a bar putting 100 of one
    beside 0.5 of the other asserts a ranking nothing on chain supports. A token
    held by a single position is skipped too — one bar at 100% is a picture of
    nothing.
@@ -38,6 +38,7 @@
 
 import { LatchConnectButton } from '@latchprotocol/connect'
 import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useAccount, useSwitchChain } from 'wagmi'
 
 import {
@@ -46,6 +47,7 @@ import {
   explorerAddress,
   formatUnits,
   isDeployed,
+  showcaseTokens,
   type DeployedChainId,
 } from '../../../lib/chain'
 import { BarList } from '../components/charts.tsx'
@@ -129,7 +131,7 @@ function Header({ chainName }: { chainName: string }) {
       </div>
       <p className="live-note">
         Positions, wallet balances and registry listings for the connected address, read from{' '}
-        {chainName}. Token units only — nothing prices these tokens. Read only.
+        {chainName}. Token units only — nothing here prices these tokens. Read only.
       </p>
     </section>
   )
@@ -137,6 +139,7 @@ function Header({ chainName }: { chainName: string }) {
 
 function NotConnected() {
   const d = DEPLOYMENTS[ACTIVE_CHAIN_ID]
+  const tokens = showcaseTokens(ACTIVE_CHAIN_ID)
   return (
     <section className="dapp-card" aria-labelledby="pf-nc">
       <h3 id="pf-nc" className="dapp-card__title">
@@ -152,21 +155,19 @@ function NotConnected() {
           <span>Current token amounts and uncollected fees per position</span>
           <span className="live-fee">from the pool&rsquo;s own price and fee-growth state</span>
         </li>
-        {/* A chain need not have a pool. Naming one that does not exist here —
-            or worse, naming another chain's — is the mistake the null branch at
-            the foot of this screen already guards against; this bullet was
-            reaching for `demoPool` without the same care. */}
-        {d.demoPool === null ? (
-          <li>
-            <span>Wallet balances of the tokens in a Latch pool</span>
-            <span className="live-fee">no pool has been initialised on {d.name} yet</span>
-          </li>
-        ) : (
-          <li>
-            <span>Wallet balances of {d.demoPool.symbol0} and {d.demoPool.symbol1}</span>
-            <span className="live-fee">the protocol&rsquo;s test tokens on {d.name}</span>
-          </li>
-        )}
+        {/* The tokens are the address book's, test tokens excluded — the same
+            list `readWalletBalances` reads, so this bullet cannot name a token
+            the screen will not show. */}
+        <li>
+          <span>
+            {tokens.length === 0
+              ? 'Wallet balances of tracked tokens'
+              : `Wallet balances of ${tokens.map((t) => t.symbol).join(', ')}`}
+          </span>
+          <span className="live-fee">
+            {tokens.length === 0 ? `the address book tracks none on ${d.name}` : `from the address book for ${d.name}`}
+          </span>
+        </li>
         <li>
           <span>Latches you have listed in the registry</span>
           <span className="live-fee">matched on submitter address</span>
@@ -402,19 +403,12 @@ function NoPositions({ p }: { p: PortfolioData }) {
         {p.checkedAtBlock.toLocaleString('en-US')}.
       </p>
 
-      {/* The one actionable next step, or the reason there isn't one. Naming a
-          pool from a different chain is the mistake this branch prevents. */}
-      {d.demoPool === null ? (
-        <p className="live-note">No pool has been initialised on {d.name} yet.</p>
-      ) : (
-        <p className="live-note">
-          Add liquidity to{' '}
-          <a href={dappPath('pool')}>
-            {d.demoPool.symbol0} / {d.demoPool.symbol1} {(d.demoPool.lpFee / 10_000).toFixed(2)}%
-          </a>{' '}
-          and it appears here.
-        </p>
-      )}
+      {/* The next step, without naming a pool: no default pool is chosen for
+          the reader. The pools screen lists the live ones, or says there are
+          none. */}
+      <p className="live-note">
+        A position you open in a <Link to={dappPath('pool')}>live pool</Link> appears here.
+      </p>
 
       <details className="dapp-method">
         <summary>How this is counted</summary>

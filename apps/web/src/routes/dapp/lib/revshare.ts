@@ -25,7 +25,7 @@
       THE KEY ALSO NAMES THE HOOK. `poolKey.hooks` is part of the pool id, so a
       pool lives on exactly one hook forever. These screens used to read every
       pool id against the address book's CURRENT hook — which hosts no pools —
-      while LTT1/LTT2 lives on the retired 0x23CE…. `resolvePoolHook` reads the
+      while the test-token pool lives on the retired 0x23CE…. `resolvePoolHook` reads the
       hook out of the pool's own key instead.
 
    2. LIFETIME TOTALS ARE SUMMED FROM LOGS. `readLifetime` sums

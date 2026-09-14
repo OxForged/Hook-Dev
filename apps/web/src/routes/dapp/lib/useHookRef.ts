@@ -7,14 +7,14 @@
      VITE_REVSHARE_HOOK   a build-time default, also exactly one hook.
      neither              EVERY RevShareHook in the SDK address book for this
                           chain — current and retired. A retired hook still
-                          hosts pools (LTT1/LTT2 lives on 0x23CE… for as long as
+                          hosts pools (the test-token pool lives on 0x23CE… for as long as
                           that pool exists), and its pools, balances and
                           proposals are as live as the current hook's.
 
    A ONE-POOL SCREEN DOES NOT USE THE LIST. A pool's hook is part of its id, so
    /app/protocol/:poolId reads the hook out of the pool's own key
    (`resolvePoolHook`) unless a hook was pinned explicitly. Reading a pool id
-   against the "current" hook is what made LTT1/LTT2 look unconfigured.
+   against the "current" hook is what made that pool look unconfigured.
 
    `withHook` keeps an explicit `?hook=` on every in-app link, so following one
    does not silently switch which contract is read.

@@ -2,7 +2,7 @@
    The freeze guard — CLAUDE.md "Deployed and unfixable" §3, as a pure predicate.
 
    `freezeConfig` is one call, immediate and permanent. On the retired hook
-   0x23CE…E446 (which hosts LTT1/LTT2) nothing on chain stops an owner freezing
+   0x23CE…E446 (which hosts the retired test-token pool) nothing on chain stops an owner freezing
    a pool whose beneficiary share is live while its roster is empty: the pot
    then accrues into `pendingBeneficiary` forever, because `settleBeneficiaries`
    RETURNS EARLY on zero total weight and the freeze has removed

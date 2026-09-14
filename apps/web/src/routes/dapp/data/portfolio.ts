@@ -17,7 +17,7 @@
         For each token: pool, ticks, liquidity, and — from the pool's slot0,
         tick info and fee-growth globals — the current token amounts and the
         fees earned since last touch, computed exactly as the pool credits them.
-     2. Wallet balances of the protocol's known tokens (ltUSD, ltETH).
+     2. Wallet balances of the address book's tokens, test tokens excluded.
      3. Hooks the address has listed in LatchRegistry as submitter.
 
    What is NOT read, and is said so on screen rather than faked:
@@ -25,7 +25,7 @@
      - Fees already collected — those left the protocol; only a full log
        replay of the address's own ModifyLiquidity calls could reconstruct
        them, and this screen does not pretend to.
-     - Any USD value. Nothing prices these testnet tokens.
+     - Any USD value. Nothing here prices these tokens.
    ============================================================================ */
 
 import {
@@ -42,6 +42,7 @@ import {
   client,
   readRegisteredLatches,
   scanWindows,
+  showcaseTokens,
   type DeployedChainId,
   type RegisteredLatch,
 } from '../../../lib/chain'
@@ -310,12 +311,11 @@ async function readWalletBalances(
   owner: Address,
   tokenCache: Map<string, Promise<TokenMeta>>,
 ): Promise<WalletBalance[]> {
-  const d = DEPLOYMENTS[chainId]
   const c = client(chainId)
-  /* Same reason as readVaultHoldings: the demo pool is the only source of
-     "which tokens to check". No pool, no known tokens, empty list. */
-  if (d.demoPool === null) return []
-  const tokens = [d.demoPool.token0, d.demoPool.token1] as const
+  /* Same source as readVaultHoldings: the address book's tokens, less the
+     ones it marks as test tokens. No such token, empty list. */
+  const tokens = showcaseTokens(chainId).map((t) => t.address as Address)
+  if (tokens.length === 0) return []
   return Promise.all(
     tokens.map(async (address) => {
       const [token, balance] = await Promise.all([
