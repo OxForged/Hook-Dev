@@ -190,14 +190,30 @@ contract LatchLaunchRegistry is ILatchLaunchRegistry {
     bytes32[] private _launchList;
     address[] private _launchpadList;
 
-    /// @dev Secondary indices, all append-only. `_byCreator` may hold a superseded entry when a
-    /// later `attestLaunchOrigin` replaces a claimed creator with a launchpad-attested one, so a
-    /// consumer filtering by creator MUST re-read the record rather than trusting membership.
-    /// The alternative — mutable indices — would break the stable-position guarantee that makes
-    /// paging safe, which is the worse trade.
+    /// @dev Secondary indices. `_byToken` and `_byCreator` are append-only. `_byCreator` may hold a
+    /// superseded entry when a later `attestLaunchOrigin` replaces a claimed creator with a
+    /// launchpad-attested one, so a consumer filtering by creator MUST re-read the record rather
+    /// than trusting membership. For those two, mutable indices would break the stable-position
+    /// guarantee that makes paging safe, which is the worse trade.
+    ///
+    /// `_byLaunchpad` is the one exception, and it is a SET: exactly the pools whose record names
+    /// that launchpad right now. It used to be append-only too, and `clearLaunchAttribution` left
+    /// the cleared pool in it, so `launchpadLaunchCount` kept counting a launch the registry no
+    /// longer attributed, `setLaunchpadVerification`'s one-launch gate passed on it, and a pool
+    /// cleared then re-attested by the same launchpad was listed twice. "Launched via X" is a
+    /// trust claim, so it is kept exact at the cost of position stability: a curator clear
+    /// swap-and-pops, moving the last entry into the removed slot. It is rare, curator-only and
+    /// always emits `LaunchAttributionCleared`, which is an indexer's cue to re-page that launchpad.
     mapping(address token => bytes32[] poolIds) private _byToken;
     mapping(address launchpad => bytes32[] poolIds) private _byLaunchpad;
     mapping(address creator => bytes32[] poolIds) private _byCreator;
+
+    /// @dev `index + 1` of `poolId` inside `_byLaunchpad[_launches[poolId].launchpad]`; zero means
+    /// the pool is not in any launchpad index. A pool names at most one launchpad at a time, so one
+    /// position per pool is enough, and it is what makes the removal O(1) whatever the launchpad
+    /// has launched — an O(n) scan would let an over-claiming launchpad price its own remedy out of
+    /// a block by inflating n. Appended after every pre-existing slot.
+    mapping(bytes32 poolId => uint256 indexPlusOne) private _launchpadIndexPosition;
 
     /// @param vault_ The LatchProtocol Vault. Pool managers are believed iff it registered them.
     /// @param latchRegistry_ The live `LatchRegistry`. Governance and hook listings both come from
@@ -291,7 +307,7 @@ contract LatchLaunchRegistry is ILatchLaunchRegistry {
 
         _launchList.push(poolId);
         _byToken[token].push(poolId);
-        if (launchpad != address(0)) _byLaunchpad[launchpad].push(poolId);
+        if (launchpad != address(0)) _addToLaunchpadIndex(launchpad, poolId);
         if (creator != address(0)) _byCreator[creator].push(poolId);
 
         emit LaunchRegistered(
@@ -359,7 +375,7 @@ contract LatchLaunchRegistry is ILatchLaunchRegistry {
         record.originAttestedAt = uint64(block.timestamp);
         record.updatedAt = uint64(block.timestamp);
 
-        _byLaunchpad[launchpad].push(poolId);
+        _addToLaunchpadIndex(launchpad, poolId);
         if (creator != address(0)) _byCreator[creator].push(poolId);
 
         emit LaunchOriginAttested(poolId, launchpad, creator, msg.sender);
@@ -377,6 +393,12 @@ contract LatchLaunchRegistry is ILatchLaunchRegistry {
     /// correct launchpad attests for itself, permissionlessly.
     ///
     /// `creator` is left in place: it is now unattested, and `origin == Claimed` says exactly that.
+    ///
+    /// The pool also leaves `previous`'s launch index, so `launchpadLaunchCount` and
+    /// `launchesOfLaunchpad` stop reporting it. If that was `previous`'s last attributed launch
+    /// and it holds a badge, the badge is reset in the same transaction: the ladder's
+    /// one-launch precondition no longer holds, and a badge earned on a launch the registry has
+    /// just withdrawn must not outlive it. Another strict reduction, so it rides the same key.
     function clearLaunchAttribution(bytes32 poolId, string calldata reason) external {
         _requireCurator();
         LaunchRecord storage record = _launches[poolId];
@@ -389,8 +411,39 @@ contract LatchLaunchRegistry is ILatchLaunchRegistry {
         record.origin = LaunchOrigin.Claimed;
         record.originAttestedAt = 0;
         record.updatedAt = uint64(block.timestamp);
+        _removeFromLaunchpadIndex(previous, poolId);
 
         emit LaunchAttributionCleared(poolId, previous, msg.sender, reason);
+
+        if (_byLaunchpad[previous].length == 0) {
+            LaunchpadRecord storage pad = _launchpads[previous];
+            if (pad.registrant != address(0)) _demoteLaunchpad(previous, pad, "last attributed launch cleared");
+        }
+    }
+
+    /// @dev The only two writes to `_byLaunchpad`. A pool enters when a vouch names a launchpad
+    /// and leaves when a curator clears it; `record.launchpad != address(0)` iff the pool is in
+    /// exactly that launchpad's index, at `_launchpadIndexPosition[poolId] - 1`.
+    function _addToLaunchpadIndex(address launchpad, bytes32 poolId) private {
+        bytes32[] storage index = _byLaunchpad[launchpad];
+        index.push(poolId);
+        _launchpadIndexPosition[poolId] = index.length;
+    }
+
+    /// @dev Swap-and-pop. The position is guaranteed non-zero for an attributed pool by the
+    /// invariant above; underflow here would mean that invariant broke, and a checked-arithmetic
+    /// panic is the correct response to that.
+    function _removeFromLaunchpadIndex(address launchpad, bytes32 poolId) private {
+        bytes32[] storage index = _byLaunchpad[launchpad];
+        uint256 position = _launchpadIndexPosition[poolId] - 1;
+        uint256 last = index.length - 1;
+        if (position != last) {
+            bytes32 moved = index[last];
+            index[position] = moved;
+            _launchpadIndexPosition[moved] = position + 1;
+        }
+        index.pop();
+        delete _launchpadIndexPosition[poolId];
     }
 
     /// @dev The one place attribution is decided. Returns the creator to record.
@@ -669,8 +722,9 @@ contract LatchLaunchRegistry is ILatchLaunchRegistry {
     ///     contract vouches for the stranger's typing. The launchpad must have acknowledged the
     ///     record with `claimLaunchpad`, which only it can call;
     ///   - NOTHING IS PROMOTED UNTIL ONE ATTRIBUTED LAUNCH EXISTS. `_byLaunchpad` only ever grows
-    ///     through a vouch, so this is a check that the launchpad has actually launched something,
-    ///     not that somebody said it did.
+    ///     through a vouch and shrinks when a curator clears one, so this is a check that the
+    ///     launchpad has a launch the registry CURRENTLY attributes to it, not that somebody said
+    ///     it did or that it once had one.
     function setLaunchpadVerification(address launchpad, Verification level, string calldata note) external {
         _requireCurator();
         LaunchpadRecord storage record = _launchpads[launchpad];
@@ -952,7 +1006,10 @@ contract LatchLaunchRegistry is ILatchLaunchRegistry {
         return _byLaunchpad[launchpad].length;
     }
 
-    /// @notice "Launched via X". Only ever contains launches whose attribution to X was proven.
+    /// @notice "Launched via X". Exactly the launches whose record names X right now, each proven.
+    /// @dev Unlike every other list here, positions are NOT stable: `clearLaunchAttribution`
+    /// moves the last entry into the cleared one's slot. Re-page a launchpad after a
+    /// `LaunchAttributionCleared` naming it.
     function launchesOfLaunchpad(address launchpad, uint256 offset, uint256 limit)
         external
         view

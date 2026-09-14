@@ -688,42 +688,91 @@ something to hand an autonomous process.
   **The bound is per-update, not a ceiling:** with `minPublisherInterval` at its default of 0, a
   compromised key can still walk the reference over many transactions. Set a non-zero interval on
   any live deployment. Regression guards: `test_FIX7_*` in `packages/hooks-rwa/test/SecurityReview.t.sol`.
-- **Open, MEDIUM** — a rogue issuer's `setHolidays` day overrides survive issuer rotation via
-  `configureMarket`, and recovery is O(n) over an attacker-chosen n. Fix is a per-pool
-  `calendarEpoch` keyed into `_dayOverrides`.
-  Design assessed 2026-09-13, not implemented: a `_calendarEpoch` counter keyed into the override
-  mapping plus an owner-only `resetCalendar(poolId)`, deliberately NOT wiped by `configureMarket`
-  (auto-wipe on rotation silently deletes legitimate holidays). ~2.1k gas on the swap path for
-  session-enabled pools only. Not patchable in place — a hook address is part of pool identity.
-  No RWA hook is deployed on any chain, so no live pool is affected.
+- **MEDIUM, FIXED IN SOURCE 2026-09-14 — a rogue issuer's day overrides survived issuer
+  rotation**, recoverable only O(n) over an attacker-chosen n. `_dayOverrides` is now keyed
+  `[poolId][_calendarEpoch[poolId]][dayIndex]`; owner-only `resetCalendar(poolId)` advances the
+  epoch in O(1) (`CalendarReset` event, `calendarEpoch` view). `configureMarket` deliberately does
+  NOT advance it — rotation must not delete legitimate holidays — so recovery is rotate, then
+  reset, then the new issuer re-writes the calendar. Measured: +2,325 gas per swap on a
+  session-enabled pool (one cold SLOAD), +~130 on a 24/7 pool. Layout: `_dayOverrides` type
+  changes in place (slot 1 / 9 on StockPairHook), `_calendarEpoch` appended after
+  `marketGuardian`, shifting `MarketHoursHook._owner`/`_pendingOwner` to slots 4/5. Guards:
+  `test_FIX2_*` (7) in `packages/hooks-rwa/test/SecurityReview.t.sol`; epoch-ignored, issuer-may-reset
+  and configure-wipes mutants all fail them. hooks-rwa 218/218 under both profiles. **Not yet
+  deployed; no RWA hook is live anywhere**, so nothing migrates — a hook address is part of pool
+  identity, so it is a redeploy, never a patch.
 - **Slither 0.11.6, all 10 packages at `bce2172` (2026-09-13): no true positives.** Every
   medium/high/critical hit triaged false positive with a concrete reason; Latch's own fork changes
   (Vault hardening, both transient backends, MixedQuoterRecorder) produced none. Slither cannot see
   raw-slot storage, so the lock-exit invariant stays guarded only by `TransientBackendSafety.t.sol`.
   Reports: session scratchpad `slither/`. Three real issues were found by reading code instead:
-- **Open, MEDIUM — snapshot dividends can be claimed into unrecoverable addresses.** `LatchVotes`
-  auto-delegates to every first receiver, contracts included (the Vault, `RevShareHook` after
-  `redeem`, the distributor itself), and `SnapshotEpochDistributor.claim(epochId, account)` is
-  callable by anyone for any `account`. `claim(e, Vault)` strands that share forever instead of
-  rolling it to real holders; repeatable every epoch for gas. Fix: reject `address(this)`, the
-  hook and its Vault as `account`, or require `msg.sender == account`. Not deployed on Robinhood.
-- **Open, LOW — a distributor repoint hands the new address the old distributor's uncollected
-  pot.** `_writeConfig` overwrites `_distributors[poolId]` and `pullDistributorShare` pays whoever
-  is current; unlike `setBeneficiaries`, nothing settles first. A pool owner can propose their
-  own address and, after the delay, pull everything accrued since the last close. In BOTH live
-  hooks (`0x23CE`, `0xfC00`) but no pool uses a distributor (LTT1/LTT2: `distributorBps = 0`).
-  Fix in the timestamp redeploy: refuse while `pendingDistributor` is non-zero, or escrow it.
-  Procedural on the live hooks: treat any `ConfigProposed` changing a distributor as an incident.
-- **Open, LOW — `CreatorReserve` harvests a rung that is not fully filled** when the launch token
-  is currency1: `currentTick <= tickLower` treats the in-range boundary as cleared (`CLPool.sol:117`),
-  and `withdraw` pays only quote, so the unsold dust strands. Mirror off-by-one in the constructor
-  check. Fix: strict comparisons. Not deployed.
-- **Open, LOW — `LatchLaunchRegistry.clearLaunchAttribution` leaves the pool in the launchpad's
-  index** (fork campaign 2026-09-14). `launchpadLaunchCount` and `launchesOfLaunchpad` keep
-  reporting the cleared launch. On the fork, `setLaunchpadVerification` then verified a launchpad
-  whose only attribution a curator had cleared. Fix: remove the pool from the index in the clear
-  (swap-and-pop with a position map). Until then, curators must not verify a launchpad on its
-  launch count alone.
+- **MEDIUM, FIXED IN SOURCE 2026-09-14 (commit `121e243`, verified 2026-09-14) — snapshot
+  dividends could be claimed into unrecoverable addresses.** `LatchVotes` auto-delegates to every
+  first receiver, contracts included, and `claim(epochId, account)` was open to anyone for any
+  `account`, so `claim(e, Vault)` stranded that share every epoch for gas. Both
+  `SnapshotEpochDistributor.claim` and `MerkleEpochDistributor.claim` now revert
+  `ContractAccountMustClaimItself(account, caller)` when `account` has code and is not the caller;
+  its share rolls over. Chosen over a sink denylist (the set of contract holders is open-ended) and
+  over `msg.sender == account` everywhere (that breaks gas-sponsored claims for plain EOAs, which
+  stay allowed; payout is hard-wired to `account`). Consequences to know: a Safe or treasury holder
+  must claim through its own transaction; an EIP-7702-delegated EOA has code and must self-claim;
+  a counterfactual address can still be claimed for while empty. No keeper or LatchAI path calls
+  `claim`; the dapp's claim screen already carries the error and states the rule. Guards:
+  `test_FIX_strangerCannotClaimForAContractHolder`, `test_FIX_aContractHoldersUnclaimedShareRollsOver`,
+  `test_FIX_aContractHolderMayClaimForItself`, `test_FIX_theVaultHookAndDistributorSharesCannotBeClaimedByAStranger`
+  (real Vault, hook and distributor as sinks) and the merkle
+  `test_FIX_strangerCannotClaimAContractLeaf_contractMayClaimItself`, all in
+  `packages/hooks-revshare/test/Distributors.t.sol`; removing either guard fails them. Storage
+  layouts unchanged. **Not yet deployed** (no distributor on Robinhood; Sepolia `0x5A90…966c`
+  predates it and is unserviceable anyway).
+- **LOW, FIXED IN SOURCE 2026-09-14 (commit `121e243`, verified 2026-09-14) — a distributor
+  repoint handed the new address the old distributor's uncollected pot.** `_writeConfig` now moves
+  the previous distributor's `pendingDistributor` in both currencies into
+  `retiredDistributorPot[poolId][previous][currency]` before overwriting; a retired distributor
+  (tracked in `_wasDistributor`) can still pull its escrow, the new one gets only what accrues after
+  the repoint, a stranger still reverts `NotDistributor`. Escrow chosen over refusing the repoint:
+  every swap refills the pot, so refusal is griefable by anyone. `totalOwed` is unchanged by the
+  move; the swap path does not touch the new mappings. Residual: an old distributor that never
+  pulls leaves its escrow in the hook forever, as the pre-fix code did for an idle distributor.
+  Layout: `retiredDistributorPot` and `_wasDistributor` INSERTED at slots 13-14, shifting
+  `totalTaken`/`claimable`/`totalOwed` to 15-17 (no proxy and no raw-slot reader, so only a
+  redeploy cares). Guards: `test_FIX_repointDoesNotHandTheOldPotToTheNewDistributor`,
+  `test_FIX_retiredDistributorPullsZeroNotRevert_strangerStillReverts`,
+  `test_FIX_postRepointFeesGoToTheNewDistributor`, `test_FIX_repointBackCollectsEscrowAndLivePot`
+  in `packages/hooks-revshare/test/RevShareHook.t.sol`; removing the retire call fails all four.
+  hooks-revshare 131/131 (1 fork rehearsal skipped) under both profiles. **Both live hooks
+  (`0x23CE`, `0xfC00`) keep the bug — redeploy required**; procedural until then: treat any
+  `ConfigProposed` changing a distributor as an incident.
+- **LOW, FIXED IN SOURCE 2026-09-14 (commit `121e243`, verified 2026-09-14) — `CreatorReserve`
+  harvested a rung that was not fully filled** when the launch token is currency1. Core keeps a
+  position in range for `tickLower <= tick < tickUpper` (`CLPool.sol:117,124`), so `_cleared` is now
+  `tick >= tickUpper` (token = currency0) / `tick < tickLower` (token = currency1), shared by
+  `harvest`, `harvestAll`, `rungState` and `harvestableCount`; the constructor's currency0 side
+  check is strict (`tickLower > tick`). Verified against real core, not only mocks: at
+  `tick == tickLower` with price above the edge a fresh position still holds currency1; one tick
+  lower it holds none; at `tick == tickUpper` it holds no currency0. Guards in
+  `packages/launchpad/test/CreatorReserveTicks.t.sol`: `test_FIX_currency1RungAtTickLowerIsNotCleared`,
+  `test_FIX_currency0RungWithTickLowerAtSpotIsRefused` (each fails its own mutant) plus
+  `test_CORE_*` (4) on a live `CLPoolManager`. No state variable changed. launchpad 290/290
+  (2 fork rehearsals skipped) under both profiles. **Not deployed.**
+- **LOW, FIXED IN SOURCE 2026-09-14 — `LatchLaunchRegistry.clearLaunchAttribution` left the pool
+  in the launchpad's index** (fork campaign 2026-09-14): `launchpadLaunchCount` and
+  `launchesOfLaunchpad` kept reporting it, `setLaunchpadVerification` verified a launchpad whose
+  only attribution had been cleared, and clear-then-re-attest listed a pool twice. `_byLaunchpad`
+  is now a set: O(1) swap-and-pop with `_launchpadIndexPosition[poolId]` (appended at slot 7). If
+  the clear removes a launchpad's last attributed launch, its badge is reset in the same
+  transaction. Cost of exactness: `launchesOfLaunchpad` positions move on a curator clear (the only
+  unstable list; re-page on `LaunchAttributionCleared`). Gas: +22,285 per attributed
+  `registerLaunch`/`attestLaunchOrigin` (one new slot), clear stays O(1). `ILaunchRegistryWriter`
+  and every ABI signature unchanged; `LaunchpadKitV2`/`LaunchLegs` untouched. Guards: `test_FIX_*`
+  (6) and `testFuzz_FIX_launchpadIndexMatchesTheRecords` in
+  `packages/registry/test/LaunchProvenance.t.sol`; no-removal, no-demotion and stale-position
+  mutants each fail them. registry 219/219 under both profiles. **Live `0x6D10…5c94` on 4663 keeps
+  the bug — redeploy required.** Read 2026-09-14 by eth_call: a plain immutable deployment (EIP-1967
+  implementation slot empty), `launchCount() = 0`, `launchpadCount() = 0`, so the redeploy
+  migrates nothing. Order: redeploy the registry, THEN deploy `LaunchpadKitV2` against it — the kit
+  takes the registry as an immutable constructor argument and asserts `vault()` matches. Kit v1
+  `0x2a4C` does not use it. Until then, curators must not verify a launchpad on launch count alone.
 - **Informational — LTT1/LTT2 is one narrow range.** An exact-in router swap of 100 LTT1 filled
   30.5 without reverting. Once the range is exhausted, the `0x23CE` hook skips its LP-donation leg
   (`LpDonationSkipped`). Any UI must set `amountOutMinimum` from a quote.

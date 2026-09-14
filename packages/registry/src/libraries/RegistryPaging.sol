@@ -7,7 +7,8 @@ pragma solidity 0.8.26;
 ///
 /// @dev Both registries keep the same shape of index: arrays that are only ever pushed to, so an
 /// entry's position never moves and a caller can page through without entries shifting underneath
-/// it between calls. The paging itself is four lines, which is exactly why it should not be written
+/// it between calls. One deliberate exception, `LatchLaunchRegistry._byLaunchpad`, is a set that
+/// a curator clear swap-and-pops; paging is unaffected, stability is not. The paging itself is four lines, which is exactly why it should not be written
 /// twice — the interesting part is the clamp, and a clamp that is right in one file and wrong in
 /// the other is a panic in a view function that a front end has no way to recover from.
 ///

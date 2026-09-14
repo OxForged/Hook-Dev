@@ -1245,6 +1245,42 @@ contract SnapshotEpochDistributorTest is DistributorFixture {
         assertTrue(distributor.claimed(0, address(holder)));
     }
 
+    /// @dev The finding's own sinks, not a stand-in: the real Vault (which holds the pool's votes
+    /// token as liquidity), the hook and the distributor itself, each self-delegated the way
+    /// `LatchVotes` auto-delegates a first receiver. A stranger can claim none of them, and all three
+    /// shares roll over to the next epoch intact.
+    function test_FIX_theVaultHookAndDistributorSharesCannotBeClaimedByAStranger() public {
+        votes.transfer(address(hook), 100 ether);
+        votes.transfer(address(distributor), 100 ether);
+        address[3] memory sinks = [address(vault), address(hook), address(distributor)];
+        for (uint256 i; i < sinks.length; ++i) {
+            vm.prank(sinks[i]);
+            votes.delegate(sinks[i]);
+        }
+        vm.roll(block.number + 1);
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+
+        uint256 sinkShare0;
+        uint256 sinkShare1;
+        for (uint256 i; i < sinks.length; ++i) {
+            (uint256 c0, uint256 c1) = distributor.claimableAmounts(0, sinks[i]);
+            assertGt(c0 + c1, 0, "each sink holds a real share");
+            sinkShare0 += c0;
+            sinkShare1 += c1;
+            vm.prank(HOLDER_C);
+            vm.expectRevert(
+                abi.encodeWithSelector(SnapshotEpochDistributor.ContractAccountMustClaimItself.selector, sinks[i], HOLDER_C)
+            );
+            distributor.claim(0, sinks[i]);
+        }
+
+        vm.warp(distributor.getEpoch(0).expiresAt);
+        distributor.rollover(0);
+        assertGe(distributor.carryOver0(), sinkShare0, "all three shares return to the next epoch");
+        assertGe(distributor.carryOver1(), sinkShare1, "in both currencies");
+    }
+
     /// @dev The documented catch, asserted rather than hand-waved: an undelegated holder gets
     /// nothing, and - because their balance is still in the denominator - nobody else gets more.
     /// Their share simply goes unclaimed and `rollover` hands it to the next epoch.

@@ -521,4 +521,178 @@ contract LaunchProvenanceTest is Test {
         assertEq(uint8(verification), uint8(Verification.Unverified), "the badge is gone in the same call");
         assertEq(uint8(listing), uint8(Listing.Malicious));
     }
+
+    /*//////////////////////////////////////////////////////////////
+        LOW, FIXED 2026-09-14 — A CLEARED ATTRIBUTION LEFT THE
+        POOL IN THE LAUNCHPAD'S INDEX
+
+        `clearLaunchAttribution` reset `record.launchpad` but never
+        removed the pool from `_byLaunchpad`, so "launched via X"
+        kept listing a launch the registry no longer attributed to
+        X, the verification ladder's one-launch gate passed on it,
+        and clear-then-re-attest listed the pool twice. Reproduced
+        on a 4663 fork: ops/fork-campaign/results/phases/
+        launchregistry.json. Every test below fails on that code.
+    //////////////////////////////////////////////////////////////*/
+
+    event LaunchpadVerificationChanged(
+        address indexed launchpad, address indexed actor, Verification previous, Verification current, string note
+    );
+
+    function _selfRegisteredPad() internal returns (HonestLaunchpad pad) {
+        pad = new HonestLaunchpad();
+        pad.selfRegister(address(registry), alice, _padMeta());
+    }
+
+    function _launchVia(HonestLaunchpad pad) internal returns (bytes32 poolId) {
+        poolId = _pool();
+        pad.registerLaunch(address(registry), address(manager), poolId, address(token), bob, bob, _meta());
+    }
+
+    function test_FIX_clearRemovesThePoolFromTheLaunchpadIndex() public {
+        HonestLaunchpad pad = _selfRegisteredPad();
+        bytes32 poolId = _launchVia(pad);
+        assertEq(registry.launchpadLaunchCount(address(pad)), 1);
+
+        vm.prank(curator);
+        registry.clearLaunchAttribution(poolId, "over-claim");
+
+        assertEq(registry.launchpadLaunchCount(address(pad)), 0, "a cleared launch is not launched via the pad");
+        assertEq(registry.launchesOfLaunchpad(address(pad), 0, 10).length, 0);
+    }
+
+    /// @notice The fork-campaign reproduction, inverted: a launchpad whose only attribution was
+    /// cleared has no launch, so it cannot be badged.
+    function test_FIX_launchpadWhoseOnlyLaunchWasClearedCannotBeVerified() public {
+        HonestLaunchpad pad = _selfRegisteredPad();
+        bytes32 poolId = _launchVia(pad);
+        vm.prank(curator);
+        registry.clearLaunchAttribution(poolId, "only launch attribution was cleared");
+
+        vm.prank(curator);
+        vm.expectRevert(abi.encodeWithSelector(ILatchLaunchRegistry.LaunchpadHasNoLaunches.selector, address(pad)));
+        registry.setLaunchpadVerification(address(pad), Verification.SourceVerified, "");
+    }
+
+    /// @notice A badge earned on a launch that is later withdrawn does not survive the withdrawal.
+    function test_FIX_clearingTheLastLaunchResetsAnExistingBadge() public {
+        HonestLaunchpad pad = _selfRegisteredPad();
+        bytes32 poolId = _launchVia(pad);
+        vm.prank(curator);
+        registry.setLaunchpadVerification(address(pad), Verification.Audited, "reviewed");
+        assertTrue(registry.isLaunchpadAudited(address(pad)));
+
+        vm.expectEmit(address(registry));
+        emit LaunchpadVerificationChanged(
+            address(pad), curator, Verification.Audited, Verification.Unverified, "last attributed launch cleared"
+        );
+        vm.prank(curator);
+        registry.clearLaunchAttribution(poolId, "never made it");
+
+        assertEq(uint8(registry.getLaunchpad(address(pad)).verification), uint8(Verification.Unverified));
+        assertFalse(registry.isLaunchpadAudited(address(pad)));
+    }
+
+    /// @notice The reset is about the LAST launch only; a pad with other attributed launches keeps
+    /// its badge when one over-claim is cleared.
+    function test_FIX_clearingOneOfSeveralLaunchesKeepsTheBadge() public {
+        HonestLaunchpad pad = _selfRegisteredPad();
+        bytes32 first = _launchVia(pad);
+        _launchVia(pad);
+        vm.prank(curator);
+        registry.setLaunchpadVerification(address(pad), Verification.Audited, "reviewed");
+
+        vm.recordLogs();
+        vm.prank(curator);
+        registry.clearLaunchAttribution(first, "one bad row");
+        assertEq(vm.getRecordedLogs().length, 1, "only LaunchAttributionCleared, no demotion");
+
+        assertEq(registry.launchpadLaunchCount(address(pad)), 1);
+        assertTrue(registry.isLaunchpadAudited(address(pad)));
+    }
+
+    /// @notice Clear then re-attest by the same launchpad: listed once, not twice.
+    function test_FIX_reattestAfterClearIsListedOnce() public {
+        HonestLaunchpad pad = new HonestLaunchpad();
+        bytes32 poolId = _pool();
+        pad.recordLaunch(poolId, bob);
+        registry.registerLaunch(address(manager), poolId, address(token), address(pad), alice, address(0), _meta());
+
+        vm.prank(curator);
+        registry.clearLaunchAttribution(poolId, "mistake");
+        registry.attestLaunchOrigin(poolId, address(pad), address(0));
+
+        assertEq(registry.launchpadLaunchCount(address(pad)), 1, "no duplicate entry");
+        assertEq(registry.launchesOfLaunchpad(address(pad), 0, 10)[0], poolId);
+    }
+
+    /// @notice Swap-and-pop from the middle, the end and the front keeps every position map right.
+    function test_FIX_swapAndPopKeepsTheIndexExact() public {
+        HonestLaunchpad pad = _selfRegisteredPad();
+        bytes32 a = _launchVia(pad);
+        bytes32 b = _launchVia(pad);
+        bytes32 c = _launchVia(pad);
+
+        vm.startPrank(curator);
+        registry.clearLaunchAttribution(b, ""); // middle: c moves into b's slot
+        bytes32[] memory list = registry.launchesOfLaunchpad(address(pad), 0, 10);
+        assertEq(list.length, 2);
+        assertEq(list[0], a);
+        assertEq(list[1], c);
+
+        registry.clearLaunchAttribution(a, ""); // front: c moves again
+        list = registry.launchesOfLaunchpad(address(pad), 0, 10);
+        assertEq(list.length, 1);
+        assertEq(list[0], c);
+
+        registry.clearLaunchAttribution(c, ""); // the moved entry is still removable
+        vm.stopPrank();
+        assertEq(registry.launchpadLaunchCount(address(pad)), 0);
+
+        // And a cleared pool re-enters cleanly.
+        pad.attestOwn(address(registry), b, bob);
+        list = registry.launchesOfLaunchpad(address(pad), 0, 10);
+        assertEq(list.length, 1);
+        assertEq(list[0], b);
+    }
+
+    /// @notice Model check over a random attest/clear sequence across two launchpads: each index is
+    /// exactly the set of pools whose record names that launchpad, with no duplicates.
+    function testFuzz_FIX_launchpadIndexMatchesTheRecords(uint256 seed) public {
+        HonestLaunchpad[2] memory pads = [new HonestLaunchpad(), new HonestLaunchpad()];
+        bytes32[6] memory pools;
+        for (uint256 i; i < pools.length; ++i) {
+            pools[i] = _pool();
+            _registerClaimed(pools[i], alice);
+        }
+
+        for (uint256 step; step < 40; ++step) {
+            uint256 r = uint256(keccak256(abi.encode(seed, step)));
+            bytes32 poolId = pools[r % pools.length];
+            address current = registry.getLaunch(poolId).launchpad;
+            if (current == address(0)) {
+                HonestLaunchpad pad = pads[(r >> 8) % 2];
+                pad.attestOwn(address(registry), poolId, bob);
+            } else {
+                vm.prank(curator);
+                registry.clearLaunchAttribution(poolId, "");
+            }
+        }
+
+        for (uint256 p; p < 2; ++p) {
+            bytes32[] memory list = registry.launchesOfLaunchpad(address(pads[p]), 0, type(uint256).max);
+            uint256 expected;
+            for (uint256 i; i < pools.length; ++i) {
+                bool named = registry.getLaunch(pools[i]).launchpad == address(pads[p]);
+                uint256 occurrences;
+                for (uint256 j; j < list.length; ++j) {
+                    if (list[j] == pools[i]) ++occurrences;
+                }
+                assertEq(occurrences, named ? 1 : 0, "index membership == record attribution, once");
+                if (named) ++expected;
+            }
+            assertEq(list.length, expected);
+            assertEq(registry.launchpadLaunchCount(address(pads[p])), expected);
+        }
+    }
 }

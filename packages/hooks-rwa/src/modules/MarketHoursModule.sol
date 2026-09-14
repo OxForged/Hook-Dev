@@ -82,7 +82,9 @@ import {IPriceBandOracle} from "../interfaces/IPriceBandOracle.sol";
 ///     change the oracle, the band widths, the staleness window, or who the issuer is.
 ///
 ///   * owner - governance. Everything, including `configureMarket`, which is the only way the
-///     oracle, the bands and the issuer address move.
+///     oracle, the bands and the issuer address move, and `resetCalendar`, which discards every day
+///     override on a pool in O(1). Rotating an issuer does NOT discard its calendar; an ousted
+///     issuer's holidays stay in force until the owner resets them.
 ///
 /// `halt` is instant and takes no argument that could fail. `resume` requires the issuer or the
 /// owner. That is the "one-way-ish" part: the fast key only ever stops things.
@@ -235,6 +237,10 @@ abstract contract MarketHoursModule {
     /// @notice Emitted for every day whose override is removed
     event DayOverrideCleared(PoolId indexed poolId, uint32 indexed dayIndex);
 
+    /// @notice Emitted when the owner discards every day override on a pool. An indexer must drop
+    /// every `DayOverrideSet` it holds for this pool from before this event.
+    event CalendarReset(PoolId indexed poolId, address indexed by, uint32 newEpoch);
+
     /// @notice Emitted when trading is halted. The highest-signal event on this module.
     event TradingHaltedEvent(PoolId indexed poolId, address indexed by, bytes32 reason);
 
@@ -359,14 +365,26 @@ abstract contract MarketHoursModule {
     /// @notice Per-pool market configuration
     mapping(PoolId poolId => MarketConfig) internal _markets;
 
-    /// @notice Per-pool calendar exceptions, keyed by `timestamp / 86400`.
+    /// @notice Per-pool calendar exceptions, keyed by calendar epoch and then `timestamp / 86400`.
     /// @dev A mapping rather than a list, so resolving a day is one storage read and there is
-    /// never a loop over a growable set on the swap path.
-    mapping(PoolId poolId => mapping(uint32 dayIndex => DayOverride)) internal _dayOverrides;
+    /// never a loop over a growable set on the swap path. Only the pool's CURRENT epoch
+    /// (`_calendarEpoch`) is ever read; overrides written under an earlier epoch are unreachable.
+    mapping(PoolId poolId => mapping(uint32 epoch => mapping(uint32 dayIndex => DayOverride))) internal
+        _dayOverrides;
 
     /// @notice Global address permitted to halt any pool on this hook, and to do nothing else.
     /// @dev See the role note. This address can stop trading; it can never start it.
     address public marketGuardian;
+
+    /// @notice Per-pool calendar generation. `resetCalendar` advances it, which orphans every day
+    /// override written before, in O(1).
+    /// @dev Without it, a rogue or compromised issuer could write thousands of future holidays and
+    /// governance could replace the issuer but not the calendar: `configureMarket` leaves overrides
+    /// alone, and `clearDayOverrides` is O(n) over an attacker-chosen n. `configureMarket` still does
+    /// NOT advance it, on purpose - rotating an issuer for an ordinary reason must not silently delete
+    /// a year of legitimate holidays and reopen those days to trading. Declared after every
+    /// pre-existing slot.
+    mapping(PoolId poolId => uint32 epoch) internal _calendarEpoch;
 
     /*//////////////////////////////////////////////////////////////
                         AUTHORISATION (mixin seam)
@@ -469,9 +487,10 @@ abstract contract MarketHoursModule {
     ///
     /// Bounded by the calldata array the caller pays for; there is no growable set to loop.
     function setHolidays(PoolId poolId, uint32[] calldata dayIndexes) external onlyMarketOperator(poolId) {
+        mapping(uint32 dayIndex => DayOverride) storage overrides = _dayOverrides[poolId][_calendarEpoch[poolId]];
         for (uint256 i = 0; i < dayIndexes.length; ++i) {
             uint32 dayIndex = dayIndexes[i];
-            _dayOverrides[poolId][dayIndex] = DayOverride({isSet: true, closed: true, openSecondOfDay: 0, closeSecondOfDay: 0});
+            overrides[dayIndex] = DayOverride({isSet: true, closed: true, openSecondOfDay: 0, closeSecondOfDay: 0});
             emit DayOverrideSet(poolId, dayIndex, true, 0, 0);
         }
     }
@@ -487,9 +506,10 @@ abstract contract MarketHoursModule {
     ) external onlyMarketOperator(poolId) {
         // No weekday mask to check: an override names its days explicitly.
         _validateWindowTimes(openSecondOfDay, closeSecondOfDay);
+        mapping(uint32 dayIndex => DayOverride) storage overrides = _dayOverrides[poolId][_calendarEpoch[poolId]];
         for (uint256 i = 0; i < dayIndexes.length; ++i) {
             uint32 dayIndex = dayIndexes[i];
-            _dayOverrides[poolId][dayIndex] = DayOverride({
+            overrides[dayIndex] = DayOverride({
                 isSet: true,
                 closed: false,
                 openSecondOfDay: openSecondOfDay,
@@ -501,11 +521,32 @@ abstract contract MarketHoursModule {
 
     /// @notice Remove overrides, returning those days to the weekly schedule. Issuer or owner.
     function clearDayOverrides(PoolId poolId, uint32[] calldata dayIndexes) external onlyMarketOperator(poolId) {
+        mapping(uint32 dayIndex => DayOverride) storage overrides = _dayOverrides[poolId][_calendarEpoch[poolId]];
         for (uint256 i = 0; i < dayIndexes.length; ++i) {
             uint32 dayIndex = dayIndexes[i];
-            delete _dayOverrides[poolId][dayIndex];
+            delete overrides[dayIndex];
             emit DayOverrideCleared(poolId, dayIndex);
         }
+    }
+
+    /// @notice Discard EVERY day override on this pool in one call. Owner only.
+    /// @dev The O(1) remedy for a calendar written by an issuer governance no longer trusts. Advances
+    /// the pool's calendar epoch, so every holiday and special session written before is unreachable
+    /// and each day falls back to the weekly schedule. The old entries are not deleted (that would
+    /// be the O(n) walk this replaces); they are simply never read again, and a later reset never
+    /// brings them back.
+    ///
+    /// Owner only, never the issuer: wiping holidays REOPENS those days to trading, which is the
+    /// less-restrictive direction and belongs on the slower key. Deliberately separate from
+    /// `configureMarket`, so the recovery is `configureMarket` (rotate the issuer) then
+    /// `resetCalendar`, and the new issuer re-writes whatever legitimate calendar should stand. Does
+    /// not touch `halted`, the weekly schedule, the band or the issuer - halt first if the gap
+    /// between the reset and the re-written calendar matters.
+    function resetCalendar(PoolId poolId) external onlyMarketAdmin {
+        if (!_markets[poolId].configured) revert MarketNotConfigured(poolId);
+        uint32 epoch = _calendarEpoch[poolId] + 1;
+        _calendarEpoch[poolId] = epoch;
+        emit CalendarReset(poolId, msg.sender, epoch);
     }
 
     /// @notice Stop trading in this pool, immediately. Owner, issuer or guardian.
@@ -556,9 +597,14 @@ abstract contract MarketHoursModule {
         return _markets[poolId];
     }
 
-    /// @notice The override, if any, for one day index
+    /// @notice The override in force, if any, for one day index (current calendar epoch only)
     function dayOverride(PoolId poolId, uint32 dayIndex) external view returns (DayOverride memory) {
-        return _dayOverrides[poolId][dayIndex];
+        return _dayOverrides[poolId][_calendarEpoch[poolId]][dayIndex];
+    }
+
+    /// @notice The pool's calendar epoch; advanced only by `resetCalendar`.
+    function calendarEpoch(PoolId poolId) external view returns (uint32) {
+        return _calendarEpoch[poolId];
     }
 
     /// @notice The day index a timestamp falls in. `timestamp / 86400`, UTC.
@@ -736,15 +782,15 @@ abstract contract MarketHoursModule {
     /// @return tradingDay Whether the day has a session at all.
     /// @return openSecondOfDay Session open for that day.
     /// @return closeSecondOfDay Session close for that day.
-    function _scheduleForDay(PoolId poolId, MarketConfig storage cfg, uint256 dayIndex)
-        private
-        view
-        returns (bool tradingDay, uint256 openSecondOfDay, uint256 closeSecondOfDay)
-    {
+    function _scheduleForDay(
+        mapping(uint32 dayIndex => DayOverride) storage overrides,
+        MarketConfig storage cfg,
+        uint256 dayIndex
+    ) private view returns (bool tradingDay, uint256 openSecondOfDay, uint256 closeSecondOfDay) {
         // `dayIndex` is derived from `block.timestamp / 86400` (or that minus one), which stays
         // inside `uint32` until the year 11,700,000. See `dayIndexOf`.
         // forge-lint: disable-next-line(unsafe-typecast)
-        DayOverride storage dayOverrideRecord = _dayOverrides[poolId][uint32(dayIndex)];
+        DayOverride storage dayOverrideRecord = overrides[uint32(dayIndex)];
         if (dayOverrideRecord.isSet) {
             if (dayOverrideRecord.closed) return (false, 0, 0);
             return (true, dayOverrideRecord.openSecondOfDay, dayOverrideRecord.closeSecondOfDay);
@@ -759,8 +805,10 @@ abstract contract MarketHoursModule {
     /// @dev Is `timestamp` inside a session? Two candidate days at most: the one it falls in, and
     /// - only when today's answer is no - the previous day, whose session may wrap past midnight.
     ///
-    /// The second storage read therefore lands only on the wrap path and the closed path, never on
-    /// an ordinary in-session swap. There is no loop and no growable set: the cost is constant.
+    /// The second override read therefore lands only on the wrap path and the closed path, never on
+    /// an ordinary in-session swap. The calendar epoch is read once, up front: one extra cold SLOAD
+    /// for a session-enabled pool, none for a 24/7 one. There is no loop and no growable set: the
+    /// cost is constant.
     function _sessionOpen(PoolId poolId, MarketConfig storage cfg, uint256 timestamp)
         internal
         view
@@ -768,9 +816,10 @@ abstract contract MarketHoursModule {
     {
         uint256 dayIndex = timestamp / SECONDS_PER_DAY;
         uint256 secondOfDay = timestamp % SECONDS_PER_DAY;
+        mapping(uint32 dayIndex => DayOverride) storage overrides = _dayOverrides[poolId][_calendarEpoch[poolId]];
 
         (bool tradingDay, uint256 openSecondOfDay, uint256 closeSecondOfDay) =
-            _scheduleForDay(poolId, cfg, dayIndex);
+            _scheduleForDay(overrides, cfg, dayIndex);
         if (tradingDay && openSecondOfDay != closeSecondOfDay) {
             if (openSecondOfDay < closeSecondOfDay) {
                 if (secondOfDay >= openSecondOfDay && secondOfDay < closeSecondOfDay) return true;
@@ -783,7 +832,7 @@ abstract contract MarketHoursModule {
         // A session that opened yesterday and wraps into today. Day index 0 has no yesterday.
         if (dayIndex == 0) return false;
         (bool yesterdayTrading, uint256 yesterdayOpen, uint256 yesterdayClose) =
-            _scheduleForDay(poolId, cfg, dayIndex - 1);
+            _scheduleForDay(overrides, cfg, dayIndex - 1);
         if (yesterdayTrading && yesterdayOpen > yesterdayClose && secondOfDay < yesterdayClose) return true;
 
         return false;

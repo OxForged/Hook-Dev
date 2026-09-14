@@ -162,41 +162,128 @@ contract SecurityReviewCalendarTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
-      FINDING 2 - day overrides outlive the issuer who wrote them.
+      FINDING 2 (MEDIUM, FIXED 2026-09-14) - day overrides outlived the
+      issuer who wrote them.
+
+      `configureMarket` is the ONLY way to replace a pool's issuer, and it
+      did not touch `_dayOverrides`. A rogue or compromised issuer could
+      write an unbounded number of future holidays; governance could remove
+      the issuer but the only remedy for the calendar was
+      `clearDayOverrides`, O(n) over an attacker-chosen n.
+
+      Overrides are now keyed by a per-pool calendar epoch, and the owner's
+      `resetCalendar` advances it in O(1). `configureMarket` still does NOT
+      advance it, deliberately: an ordinary issuer rotation must not delete
+      legitimate holidays and reopen those days to trading.
     //////////////////////////////////////////////////////////////*/
 
-    /// `configureMarket` is the ONLY way to replace a pool's issuer, and it does not touch
-    /// `_dayOverrides`. A rogue or compromised issuer can write an unbounded number of future
-    /// day overrides; governance can remove the issuer but cannot undo the calendar in O(1).
-    /// The only remedy is `clearDayOverrides`, which is O(n) over an attacker-chosen n.
-    function test_FINDING2_rogueIssuerCalendarSurvivesIssuerRotation() public {
-        uint32 today = hook.dayIndexOf(block.timestamp);
+    event CalendarReset(PoolId indexed poolId, address indexed by, uint32 newEpoch);
 
-        // Rogue issuer closes the next 500 days. (A real one would write decades; the loop here
-        // is kept small so the test is fast - nothing about the mechanism changes with n.)
-        uint32[] memory days_ = new uint32[](500);
-        for (uint256 i = 0; i < days_.length; ++i) days_[i] = today + uint32(i);
+    function _rogueCloses(uint256 n) internal returns (uint32[] memory days_) {
+        uint32 today = hook.dayIndexOf(block.timestamp);
+        days_ = new uint32[](n);
+        for (uint256 i = 0; i < n; ++i) days_[i] = today + uint32(i);
         vm.prank(ISSUER);
         hook.setHolidays(poolId, days_);
+    }
+
+    /// The original finding, now recoverable in one owner call whatever n the rogue chose.
+    /// FAILS ON THE PRE-FIX MODULE: it has no `resetCalendar` (does not compile), and with the
+    /// epoch removed from the key the reset leaves the rogue calendar in force.
+    function test_FIX2_ownerDiscardsARogueCalendarInOneCall() public {
+        uint32 today = hook.dayIndexOf(block.timestamp);
+        _rogueCloses(500);
         assertFalse(hook.isTradable(poolId), "market closed by the rogue calendar");
 
-        // Governance reacts: replace the issuer entirely.
         MarketHoursModule.MarketSettings memory s = _settings();
         s.issuer = NEW_ISSUER;
         hook.configureMarket(key, s);
-        assertEq(hook.marketConfig(poolId).issuer, NEW_ISSUER);
+        assertFalse(hook.isTradable(poolId), "rotation alone still leaves the calendar in force, by design");
 
-        // The calendar the ousted issuer wrote is still in force.
-        assertTrue(hook.dayOverride(poolId, today).isSet, "override survived reconfiguration");
-        assertFalse(hook.isTradable(poolId), "market STILL closed after the issuer was removed");
-        vm.warp(block.timestamp + 100 days);
-        assertFalse(hook.isTradable(poolId), "and remains closed for as long as the rogue chose");
+        vm.expectEmit(address(hook));
+        emit CalendarReset(poolId, address(this), 1);
+        hook.resetCalendar(poolId);
 
-        // Only an O(n) walk clears it. There is no bulk reset and no configuration epoch.
-        vm.prank(NEW_ISSUER);
-        hook.clearDayOverrides(poolId, days_);
-        vm.warp(MONDAY_MIDNIGHT + 16 hours);
-        assertTrue(hook.isTradable(poolId), "recovered only by clearing every single day");
+        assertEq(hook.calendarEpoch(poolId), 1);
+        assertFalse(hook.dayOverride(poolId, today).isSet, "every override is unreachable");
+        assertTrue(hook.isTradable(poolId), "back on the weekly schedule");
+        vm.warp(block.timestamp + 101 days); // a Thursday afternoon, well inside the rogue range
+        assertTrue(hook.isTradable(poolId), "and stays there across the whole rogue range");
+    }
+
+    /// The design constraint: rotating an issuer must not silently delete a legitimate calendar.
+    function test_FIX2_configureMarketDoesNotDiscardTheCalendar() public {
+        uint32[] memory holiday = new uint32[](1);
+        holiday[0] = hook.dayIndexOf(block.timestamp);
+        vm.prank(ISSUER);
+        hook.setHolidays(poolId, holiday);
+
+        MarketHoursModule.MarketSettings memory s = _settings();
+        s.issuer = NEW_ISSUER;
+        hook.configureMarket(key, s);
+
+        assertEq(hook.calendarEpoch(poolId), 0);
+        assertTrue(hook.dayOverride(poolId, holiday[0]).isSet, "the legitimate holiday survives rotation");
+        assertFalse(hook.isTradable(poolId));
+    }
+
+    /// Wiping holidays reopens days, the less-restrictive direction, so it is the owner's alone.
+    function test_FIX2_resetCalendarIsOwnerOnly() public {
+        address[3] memory notOwner = [ISSUER, GUARDIAN, NEW_ISSUER];
+        for (uint256 i; i < notOwner.length; ++i) {
+            vm.prank(notOwner[i]);
+            vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.NotMarketAdmin.selector, notOwner[i]));
+            hook.resetCalendar(poolId);
+        }
+        assertEq(hook.calendarEpoch(poolId), 0);
+    }
+
+    function test_FIX2_resetCalendarRequiresAConfiguredPool() public {
+        PoolId unknown = _key(500).toId();
+        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.MarketNotConfigured.selector, unknown));
+        hook.resetCalendar(unknown);
+    }
+
+    /// After a reset the new issuer's calendar applies normally, clears only its own epoch, and a
+    /// later reset never resurrects an earlier epoch's overrides.
+    function test_FIX2_calendarWrittenAfterAResetWorksAndOldEpochsNeverReturn() public {
+        uint32 today = hook.dayIndexOf(block.timestamp);
+        _rogueCloses(3);
+        hook.resetCalendar(poolId);
+        assertFalse(hook.dayOverride(poolId, today + 1).isSet, "the rogue's later days are gone too");
+
+        uint32[] memory one = new uint32[](1);
+        one[0] = today;
+        vm.prank(ISSUER);
+        hook.setHolidays(poolId, one);
+        assertFalse(hook.isTradable(poolId), "a holiday written in the new epoch is enforced");
+
+        vm.prank(ISSUER);
+        hook.clearDayOverrides(poolId, one);
+        assertTrue(hook.isTradable(poolId), "clearing in the new epoch does not expose epoch 0");
+
+        hook.resetCalendar(poolId);
+        assertEq(hook.calendarEpoch(poolId), 2);
+        assertFalse(hook.dayOverride(poolId, today).isSet);
+        assertFalse(hook.dayOverride(poolId, today + 2).isSet, "epoch 0 is never resurrected");
+        vm.warp(block.timestamp + 1 days); // Tuesday: a rogue holiday in epoch 0
+        assertTrue(hook.isTradable(poolId), "a second reset starts empty, it does not restore epoch 0");
+    }
+
+    /// Special sessions go too, including the wrap-tail lookup on the previous day's override.
+    function test_FIX2_resetAlsoDiscardsSpecialSessionsOnTheWrapPath() public {
+        uint32 monday = hook.dayIndexOf(MONDAY_MIDNIGHT);
+        // A Saturday special session 22:00 -> 02:00 that wraps into Sunday.
+        uint32[] memory saturday = new uint32[](1);
+        saturday[0] = monday + 5;
+        vm.prank(ISSUER);
+        hook.setSpecialSessions(poolId, saturday, 79_200, 7_200);
+        uint256 sundayOneAm = MONDAY_MIDNIGHT + 6 days + 1 hours;
+        assertTrue(hook.isSessionOpenAt(poolId, sundayOneAm), "the Saturday session's tail runs into Sunday");
+
+        hook.resetCalendar(poolId);
+        assertFalse(hook.isSessionOpenAt(poolId, sundayOneAm), "no weekday session on Saturday, so no tail");
+        assertFalse(hook.isSessionOpenAt(poolId, MONDAY_MIDNIGHT + 5 days + 23 hours));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -629,6 +716,29 @@ contract SecurityReviewStockPairTest is Test, Deployers, TokenFixture {
             abi.encodeWithSelector(PermissionedPoolHook.AccountNotPermitted.selector, OUTSIDER)
         );
         _swapAs(OUTSIDER, true, -1 ether);
+    }
+
+    /// FIX2 through the composed hook and a real swap: a rogue calendar blocks trading, rotation
+    /// does not lift it, the owner's reset does.
+    function test_FIX2_stockPairResetCalendarReopensSwaps() public {
+        uint32[] memory days_ = new uint32[](30);
+        uint32 today = hook.dayIndexOf(block.timestamp);
+        for (uint256 i; i < days_.length; ++i) days_[i] = today + uint32(i);
+        vm.prank(ISSUER);
+        hook.setHolidays(poolId, days_);
+
+        _expectHookRevert(
+            ICLHooks.beforeSwap.selector,
+            abi.encodeWithSelector(MarketHoursModule.MarketClosed.selector, poolId, block.timestamp)
+        );
+        _swapAs(INVESTOR, true, -1 ether);
+
+        vm.prank(ISSUER);
+        vm.expectRevert(abi.encodeWithSelector(MarketHoursModule.NotMarketAdmin.selector, ISSUER));
+        hook.resetCalendar(poolId);
+
+        hook.resetCalendar(poolId);
+        _swapAs(INVESTOR, true, -1 ether);
     }
 
     /// The claim that matters most: nothing on the market side can trap an LP.
