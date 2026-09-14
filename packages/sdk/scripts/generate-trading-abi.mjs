@@ -74,7 +74,11 @@ const SOURCES = [
       "`CLQuoter` — simulated swap output. Every function here REVERTS with the answer " +
       "encoded in the revert data, so these are `eth_call`-only and cost gas if sent.",
     contract: "CLQuoter",
-    artifact: join(REPO_PACKAGES, "periphery", "foundry-out", "lens", "CLQuoter.sol", "CLQuoter.json"),
+    /* NOT `foundry-out/lens/CLQuoter.sol/...`. That path exists in older local
+       trees as a stale artifact Foundry never deleted; a clean build of
+       src/pool-cl/lens/CLQuoter.sol writes it here. CI builds clean, so a
+       stale path fails the `generated-abis` job instead of reading a dead file. */
+    artifact: join(REPO_PACKAGES, "periphery", "foundry-out", "CLQuoter.sol", "CLQuoter.json"),
     keep: {
       function: [
         "quoteExactInputSingle",

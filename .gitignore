@@ -12,6 +12,9 @@ node_modules/
 foundry-out/
 foundry-out-legacy/
 cache/
+# `cache/` is meant for Foundry build caches, but it also matched API SOURCE code:
+# apps/api/src/cache/{cache,redis}.ts were never committed and CI could not build the api.
+!apps/api/src/cache/
 out/
 broadcast/
 .forge-snapshots/

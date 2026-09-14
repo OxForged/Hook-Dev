@@ -31,20 +31,19 @@ jobs:
         working-directory: packages/sdk
         run: npm install
 
-      - name: sdk · generated types are not stale
-        working-directory: packages/sdk
-        run: node scripts/generate-events.mjs --check
-        # Non-fatal: the generator reads packages/core/foundry-out, which is not in
-        # this repo yet (see the `solidity` job below). Once core is a submodule and
-        # artifacts are built in CI, drop continue-on-error so drift fails the build.
-        continue-on-error: true
-
+      # Builds from the COMMITTED generated sources (src/**/generated). This job
+      # compiles no Solidity, so `npm run build` - which regenerates from Foundry
+      # artifacts first - cannot run here. Whether those committed sources match
+      # the contracts is proved by the `generated-abis` job, against artifacts the
+      # Solidity matrix compiled in this same run. (A `--check` step used to live
+      # here with continue-on-error; it crashed on the missing artifact every run
+      # and reported green.)
       - name: sdk · typecheck, test, build
         working-directory: packages/sdk
         run: |
           npx tsc --noEmit
           npx vitest run
-          npm run build
+          npm run build:ci
 
       - name: widgets · install, typecheck, test, build
         working-directory: packages/widgets
@@ -62,8 +61,15 @@ jobs:
           npm test
           npm run build
 
+      # Placeholders copied from apps/api/.env.example, NOT credentials: nothing
+      # here connects. `prisma validate` refuses a schema whose env("DATABASE_URL")
+      # is unset, and src/config/env.ts - which the unit tests import
+      # transitively - throws at import time without both variables.
       - name: api · install, generate client, typecheck, test, build
         working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://latch:latch@localhost:5432/latch?schema=public
+          REDIS_URL: redis://localhost:6379
         run: |
           npm install
           npx prisma generate
@@ -72,11 +78,134 @@ jobs:
           npm test
           npm run build
 
+      # apps/web depends on `file:../../packages/connect`, which resolves to its
+      # BUILT dist/ (gitignored). Unbuilt, web's `tsc -b` fails on every import.
+      - name: connect · install, typecheck, build
+        working-directory: packages/connect
+        run: |
+          npm install
+          npx tsc -p tsconfig.json --noEmit
+          npm run build
+
+      # Not `npm run build`: its `prebuild` also runs sync-abi, which reads Foundry
+      # artifacts this job never builds. The two syncs that need only the repo run
+      # here; sync-abi runs in `generated-abis` against this run's artifacts and
+      # must produce no diff. The guard fails if `prebuild` changes, so a sync step
+      # added there cannot be silently skipped by CI.
       - name: web · install, build
         working-directory: apps/web
         run: |
           npm install
-          npm run build
+          expected='node scripts/sync-brand.mjs && node scripts/sync-chains.mjs && node scripts/sync-abi.mjs'
+          actual=$(node -p 'require("./package.json").scripts.prebuild')
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::apps/web prebuild changed to '$actual'; update this step to match"
+            exit 1
+          fi
+          node scripts/sync-brand.mjs
+          node scripts/sync-chains.mjs
+          # chains.generated.ts is committed and derived from the SDK: prove it.
+          git diff --exit-code -- src/data/chains.generated.ts
+          npm run build --ignore-scripts
+
+  # ---------------------------------------------------------------------------
+  # ABI drift: the committed generated ABIs (packages/sdk, apps/web) against the
+  # artifacts the Solidity matrix compiled in THIS run, at the pinned fork refs.
+  #
+  # A stale generated ABI compiles, ships, and then decodes nonsense or reverts
+  # on an unknown selector. The generators already fail loudly on a missing
+  # member; this job makes them run against real artifacts instead of none.
+  # Deliberately not skippable: if an input artifact is missing (its cell failed
+  # before building), this fails with "artifact not found".
+  # ---------------------------------------------------------------------------
+  generated-abis:
+    name: Generated ABIs match the compiled contracts
+    needs: solidity
+    # Still check when an unrelated cell went red; only a cancelled run skips.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: download ABI inputs (default profile)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: abi-inputs-*-default
+          merge-multiple: true
+          path: ${{ runner.temp }}/abi-inputs-default
+
+      - name: download ABI inputs (legacy profile)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: abi-inputs-*-legacy
+          merge-multiple: true
+          path: ${{ runner.temp }}/abi-inputs-legacy
+
+      # One generated ABI serves both chain classes; prove the backends agree,
+      # file for file, before trusting either as the reference.
+      - name: default and legacy backends expose identical ABIs
+        env:
+          DEFAULT_DIR: ${{ runner.temp }}/abi-inputs-default
+          LEGACY_DIR: ${{ runner.temp }}/abi-inputs-legacy
+        run: |
+          node --input-type=module <<'JS'
+          import { existsSync, readdirSync, readFileSync } from "node:fs";
+          import { join, relative } from "node:path";
+          const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+            e.isDirectory() ? walk(join(d, e.name)) : e.name.endsWith(".json") ? [join(d, e.name)] : []);
+          const list = (root) => (existsSync(root) ? walk(root).map((f) => relative(root, f)).sort() : []);
+          const { DEFAULT_DIR, LEGACY_DIR } = process.env;
+          const dflt = list(DEFAULT_DIR), legacy = list(LEGACY_DIR);
+          if (dflt.length === 0) throw new Error("no default-profile ABI inputs were downloaded");
+          const missing = dflt.filter((f) => !legacy.includes(f));
+          const extra = legacy.filter((f) => !dflt.includes(f));
+          if (missing.length || extra.length) {
+            console.error(`::error::artifact sets differ. legacy missing: ${missing.join(", ") || "-"}; legacy extra: ${extra.join(", ") || "-"}`);
+            process.exit(1);
+          }
+          const abi = (root, f) => JSON.stringify(JSON.parse(readFileSync(join(root, f), "utf8")).abi);
+          const differ = dflt.filter((f) => abi(DEFAULT_DIR, f) !== abi(LEGACY_DIR, f));
+          for (const f of differ) console.error(`::error::ABI differs between default and legacy: ${f}`);
+          if (differ.length) process.exit(1);
+          console.log(`${dflt.length} artifacts, identical ABI under both backends:\n  ${dflt.join("\n  ")}`);
+          JS
+
+      # Into packages/<pkg>/foundry-out/..., the paths the generators read.
+      - name: place ABI inputs
+        run: cp -R "$RUNNER_TEMP/abi-inputs-default/packages/." packages/
+
+      - name: sdk · install
+        working-directory: packages/sdk
+        run: npm ci
+
+      # All four generators, not just events. Fails on any drift.
+      - name: sdk · committed generated sources are not stale
+        working-directory: packages/sdk
+        run: npm run generate:check
+
+      # sync-abi has no check mode (and apps/web is not this job's to edit), so
+      # regenerate in place and require a clean tree, untracked files included.
+      - name: web · committed ABIs (src/lib/abi) are not stale
+        run: |
+          node apps/web/scripts/sync-abi.mjs
+          if [ -n "$(git status --porcelain -- apps/web/src/lib/abi)" ]; then
+            git status --short -- apps/web/src/lib/abi
+            git --no-pager diff --stat -- apps/web/src/lib/abi
+            echo "::error::apps/web/src/lib/abi is stale against the compiled contracts; run sync-abi and commit"
+            exit 1
+          fi
 
   # ---------------------------------------------------------------------------
   # Solidity: every contract package, built and tested under BOTH profiles.
@@ -149,8 +278,20 @@ jobs:
             is_eip1153: false
 
           # TickMath differential tests shell out to `npx ts-node` through ffi.
+          # abi_inputs: the artifacts (relative to foundry-out/) that
+          # packages/sdk/scripts/generate-*.mjs and apps/web/scripts/sync-abi.mjs
+          # read. See "publish ABI inputs".
           - package: core
             node: true
+            abi_inputs: Vault.sol/Vault.json CLPoolManager.sol/CLPoolManager.json BinPoolManager.sol/BinPoolManager.json ProtocolFees.sol/ProtocolFees.json
+          - package: periphery
+            abi_inputs: CLQuoter.sol/CLQuoter.json CLPositionManager.sol/CLPositionManager.json
+          - package: hooks
+            abi_inputs: LaunchGuardHook.sol/LaunchGuardHook.json BinLaunchGuardHook.sol/BinLaunchGuardHook.json
+          - package: launchpad
+            abi_inputs: LaunchpadKit.sol/LaunchpadKit.json
+          - package: registry
+            abi_inputs: LatchRegistry.sol/LatchRegistry.json ILatchRegistry.sol/ILatchRegistry.json
 
           # periphery builds WITH its scripts and is green under both profiles as
           # of periphery 32dcaaa. That commit pinned pancake-create3-factory/ in
@@ -166,6 +307,7 @@ jobs:
           # (fail), they do not skip. Excluded by exact contract name, so a new
           # fork test added later fails CI loudly instead of hiding here.
           - package: router
+            abi_inputs: UniversalRouter.sol/UniversalRouter.json IAllowanceTransfer.sol/IAllowanceTransfer.json
             no_match_contract: "^(StableSwapBusdUsdcTest|StableSwapArbTest|StableSwapNativeExactOutputRefundTest|StableSwapMultiHop|V2BnbCake|V2MockBnb|V3BnbCake)$"
 
     env:
@@ -173,7 +315,7 @@ jobs:
       CORE_REF: 3c73f851cec58d0eb79068d5be0e7a58b28e133d
       # Must exist on origin/fork/periphery before this runs: push the nested
       # repo first (`git -C packages/periphery push backup main:fork/periphery`).
-      PERIPHERY_REF: 32dcaaa83772b562985afb5b8e35aa2907ac3976
+      PERIPHERY_REF: deabf9c487ce3f09cbc2ddd35258c4751c0e463d
       ROUTER_REF: 8f76780708bf18deeecf0f21667d12fea213a910
 
     steps:
@@ -272,6 +414,14 @@ jobs:
             exit 1
           fi
 
+      # Timestamp before the first forge command that compiles (the identity test
+      # below). "publish ABI inputs" refuses any artifact older than this: the
+      # forks TRACK foundry-out-legacy/, so a stale committed artifact at the
+      # expected path would otherwise be published as if this run built it.
+      - name: ${{ matrix.package }} · mark compile start
+        if: matrix.abi_inputs
+        run: touch "$RUNNER_TEMP/compile-start"
+
       # The compiled proof. core's test_backendIdentity_matchesProfile asserts
       # IS_EIP1153 in one branch and !IS_EIP1153 in the other, so it passes
       # whichever backend was built. This compares against what the MATRIX
@@ -310,6 +460,41 @@ jobs:
           args=()
           if [ "$SKIP_SCRIPTS" = true ]; then args+=(--skip script); fi
           forge build "${args[@]}"
+
+      # The MIT SDK and apps/web ship TypeScript generated from these ABIs.
+      # Publish exactly the files their generators read, from BOTH profiles, so
+      # `generated-abis` can prove the committed sources match what this run
+      # compiled at the pinned refs, and that the two backends expose one ABI.
+      # Copied by exact path: a renamed or moved artifact fails here, never
+      # shrinks the check. Before the tests on purpose, so a red test does not
+      # also hide ABI drift.
+      - name: ${{ matrix.package }} · publish ABI inputs (${{ matrix.profile }})
+        if: matrix.abi_inputs
+        working-directory: packages/${{ matrix.package }}
+        env:
+          ABI_INPUTS: ${{ matrix.abi_inputs }}
+        run: |
+          # foundry-out or foundry-out-legacy, as this profile actually built it.
+          out=$(forge config --json | jq -r .out)
+          # Staged under the DEFAULT layout the generators read, whichever profile.
+          stage="$RUNNER_TEMP/abi-inputs/packages/$(basename "$PWD")/foundry-out"
+          for rel in $ABI_INPUTS; do
+            if [ ! "$out/$rel" -nt "$RUNNER_TEMP/compile-start" ]; then
+              echo "::error::$out/$rel was not written by this run's compile (missing, or a stale tracked artifact)"
+              exit 1
+            fi
+            mkdir -p "$stage/$(dirname "$rel")"
+            cp "$out/$rel" "$stage/$rel"
+          done
+
+      - name: ${{ matrix.package }} · upload ABI inputs (${{ matrix.profile }})
+        if: matrix.abi_inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: abi-inputs-${{ matrix.package }}-${{ matrix.profile }}
+          path: ${{ runner.temp }}/abi-inputs
+          if-no-files-found: error
+          retention-days: 7
 
       - name: ${{ matrix.package }} · test (${{ matrix.profile }})
         working-directory: packages/${{ matrix.package }}
