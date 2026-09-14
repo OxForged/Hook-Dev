@@ -146,7 +146,10 @@ contract MarketHoursHook is BaseCLHook, MarketHoursModule, Ownable2Step {
     /// periphery contract, and is not a trustworthy identity. The gate is that the OWNER must have
     /// configured this exact pool id, which cannot be forged because the pool id is the hash of
     /// the key core is initializing.
-    function _beforeInitialize(address, /* sender */ PoolKey calldata key, uint160 /* sqrtPriceX96 */ )
+    ///
+    /// On a band-enabled pool the birth price must also sit inside the band. `sqrtPriceX96` is the
+    /// one input here an arbitrary caller chooses; see `_requireInitialPriceInBand`.
+    function _beforeInitialize(address, /* sender */ PoolKey calldata key, uint160 sqrtPriceX96)
         internal
         view
         override
@@ -158,6 +161,7 @@ contract MarketHoursHook is BaseCLHook, MarketHoursModule, Ownable2Step {
 
         PoolId poolId = key.toId();
         if (!_markets[poolId].configured) revert MarketNotConfigured(poolId);
+        _requireInitialPriceInBand(poolId, sqrtPriceX96);
 
         return ICLHooks.beforeInitialize.selector;
     }

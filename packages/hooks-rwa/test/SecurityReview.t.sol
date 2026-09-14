@@ -5,7 +5,9 @@ pragma solidity 0.8.26;
 // SCRATCH FILE - security review only. Not part of the shipped suite.
 // Each test is named after the finding it demonstrates. Tests whose name starts with
 // `test_FINDING_` are expected to demonstrate a defect; tests named `test_OK_` confirm a
-// claimed guarantee actually holds.
+// claimed guarantee actually holds. `test_FIX<n>_` is a finding that was fixed, now asserting
+// the fix; `test_DESIGN<n>_` is a finding triaged as intended behaviour, asserting that
+// behaviour so a change to it is a deliberate decision rather than an accident.
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -198,13 +200,27 @@ contract SecurityReviewCalendarTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
-      FINDING 3 - a holiday on the day a wrapped session ENDS is ignored.
+      FINDING 3 (TRIAGED: BY DESIGN, DOCUMENTATION CORRECTED) - a holiday
+      on the day a wrapped session ENDS does not close that session's tail.
+
+      Not a vulnerability. The module attributes a wrapping session to the
+      day it OPENED on, for the weekday mask and the overrides alike, and
+      says so. A holiday on day D cancels the session that OPENS on D; the
+      tail of D-1's session still runs into D. No party but the issuer or the
+      owner can write a calendar, nothing here lets anyone else trade outside
+      the schedule as the contract defines it, and the tail is the same
+      overnight window the pool trades every other night, under the same halt
+      and the same band.
+
+      What was wrong was the prose: `setHolidays` said "mark days as closed"
+      and `DayOverride.closed` said "no session", both of which read as "the
+      whole UTC day". Both now state the attribution. These tests pin the
+      behaviour and the procedure an issuer must follow, so changing the
+      convention later is a decision, not a side effect.
     //////////////////////////////////////////////////////////////*/
 
-    /// The module documents that a wrapping session is attributed to the day it OPENED on. The
-    /// consequence, which the suite does not test, is that declaring the FOLLOWING day a holiday
-    /// does not close the tail: the pool trades on a day the issuer explicitly marked closed.
-    function test_FINDING3_holidayOnTheTailDayDoesNotCloseTheWrappedSession() public {
+    /// The attribution rule, asserted: a holiday on the TAIL day leaves the tail open.
+    function test_DESIGN3_holidayOnTheTailDayDoesNotCloseTheWrappedSession() public {
         // 22:00 -> 02:00, Mon..Fri.
         MarketHoursModule.MarketSettings memory s = _settings();
         s.openSecondOfDay = 79_200;
@@ -220,36 +236,158 @@ contract SecurityReviewCalendarTest is Test, Deployers, TokenFixture {
         vm.prank(ISSUER);
         hook.setHolidays(poolId, holiday);
 
-        // Tuesday 01:00 UTC - inside the declared holiday - is nonetheless open.
+        // Tuesday 01:00 UTC - the tail of MONDAY's session - is open, because the holiday
+        // cancelled the session that opens on Tuesday, not Monday's.
         uint256 tuesdayOneAm = MONDAY_MIDNIGHT + 1 days + 1 hours;
-        assertTrue(
-            hook.isSessionOpenAt(poolId, tuesdayOneAm),
-            "session open during a day explicitly marked as a holiday"
-        );
+        assertTrue(hook.isSessionOpenAt(poolId, tuesdayOneAm), "Monday's tail runs into Tuesday");
+
+        // ...and the session that OPENS on Tuesday is the one the holiday closed, tail included.
+        assertFalse(hook.isSessionOpenAt(poolId, MONDAY_MIDNIGHT + 1 days + 23 hours), "Tuesday evening closed");
+        assertFalse(hook.isSessionOpenAt(poolId, MONDAY_MIDNIGHT + 2 days + 1 hours), "and its Wednesday tail");
+    }
+
+    /// The procedure, asserted. To stop ALL trading during UTC day D on a wrapping schedule, an
+    /// issuer writes TWO overrides: the holiday on D, and a non-wrapping special session on D-1
+    /// that ends the D-1 session at the last expressible second. (`closeSecondOfDay` must be below
+    /// 86400, so the D-1 session loses its final second, 23:59:59.)
+    function test_DESIGN3_closingAWholeUtcDayNeedsTheOpeningDayTruncatedToo() public {
+        MarketHoursModule.MarketSettings memory s = _settings();
+        s.openSecondOfDay = 79_200; // 22:00
+        s.closeSecondOfDay = 7_200; // 02:00
+        hook.configureMarket(key, s);
+
+        uint32 monday = hook.dayIndexOf(MONDAY_MIDNIGHT);
+
+        uint32[] memory tue = new uint32[](1);
+        tue[0] = monday + 1;
+        uint32[] memory mon = new uint32[](1);
+        mon[0] = monday;
+
+        vm.startPrank(ISSUER);
+        hook.setHolidays(poolId, tue);
+        hook.setSpecialSessions(poolId, mon, 79_200, 86_399);
+        vm.stopPrank();
+
+        assertTrue(hook.isSessionOpenAt(poolId, MONDAY_MIDNIGHT + 23 hours), "Monday evening still trades");
+        assertFalse(hook.isSessionOpenAt(poolId, MONDAY_MIDNIGHT + 86_399), "except its last second");
+        assertFalse(hook.isSessionOpenAt(poolId, MONDAY_MIDNIGHT + 1 days + 1 hours), "no tail into Tuesday");
+        assertFalse(hook.isSessionOpenAt(poolId, MONDAY_MIDNIGHT + 1 days + 23 hours), "no Tuesday session");
+        assertFalse(hook.isSessionOpenAt(poolId, MONDAY_MIDNIGHT + 2 days + 1 hours), "no tail into Wednesday");
+        assertTrue(hook.isSessionOpenAt(poolId, MONDAY_MIDNIGHT + 2 days + 23 hours), "Wednesday reopens");
     }
 
     /*//////////////////////////////////////////////////////////////
-      FINDING 4 - the band never constrains the price a pool is BORN at.
+      FINDING 4 (FIXED) - the band never constrained the price a pool is BORN at.
+
+      `beforeInitialize` checked configuration and the fee flag, never the
+      reference price, and `initialize` is permissionless once governance has
+      configured a key. Anyone could front-run the issuer's initialize at any
+      price. The band did not help afterwards: from an out-of-band birth, the
+      arbitrage that extracts value from the first LP deposit is a CONVERGING
+      swap, which the band exists to permit. Measured on this suite's fixtures
+      before the fix: born at 4x, an LP depositing ~651 units (valued at the
+      reference) lost ~345 of them to one converging swap.
+
+      `beforeInitialize` now requires the initial price to be strictly inside
+      the band, with no converging exception (a pool that has never traded has
+      not gapped), failing closed if the reference is unavailable or stale.
     //////////////////////////////////////////////////////////////*/
 
-    /// `beforeInitialize` checks configuration and the fee flag, never the reference price. Anyone
-    /// may initialize a configured pool at any representable price, arbitrarily far outside the
-    /// band, and the converging exception then permits unlimited trading on the near side.
-    function test_FINDING4_poolCanBeInitializedArbitrarilyFarOutsideItsOwnBand() public {
-        PoolKey memory k2 = _key(500);
-        PoolId id2 = k2.toId();
-        hook.configureMarket(k2, _settings());
-        priceOracle.setReferencePrice(id2, SQRT_RATIO_1_1);
+    function _expectInitRevert(PoolId id, uint256 ratioPpm) internal {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                ICLHooks.beforeInitialize.selector,
+                abi.encodeWithSelector(
+                    MarketHoursModule.PriceBandBreached.selector, id, ratioPpm, uint256(950_000), uint256(1_050_000)
+                ),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+    }
 
-        // Born at ~4x the reference price, with a +/-5% band configured.
-        uint160 farOut = uint160(uint256(SQRT_RATIO_1_1) * 2);
+    function _freshPool(uint24 fee) internal returns (PoolKey memory k, PoolId id) {
+        k = _key(fee);
+        id = k.toId();
+        hook.configureMarket(k, _settings());
+        priceOracle.setReferencePrice(id, SQRT_RATIO_1_1);
+    }
+
+    /// The original finding, now refused: born at 4x the reference with a +/-5% band.
+    function test_FIX4_initializationAboveTheBandIsRefused() public {
+        (PoolKey memory k2, PoolId id2) = _freshPool(500);
+
+        uint160 farOut = uint160(uint256(SQRT_RATIO_1_1) * 2); // 2x sqrt == 4x price
+        _expectInitRevert(id2, 4_000_000);
         poolManager.initialize(k2, farOut);
 
         (uint160 born,,,) = poolManager.getSlot0(id2);
-        assertEq(born, farOut, "initialized far outside the band with no objection from the hook");
+        assertEq(born, 0, "the front-run left no pool behind");
 
-        (bool wouldRevert,) = hook.previewPriceBand(id2, false, farOut);
-        assertTrue(wouldRevert, "a SWAP to this price would have been rejected");
+        // The honest initialize at the reference still lands afterwards.
+        poolManager.initialize(k2, SQRT_RATIO_1_1);
+        (born,,,) = poolManager.getSlot0(id2);
+        assertEq(born, SQRT_RATIO_1_1);
+    }
+
+    /// No converging exception at birth: the lower edge binds exactly like the upper one.
+    function test_FIX4_initializationBelowTheBandIsRefused() public {
+        (PoolKey memory k2, PoolId id2) = _freshPool(500);
+
+        _expectInitRevert(id2, 250_000); // 0.5x sqrt == 0.25x price
+        poolManager.initialize(k2, uint160(uint256(SQRT_RATIO_1_1) / 2));
+    }
+
+    /// The residual, asserted rather than hand-waved: a front-runner can still choose the birth
+    /// price, but only INSIDE the band. The band width is now the ceiling on a mis-initialization.
+    function test_FIX4_frontRunIsBoundedToTheBandWidth() public {
+        (PoolKey memory k2, PoolId id2) = _freshPool(500);
+
+        // sqrt x1.025 == price x1.050625, just past the +5% edge: refused.
+        uint160 justOutside = uint160(uint256(SQRT_RATIO_1_1) * 1025 / 1000);
+        vm.expectRevert();
+        poolManager.initialize(k2, justOutside);
+
+        // sqrt x1.024 == price x1.048576, inside: accepted.
+        uint160 justInside = uint160(uint256(SQRT_RATIO_1_1) * 1024 / 1000);
+        poolManager.initialize(k2, justInside);
+        (uint160 born,,,) = poolManager.getSlot0(id2);
+        assertEq(born, justInside);
+    }
+
+    /// Fails closed: no reference, no pool. Publishing the reference is a precondition of launch.
+    function test_FIX4_initializationFailsClosedWithoutAReference() public {
+        PoolKey memory k2 = _key(500);
+        PoolId id2 = k2.toId();
+        hook.configureMarket(k2, _settings());
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                ICLHooks.beforeInitialize.selector,
+                abi.encodeWithSelector(
+                    MarketHoursModule.PriceOracleUnavailable.selector, address(priceOracle), id2
+                ),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        poolManager.initialize(k2, SQRT_RATIO_1_1);
+    }
+
+    /// Scoped to the band: a pool that opted out of the band is not given one at birth.
+    function test_FIX4_bandDisabledPoolIsNotConstrainedAtBirth() public {
+        PoolKey memory k2 = _key(500);
+        PoolId id2 = k2.toId();
+        MarketHoursModule.MarketSettings memory s = _settings();
+        s.bandEnabled = false;
+        hook.configureMarket(k2, s);
+
+        uint160 farOut = uint160(uint256(SQRT_RATIO_1_1) * 2);
+        poolManager.initialize(k2, farOut);
+        (uint160 born,,,) = poolManager.getSlot0(id2);
+        assertEq(born, farOut);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -546,6 +684,52 @@ contract SecurityReviewStockPairTest is Test, Deployers, TokenFixture {
 
         assertEq(hook.marketConfig(poolId).weekdayMask, WEEKDAYS);
         assertTrue(hook.isTradable(poolId));
+    }
+
+    /// FINDING 4's fix, in composition. `StockPairHook` overrides `_beforeInitialize`, so the band
+    /// check must survive that override: asserted here so a future edit to the composition cannot
+    /// quietly drop it. Both halves configured, reference published, birth at 4x refused.
+    function test_FIX4_stockPairRefusesOutOfBandInitialization() public {
+        PoolKey memory k2 = key;
+        k2.fee = 500;
+        PoolId id2 = k2.toId();
+        hook.configurePool(k2, _poolSettings());
+        hook.configureMarket(k2, _marketSettings());
+        priceOracle.setReferencePrice(id2, SQRT_RATIO_1_1);
+
+        _expectHookRevert(
+            ICLHooks.beforeInitialize.selector,
+            abi.encodeWithSelector(
+                MarketHoursModule.PriceBandBreached.selector,
+                id2,
+                uint256(4_000_000),
+                uint256(950_000),
+                uint256(1_050_000)
+            )
+        );
+        poolManager.initialize(k2, uint160(uint256(SQRT_RATIO_1_1) * 2));
+
+        poolManager.initialize(k2, SQRT_RATIO_1_1);
+        (uint160 born,,,) = poolManager.getSlot0(id2);
+        assertEq(born, SQRT_RATIO_1_1, "an in-band birth still works");
+    }
+
+    /// The configuration errors still come first. Market half configured and band-enabled, a
+    /// reference published, a birth price far out of band - but the COMPLIANCE half was never
+    /// configured, and that is what must be reported. If the band check ran before `super`, this
+    /// would surface as `PriceBandBreached` and hide the real mistake.
+    function test_FIX4_stockPairConfigurationErrorsPrecedeTheBandCheck() public {
+        PoolKey memory k2 = key;
+        k2.fee = 500;
+        PoolId id2 = k2.toId();
+        hook.configureMarket(k2, _marketSettings());
+        priceOracle.setReferencePrice(id2, SQRT_RATIO_1_1);
+
+        _expectHookRevert(
+            ICLHooks.beforeInitialize.selector,
+            abi.encodeWithSelector(PermissionedPoolHook.PoolNotConfigured.selector, id2)
+        );
+        poolManager.initialize(k2, uint160(uint256(SQRT_RATIO_1_1) * 2));
     }
 
     /*//////////////////////////////////////////////////////////////

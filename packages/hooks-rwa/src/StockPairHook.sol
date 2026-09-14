@@ -115,6 +115,10 @@ contract StockPairHook is PermissionedPoolHook, MarketHoursModule {
     /// here is what stops an issuer initializing a pair, publishing the key, and only then
     /// discovering that the calendar was never set - at which point the hours would silently not
     /// apply, which is the worst of the available failures.
+    ///
+    /// The band check on the birth price runs LAST, after both configuration gates, so a
+    /// misconfigured key still reports the configuration error rather than an oracle one. See
+    /// `MarketHoursModule._requireInitialPriceInBand`.
     function _beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
         internal
         view
@@ -123,7 +127,9 @@ contract StockPairHook is PermissionedPoolHook, MarketHoursModule {
     {
         PoolId poolId = key.toId();
         if (!_markets[poolId].configured) revert MarketNotConfigured(poolId);
-        return super._beforeInitialize(sender, key, sqrtPriceX96);
+        bytes4 selector = super._beforeInitialize(sender, key, sqrtPriceX96);
+        _requireInitialPriceInBand(poolId, sqrtPriceX96);
+        return selector;
     }
 
     /// @dev Compliance gate, then market gate. See the ordering note above.

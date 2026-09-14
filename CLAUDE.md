@@ -589,9 +589,22 @@ something to hand an autonomous process.
   (auto-wipe on rotation silently deletes legitimate holidays). ~2.1k gas on the swap path for
   session-enabled pools only. Not patchable in place — a hook address is part of pool identity.
   No RWA hook is deployed on any chain, so no live pool is affected.
-- **Open, untriaged** — two further findings are asserted in `SecurityReview.t.sol` and were never
-  listed here: `FINDING3` (a holiday on the day an overnight session ENDS does not close that
-  session's tail) and `FINDING4` (a pool can be initialized far outside its own price band).
+- **Informational, triaged by design 2026-09-13 — a holiday does not close the previous
+  day's overnight tail.** An override on day D governs the session that OPENS on D (the
+  module's stated attribution), so on a wrapping schedule D-1's tail still trades into D.
+  Comments corrected. Issuer rule: to close all of UTC day D, set the holiday on D AND a
+  special session on D-1 ending at 86399; a next-trade-date overnight session's holiday goes
+  on the day before. Calendar UIs must render a holiday as "the session opening on D", not
+  the calendar day. Guards: `test_DESIGN3_*` in `packages/hooks-rwa/test/SecurityReview.t.sol`.
+- **LOW, fixed 2026-09-13 — a pool could be born outside its own price band.** `initialize`
+  is permissionless once a key is configured, the birth price was unchecked, and the
+  arbitrage that drains the first LP deposit is a converging swap the band permits (measured:
+  ~53% of a deposit at a 4x birth). `beforeInitialize` on `MarketHoursHook` and
+  `StockPairHook` now requires the birth price strictly inside the band, failing closed
+  without a fresh reference, so **publish the reference before initializing**. Residual: a
+  front-runner can still choose a birth price anywhere inside the band; seed liquidity with
+  price-aware slippage, never slot0-derived bounds via a multicall that swallows the init.
+  Guards: `test_FIX4_*` in `packages/hooks-rwa/test/SecurityReview.t.sol`.
 - **FIXED 2026-09-13, LOW–MEDIUM** — weekday mask bit 7. `0x80` used to pass validation and produce
   a pool that could never trade while every view reported it healthy. Both mask entry points now
   reject any bit outside `0x7F` with `InvalidWeekdayMask(uint8)`; `0` keeps `EmptyWeekdayMask`.
@@ -605,7 +618,7 @@ something to hand an autonomous process.
   anonymous `MathOverflowedMulDiv`; core represents up to ~2¹²⁸. Now scale-switched exactly like
   the Chainlink adapter, `RatioUnrepresentable(num, den)` at ≥ 2¹³⁰. The two Sepolia exercise
   instances (`0x6283…8915`, `0xe0aa…00b9`) keep the bug; nothing on Robinhood.
-- hooks-rwa passes under BOTH profiles (205/205 each, 2026-09-13), all storage layouts unchanged.
+- hooks-rwa passes under BOTH profiles (212/212 each, 2026-09-13), all storage layouts unchanged.
 
 
 ---

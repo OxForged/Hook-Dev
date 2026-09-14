@@ -44,6 +44,18 @@ import {IPriceBandOracle} from "../interfaces/IPriceBandOracle.sol";
 ///     half-days or special sessions (`setSpecialSessions`). An override REPLACES the weekday mask
 ///     for that day, which is how a special Saturday auction is scheduled.
 ///
+/// AN OVERRIDE ON DAY D GOVERNS THE SESSION THAT OPENS ON D, NOT THE UTC CALENDAR DAY D. On a
+/// same-day schedule the two are identical. On a WRAPPING schedule they are not, and the
+/// difference is the part an issuer gets wrong:
+///
+///   * A holiday on D cancels D's session, including its tail into D+1. It does NOT close the tail
+///     of D-1's session, which still trades from midnight until close on D.
+///   * To stop ALL trading during UTC day D, write the holiday on D AND a non-wrapping special
+///     session on D-1 ending at 86399 (the D-1 session then loses its final second).
+///   * A venue whose overnight session belongs to the NEXT trade date - the usual convention for
+///     an evening session - must write that trade date's holiday on the day BEFORE it, the day the
+///     session opens. Translating an exchange holiday calendar date-for-date is wrong here.
+///
 /// THERE IS NO TIMEZONE AND NO DAYLIGHT SAVING. UTC does not observe DST; a venue that does will
 /// shift by an hour twice a year relative to any fixed UTC window, and the schedule must be
 /// re-cut when it does. `setSessionHours` exists for exactly that and is available to the issuer
@@ -99,6 +111,12 @@ import {IPriceBandOracle} from "../interfaces/IPriceBandOracle.sol";
 /// safety control itself. Because an AMM's price is monotone in the swap direction, a converging
 /// swap can never end further from the band than it started, so permitting it cannot be used to
 /// print a worse price than the pool already showed.
+///
+/// That argument only holds if every price the pool has shown was either band-checked or became
+/// out-of-band because the REFERENCE moved. The one price no swap produces is the birth price, so
+/// the hooks mixing this in also check it in `beforeInitialize`, strictly and with no converging
+/// exception (`_requireInitialPriceInBand`). A front-runner may still choose where inside the band
+/// a pool is born; the band width is the ceiling on that, not zero.
 ///
 /// WHAT THE BAND DOES NOT DO, STATED PLAINLY:
 ///
@@ -326,7 +344,9 @@ abstract contract MarketHoursModule {
 
     /// @param isSet Whether this day has an override at all. A cleared day reads back false and
     ///        falls through to the weekly schedule.
-    /// @param closed The day is a holiday: no session, whatever the weekday mask says.
+    /// @param closed The day is a holiday: no session OPENS on it, whatever the weekday mask says.
+    ///        On a wrapping schedule the previous day's session still runs into this day until its
+    ///        close; see "AN OVERRIDE ON DAY D" in the contract documentation.
     /// @param openSecondOfDay Replacement session open for this day.
     /// @param closeSecondOfDay Replacement session close for this day.
     struct DayOverride {
@@ -442,8 +462,12 @@ abstract contract MarketHoursModule {
         emit SessionHoursSet(poolId, msg.sender, weekdayMask, openSecondOfDay, closeSecondOfDay);
     }
 
-    /// @notice Mark days as closed. Issuer or owner.
-    /// @dev Bounded by the calldata array the caller pays for; there is no growable set to loop.
+    /// @notice Cancel the session that OPENS on each of these days. Issuer or owner.
+    /// @dev On a same-day schedule this closes the whole day. On a wrapping schedule it does not
+    /// close the tail of the PREVIOUS day's session, which still trades into these days until its
+    /// close; see "AN OVERRIDE ON DAY D" in the contract documentation for the two-override recipe.
+    ///
+    /// Bounded by the calldata array the caller pays for; there is no growable set to loop.
     function setHolidays(PoolId poolId, uint32[] calldata dayIndexes) external onlyMarketOperator(poolId) {
         for (uint256 i = 0; i < dayIndexes.length; ++i) {
             uint32 dayIndex = dayIndexes[i];
@@ -585,6 +609,9 @@ abstract contract MarketHoursModule {
     /// @notice Dry-run the band decision for a hypothetical post-swap price.
     /// @dev Lets a router pre-flight a trade it has already quoted: quote the swap, take the
     /// resulting `sqrtPriceX96`, and ask here whether the hook would accept it.
+    ///
+    /// To pre-flight an `initialize`, ask BOTH directions: the birth check has no converging
+    /// exception, so a price is acceptable at birth only if neither `zeroForOne` value reverts.
     /// @return wouldRevert Whether `afterSwap` would reject this outcome.
     /// @return reason Empty when it would not; otherwise the ABI-encoded custom error it would
     ///         revert with, so the caller can surface the exact cause.
@@ -616,6 +643,28 @@ abstract contract MarketHoursModule {
     /// @dev Whether the halt/calendar gate applies to liquidity additions on this pool.
     function _liquidityGated(PoolId poolId) internal view returns (bool) {
         return _markets[poolId].gateLiquidity;
+    }
+
+    /// @dev The band gate for the price a pool is BORN at. Call from `beforeInitialize`.
+    ///
+    /// Without it, the band never constrained the one price no swap produces. `initialize` is
+    /// permissionless once governance has configured a key, so anyone could front-run the issuer's
+    /// initialize at any price; and from an out-of-band birth, the arbitrage that drains the first
+    /// LP deposit is a CONVERGING swap - precisely the swap the band exists to permit.
+    ///
+    /// The converging exception has no meaning here: a pool that has never traded has not gapped,
+    /// so the birth price must be strictly inside `[lowerPpm, upperPpm]`. That is exactly the
+    /// conjunction of the two swap directions, because a price-increasing outcome is rejected only
+    /// above the upper edge and a price-decreasing one only below the lower edge. Composing the
+    /// swap-path check rather than restating the band keeps one definition of "in band", at the
+    /// cost of querying the oracle twice - once per pool, on a path that is not hot.
+    ///
+    /// Fails closed on the same terms as a swap: no reference, a stale one, or an unreachable
+    /// oracle means the pool cannot be created yet. A pool with `bandEnabled == false` is not
+    /// checked, and so remains free to be born at any price.
+    function _requireInitialPriceInBand(PoolId poolId, uint160 sqrtPriceX96) internal view {
+        _requirePriceInBand(poolId, false, sqrtPriceX96);
+        _requirePriceInBand(poolId, true, sqrtPriceX96);
     }
 
     /// @dev The band gate. Call from `afterSwap` with the price the pool ended at.
