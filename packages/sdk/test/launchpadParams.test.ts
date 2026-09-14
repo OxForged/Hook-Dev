@@ -30,11 +30,27 @@ const LAUNCH = "0x1111111111111111111111111111111111111111" as const;
 const QUOTE = "0x2222222222222222222222222222222222222222" as const;
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
-/** Robinhood Chain: kit at 10 centis, hook immutables read off chain. */
+/**
+ * A correctly configured deployment: the kit's declared block time equals the
+ * real contract cadence, so declared and real durations agree.
+ */
 const LIMITS: LaunchLimits = {
   blockTimeCentis: 10,
+  contractBlockTimeCentis: 10,
   maxDecayBlocks: 2_592_000n, // 3 days at 0.10s
   maxStartDelayBlocks: 2_592_000n,
+};
+
+/**
+ * The LIVE Robinhood kit and hook as read on 2026-09-13: they declare 10 centis
+ * (0.1 s) and MAX_DECAY_BLOCKS 26,000,000, but the hook's block.number is
+ * Ethereum's (~12 s). Every window runs 120x longer than declared.
+ */
+const ROBINHOOD_LIVE: LaunchLimits = {
+  blockTimeCentis: 10,
+  contractBlockTimeCentis: 1200,
+  maxDecayBlocks: 26_000_000n,
+  maxStartDelayBlocks: 26_000_000n,
 };
 
 const SEED: SeedParams = {
@@ -198,6 +214,36 @@ describe("warnings the chain will not give you", () => {
     expect(warn?.message).toContain("BLOCKS, not seconds");
   });
 
+  it("warns when a named preset's window is stretched by a clock mismatch", () => {
+    const warns = validateLaunchParams(params({ preset: PRESET.FairLaunch }), ROBINHOOD_LIVE).filter(
+      (i) => i.severity === "warning" && i.field === "preset",
+    );
+    expect(warns.some((w) => w.message.includes("really lasts 10h") && w.message.includes("120x longer"))).toBe(true);
+    // The chain accepts it, so it stays a warning.
+    expect(validateLaunchParams(params(), ROBINHOOD_LIVE).filter((i) => i.severity === "error")).toHaveLength(0);
+  });
+
+  it("stays quiet about clocks when declared and real agree", () => {
+    const warns = validateLaunchParams(params({ startDelaySeconds: 60 }), LIMITS).filter(
+      (i) => i.message.includes("declared"),
+    );
+    expect(warns).toHaveLength(0);
+  });
+
+  it("warns that a start delay really opens later on a mismatched clock", () => {
+    const warn = validateLaunchParams(params({ startDelaySeconds: 60 }), ROBINHOOD_LIVE).find(
+      (i) => i.field === "startDelaySeconds",
+    );
+    expect(warn?.severity).toBe("warning");
+    expect(warn?.message).toContain("really opens after 2h");
+  });
+
+  it("warns that a Custom decayBlocks is very long in real time", () => {
+    const p = params({ preset: PRESET.Custom, initialFeeBips: 100_000, finalFeeBips: 3_000, decayBlocks: 216_000, enabled: true });
+    const warn = validateLaunchParams(p, ROBINHOOD_LIVE).find((i) => i.field === "decayBlocks");
+    expect(warn?.message).toContain("30d");
+  });
+
   it("warns that maxBuyPerTx is per transaction, not per wallet", () => {
     const warn = validateLaunchParams(params({ maxBuyPerTx: 1n }), LIMITS).find(
       (i) => i.field === "maxBuyPerTx",
@@ -230,9 +276,29 @@ describe("describeLaunch", () => {
   it("the same preset is a different block count on a 12s chain", () => {
     const s = describeLaunch(params({ preset: PRESET.FairLaunch }), {
       blockTimeCentis: 1200,
+      contractBlockTimeCentis: 1200,
     });
     expect(s.decayWindow).toBe("5m");
     expect(s.decayBlocks).toBe(25n);
+    expect(s.clockStretch).toBeNull();
+  });
+
+  it("on the live Robinhood kit the FairLaunch 5m window really lasts 10h", () => {
+    const s = describeLaunch(params({ preset: PRESET.FairLaunch, startDelaySeconds: 60 }), ROBINHOOD_LIVE);
+    expect(s.decayBlocks).toBe(3_000n);
+    expect(s.declaredDecayWindow).toBe("5m");
+    expect(s.decayWindow).toBe("10h");
+    expect(s.opensAfter).toBe("2h"); // 60 s -> 600 blocks -> 7,200 s
+    expect(s.clockStretch).toBe(120);
+  });
+
+  it("a Custom window is judged at the real cadence, not the declared one", () => {
+    const s = describeLaunch(
+      params({ preset: PRESET.Custom, initialFeeBips: 100_000, finalFeeBips: 3_000, decayBlocks: 3_000, enabled: true }),
+      ROBINHOOD_LIVE,
+    );
+    expect(s.declaredDecayWindow).toBe("5m");
+    expect(s.decayWindow).toBe("10h");
   });
 
   it("NoTax is honest about protecting against nothing", () => {

@@ -34,7 +34,7 @@ import {
   type Hex,
   type PublicClient,
 } from "viem";
-import type { PoolId } from "@latchprotocol/sdk";
+import { readContractClock, type PoolId } from "@latchprotocol/sdk";
 import type { ChainConfig } from "../config/chain.js";
 import { requireContract } from "../config/chain.js";
 import {
@@ -608,15 +608,20 @@ class ViemProtocolAdapter implements ProtocolAdapter {
     const guard = decodeLaunchGuard(raw as unknown as RawLaunchGuard);
     if (!isLaunchConfigured(guard)) return null;
 
-    const [currentFeePips, readAtBlock] = await Promise.all([
+    const [currentFeePips, clock] = await Promise.all([
       this.#client.readContract({
         address: hook,
         abi: LAUNCH_GUARD_HOOK_ABI,
         functionName: "currentFee",
         args: [pool.id],
       }),
-      this.#client.getBlockNumber(),
+      /* The HOOK's block.number, not eth_blockNumber. `startBlock` and the decay
+         are on the EVM clock, which on an Arbitrum chain (Robinhood, 4663) is
+         Ethereum's block number while the RPC head is the L2 block. Against
+         the RPC head every unopened launch rendered as settled. */
+      readContractClock(this.#client, this.chain.chainId),
     ]);
+    const readAtBlock = clock.contractBlockNumber;
 
     const [launchToken, quoteToken] = guard.launchTokenIsCurrency0
       ? [pool.token0, pool.token1]

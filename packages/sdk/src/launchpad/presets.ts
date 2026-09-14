@@ -176,11 +176,13 @@ export function presetName(value: number): PresetName {
  * down to zero blocks is rejected by the hook, so the safe direction is one
  * block too many.
  *
- * @param blockTimeCentis Block time in HUNDREDTHS of a second. Read it from
- * the deployed kit (`blockTimeCentis()`), do not assume: Robinhood Chain's kit
- * is configured at 10 (0.10s), while a 12-second chain would be 1200. This
- * single number is the difference between a three-day launch and a
- * thirty-five-minute one.
+ * @param blockTimeCentis Block time in HUNDREDTHS of a second. To reproduce
+ * what a deployed kit will compute, pass the kit's own `blockTimeCentis()`. To
+ * learn how long those blocks REALLY last, convert back with the chain's
+ * `contractBlockTimeCentis` (see `chains/clock`), not with the same number:
+ * the live Robinhood kit declares 10 (0.1 s) but the hook's `block.number` is
+ * Ethereum's and advances every ~12 s, so its windows run 120x longer than the
+ * seconds they came from.
  */
 export function secondsToBlocks(secondsValue: number | bigint, blockTimeCentis: number | bigint): bigint {
   const s = BigInt(secondsValue);
@@ -191,7 +193,11 @@ export function secondsToBlocks(secondsValue: number | bigint, blockTimeCentis: 
   return blocks === 0n ? 1n : blocks;
 }
 
-/** Inverse of {@link secondsToBlocks}, for turning a block count into wall clock. */
+/**
+ * Inverse of {@link secondsToBlocks}. Real wall clock only when
+ * `blockTimeCentis` is the chain's REAL contract cadence
+ * (`contractBlockTimeCentis`), not a contract's declared one.
+ */
 export function blocksToSeconds(blocks: number | bigint, blockTimeCentis: number | bigint): number {
   const b = BigInt(blocks);
   const centis = BigInt(blockTimeCentis);
@@ -200,9 +206,9 @@ export function blocksToSeconds(blocks: number | bigint, blockTimeCentis: number
 }
 
 /**
- * A duration in words. Exists because "1000000 blocks" tells a reviewer
- * nothing and "28 hours" tells them everything — and on a 0.102s chain those
- * are the same quantity.
+ * A duration in words. Exists because "26000000 blocks" tells a reviewer
+ * nothing and "3611d" (9.9 years) tells them everything — and on Robinhood, where a
+ * contract block is ~12 s, those are the same quantity.
  */
 export function humanDuration(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "unknown";

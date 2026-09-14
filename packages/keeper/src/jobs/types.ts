@@ -44,7 +44,17 @@ export interface JobContext {
   readonly account?: Address
   readonly chainId: number
   readonly now: bigint
+  /**
+   * `eth_blockNumber` — the L2 block on Robinhood. For log ranges and the tick
+   * banner ONLY. Never compare it to a block number a contract stored.
+   */
   readonly blockNumber: bigint
+  /**
+   * `block.number` as a contract sees it (Ethereum L1's on Robinhood). Every
+   * comparison against `effectiveBlock`, `expiryBlock` or any stored block uses
+   * this. See `clock.ts`.
+   */
+  readonly contractBlockNumber: bigint
   /** From config. When set, a clean simulation that estimates above this is refused, not sent. */
   readonly maxGas?: bigint
 }

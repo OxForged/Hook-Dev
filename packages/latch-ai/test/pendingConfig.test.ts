@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { encodeAbiParameters, type Hex, type PublicClient } from "viem";
+import { encodeAbiParameters, type Address, type Hex, type PublicClient } from "viem";
 
 import { decodePendingConfig } from "../src/abi.js";
 import { createContext } from "../src/context.js";
@@ -97,19 +97,37 @@ describe("decodePendingConfig", () => {
 
 interface Scenario {
   readonly returnData: Hex | undefined;
+  /** `block.number` as the hook sees it. */
   readonly blockNumber: bigint;
+  /**
+   * `eth_blockNumber`. Defaults to `blockNumber` (a native chain). On a Nitro
+   * chain it is the L2 head and MUST NOT be what the tool compares against.
+   */
+  readonly rpcBlockNumber?: bigint;
 }
+
+const word = (v: bigint): string => v.toString(16).padStart(64, "0");
 
 function hookClient(s: Scenario): { client: PublicClient; methods: string[] } {
   const methods: string[] = [];
+  const rpcHead = s.rpcBlockNumber ?? s.blockNumber;
   const client = {
-    async call() {
+    async call(args: { to?: Address; data: Hex }) {
+      // A call with no `to` is the SDK's NUMBER/TIMESTAMP clock probe.
+      if (args.to === undefined) {
+        methods.push("probe");
+        return { data: `0x${word(s.blockNumber)}${word(1_789_343_079n)}` as Hex };
+      }
       methods.push("call");
       return { data: s.returnData };
     },
     async getBlockNumber() {
       methods.push("getBlockNumber");
-      return s.blockNumber;
+      return rpcHead;
+    },
+    async getBlock() {
+      methods.push("getBlock");
+      return { number: rpcHead, timestamp: 1_789_343_079n };
     },
     async readContract(args: { functionName: string }) {
       // Any typed read of getPendingConfig is the bug this suite exists for.
@@ -134,15 +152,18 @@ interface Outcome {
   readonly reason: string;
 }
 
-async function apply(s: Scenario) {
+async function apply(s: Scenario, chainId?: number) {
   const { client, methods } = hookClient(s);
-  const tool = maintenanceTool(createContext({ publicClient: client, maintenance: { enabled: true } }));
+  const base = createContext({ publicClient: client, maintenance: { enabled: true } });
+  // The toolset only ships a Sepolia deployment, but the hook argument is free
+  // and the clock is a property of the chain: override it to exercise 4663.
+  const tool = maintenanceTool(chainId === undefined ? base : { ...base, chainId });
   const r = await tool.handler({ action: "applyPendingConfig", hook: HOOK, poolId: POOL_ID, poolKey: POOL_KEY });
   return { r, methods };
 }
 
-async function applyOk(s: Scenario): Promise<{ data: Outcome; methods: string[] }> {
-  const { r, methods } = await apply(s);
+async function applyOk(s: Scenario, chainId?: number): Promise<{ data: Outcome; methods: string[] }> {
+  const { r, methods } = await apply(s, chainId);
   if (!r.ok) throw new Error(`tool errored: ${JSON.stringify(r.error)}`);
   return { data: r.data as unknown as Outcome, methods };
 }
@@ -158,7 +179,7 @@ describe("applyPendingConfig: legacy 7-word hook", () => {
   it("an immature proposal says it will never expire once matured", async () => {
     const { data } = await applyOk({ returnData: legacyReturn(2_000n), blockNumber: 1_000n });
     expect(data.due).toBe(false);
-    expect(data.reason).toMatch(/1000 block\(s\) to go/);
+    expect(data.reason).toMatch(/1000 contract block\(s\) to go/);
     expect(data.reason).toMatch(/no expiry/);
   });
 
@@ -184,13 +205,54 @@ describe("applyPendingConfig: current 8-word hook", () => {
   it("past expiryBlock is reported expired and not simulated", async () => {
     const { data, methods } = await applyOk({ returnData: currentReturn(2_000n, 5_600n), blockNumber: 5_601n });
     expect(data.due).toBe(false);
-    expect(data.reason).toMatch(/expired at block 5600/);
+    expect(data.reason).toMatch(/expired at contract block 5600/);
     expect(methods.some((m) => m.startsWith("simulate"))).toBe(false);
   });
 
   it("an immature proposal reports its expiry", async () => {
     const { data } = await applyOk({ returnData: currentReturn(2_000n, 5_600n), blockNumber: 1_000n });
-    expect(data.reason).toMatch(/expires after block 5600/);
+    expect(data.reason).toMatch(/expires after contract block 5600/);
+  });
+});
+
+describe("applyPendingConfig: Robinhood's two clocks (EVM block.number is Ethereum's)", () => {
+  /* Values read on 4663, 2026-09-13. A proposal made now on the live hook:
+     effective = now + 432,000, expiry = effective + 2,592,000 contract blocks. */
+  const L1 = 25_971_883n;
+  const L2 = 62_356_430n;
+  const effective = L1 + 432_000n;
+  const expiry = effective + 2_592_000n;
+
+  it("a queued proposal is NOT DUE against the contract clock, even though the L2 head is past expiry", async () => {
+    const { data, methods } = await applyOk(
+      { returnData: currentReturn(effective, expiry), blockNumber: L1, rpcBlockNumber: L2 },
+      4663,
+    );
+    expect(L2 > expiry).toBe(true); // the trap: compared to eth_blockNumber this reads expired
+    expect(data.due).toBe(false);
+    expect(data.reason).toMatch(/432000 contract block\(s\) to go/);
+    expect(data.reason).not.toMatch(/expired/);
+    expect(methods).toContain("probe");
+    expect(methods).not.toContain("getBlockNumber");
+    expect(methods.some((m) => m.startsWith("simulate"))).toBe(false);
+  });
+
+  it("a matured proposal inside its window goes to simulation", async () => {
+    const { data, methods } = await applyOk(
+      { returnData: currentReturn(effective, expiry), blockNumber: effective, rpcBlockNumber: L2 + 50_000_000n },
+      4663,
+    );
+    expect(data.due).toBe(true);
+    expect(methods).toContain("simulate:applyPendingConfig");
+  });
+
+  it("past expiry on the CONTRACT clock is expired", async () => {
+    const { data } = await applyOk(
+      { returnData: currentReturn(effective, expiry), blockNumber: expiry + 1n, rpcBlockNumber: L2 },
+      4663,
+    );
+    expect(data.due).toBe(false);
+    expect(data.reason).toMatch(/expired at contract block/);
   });
 });
 

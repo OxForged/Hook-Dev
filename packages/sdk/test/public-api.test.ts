@@ -29,6 +29,7 @@ import * as poolKeyModule from "../src/types/poolKey.js";
 import * as bitmapModule from "../src/hooks/bitmap.js";
 import * as endpointsModule from "../src/chains/endpoints.js";
 import * as transportModule from "../src/chains/transport.js";
+import * as clockModule from "../src/chains/clock.js";
 import * as deploymentsModule from "../src/deployments/index.js";
 
 /** Exactly the modules `src/index.ts` re-exports with `export *`. */
@@ -41,6 +42,7 @@ const STAR_EXPORTED: ReadonlyArray<readonly [string, Record<string, unknown>]> =
   ["hooks/bitmap", bitmapModule],
   ["chains/endpoints", endpointsModule],
   ["chains/transport", transportModule],
+  ["chains/clock", clockModule],
 ];
 
 describe("root export surface", () => {

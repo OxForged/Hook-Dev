@@ -172,6 +172,10 @@ export * as indexer from "./indexer/index.js";
 // Chain RPC endpoints and the auto-failover transport.
 export * from "./chains/endpoints.js"
 export * from "./chains/transport.js"
+// The block number CONTRACTS see, which on an Arbitrum Nitro chain is not the
+// one `eth_blockNumber` reports. Compare every contract-stored block number
+// against `readContractBlockNumber`; keep `getBlockNumber` for log ranges.
+export * from "./chains/clock.js"
 
 // --- deployed addresses ----------------------------------------------------
 // The address book: every deployed Latch contract, per chain, with token

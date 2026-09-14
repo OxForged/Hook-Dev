@@ -18,6 +18,7 @@
 import { createPublicClient, createWalletClient, defineChain, fallback, http, type Address } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
+import { readContractClock } from './clock.js'
 import { loadConfig, readPrivateKey } from './config.js'
 import { applyPendingConfigJob, settleBeneficiariesJob } from './jobs/hook.js'
 import { sweepProtocolFeesJob } from './jobs/fees.js'
@@ -152,17 +153,22 @@ async function main(): Promise<void> {
   console.log('')
 
   const runOnce = async (): Promise<void> => {
-    const block = await publicClient.getBlock()
+    const clock = await readContractClock(publicClient, cfg.chainId)
     const ctx: JobContext = {
       publicClient,
       chainId: cfg.chainId,
-      now: block.timestamp,
-      blockNumber: block.number,
+      now: clock.timestamp,
+      blockNumber: clock.rpcBlockNumber,
+      contractBlockNumber: clock.contractBlockNumber,
       ...(walletClient ? { walletClient } : {}),
       ...(account ? { account: account.address as Address } : {}),
       ...(cfg.maxGas !== undefined ? { maxGas: cfg.maxGas } : {}),
     }
-    console.log(`[${stamp()}] block ${block.number}`)
+    console.log(
+      clock.contractBlockNumber === clock.rpcBlockNumber
+        ? `[${stamp()}] block ${clock.rpcBlockNumber}`
+        : `[${stamp()}] block ${clock.rpcBlockNumber} · contract block.number ${clock.contractBlockNumber} (${clock.method})`,
+    )
     const { acted, failures } = await tick(jobs, ctx)
     console.log(`[${stamp()}] ${acted} due, ${failures} failed\n`)
   }

@@ -19,6 +19,7 @@
 import { encodeFunctionData } from 'viem'
 import { GET_PENDING_CONFIG_ABI, REV_SHARE_HOOK_ABI } from '../abi.js'
 import type { PoolKeyConfig, WatchTarget } from '../config.js'
+import { pendingPhase } from '../clock.js'
 import { decodePendingConfig } from '../decode.js'
 import { revertReason, sendGuarded } from './send.js'
 import { failed, notDue, type Job, type JobVerdict } from './types.js'
@@ -118,13 +119,22 @@ export function applyPendingConfigJob(targets: readonly WatchTarget[]): Job {
           }
           const pending = decodePendingConfig(data)
 
-          if (pending.effectiveBlock === 0n) {
+          // Judged on the CONTRACT clock. `effectiveBlock` and `expiryBlock`
+          // were written from the hook's `block.number`, which on Robinhood is
+          // Ethereum's (~26M) while `ctx.blockNumber` is the L2 head (~62M).
+          // Against the L2 number every live proposal read as expired and was
+          // never applied. See clock.ts.
+          const phase = pendingPhase(pending, ctx.contractBlockNumber)
+          if (phase === 'none') {
             out.push(notDue(`${label}: no proposal outstanding`))
             continue
           }
-          if (ctx.blockNumber < pending.effectiveBlock) {
+          if (phase === 'not-due') {
             out.push(
-              notDue(`${label}: proposal lands at block ${pending.effectiveBlock}, ${pending.effectiveBlock - ctx.blockNumber} to go`),
+              notDue(
+                `${label}: proposal lands at contract block ${pending.effectiveBlock}, ` +
+                  `${pending.effectiveBlock - ctx.contractBlockNumber} contract block(s) to go`,
+              ),
             )
             continue
           }
@@ -134,9 +144,9 @@ export function applyPendingConfigJob(targets: readonly WatchTarget[]): Job {
           // simulation on every tick for a proposal nobody can ever apply.
           // The legacy hook has no expiry (expiryBlock === null): there a
           // matured proposal stays armed until applied or retracted.
-          if (pending.expiryBlock !== null && pending.expiryBlock !== 0n && ctx.blockNumber > pending.expiryBlock) {
+          if (phase === 'expired') {
             out.push(
-              notDue(`${label}: proposal expired at block ${pending.expiryBlock}; the owner has to propose again`),
+              notDue(`${label}: proposal expired at contract block ${pending.expiryBlock}; the owner has to propose again`),
             )
             continue
           }

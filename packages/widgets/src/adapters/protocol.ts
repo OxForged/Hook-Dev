@@ -289,7 +289,11 @@ export interface LaunchInfo {
    * reproduces the same maths locally for the projected schedule.
    */
   readonly currentFeePips: number;
-  /** Block height the reads above were taken at. */
+  /**
+   * `block.number` as the launch hook sees it when the reads above were taken —
+   * the clock `startBlock` and `decayBlocks` are on. NOT `eth_blockNumber`: on
+   * an Arbitrum chain the two differ (Ethereum's block vs the L2 block).
+   */
   readonly readAtBlock: bigint;
   readonly source: DataSource;
 }

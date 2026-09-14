@@ -309,10 +309,11 @@ export function LaunchWizard(): ReactElement {
                     <small>
                       about{" "}
                       {formatDuration(
-                        blocksToSeconds(Number(form.decayBlocks) || 0, limits.blockTimeCentis),
+                        blocksToSeconds(Number(form.decayBlocks) || 0, limits.contractBlockTimeCentis),
                       )}{" "}
-                      at the {limits.blockTimeCentis / 100}s block time this kit was configured
-                      with. The contract counts blocks, not seconds.
+                      of real time: the hook&rsquo;s block advances every ~
+                      {limits.contractBlockTimeCentis / 100}s on this chain. The contract counts
+                      blocks, not seconds.
                     </small>
                   </label>
                 </>
@@ -332,9 +333,16 @@ export function LaunchWizard(): ReactElement {
                   onChange={(e) => set("startDelaySeconds", e.target.value)}
                 />
                 <small>
-                  Converted to a block count by the kit. Its ceiling is{" "}
-                  {limits.maxStartDelay.toString()} blocks, about{" "}
-                  {formatDuration(blocksToSeconds(limits.maxStartDelay, limits.blockTimeCentis))}.
+                  Converted to a block count by the kit at its configured{" "}
+                  {limits.blockTimeCentis / 100}s per block
+                  {limits.contractBlockTimeCentis !== limits.blockTimeCentis
+                    ? `, but the hook's block really takes ~${limits.contractBlockTimeCentis / 100}s, so trading opens about ${
+                        limits.contractBlockTimeCentis / limits.blockTimeCentis
+                      }x later than the seconds you enter`
+                    : ""}
+                  . Its ceiling is {limits.maxStartDelay.toString()} blocks, about{" "}
+                  {formatDuration(blocksToSeconds(limits.maxStartDelay, limits.contractBlockTimeCentis))}{" "}
+                  of real time.
                 </small>
               </label>
 

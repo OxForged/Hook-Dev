@@ -87,6 +87,8 @@
 
 import type { Address } from "viem";
 
+import type { ContractBlockClock } from "../chains/clock.js";
+
 /** Chains where Latch's shared core is deployed and verified. */
 export type LatchChainId = 4663 | 11155111;
 
@@ -165,6 +167,25 @@ export interface LatchDeployment {
    */
   readonly deployedAtBlock: bigint;
   readonly nativeCurrency: NativeCurrency;
+
+  /* -- clocks ------------------------------------------------------------- */
+
+  /**
+   * Which clock `block.number` follows INSIDE THE EVM on this chain.
+   *
+   * `"parent-l1"` on Arbitrum Nitro chains, where a contract sees Ethereum's
+   * block number while `eth_blockNumber` (and `deployedAtBlock` above) is the L2
+   * one. Every block number a Latch contract STORES is on this clock. Compare
+   * those against `readContractBlockNumber` from `chains/clock`, never against
+   * `getBlockNumber()`. See the header of `chains/clock.ts`.
+   */
+  readonly contractBlockClock: ContractBlockClock;
+  /**
+   * Real cadence of the contract-visible `block.number`, in hundredths of a
+   * second. NOT the RPC's block time, and NOT whatever a contract declared in
+   * its own `blockTimeCentis()` — those can be wrong, and on Robinhood they are.
+   */
+  readonly contractBlockTimeCentis: number;
 
   /* -- settlement core ---------------------------------------------------- */
 
@@ -353,6 +374,15 @@ export const LATCH_DEPLOYMENTS: Readonly<Record<LatchChainId, LatchDeployment>> 
     deployedAtBlock: 60111836n,
     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
 
+    /* Arbitrum Nitro. Measured 2026-09-13: eth_call NUMBER 25,972,228 while
+       eth_blockNumber read 62,397,593; the latest header's l1BlockNumber matched
+       NUMBER, and over 3,428 s of headers NUMBER advanced 283 (12.1 s each).
+       Mined-state proof: ERC20Votes 0x1eae…8888 checkpointed L2 block
+       62,356,430 at key 25,971,883, that block's l1BlockNumber. The RPC's own
+       0.102 s blocks are the LOG clock only. */
+    contractBlockClock: "parent-l1",
+    contractBlockTimeCentis: 1200,
+
     vault: "0x78e8359c6D34Df797b8A793dE8c7c6bffA97fB6c",
     clPoolManager: "0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66",
     binPoolManager: "0x1bB57b3A59b69f128700Ff59cC6EE22835aE6979",
@@ -470,6 +500,11 @@ timelockCustody: "0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
     isMainnet: false,
     deployedAtBlock: 11672600n,
     nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
+
+    /* An L1: NUMBER and eth_blockNumber are the same clock (both 11,699,528
+       when probed 2026-09-13), 12 s slots. */
+    contractBlockClock: "native",
+    contractBlockTimeCentis: 1200,
 
     vault: "0xCe3d133eb486b448A53437A5073619FbE424d01B",
     clPoolManager: "0xb7C8a11E0B359616eD06256783aF57114841F738",

@@ -72,9 +72,28 @@ const params = buildLaunchParams({
   preset: "FairLaunch", seed, startDelaySeconds: 3600,
 })
 
-// 3. Every objection, before a wallet is opened. blockTimeCentis comes off the kit.
-const issues = validateLaunchParams(params, { blockTimeCentis, maxDecayBlocks, maxStartDelayBlocks })
-console.log(describeLaunch(params, { blockTimeCentis }).decayWindow)   // "5m", not "3000 blocks"
+// 3. Every objection, before a wallet is opened. blockTimeCentis comes off the kit;
+//    contractBlockTimeCentis is the chain's REAL block.number cadence, from the address book.
+const { contractBlockTimeCentis } = LATCH_DEPLOYMENTS[4663]
+const limits = { blockTimeCentis, contractBlockTimeCentis, maxDecayBlocks, maxStartDelayBlocks }
+const issues = validateLaunchParams(params, limits)
+console.log(describeLaunch(params, limits).decayWindow)
+// On the live Robinhood kit: "10h", with declaredDecayWindow "5m" and clockStretch 120.
+```
+
+### Two block clocks
+
+On an Arbitrum Nitro chain — Robinhood Chain is one — `block.number` inside the EVM is
+Ethereum's block number (~12 s), while `eth_blockNumber` is the L2 block (~0.1 s). Every block
+number a Latch contract stores (`effectiveBlock`, `expiryBlock`, `startBlock`) is on the EVM
+clock. Compare them against `readContractBlockNumber(client, chainId)`, never against
+`getBlockNumber()`, and convert block counts to time with `contractBlocksToSeconds`. Keep
+`getBlockNumber()` for `eth_getLogs` ranges, which are L2.
+
+```ts
+const clock = await readContractClock(publicClient, 4663)
+clock.contractBlockNumber   // ~26M, what the hook compares against
+clock.rpcBlockNumber        // ~62M, the log clock
 ```
 
 ### Three traps these close
@@ -100,8 +119,9 @@ all-zero Custom as an error rather than a default.
 `MAX_DECAY_BLOCKS` and `MAX_START_DELAY` are immutables set per deployment from the chain's
 real block time — read them off the hook and pass them in. Hardcoding them is the twelve-second
 assumption that made them immutable in the first place. Likewise `blockTimeCentis`: read it
-from the kit. Robinhood's is `10` (0.10s per block), and on a chain that fast a duration
-written for 12-second blocks is off by more than two orders of magnitude.
+from the kit — it is what the kit USES, not what the chain does. Robinhood's live kit declares
+`10` (0.10 s), but its hook's `block.number` advances every ~12 s, so every window it resolves
+runs 120x longer than the seconds it was given. `contractBlockTimeCentis` is the real figure.
 
 `PRESET_PARAMS` mirrors the Solidity so a UI can render a schedule without an RPC call, and a
 test reads `LaunchPresets.sol` and asserts every field. The chain is still the authority:

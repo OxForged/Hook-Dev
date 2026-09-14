@@ -386,7 +386,7 @@ export function LaunchSchedulePanel(props: { readonly view: LaunchView }): JSX.E
           <div className="latch-meta">
             <span>{(feeSpanProgressBps / 100).toFixed(1)}% of the way to the final fee</span>
             <span className="latch-meta-value">
-              read at block {launch.readAtBlock.toLocaleString()}
+              read at hook block {launch.readAtBlock.toLocaleString()}
             </span>
           </div>
         </div>

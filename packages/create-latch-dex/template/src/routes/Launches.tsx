@@ -125,13 +125,25 @@ export function Launches(): ReactElement {
                     <dt>Schedule</dt>
                     <dd>
                       {formatPips(record.initialFeeBips)} to {formatPips(record.finalFeeBips)} over{" "}
-                      {record.decayBlocks.toLocaleString()} blocks (
-                      {formatDuration(blocksToSeconds(record.decayBlocks, bounds.blockTimeCentis))}{" "}
-                      at {bounds.blockTimeCentis / 100}s per block)
+                      {record.decayBlocks.toLocaleString()} blocks (about{" "}
+                      {formatDuration(blocksToSeconds(record.decayBlocks, bounds.contractBlockTimeCentis))}{" "}
+                      of real time: the hook&rsquo;s block advances every ~
+                      {bounds.contractBlockTimeCentis / 100}s
+                      {bounds.contractBlockTimeCentis !== bounds.blockTimeCentis
+                        ? `, not the ${bounds.blockTimeCentis / 100}s this kit was configured with`
+                        : ""}
+                      )
                     </dd>
 
                     <dt>Starts</dt>
-                    <dd className="mono">block {record.startBlock.toString()}</dd>
+                    <dd className="mono">
+                      hook block {record.startBlock.toString()}
+                      {record.phase === "scheduled"
+                        ? ` · in ~${formatDuration(
+                            blocksToSeconds(record.startBlock - scan.contractBlockNumber, bounds.contractBlockTimeCentis),
+                          )}`
+                        : ""}
+                    </dd>
 
                     <dt>Max buy per tx</dt>
                     <dd>
@@ -179,7 +191,12 @@ export function Launches(): ReactElement {
               <code>{shortAddress(kit)}</code> since block{" "}
               {scan.fromBlock.toString()}, at block {scan.atBlock.toString()}. Fees and status come
               from the hook at <code>{shortAddress(scan.hook)}</code>, read live rather than from
-              the creation event.
+              the creation event. Status is judged against the hook&rsquo;s own{" "}
+              <code>block.number</code> ({scan.contractBlockNumber.toString()})
+              {scan.contractBlockNumber !== scan.atBlock
+                ? ", which on this chain is a different clock from the RPC block above"
+                : ""}
+              .
             </Provenance>
           </>
         )}

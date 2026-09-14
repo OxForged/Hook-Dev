@@ -25,7 +25,7 @@
  * `LAUNCHPAD_KIT_ABI` and `LAUNCH_GUARD_HOOK_ABI` from `@latchprotocol/sdk`.
  */
 
-import { LAUNCHPAD_KIT_ABI, LAUNCH_GUARD_HOOK_ABI } from "@latchprotocol/sdk";
+import { LAUNCHPAD_KIT_ABI, LAUNCH_GUARD_HOOK_ABI, readContractClock } from "@latchprotocol/sdk";
 import type { TokenInfo } from "@latchprotocol/widgets";
 import { getAbiItem, type Address, type Hex } from "viem";
 
@@ -94,14 +94,22 @@ export interface LaunchRecord {
   /** True once the first swap has happened; the config is frozen from then on. */
   readonly launched: boolean;
   readonly phase: LaunchPhase;
-  /** Blocks until the decay finishes, or null once it has. */
+  /** HOOK blocks until the decay finishes, or null once it has. */
   readonly blocksRemaining: bigint | null;
 }
 
 export interface LaunchScan {
   readonly launches: readonly LaunchRecord[];
+  /** Log-scan range start, on the RPC (log) clock. */
   readonly fromBlock: bigint;
+  /** `eth_blockNumber` when scanned — the log clock. Not comparable to `startBlock`. */
   readonly atBlock: bigint;
+  /**
+   * `block.number` as `LaunchGuardHook` sees it. `startBlock` and `decayBlocks`
+   * are on this clock. On Robinhood it is Ethereum's block number, not the L2
+   * head, and comparing against the L2 head showed every launch as settled.
+   */
+  readonly contractBlockNumber: bigint;
   /** The hook the configured kit is welded to. Read off the kit, not assumed. */
   readonly hook: Address;
 }
@@ -124,11 +132,15 @@ export async function readLaunches(): Promise<LaunchScan> {
   const client = publicClient();
   const fromBlock = cfg.core.deployedAtBlock;
 
-  const [hook, logs, atBlock] = await Promise.all([
+  const [hook, logs, clock] = await Promise.all([
     client.readContract({ address: kit, abi: LAUNCHPAD_KIT_ABI, functionName: "hook" }),
     client.getLogs({ address: kit, event: LAUNCH_CREATED, fromBlock, toBlock: "latest" }),
-    client.getBlockNumber(),
+    /* Both clocks. Logs are indexed by the RPC's block; the hook's schedule is
+       on the EVM's `block.number`, which differs on Arbitrum chains. */
+    readContractClock(client, cfg.core.chainId),
   ]);
+  const atBlock = clock.rpcBlockNumber;
+  const contractBlock = clock.contractBlockNumber;
 
   const launches = await Promise.all(
     logs.map(async (log): Promise<LaunchRecord> => {
@@ -147,7 +159,7 @@ export async function readLaunches(): Promise<LaunchScan> {
       ]);
 
       const phase: LaunchPhase =
-        atBlock < startBlock ? "scheduled" : atBlock < endBlock ? "decaying" : "settled";
+        contractBlock < startBlock ? "scheduled" : contractBlock < endBlock ? "decaying" : "settled";
 
       return {
         poolId,
@@ -167,13 +179,13 @@ export async function readLaunches(): Promise<LaunchScan> {
         enabled: live?.enabled ?? false,
         launched: live?.launched ?? false,
         phase,
-        blocksRemaining: phase === "settled" ? null : endBlock - atBlock,
+        blocksRemaining: phase === "settled" ? null : endBlock - contractBlock,
       };
     }),
   );
 
   launches.sort((a, b) => Number(b.createdAtBlock - a.createdAtBlock));
-  return { launches, fromBlock, atBlock, hook };
+  return { launches, fromBlock, atBlock, contractBlockNumber: contractBlock, hook };
 }
 
 /** Thrown by `readLaunches` when `chain.launchpadKit` is null. */
@@ -225,17 +237,27 @@ async function readCurrentFee(hook: Address, poolId: Hex): Promise<number | null
  *
  * These are NOT hardcoded here, and the reason is specific: `MAX_DECAY_BLOCKS`
  * and `MAX_START_DELAY` are block counts, so their wall-clock meaning depends
- * entirely on the chain's block time. A million blocks is about 139 days at
- * 12 seconds and about 28 hours at a tenth of a second. A wizard that assumed
- * one of those would silently offer schedules the contract rejects.
+ * entirely on how fast the HOOK's `block.number` advances. That is not always
+ * the block time the RPC shows: on Robinhood Chain (Arbitrum) the hook sees
+ * Ethereum's block number, ~12 s per block, while the RPC's own blocks are
+ * ~0.1 s. The live kit declares 0.1 s, so its caps and presets run 120x longer
+ * in real time than the kit believes.
  */
 export interface LaunchBounds {
   readonly maxDecayBlocks: number;
   readonly maxStartDelay: bigint;
   readonly maxInitialFeeBips: number;
   readonly maxFinalFeeBips: number;
-  /** Hundredths of a second per block, as the kit was configured with. */
+  /**
+   * Hundredths of a second per block, AS THE KIT WAS CONFIGURED. The kit uses it
+   * to turn seconds into blocks. Not a fact about the chain.
+   */
   readonly blockTimeCentis: number;
+  /**
+   * Hundredths of a second per block as the hook REALLY experiences it, from the
+   * SDK address book (`contractBlockTimeCentis`). Every real-time figure uses this.
+   */
+  readonly contractBlockTimeCentis: number;
 }
 
 export async function readLaunchBounds(): Promise<LaunchBounds> {
@@ -268,10 +290,14 @@ export async function readLaunchBounds(): Promise<LaunchBounds> {
     maxInitialFeeBips: Number(maxInitialFee),
     maxFinalFeeBips: Number(maxFinalFee),
     blockTimeCentis: Number(blockTimeCentis),
+    contractBlockTimeCentis: cfg.core.contractBlockTimeCentis,
   };
 }
 
-/** Blocks converted to a rough duration, using the kit's own block time. */
+/**
+ * Blocks converted to a rough duration. Pass `contractBlockTimeCentis` for real
+ * time; pass the kit's `blockTimeCentis` only to show what the kit believes.
+ */
 export function blocksToSeconds(blocks: number | bigint, blockTimeCentis: number): number {
   return (Number(blocks) * blockTimeCentis) / 100;
 }

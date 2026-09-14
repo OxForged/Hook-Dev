@@ -51,6 +51,7 @@
  */
 
 import { encodeFunctionData, type Address, type Hex } from "viem";
+import { readContractBlockNumber } from "@latchprotocol/sdk";
 
 import {
   decodePendingConfig,
@@ -617,7 +618,12 @@ async function applyPendingConfig(
     };
   }
 
-  const blockNumber = await ctx.publicClient.getBlockNumber();
+  // The CONTRACT clock, not `getBlockNumber()`. `effectiveBlock` and `expiryBlock` were
+  // written from the hook's `block.number`, which on an Arbitrum Nitro chain (Robinhood,
+  // 4663) is Ethereum's block number (~26M) while the RPC head is the L2 block (~62M).
+  // Against the RPC head every queued proposal reads as expired. See the SDK's
+  // `chains/clock.ts`; it throws rather than substitute the wrong clock.
+  const blockNumber = await readContractBlockNumber(ctx.publicClient, ctx.chainId);
   if (blockNumber < effectiveBlock) {
     return {
       action: "applyPendingConfig",
@@ -626,10 +632,11 @@ async function applyPendingConfig(
       wouldSucceed: false,
       sent: false,
       reason:
-        `the pending config takes effect at block ${effectiveBlock}; ${effectiveBlock - blockNumber} block(s) to go.` +
+        `the pending config takes effect at contract block ${effectiveBlock}; ${effectiveBlock - blockNumber} contract block(s) to go ` +
+        `(block.number as the hook sees it, which is not eth_blockNumber on every chain).` +
         (shape === "legacy"
           ? " This hook returns the legacy 7-word PendingConfig, which has no expiry: once matured the proposal stays armed, applicable by anyone, until the owner cancels or freezes."
-          : ` It expires after block ${expiryBlock}.`),
+          : ` It expires after contract block ${expiryBlock}.`),
     };
   }
 
@@ -646,7 +653,7 @@ async function applyPendingConfig(
       due: false,
       wouldSucceed: false,
       sent: false,
-      reason: `the pending config expired at block ${expiryBlock}; it can no longer be applied and the pool owner has to propose it again.`,
+      reason: `the pending config expired at contract block ${expiryBlock}; it can no longer be applied and the pool owner has to propose it again.`,
     };
   }
 

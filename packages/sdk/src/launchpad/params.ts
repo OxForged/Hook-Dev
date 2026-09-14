@@ -122,10 +122,23 @@ export interface LaunchIssue {
 /** Deployment facts the validator cannot know and must not assume. */
 export interface LaunchLimits {
   /**
-   * From the kit's `blockTimeCentis()`. Hundredths of a second.
-   * Robinhood's kit is 10; a 12-second chain is 1200.
+   * From the kit's `blockTimeCentis()`. Hundredths of a second. This is what
+   * the KIT BELIEVES and uses to turn a preset's seconds into blocks — it is a
+   * conversion input, not a fact about the chain. The live Robinhood kit
+   * declares 10.
    */
   readonly blockTimeCentis: number;
+  /**
+   * The REAL cadence of `block.number` as the hook sees it, in hundredths of a
+   * second — `LatchDeployment.contractBlockTimeCentis` / `getContractClock`.
+   * Every "how long does this really last" answer uses this.
+   *
+   * Required, not defaulted to `blockTimeCentis`, because the two are 120x apart
+   * on Robinhood (declared 10, real 1200: an Arbitrum chain's EVM sees Ethereum
+   * block numbers) and defaulting one to the other is how "5 minutes" got
+   * printed above a window that lasts 10 hours.
+   */
+  readonly contractBlockTimeCentis: number;
   /**
    * From `LaunchGuardHook.MAX_DECAY_BLOCKS()` — SCREAMING_SNAKE on chain, and
    * there is no camelCase alias. A probe for `maxDecayBlocks()` reverts.
@@ -136,6 +149,25 @@ export interface LaunchLimits {
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+/**
+ * Real / declared block time, or `null` when they agree within a factor of 1.5.
+ * Tolerance, not equality: 10 vs a measured 10.2 is rounding, 10 vs 1200 is a
+ * different clock.
+ */
+function clockStretchOf(limits: LaunchLimits): number | null {
+  if (limits.blockTimeCentis <= 0 || limits.contractBlockTimeCentis <= 0) {
+    throw new RangeError("blockTimeCentis and contractBlockTimeCentis must be positive");
+  }
+  const ratio = limits.contractBlockTimeCentis / limits.blockTimeCentis;
+  return ratio > 1.5 || ratio < 1 / 1.5 ? ratio : null;
+}
+
+function formatStretch(stretch: number): string {
+  return stretch >= 1
+    ? `${Number.parseFloat(stretch.toFixed(1))}x longer than declared`
+    : `${Number.parseFloat((1 / stretch).toFixed(1))}x shorter than declared`;
+}
 
 /**
  * Every objection to a `LaunchParams`, cheapest checks first.
@@ -233,15 +265,21 @@ export function validateLaunchParams(p: LaunchParams, limits: LaunchLimits): rea
           "DecayWindowTooLong(uint256)",
         );
       }
-      /* decayBlocks is in BLOCKS while every other duration here is in seconds.
-         On a 0.102s chain the difference is 118x, so say what it means. */
+      /* decayBlocks is in BLOCKS while every other duration here is in seconds,
+         and the block is the CONTRACT's block — say what it really lasts. */
       if (p.decayBlocks > 0) {
-        const seconds = blocksToSeconds(p.decayBlocks, limits.blockTimeCentis);
+        const seconds = blocksToSeconds(p.decayBlocks, limits.contractBlockTimeCentis);
         if (seconds < 60) {
           warn(
             "decayBlocks",
             `${p.decayBlocks} blocks is only ${humanDuration(seconds)} on this chain ` +
-              `(${limits.blockTimeCentis / 100}s per block). decayBlocks is in BLOCKS, not seconds.`,
+              `(a contract block every ${limits.contractBlockTimeCentis / 100}s). decayBlocks is in BLOCKS, not seconds.`,
+          );
+        } else if (seconds > 7 * 86_400) {
+          warn(
+            "decayBlocks",
+            `${p.decayBlocks} blocks is ${humanDuration(seconds)} of real time on this chain ` +
+              `(a contract block every ${limits.contractBlockTimeCentis / 100}s). decayBlocks is in BLOCKS, not seconds.`,
           );
         }
       }
@@ -268,6 +306,18 @@ export function validateLaunchParams(p: LaunchParams, limits: LaunchLimits): rea
           "The values you set in those fields are ignored — set preset to Custom to use them.",
       );
     }
+    const stretch = clockStretchOf(limits);
+    if (stretch !== null) {
+      const blocks = secondsToBlocks(pp.windowSeconds, limits.blockTimeCentis);
+      warn(
+        "preset",
+        `Preset ${name} promises a ${humanDuration(pp.windowSeconds)} window, but this kit converts ` +
+          `seconds at ${limits.blockTimeCentis / 100}s per block while the hook's block.number advances ` +
+          `every ${limits.contractBlockTimeCentis / 100}s. The window is ${blocks} blocks, which really ` +
+          `lasts ${humanDuration(blocksToSeconds(blocks, limits.contractBlockTimeCentis))} ` +
+          `(${formatStretch(stretch)}).`,
+      );
+    }
     if (limits.maxDecayBlocks !== undefined) {
       const blocks = secondsToBlocks(pp.windowSeconds, limits.blockTimeCentis);
       if (blocks > limits.maxDecayBlocks) {
@@ -284,9 +334,18 @@ export function validateLaunchParams(p: LaunchParams, limits: LaunchLimits): rea
   /* ---- start delay ---- */
   if (p.startDelaySeconds < 0) {
     err("startDelaySeconds", "startDelaySeconds must not be negative.");
-  } else if (p.startDelaySeconds > 0 && limits.maxStartDelayBlocks !== undefined) {
+  } else if (p.startDelaySeconds > 0) {
     const blocks = secondsToBlocks(p.startDelaySeconds, limits.blockTimeCentis);
-    if (blocks > limits.maxStartDelayBlocks) {
+    const stretch = clockStretchOf(limits);
+    if (stretch !== null) {
+      warn(
+        "startDelaySeconds",
+        `A ${humanDuration(p.startDelaySeconds)} delay becomes ${blocks} blocks at this kit's declared ` +
+          `${limits.blockTimeCentis / 100}s per block, and trading really opens after ` +
+          `${humanDuration(blocksToSeconds(blocks, limits.contractBlockTimeCentis))} (${formatStretch(stretch)}).`,
+      );
+    }
+    if (limits.maxStartDelayBlocks !== undefined && blocks > limits.maxStartDelayBlocks) {
       err(
         "startDelaySeconds",
         `A ${humanDuration(p.startDelaySeconds)} delay is ${blocks} blocks on this chain, ` +
@@ -356,10 +415,24 @@ export interface LaunchSummary {
   readonly finalFee: string;
   /** Decay window in blocks, resolved through the preset where one applies. */
   readonly decayBlocks: bigint;
-  /** The same window as wall-clock time on THIS chain. The number that matters. */
+  /**
+   * The same window as REAL wall-clock time on this chain, at
+   * `contractBlockTimeCentis`. The number that matters.
+   */
   readonly decayWindow: string;
-  /** When trading opens, relative to the transaction landing. */
+  /**
+   * What the preset's own `windowSeconds` promises, or for Custom the window at
+   * the kit's declared block time. Equal to `decayWindow` on a correctly
+   * configured deployment; differs on the live Robinhood kit.
+   */
+  readonly declaredDecayWindow: string;
+  /** When trading really opens, relative to the transaction landing. */
   readonly opensAfter: string;
+  /**
+   * `contractBlockTimeCentis / blockTimeCentis` when they disagree by more than
+   * 1.5x, else `null`. 120 on the live Robinhood kit.
+   */
+  readonly clockStretch: number | null;
   readonly gated: boolean;
   readonly maxBuyPerTx: bigint;
   /** What this configuration does not protect against. Never empty. */
@@ -377,16 +450,26 @@ export interface LaunchSummary {
 export function describeLaunch(p: LaunchParams, limits: LaunchLimits): LaunchSummary {
   const preset = parsePreset(p.preset);
   const name = presetName(preset);
+  const stretch = clockStretchOf(limits);
+  /* The kit turns the delay into blocks at its DECLARED block time; the hook
+     then waits those blocks at the REAL one. */
+  const opensAfter =
+    p.startDelaySeconds === 0
+      ? "immediately"
+      : humanDuration(
+          blocksToSeconds(secondsToBlocks(p.startDelaySeconds, limits.blockTimeCentis), limits.contractBlockTimeCentis),
+        );
 
   if (name === "Custom") {
-    const seconds = blocksToSeconds(p.decayBlocks, limits.blockTimeCentis);
     return {
       preset: name,
       initialFee: formatPips(p.initialFeeBips),
       finalFee: formatPips(p.finalFeeBips),
       decayBlocks: BigInt(p.decayBlocks),
-      decayWindow: humanDuration(seconds),
-      opensAfter: p.startDelaySeconds === 0 ? "immediately" : humanDuration(p.startDelaySeconds),
+      decayWindow: humanDuration(blocksToSeconds(p.decayBlocks, limits.contractBlockTimeCentis)),
+      declaredDecayWindow: humanDuration(blocksToSeconds(p.decayBlocks, limits.blockTimeCentis)),
+      opensAfter,
+      clockStretch: stretch,
       gated: p.enabled,
       maxBuyPerTx: p.maxBuyPerTx,
       doesNotProtectAgainst:
@@ -402,8 +485,10 @@ export function describeLaunch(p: LaunchParams, limits: LaunchLimits): LaunchSum
     initialFee: formatPips(pp.initialFeeBips),
     finalFee: formatPips(pp.finalFeeBips),
     decayBlocks: blocks,
-    decayWindow: humanDuration(pp.windowSeconds),
-    opensAfter: p.startDelaySeconds === 0 ? "immediately" : humanDuration(p.startDelaySeconds),
+    decayWindow: humanDuration(blocksToSeconds(blocks, limits.contractBlockTimeCentis)),
+    declaredDecayWindow: humanDuration(pp.windowSeconds),
+    opensAfter,
+    clockStretch: stretch,
     gated: pp.enabled,
     maxBuyPerTx: p.maxBuyPerTx,
     doesNotProtectAgainst: pp.doesNotProtectAgainst,
