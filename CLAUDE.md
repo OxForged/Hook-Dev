@@ -1049,6 +1049,19 @@ The policy timelock holds only the descriptor and has **no CANCELLER_ROLE** for 
 (the custody timelock does). Low impact — the descriptor is cosmetic — but either move the
 descriptor to the Safe per the table or grant the role.
 
+**Also found 2026-09-13 (dapp governance audit, confirmed with `cast`):**
+
+- **The policy timelock has one READY operation**: `transferOwnership` (`0xf2fde38b`) targeting
+  `CLPositionDescriptorOffChain`. Executor is `address(0)`, so anyone can execute it. Before it
+  runs, decode the new owner from its calldata and check it is the Safe. If it names anything
+  else, have the proposer cancel it. The policy timelock has no canceller key.
+- **`Create3Factory` is owned by the shared-VPS EOA `0x304b…c9a9`**, and it is not in the tables
+  below. That makes it a decision nobody took. If that owner can gate or front-run deterministic
+  deploys, move it to the Safe. Otherwise, add a row saying why an EOA is acceptable.
+- **Dapp reads still start at nodeflare (1 request per 10 s).** Log scans now use their own
+  endpoint ordering (`LOG_RANGE_ENDPOINTS` in `packages/sdk/src/chains/endpoints.ts`), but point
+  reads do not. Moving the canonical Robinhood RPC first for reads is a pending decision.
+
 ### Protocol-level — governance owns these
 
 | Contract | Role | Assign to | Why |
