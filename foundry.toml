@@ -1,4 +1,9 @@
 [profile.default]
+# Every remapping below is explicit, as under legacy. Auto-detection walked the nested upstream
+# lib/infinity-core (initialized in some trees) and added forge-gas-snapshot/, erc4626-tests/ and
+# halmos-cheatcodes/ from the UNHARDENED core. Nothing here imports them, and nothing may
+# silently start resolving through that tree.
+auto_detect_remappings = false
 allow_paths = ["../core"]
 skip = [
     # Default (cancun) build: exclude only the storage backend it does not use.
