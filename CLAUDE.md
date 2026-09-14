@@ -257,6 +257,19 @@ packages/core/     LatchProtocol core (fork of pancakeswap/infinity-core)
 - To keep third-party hook authors out of GPL scope, the public SDK/interfaces package must be
   independently authored and MIT-licensed, so hook devs never import GPL code to build against us.
 
+## A chain's RPC block number and the EVM's `block.number` can be different clocks
+
+On Arbitrum Nitro/Orbit chains (Robinhood 4663 among them) `block.number` inside the EVM is the
+parent chain's block number; `eth_blockNumber` and header `number` are the L2 block. Block
+explorers, `cast block-number` and header timestamps measure the WRONG clock for any contract
+parameter.
+
+Before writing any block-denominated parameter, or any off-chain comparison against a
+contract-stored block number, measure `NUMBER` via `eth_call`:
+`cast call --create 0x436000524260205260406000f3 --rpc-url $RPC` returns (NUMBER, TIMESTAMP).
+Measure cadence over at least 2 minutes of chain time. Deploy scripts do this themselves
+(`ContractClockProbe`) and must keep doing it. Prefer `block.timestamp` for durations in new contracts.
+
 ## Build profiles — two backends, one source
 
 Target chains span both Cancun and pre-Cancun EVMs, so the settlement layer is compiled against
@@ -703,8 +716,8 @@ only works if it is written here rather than remembered.
 
 | Address | Record | State |
 |---|---|---|
-| `0x23CE34E8199927DD270dddd8579c947542bDE446` | retired in `packages/sdk/src/deployments/index.ts:373` | **Still hosts the only pool with liquidity** — LTT1/LTT2, `beneficiaryBps = 8000`, one roster entry, NOT frozen, `poolOwner = 0x304b…c9a9` (the shared-VPS key). Items 3, 3b, 4 and 5 all apply. |
-| `0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2` | current, `index.ts:395`; what the dapp reads | Runtime bytecode matches current `src/RevShareHook.sol` byte for byte. Items 3, 3b and 5 are FIXED; item 4 is unchanged by design; renounce reverts `RenounceDisabled`. No pools yet. |
+| `0x23CE34E8199927DD270dddd8579c947542bDE446` | retired in `packages/sdk/src/deployments/index.ts:373` | **Still hosts the only pool with liquidity** — LTT1/LTT2, `beneficiaryBps = 8000`, one roster entry, NOT frozen, `poolOwner = 0x304b…c9a9` (the shared-VPS key). Items 3, 4 and 5 apply; its 3,600-block delay is ~12 h and correct (§3b). |
+| `0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2` | current, `index.ts:395`; what the dapp reads | Runtime bytecode matches current `src/RevShareHook.sol` byte for byte. Items 3 and 5 are fixed in logic, BUT its delay (~60 days) and proposal TTL (~360 days) were sized for the wrong clock (§3b) - redeploy pending; item 4 is unchanged by design; renounce reverts `RenounceDisabled`. No pools yet. |
 
 Retiring a hook in the address book does not retire its pools. The hazards on `0x23CE` last
 as long as LTT1/LTT2 does. The cheapest mitigation is moving that pool's ownership off
@@ -789,65 +802,45 @@ irreversible half, so the rule is about ordering, not the roster.**
 `pendingBeneficiary` settled to dust on **both** currencies. Any UI offering the button
 must check these and refuse.
 
-> **CORRECTION IN PROGRESS, 2026-09-13 — the premise of this section is WRONG.** Robinhood
-> Chain is Arbitrum Nitro: inside the EVM, `block.number` is the **Ethereum L1 block number
-> (~12 s)**, not the L2 block number (~0.102 s). Measured: `eth_call` of the `NUMBER` opcode =
-> 25,972,155 = header `l1BlockNumber` = Ethereum's head, while `eth_blockNumber` = 62,388,681.
-> So `3600` on `0x23CE` is ~12 HOURS, and every duration "fixed" for 0.1 s blocks is ~120x too
-> LONG: `0xfC00`'s `CONFIG_DELAY_BLOCKS` 432,000 ≈ 60 days, its TTL ≈ 1 year, and
-> `LaunchpadKit`/`LaunchGuardHook` with `blockTimeCentis = 10` stretch every launch window
-> ~120x. Off-chain code comparing contract block numbers to `eth_blockNumber` mixes clocks.
-> **Do not act on the "118x short" rule below.** Measure `NUMBER` via eth_call before writing
-> any block-denominated parameter on any chain. A full audit and replacement text is pending.
+### 3b. Robinhood's contract clock is Ethereum's: every block-denominated value was sized for the wrong clock
 
-### 3b. `CONFIG_DELAY_BLOCKS` is six minutes on `0x23CE…E446`, not twelve hours
+Robinhood Chain (4663) is Arbitrum Nitro. Inside the EVM, `block.number` is the **Ethereum L1
+block number** (~12 s per block), not the L2 block the RPC reports (~0.102 s). Proven against
+mined state 2026-09-13: ERC20Votes `0x1eae…8888` checkpointed tx `0x2db9…51c7` (L2 block
+62,356,430, header `l1BlockNumber` 25,971,883) at key 25,971,883, and `getPastVotes` at the L2
+number reverts `ERC5805FutureLookup`. Arbitrum documents the same behaviour. 3,428 s of headers
+advanced `NUMBER` by 283: 12.11 s per contract block.
 
-**Applies to `0x23CE` only.** In `0xfC00` it is an immutable validated against a wall-clock
-window: reads `432000` blocks × `blockTimeCentis` 10 = 12h, constructor-bounded to 12h–14d
-(`RevShareHook.sol:529-535`). The retired hook reads `3600` on chain.
+Consequences, read on chain 2026-09-13 (nothing uses these contracts yet):
 
-Retired source (git `3c6edc8`, line 159) — `uint48 public constant CONFIG_DELAY_BLOCKS = 3600`, whose own
-docstring reads *"Roughly 12 hours at 12s blocks, or proportionally less on a faster chain -
-set by the deployer's chain choice, and documented rather than configurable so it cannot be
-shortened."*
+| Contract | Value | Meant | Really |
+|---|---|---|---|
+| `0x23CE` RevShareHook (retired) | `CONFIG_DELAY_BLOCKS` 3,600 | 12 h | **12 h — correct.** The old "six minutes" claim was false. No expiry (item 5 still applies). |
+| `0xfC00` RevShareHook | `CONFIG_DELAY_BLOCKS` 432,000 at `blockTimeCentis` 10 | 12 h | **60 days** |
+| `0xfC00` | `CONFIG_PROPOSAL_TTL_BLOCKS` 2,592,000 | 3 days | **360 days**: a matured proposal stays armed ~a year |
+| `0x8b4F` LaunchGuardHook | `MAX_DECAY_BLOCKS` = `MAX_START_DELAY` = 26,000,000 at 10 | 30 days | **~9.9 years**: the 180-day "no permanent tax" ceiling is void |
+| `0x2a4C` LaunchpadKit | `blockTimeCentis` 10 | presets 5 m / 30 m / 2 m | **10 h / 60 h / 4 h**; start delays 120× as typed |
 
-Robinhood produces a block every **0.102 s**, measured over 500,000 blocks (51,001 s). So:
+All three have zero pools, launches, proposals and registry listings, so a redeploy migrates
+nothing. Until then the UI states the real durations (PresetCurve, ProtocolPool, PoolOwnerActions).
 
-```
-3,600 blocks x 0.102 s = 367 seconds = 6.1 minutes
-```
+**Rule:** never compare a contract-stored block number (`effectiveBlock`, `expiryBlock`,
+`startBlock`, `registeredAtBlock`, votes timepoints) with `eth_blockNumber`. Use
+`readContractBlockNumber` from `@latchprotocol/sdk` (keeper: `src/clock.ts`). `eth_getLogs`
+ranges and `deployedAtBlock` stay on the L2 number. Against the L2 head, queued proposals read
+expired or armed, launches read settled, and the keeper never applied a proposal.
 
-The docstring anticipated the direction and not the magnitude. 118x shorter is not
-"proportionally less" — it is the mechanism defeated. The delay exists so a pool owner
-cannot land a fee rise in the same block as a large trade, *"a sandwich the trader cannot
-price"*. Six minutes of public notice, on a chain where nobody is watching a mempool for
-`proposeConfig`, does not achieve that.
-
-Compounded by item 5: a matured proposal never expires, so the practical sequence is
-propose once, wait six minutes, and hold an armed 10% fee indefinitely for the moment a
-large trade appears.
-
-**Unfixable on `0x23CE34E8199927DD270dddd8579c947542bDE446`** because the value is a
-`constant` in immutable code and LTT1/LTT2 is bound to that hook forever. Mitigation is
-procedural and thin: monitor `ConfigProposed(bytes32,uint48)` (the 2-arg event) on `0x23CE`
-and treat one as an incident. The redeploy fix — a constructor argument validated against a
-WALL-CLOCK floor — shipped in `0xfC00`. The same failure existed in `LaunchGuardHook`
-(`MAX_DECAY_BLOCKS` / `MAX_START_DELAY` as 1,000,000-block constants, **28 hours** here). It is
-FIXED in the deployed hook `0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c`, read on chain
-2026-09-13: `blockTimeCentis` = 10, `MAX_DECAY_BLOCKS` = `MAX_START_DELAY` = 26,000,000
-(~30 days at the declared 0.1 s), `MIN_LAUNCH_WINDOW_SECONDS` = 259,200 (3 days). `LaunchpadKit`'s
-constructor rejected Robinhood's block time outright until it was fixed.
-
-**The general rule, which is the actually useful output: this codebase was written assuming
-12-second blocks, and every duration expressed in blocks is 118x short on this chain.**
-Grep for `constant` on anything named `_BLOCKS`, `_DELAY` or `_PERIOD` before deploying
-another contract here, and prefer a wall-clock parameter with a block-time argument over a
-block count.
+**Deploy rule:** the three deploy scripts measure `NUMBER` against `TIMESTAMP` on the live chain
+(`packages/hooks/script/ContractClock.sol`, ~3 minutes of real waiting) and refuse to broadcast a
+`blockTimeCentis` outside 75–105% of the measurement. Robinhood's value is **1200**. The
+preferred redesign moves all durations to `block.timestamp` (sequencer-bounded at −24 h/+1 h on
+Nitro; `block.number` is equally sequencer-reported and varies by chain), so no block-time
+argument exists to get wrong.
 
 ### 4. `freezeConfig` is irreversible and cheaper than raising a fee
 
-Applies to both hooks. `proposeConfig` costs `CONFIG_DELAY_BLOCKS` (3600 blocks, ~6 min, on
-`0x23CE`; 432000 blocks, 12h, on `0xfC00`) and two transactions. `freezeConfig` is one call,
+Applies to both hooks. `proposeConfig` costs `CONFIG_DELAY_BLOCKS` (3600 blocks ≈ 12 h on
+`0x23CE`; 432,000 blocks ≈ **60 days** on `0xfC00`, mis-sized for 0.1 s blocks — see §3b) and two transactions. `freezeConfig` is one call,
 immediate, and permanently ends `proposeConfig`, `reduceFee`, `disable`,
 `setBeneficiaries` and `transferPoolOwnership` for that pool.
 
@@ -861,7 +854,7 @@ burn.**
 
 **Applies to `0x23CE` only.** Fixed in `0xfC00`: `reduceFee` and `disable` call `_clearPending`
 (`RevShareHook.sol:725,744`), and a proposal applies only inside `[effectiveBlock, expiryBlock]`
-(`:685`; `CONFIG_PROPOSAL_TTL_BLOCKS` = 2,592,000 = 3 days). Its `PendingConfig` is 8 words,
+(`:685`; `CONFIG_PROPOSAL_TTL_BLOCKS` = 2,592,000 ≈ **360 days** on Robinhood's real ~12 s contract clock, intended 3 days — see §3b). Its `PendingConfig` is 8 words,
 the retired one 7 — decode by length. Verified on an anvil fork: `disable` on `0x23CE` left
 the proposal armed. (The "stranger applies it days later" replay did not complete — RPC 429.)
 

@@ -134,8 +134,8 @@ table above is reading a contract that will answer.
 | `LatchRegistry` v2 | `0xb2c8BB7473A09b0906f192D69e30D7362fA988CC` | pool attestation — a hook can no longer show the registry one bitmap and core another |
 | `LatchTimelock` custody 48h | `0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119` | `CANCELLER_ROLE` on a separate key; `updateDelay` floor re-applied |
 | `LatchLaunchRegistry` | `0x6D10B4CeDb53aD50c5A1D83f27fcE9c5C3b15c94` | new — the shared launch index |
-| `RevShareHook` | `0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2` | config delay 6 min -> 12 real hours; proposal expiry; roster invariant |
-| `LaunchGuardHook` | `0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c` | first deployment; launch window 28 h -> ~30 days |
+| `RevShareHook` | `0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2` | config delay sized for 0.1 s blocks: 432,000 contract blocks = ~60 days on the real ~12 s clock (CLAUDE.md §3b); proposal expiry; roster invariant |
+| `LaunchGuardHook` | `0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c` | first deployment; caps 26,000,000 contract blocks = ~9.9 years on the real ~12 s clock, not 30 days (CLAUDE.md §3b) |
 | `LaunchpadKit` | `0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7` | first deployment; its constructor rejected this chain's block time until this week |
 
 Retired: `LatchRegistry 0xE4395085…`, `RevShareHook 0x23CE34E8…`,
