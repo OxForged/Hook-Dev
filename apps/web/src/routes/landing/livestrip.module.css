@@ -1,33 +1,33 @@
 /* ============================================================================
-   Live strip — four cells that prove the protocol is running.
-   Option B ("Institutional Clarity") treatment: b.html's `.kpis` row.
+   Protocol activity — the live KPI row and the fee-split chart beneath it.
+   Option B ("Institutional Clarity") treatment: b.html's `.kpis` row, then a
+   `.panel` holding one stacked bar with real ticks and the inverted `.tip`.
 
    B PRIMITIVE DUPLICATED LOCALLY (consolidate once landing.module.css carries
    it): `.strip` + `.cell` + `.label` + `.value` + `.note` are b.html's
    `.kpis` / `.kpi` / `.k` / `.v` / `.s`. SwapCost's `.breakdown` is the same
-   primitive.
+   primitive. Heading, toggle, panel, state card and provenance are COMPOSED
+   from ./primitives.module.css.
 
    The page width and gutter come from `.kpiBand` in landing.module.css,
    which index.tsx wraps around this component.
 
-   MOTION: a count-up on each cell's first real value (in LiveStrip.tsx), a
-   flash when a new block-height read lands, and the live dot. All three are
-   off under `prefers-reduced-motion`.
+   MOTION: a count-up on each cell's first real value, a flash when a new
+   block-height read lands, the live dot, and the bar growing from the left on
+   first view (chartMotion.ts `useFirstView`). All off under
+   `prefers-reduced-motion`.
 
    TOKENS ONLY. Every colour, radius, shadow and type size comes from
    src/styles/tokens.css, so `light-dark()` resolves both themes here.
 
    THE FOUR STATES ARE VISUALLY DISTINCT, not just textually. `data-state` on
-   the cell reassigns `--tone`, which paints the value and the note. A reader
-   glancing at the strip can see that a cell failed without reading a word.
+   a cell reassigns `--tone`; the panel's state card takes the primitives'
+   loading / error / empty shapes.
    ========================================================================== */
 
 .wrap {
-  /* The KPI row answers to its OWN width, not the viewport's, so the column
-     count is right whether or not any shell chrome sits beside it.
-
-     No max-width or gutter here: index.tsx wraps this in `.kpiBand`, which is
-     the column box. Declaring a second one doubled the gutter. */
+  /* The row answers to its OWN width, not the viewport's. No max-width or
+     gutter here: `.kpiBand` is the column box. */
   container-type: inline-size;
   position: relative;
   display: flex;
@@ -37,12 +37,46 @@
   min-width: 0;
 }
 
-/* b.html `.kpis`: the 1px gap over a hairline ground IS the divider, inside a
-   bordered, rounded box. One rule instead of per-cell borders that double at
-   the seams. */
+/* ---- heading row ---------------------------------------------------------- */
+
+.head {
+  composes: panelHead from './primitives.module.css';
+  align-items: flex-end;
+  margin-bottom: var(--s1);
+}
+
+.headText {
+  composes: panelHeadText from './primitives.module.css';
+}
+
+.title {
+  composes: panelTitle from './primitives.module.css';
+}
+
+.caption {
+  composes: panelCaption from './primitives.module.css';
+}
+
+.toggle {
+  composes: toggle from './primitives.module.css';
+}
+
+.tab {
+  composes: toggleSeg from './primitives.module.css';
+}
+
+.tabOn {
+  composes: toggleSegOn from './primitives.module.css';
+}
+
+/* ---- the KPI row ------------------------------------------------------------
+   b.html `.kpis`: the 1px gap over a hairline ground IS the divider. Five
+   cells; below the wide layout BLOCK takes a row of its own so the four
+   log-derived figures always sit in a full grid with no empty hairline slot. */
+
 .strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px;
   background: var(--hairline);
   border: 1px solid var(--hairline);
@@ -53,21 +87,22 @@
 .cell {
   display: flex;
   flex-direction: column;
-  /* Grid items default to min-content width; one long value would otherwise
-     push the whole strip wider than the viewport. */
   min-width: 0;
-  padding: 22px 22px 20px;
+  padding: 22px 20px 20px;
   background: var(--panel);
   --tone: var(--ink);
   --tone-weight: 600;
   --tone-note: var(--muted-ink);
 }
 
-/* ---- the four states, plus ready -----------------------------------------
-   `loading` and `empty` take b.html's `.v.zero` treatment (dimmed, lighter
-   weight); the two failures are louder. `unconfigured` is deliberately NOT
-   red: a contract deployed and not wired is a fact, not a fault. */
+.cellBlock {
+  /* Identity hook for the responsive rules below. */
+  min-width: 0;
+}
 
+/* `loading` and `empty` take b.html's `.v.zero` treatment; the failures are
+   louder. `unconfigured` is deliberately NOT red: a source that does not exist
+   on this chain is a fact, not a fault. */
 .cell[data-state="loading"],
 .cell[data-state="empty"] {
   --tone: var(--faint-ink);
@@ -84,10 +119,6 @@
   --tone-note: var(--error);
 }
 
-/* ---- contents ------------------------------------------------------------ */
-
-/* b.html `.kpi .k`. The label strings are uppercase in the markup, so they are
-   tracked lightly to read as labels rather than as shouting. */
 .label {
   font-family: var(--font-body);
   font-size: var(--b-label);
@@ -106,43 +137,24 @@
   margin-top: var(--s2);
 }
 
-/* b.html `.kpi .v`: sans, 600, tabular, tight tracking. Tabular because the
-   block height changes every poll and the digits must not reflow. */
+/* b.html `.kpi .v`, one step down from the four-cell row: five cells and a
+   token symbol on every figure. Tabular, because the block height changes
+   every poll and the digits must not reflow. */
 .value {
-  /* A little inline room so the update flash has a ground to paint, pulled
-     back by the same amount so the figure stays on the label's edge. */
   margin-inline: -4px;
   padding-inline: 4px;
   border-radius: var(--r-micro);
   font-family: var(--font-body);
-  font-size: var(--b-kpi);
-  line-height: 1.15;
+  font-size: var(--b-mini);
+  line-height: 1.2;
   font-weight: var(--tone-weight);
-  letter-spacing: -0.026em;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   color: var(--tone);
-  /* A chain name is words and wraps between them; a number never needs to. */
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   min-width: 0;
 }
 
-/* A value that is words (the chain name). b.html's KPI row only ever holds
-   figures, and a two-word name at --b-kpi wrapped onto two lines in a quarter
-   of the row. One type step down, on the SAME line box as a figure, so the
-   four values still share a baseline and the notes beneath stay level. If a
-   very narrow cell ever clips it, the full name is in the element's `title`
-   and in the cell's hidden text for assistive tech. */
-.valueText {
-  font-size: var(--b-mini);
-  line-height: calc(var(--b-kpi) * 1.15);
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* b.html `.kpi .s` is --dim (--faint-ink here), which fails 4.5:1 for
-   sentence-case prose; --muted-ink carries it. */
 .note {
   margin-top: var(--s1);
   font-size: var(--b-label);
@@ -151,10 +163,7 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- the live indicator ---------------------------------------------------
-   b.html `.pill i`: a small dot breathing in opacity only — no ring, no glow.
-   Decoration, `aria-hidden` in the markup, resting fully opaque so a paused
-   animation leaves a visible dot. */
+/* ---- the live indicator (decorative, aria-hidden) ------------------------- */
 .pulse {
   flex: none;
   width: 7px;
@@ -175,9 +184,7 @@
   }
 }
 
-/* ---- the update flash ----------------------------------------------------
-   One pass of the soft accent behind a value that a NEW read just replaced.
-   Never on the first value (that one counts up), never between reads. */
+/* One pass of the soft accent behind a value a NEW read just replaced. */
 .flash {
   animation: flash 900ms var(--ease);
 }
@@ -191,47 +198,336 @@
   }
 }
 
-/* The real value, for assistive tech; the painted figure is aria-hidden. */
 .sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
+  composes: sr from './primitives.module.css';
 }
 
-/* ---- provenance line ------------------------------------------------------
-   One quiet caption under the row. --muted-ink, not --faint-ink: it is
-   sentence-case prose and has to clear 4.5:1. */
-.provenance {
+/* ---- the chart panel ------------------------------------------------------ */
+
+.panel {
+  composes: panel from './primitives.module.css';
+  padding: 22px 26px;
+}
+
+.stateCard {
+  composes: stateCard from './primitives.module.css';
+  /* Inside a panel already: no second border or shadow, and a module's
+     height reserved so nothing jumps when the read lands. */
+  min-height: 150px;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+/* The primitives' error/empty grounds, re-applied: this card sits inside a
+   panel, so the rules above removed the border they would otherwise paint. */
+.stateCard[data-state="error"] {
+  padding: var(--s4);
+  border: 1px solid var(--dapp-badge-warn-border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--r-card);
+  background: var(--dapp-badge-warn-bg);
+}
+
+.stateCard[data-state="empty"] {
+  padding: var(--s4);
+  border: 1px dashed var(--dashed-rule);
+  border-radius: var(--r-card);
+}
+
+.splitState {
+  min-height: 110px;
+}
+
+.stateText {
+  composes: stateText from './primitives.module.css';
+}
+
+.stateDot {
+  composes: stateDot from './primitives.module.css';
+}
+
+.stateRaw {
+  composes: stateRaw from './primitives.module.css';
+}
+
+.split {
+  min-width: 0;
+}
+
+.splitHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s1) var(--s4);
+  margin-bottom: var(--s3);
+}
+
+.splitTitle {
   margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--b-caption);
+  font-weight: 640;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.splitTotal {
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-ink);
+}
+
+/* Width independent of the chart inside: it is drawn at this box's measured
+   width (see useMeasuredWidth). Overflow stays VISIBLE: the bar always fits
+   the measured width, and the tooltip hangs below the plot over the legend,
+   where a clipping box would cut it off. */
+.scroller {
+  contain: inline-size;
+  width: 100%;
+  min-width: 0;
+  overflow: visible;
+}
+
+.plot {
+  position: relative;
+}
+
+.svg {
+  display: block;
+  overflow: visible;
+}
+
+.track {
+  fill: var(--panel-alt);
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.tick {
+  stroke: var(--cta-border);
+  stroke-width: 1;
+}
+
+.axis {
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  fill: var(--faint-ink);
+}
+
+.bar {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  transform: scaleX(1);
+  transition: transform var(--b-reveal) var(--ease);
+}
+
+.barHidden {
+  transform: scaleX(0);
+  transition: none;
+}
+
+.seg {
+  transition: opacity var(--b-dur);
+}
+
+.plot[data-active] .seg:not(.segOn) {
+  opacity: 0.45;
+}
+
+/* Series hues. LP is the secondary series every landing chart uses; creators
+   take the roster hue tokens.css reserves (`--violet`); protocol is the
+   primary blue, as in FeeChart. */
+.segLp,
+.swLp {
+  fill: var(--chart-lp);
+  background: var(--chart-lp);
+}
+
+.segCreators,
+.swCreators {
+  fill: var(--violet);
+  background: var(--violet);
+}
+
+.segHolders,
+.swHolders {
+  fill: var(--amber);
+  background: var(--amber);
+}
+
+.segProtocol,
+.swProtocol {
+  fill: var(--latch-blue);
+  background: var(--latch-blue);
+}
+
+/* ---- hit targets: real buttons over each drawn segment -------------------- */
+
+.hits {
+  position: absolute;
+  inset: 0;
+}
+
+.hit {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--r-micro);
+}
+
+.hit:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+/* ---- tooltip (b.html `.tip`): the --tip-* tokens invert the theme ---------- */
+
+.tip {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 2px;
+  padding: 9px 11px;
+  background: var(--tip-bg);
+  color: var(--tip-ink);
+  border-radius: var(--r-btn);
+  box-shadow: var(--shadow-2);
+  font-size: var(--b-label);
+  line-height: 1.45;
+  pointer-events: none;
+  animation: tipIn var(--b-dur) var(--ease);
+}
+
+.tipHead {
+  font-weight: 640;
+}
+
+.tipRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s3);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tipMut,
+.tipFoot {
+  font-family: var(--font-body);
+  color: var(--tip-mut);
+}
+
+.tipFoot {
+  margin-top: 2px;
+  font-size: var(--b-axis);
+}
+
+@keyframes tipIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- legend: every segment, zeros included -------------------------------- */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s5);
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+}
+
+.legendLabel {
+  color: var(--ink);
+}
+
+.legendValue {
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.legendItem[data-zero] .swatch {
+  opacity: 0.4;
+}
+
+.swatch {
+  flex: none;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-micro);
+}
+
+/* The "why there is no line over time" note, in the panel's own voice. */
+.series {
+  margin: var(--s4) 0 0;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--hairline);
   font-size: var(--b-label);
   line-height: var(--b-body-lh);
   color: var(--muted-ink);
 }
 
+/* ---- provenance line ------------------------------------------------------ */
+
+.provenance {
+  composes: provenance from './primitives.module.css';
+  max-width: 110ch;
+}
+
+.provenance strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
 /* ---- responsive: against the row's own width ------------------------------ */
 
-@container (max-width: 860px) {
+@container (max-width: 980px) {
   .strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .cellBlock {
+    grid-column: 1 / -1;
   }
 }
 
-@container (max-width: 520px) {
-  .cell {
+@container (max-width: 640px) {
+  .strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .panel {
     padding: var(--s4);
   }
-  .value {
-    font-size: var(--b-mini);
+}
+
+@container (max-width: 400px) {
+  .strip {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .valueText {
-    font-size: var(--b-panel-h);
-    line-height: calc(var(--b-mini) * 1.15);
+  .cell {
+    padding: var(--s4);
   }
 }
 
@@ -240,5 +536,12 @@
   .flash {
     animation: none;
     opacity: 1;
+  }
+  .bar,
+  .seg {
+    transition: none;
+  }
+  .tip {
+    animation: none;
   }
 }

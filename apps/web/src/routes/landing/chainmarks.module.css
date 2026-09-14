@@ -1,0 +1,186 @@
+/* ============================================================================
+   ChainMarks — the live chain and the target chains, as marks in a row.
+
+   THE TILE IS DARK IN BOTH THEMES, AND THAT IS THE WHOLE TRICK.
+   Five official marks in public/chains/ are white or near-white on a
+   transparent ground (SOURCES.md: Linea White, X Layer White, Plasma white,
+   Stable #E8FBF7, Arc white fill) and would disappear on the light page.
+   Recolouring or swapping an asset is not allowed, so the GROUND changes
+   instead: every mark sits on the same neutral tile, `--ink` on the light
+   theme and `--panel-alt` on the dark one — both near-black. The coloured
+   marks (Ethereum, Base, BNB, Ink, Monad, Hyperliquid) read on it as well.
+   One tile for all, never a tile tinted to "match" a brand.
+
+   TOKENS ONLY. `light-dark()` over two tokens, each itself a `light-dark()`
+   colour, resolves per `color-scheme` exactly as tokens.css does.
+   ========================================================================== */
+
+.rows {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s5) var(--s7);
+  margin-top: var(--s5);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+/* DEPLOYED / TARGET badge tokens, as the unmounted `Chains()` tiles used. */
+.badge {
+  align-self: flex-start;
+  padding: 2px var(--s2);
+  border: 1px solid var(--badge-target-border);
+  border-radius: var(--r-badge);
+  background: var(--badge-target-bg);
+  color: var(--badge-target-ink);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+}
+
+.badgeLive {
+  border-color: var(--badge-live-border);
+  background: var(--badge-live-bg);
+  color: var(--badge-live-ink);
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-sm);
+  background: light-dark(var(--ink), var(--panel-alt));
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  outline: none;
+  transition:
+    transform var(--b-dur) var(--ease),
+    box-shadow var(--b-dur);
+}
+
+/* The live chain reads differently at a glance, without a colour of its own:
+   the live-badge hairline, doubled. */
+.tileLive {
+  box-shadow:
+    inset 0 0 0 1px var(--badge-live-border),
+    0 0 0 2px var(--badge-live-border);
+}
+
+.tile:hover,
+.tile:focus-visible {
+  transform: var(--b-btn-lift);
+}
+
+.tile:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    0 0 0 2px var(--latch-blue);
+}
+
+.markBox {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+}
+
+.mark {
+  width: 24px;
+  height: 24px;
+}
+
+/* An official mark keeps its own aspect ratio and colour: contain, no filter. */
+img.mark {
+  display: block;
+  object-fit: contain;
+}
+
+/* The typographic monogram, where no official mark exists. Light ink on the
+   dark tile in both themes. */
+span.mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  font-size: var(--b-axis);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: light-dark(var(--panel), var(--ink));
+}
+
+/* The name, on hover or focus: b.html's inverted `.tip` chip, above the tile. */
+.name {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 5;
+  padding: 5px 9px;
+  border-radius: var(--r-btn);
+  background: var(--tip-bg);
+  color: var(--tip-ink);
+  box-shadow: var(--shadow-2);
+  font-size: var(--b-label);
+  font-weight: 560;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity var(--b-dur),
+    transform var(--b-dur) var(--ease);
+}
+
+.tile:hover .name,
+.tile:focus-visible .name {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* The live chain's name is always shown beside it: the one fact this section
+   exists to state should not need a hover. */
+.liveName {
+  font-size: var(--b-caption);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile,
+  .name {
+    transition: none;
+  }
+  .tile:hover,
+  .tile:focus-visible {
+    transform: none;
+  }
+}
+
+/* The live tile already has its name beside it; a hover chip would repeat it. */
+.tileLive .name {
+  display: none;
+}

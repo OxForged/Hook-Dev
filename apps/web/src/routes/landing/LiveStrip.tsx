@@ -1,228 +1,187 @@
 /* ============================================================================
-   LIVE STRIP — four facts that prove the protocol is running, and nothing else.
+   PROTOCOL ACTIVITY — Block, Volume, Fees, Creator revenue, Protocol revenue,
+   and the chart of where one token's fees went.
 
-   Every cell is either READ FROM CHAIN or COUNTED FROM THE ADDRESS BOOK, and
-   each one says which. There is no constant here that a reader could mistake
-   for a measurement: no chain name typed out, no contract count typed out, no
-   fee percentage typed out. If a value cannot be read, the cell renders an em
-   dash and the reason — never a zero, never a cached figure, never an example.
+   Owner's request, 2026-09-13: "Volume FEES Creators Revenue BLOCK in a chart
+   on landing page." This replaced the Chain / Block / Fee / Contracts strip.
+   The chain name now sits in ChainMarks ("Live on"); the protocol's fee RATE
+   is FeeChart's subject directly below; the contract count left with the
+   addresses, for the docs.
 
-   WHY THAT IS SPELLED OUT RATHER THAN ASSUMED. CLAUDE.md records the failure
-   this rule came from: a log scan the endpoint refused surfaced as `0`, and the
-   landing page announced "0 POOLS INITIALIZED" over a chain holding a live
-   pool. A zero that means "we could not look" is indistinguishable from a zero
-   that means "none", and the reader has no way to tell which they are seeing.
-   So the states are separated in the type, not just in the copy:
+   EVERY FIGURE IS READ, AND EACH SAYS HOW:
+     BLOCK             `eth_blockNumber`, polled.
+     VOLUME / FEES /   `lib/protocolActivity.ts`: Swap and RevShareTaken logs
+     CREATOR / PROTOCOL  over the protocol's whole history, with the cut
+                       checked against `RevShareHook.totalTaken`.
+   Nothing is typed out, nothing is priced, and no dollar sign appears.
 
+   WHY THERE IS NO TIME SERIES. On Robinhood the protocol's entire swap history
+   is two swaps, 24 blocks apart. A line through two points is a drawing, not a
+   trend, so the chart is a share-of-fees bar and the panel says why in words.
+   The wording is computed from the swap count, so it cannot outlive the fact.
+
+   THE STATES ARE SEPARATED IN THE TYPE, not just in the copy:
      loading        the read is in flight
-     ready          a value came back — including a REAL zero, which is a
-                    measurement and is rendered as a number
+     ready          a value came back — including a REAL zero, rendered as a
+                    number, because it is a measurement
      error          the chain would not answer; the reason is shown verbatim
      empty          the answer came back and there is nothing in it
-     unconfigured   the contract exists but is not wired, so there is no
-                    number to have an opinion about
-
-   This strip deliberately does NOT duplicate StatsStrip. That one counts pool
-   and swap history from logs (which the public Robinhood endpoints refuse, so
-   it renders em dashes today). This one carries only O(1) reads that always
-   answer, plus two facts derived from the address book.
+     unconfigured   the source does not exist on this chain (no RevShareHook),
+                    so there is no number to have an opinion about
    ========================================================================== */
 
 import { useEffect, useRef, useState } from 'react'
 
+import { ACTIVE_CHAIN_ID, DEPLOYMENTS, readBlockNumber } from '../../lib/chain'
 import {
-  ACTIVE_CHAIN_ID,
-  DEPLOYMENTS,
-  readBlockNumber,
-  readProtocolStatus,
-  type ProtocolStatus,
-} from '../../lib/chain'
+  formatTokenAmount,
+  readProtocolActivity,
+  type ProtocolActivity,
+  type TokenActivity,
+} from '../../lib/protocolActivity'
+import { FeeSplit } from './FeeSplit'
 import styles from './livestrip.module.css'
 import { cx, prefersReducedMotion } from './ui'
 
-/** The chain this build serves. Never a spelled-out name: see landing/data.ts. */
+/** The chain this build serves. Never a spelled-out name. */
 const CHAIN = DEPLOYMENTS[ACTIVE_CHAIN_ID]
 
 /**
  * How often the head is re-read.
  *
- * NOT once per block. Robinhood produces a block every 0.102s — measured over
- * 500,000 blocks, and the same 118x-faster clock that makes every block-denominated
- * constant in this codebase wrong (CLAUDE.md, `CONFIG_DELAY_BLOCKS`). Polling at
- * chain speed would be ten `eth_blockNumber` calls a second against endpoints
- * that already rate-limit this app out of its log scans, to animate a digit
- * nobody can read at that rate.
- *
- * Three seconds is a compromise with one honest consequence: the number shown
- * is the head as of the last poll and can be ~30 blocks behind. That is fine —
- * it is a real height that really existed. What would NOT be fine is a
- * client-side counter incrementing between polls: that is an invented number,
- * and it would be invented at 0.102s intervals.
+ * NOT once per block. Robinhood produces a block every 0.102s — the same
+ * 118x-faster clock that makes every block-denominated constant in this
+ * codebase wrong (CLAUDE.md, `CONFIG_DELAY_BLOCKS`). Polling at chain speed
+ * would be ten calls a second against endpoints that rate-limit, to animate a
+ * digit nobody can read at that rate. The figure shown is the head as of the
+ * last poll, and nothing increments it between polls: that would be invented.
  */
 const BLOCK_POLL_MS = 3_000
-
-/** What an address looks like. Used to count the address book, never to make one. */
-const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
 
 /** Rendered wherever a value could not be read. Never a `0`. */
 const UNREAD = '—'
 
-/**
- * Contracts recorded for this chain, COUNTED rather than stated.
- *
- * A literal here would be a number that decays the moment a contract is added
- * or a redeploy lands, and it would decay silently — the failure mode of every
- * hand-maintained mirror in this repo. Counting the address book means the
- * figure is wrong only if the address book is wrong, and the address book is
- * what everything else reads too.
- *
- * `null` is excluded by construction: the SDK writes `null` for a contract that
- * does not exist on a chain and never a zero address (see the header of
- * `packages/sdk/src/deployments/index.ts`), and `typeof null !== 'string'`.
- * Nested values — the token table, the reference pool, the native currency —
- * are objects and never match either.
- *
- * PROVENANCE, stated in the cell: this counts every address the book records
- * for this chain, which includes canonical externals we did not deploy
- * (Permit2, the wrapped native token) and the governance Safe. It is a count of
- * records, not a `getCode` sweep — it says what is wired up, not what has
- * bytecode this second.
- */
-function countAddresses(record: object): number {
-  // `Object.values` on an interface with mixed value types resolves to the
-  // `any[]` overload. Widening to `unknown[]` keeps the strictness the repo
-  // asks for without a cast to a lie.
-  const values: readonly unknown[] = Object.values(record)
-  return values.filter((v) => typeof v === 'string' && ADDRESS_RE.test(v)).length
-}
-
-const CONTRACT_COUNT = countAddresses(CHAIN)
-
-/**
- * Pips to a percentage. 999 -> "0.0999%".
- *
- * A unit conversion, not the fee formula. The split arithmetic — how a protocol
- * fee and an LP fee compose — lives in the controller and is deliberately not
- * reproduced here; `feeForLpFee` on chain already applied it.
- */
-const pct = (pips: number): string => `${(pips / 10_000).toFixed(4)}%`
+const n = (v: bigint | number): string => v.toLocaleString('en-US')
+const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : 'unreachable')
 
 /* ---------------------------------------------------------------------------
    State
    --------------------------------------------------------------------------- */
 
-type Status =
+type Head = { k: 'loading' } | { k: 'error'; message: string } | { k: 'ready'; height: bigint }
+
+type Activity =
   | { k: 'loading' }
   | { k: 'error'; message: string }
-  | { k: 'ready'; status: ProtocolStatus }
+  | { k: 'ready'; a: ProtocolActivity }
 
-type Head =
-  | { k: 'loading' }
-  | { k: 'error'; message: string }
-  | { k: 'ready'; height: bigint }
-
-/** One cell's answer. The four failure shapes are distinct on purpose. */
+/** One cell's answer. The failure shapes are distinct on purpose. */
 type Cell =
   | { k: 'loading' }
   | { k: 'ready'; value: string; note: string }
   | { k: 'error'; reason: string }
-  | { k: 'empty'; reason: string }
+  | { k: 'empty'; value: string; reason: string }
   | { k: 'unconfigured'; reason: string }
 
-const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : 'unreachable')
+/** A token's display unit. Raw base units are said out loud, never scaled by a guess. */
+function unitOf(t: TokenActivity): string {
+  const sym = t.symbol ?? `${t.address.slice(0, 6)}…${t.address.slice(-4)}`
+  return t.decimals === null ? `${sym} base units` : sym
+}
 
 /* ---------------------------------------------------------------------------
    Cells
    --------------------------------------------------------------------------- */
 
-/**
- * The chain. Read from the address book, which is where the identity of a
- * deployment target legitimately lives — it is not a measurement and is not
- * presented as one.
- */
-const chainCell: Cell = {
-  k: 'ready',
-  value: CHAIN.name,
-  note: `chain id ${CHAIN.chainId}`,
-}
-
-function contractsCell(): Cell {
-  /* Zero would be a truthful answer here — it would mean the book records
-     nothing for this chain — but it is a different statement from "we could not
-     read it", so it gets its own state rather than a bare `0`. */
-  if (CONTRACT_COUNT === 0) {
-    return { k: 'empty', reason: `no addresses are recorded for ${CHAIN.name}` }
-  }
-  return {
-    k: 'ready',
-    value: String(CONTRACT_COUNT),
-    note: 'addresses in the book, externals included',
-  }
-}
-
 function headCell(h: Head): Cell {
   if (h.k === 'loading') return { k: 'loading' }
-  /* No last-known-good fallback. A height frozen at its last successful read,
-     still captioned "live", is the most convincing wrong number this page could
-     print — the format is right, the digits are plausible, and only the clock
-     disagrees. Better to say the poll failed and let the next one recover. */
+  /* No last-known-good fallback: a frozen height still captioned "live" is the
+     most convincing wrong number this page could print. */
   if (h.k === 'error') return { k: 'error', reason: `${CHAIN.name} is unreachable — ${h.message}` }
-  return {
-    k: 'ready',
-    value: h.height.toLocaleString('en-US'),
-    note: `re-read every ${BLOCK_POLL_MS / 1000}s`,
-  }
+  return { k: 'ready', value: n(h.height), note: `re-read every ${BLOCK_POLL_MS / 1000}s` }
 }
 
-function feeCell(s: Status): Cell {
+/** The shared non-ready answers for the four log-derived cells. */
+function pending(s: Activity): Cell | null {
   if (s.k === 'loading') return { k: 'loading' }
-  if (s.k === 'error') return { k: 'error', reason: `${CHAIN.name} is unreachable — ${s.message}` }
-
-  const p = s.status
-
-  /* The controller being DEPLOYED and the controller being IN FORCE are
-     different facts, and only the pool manager knows the second one. When
-     `protocolFeeController()` reads address(0) there is no rate to quote:
-     quoting the controller's own configured figure would describe a contract
-     that charges nobody. `readProtocolStatus` already settles this. */
-  if (!p.controllerWired) {
-    return {
-      k: 'unconfigured',
-      reason: `no fee controller is wired to the pool manager on ${CHAIN.name}`,
-    }
+  if (s.k === 'error') return { k: 'error', reason: `${CHAIN.name} logs unreachable — reason below` }
+  if (s.a.swapCount === 0 && s.a.tokens.length === 0) {
+    return { k: 'empty', value: '0', reason: `no swaps in blocks ${n(s.a.fromBlock)}–${n(s.a.toBlock)}` }
   }
+  return null
+}
 
-  /* `effectiveFeePips` is zero when the guardian has switched fees off. That
-     zero is a MEASUREMENT — the protocol really does take nothing — so it is
-     rendered as a number, unlike the em dashes above. The note carries the
-     reason so the two zeros can never be confused. */
+function volumeCell(s: Activity, t: TokenActivity | undefined): Cell {
+  const p = pending(s)
+  if (p || s.k !== 'ready' || !t) return p ?? { k: 'loading' }
+  const u = unitOf(t)
   return {
     k: 'ready',
-    value: pct(p.effectiveFeePips),
-    note: p.feesDisabled
-      ? 'fees are switched off at the controller'
-      : `${(p.splitRatio / 10_000).toFixed(0)}% of a 0.30% pool's fee`,
+    value: `${formatTokenAmount(t.volumeIn, t.decimals)} ${u}`,
+    note:
+      t.swapsIn === 0
+        ? `no swap paid in ${u} (of ${n(s.a.swapCount)})`
+        : `paid in, ${n(t.swapsIn)} of ${n(s.a.swapCount)} swap${s.a.swapCount === 1 ? '' : 's'}`,
   }
 }
 
-/* ---------------------------------------------------------------------------
-   View
-   --------------------------------------------------------------------------- */
+function feesCell(s: Activity, t: TokenActivity | undefined): Cell {
+  const p = pending(s)
+  if (p || s.k !== 'ready' || !t) return p ?? { k: 'loading' }
+  const swapFee = t.lpSwapFee + t.protocolSwapFee
+  const cut = t.cutLp + t.cutCreators + t.cutHolders
+  const f = (v: bigint): string => formatTokenAmount(v, t.decimals)
+  return {
+    k: 'ready',
+    value: `${f(swapFee + cut)} ${unitOf(t)}`,
+    note: `swap fee ${f(swapFee)} + Latch cut ${f(cut)}`,
+  }
+}
+
+function creatorCell(s: Activity, t: TokenActivity | undefined): Cell {
+  const p = pending(s)
+  if (p || s.k !== 'ready' || !t) return p ?? { k: 'loading' }
+  if (s.a.cutHooks === 0) {
+    return { k: 'unconfigured', reason: `no Latch RevShareHook is configured on ${CHAIN.name}` }
+  }
+  return {
+    k: 'ready',
+    value: `${formatTokenAmount(t.cutCreators, t.decimals)} ${unitOf(t)}`,
+    note:
+      s.a.cutCheck.k === 'verified'
+        ? 'beneficiary roster · matches totalTaken'
+        : s.a.cutCheck.k === 'unavailable'
+          ? 'beneficiary roster · no counter to check against'
+          : 'beneficiary roster share of the Latch cut',
+  }
+}
+
+function protocolCell(s: Activity, t: TokenActivity | undefined): Cell {
+  const p = pending(s)
+  if (p || s.k !== 'ready' || !t) return p ?? { k: 'loading' }
+  const f = (v: bigint): string => formatTokenAmount(v, t.decimals)
+  const u = unitOf(t)
+  /* A zero here is a MEASUREMENT: every swap's own `protocolFee` field said
+     so. It renders as a number, and the note says why it is zero. */
+  const why =
+    t.swapsIn === 0
+      ? `no swap paid in ${u}`
+      : t.protocolFeeSwaps === 0
+        ? `no swap carried a protocol fee`
+        : 'protocol slice of the swap fee'
+  return {
+    k: 'ready',
+    value: `${f(t.protocolSwapFee)} ${u}`,
+    note: `${why} · ${f(t.protocolAccrued)} uncollected`,
+  }
+}
 
 /* ---------------------------------------------------------------------------
    Motion: a count-up on the FIRST real value, and a flash on each real update.
-
-   WHAT THIS IS NOT. It is not a ticker. Nothing increments between reads: the
-   count-up runs once, from zero to a value that has already come back from
-   the chain, and is over in under a second; after that every change on screen
-   is a new read landing, marked by a brief flash. A counter animating between
-   polls would be an invented number — exactly what BLOCK_POLL_MS's note rules
-   out.
-
-   Under `prefers-reduced-motion` neither runs: the value is simply shown.
+   Nothing increments between reads. Off under `prefers-reduced-motion`.
    --------------------------------------------------------------------------- */
 
-/** Prefix, a grouped/decimal number, suffix. "0.0999%" -> "", "0.0999", "%". */
+/** Prefix, a grouped/decimal number, suffix. "0.005994 LTT1" -> "", "0.005994", " LTT1". */
 const NUMERIC = /^([^0-9]*)(\d[\d,]*(?:\.\d+)?)(.*)$/
 const COUNT_MS = 900
 
@@ -238,7 +197,7 @@ function useCountOnce(value: string | null): { text: string | null; flash: numbe
     if (started.current) {
       if (value !== last.current) {
         last.current = value
-        setFlash((n) => n + 1)
+        setFlash((x) => x + 1)
       }
       return
     }
@@ -257,8 +216,8 @@ function useCountOnce(value: string | null): { text: string | null; flash: numbe
     if (!Number.isFinite(target) || target === 0) return
     const decimals = (plain.split('.')[1] ?? '').length
     const grouped = digits.includes(',')
-    const format = (n: number): string => {
-      const fixed = n.toFixed(decimals)
+    const format = (x: number): string => {
+      const fixed = x.toFixed(decimals)
       const body = grouped
         ? Number(fixed).toLocaleString('en-US', {
             minimumFractionDigits: decimals,
@@ -285,8 +244,6 @@ function useCountOnce(value: string | null): { text: string | null; flash: numbe
 
     return () => {
       cancelAnimationFrame(frame)
-      /* An interrupted count (StrictMode's dev double-run, or a fast unmount)
-         is not a completed first load; let the next run start it again. */
       if (!finished) started.current = false
       setAnim(null)
     }
@@ -301,47 +258,36 @@ function CellView({
   liveRegion = false,
   pulse = false,
   flashOnUpdate = false,
-  text = false,
+  className,
 }: {
   label: string
   cell: Cell
-  /**
-   * The value is WORDS, not a figure (the chain name). Set a step smaller on
-   * the same line box as the figures beside it, so it neither wraps at KPI
-   * size nor drops the row out of line.
-   */
-  text?: boolean
   /** Announce changes politely. Only the block height needs this. */
   liveRegion?: boolean
   /** Show the live indicator when the cell is ready. Purely decorative. */
   pulse?: boolean
   /** Flash the value when a NEW real read replaces the previous one. */
   flashOnUpdate?: boolean
+  className?: string | undefined
 }) {
-  const real = cell.k === 'ready' ? cell.value : null
-  const counted = useCountOnce(real)
-  const value = real !== null ? (counted.text ?? real) : cell.k === 'loading' ? '·' : UNREAD
+  const real = cell.k === 'ready' || cell.k === 'empty' ? cell.value : null
+  const counted = useCountOnce(cell.k === 'ready' ? cell.value : null)
+  const value =
+    cell.k === 'ready' ? (counted.text ?? cell.value) : cell.k === 'empty' ? cell.value : cell.k === 'loading' ? '·' : UNREAD
   const note =
     cell.k === 'ready' ? cell.note : cell.k === 'loading' ? `reading ${CHAIN.name}…` : cell.reason
 
   return (
-    <div className={styles['cell']} data-state={cell.k}>
+    <div className={cx(styles['cell'], className)} data-state={cell.k}>
       <span className={styles['label']}>{label}</span>
       <span className={styles['valueRow']}>
         {pulse && cell.k === 'ready' ? <i className={styles['pulse']} aria-hidden="true" /> : null}
         {/* The painted figure is aria-hidden: mid count-up it is a frame of an
-            animation, not a value, and must never be announced as one. The
-            real value is exposed beside it. Keyed on the flash count so each
-            new read restarts the flash. */}
+            animation, not a value. The real value is exposed beside it. */}
         <span
           key={counted.flash}
-          className={cx(
-            styles['value'],
-            text && styles['valueText'],
-            flashOnUpdate && counted.flash > 0 && styles['flash'],
-          )}
+          className={cx(styles['value'], flashOnUpdate && counted.flash > 0 && styles['flash'])}
           aria-hidden="true"
-          title={text && real !== null ? real : undefined}
         >
           {value}
         </span>
@@ -358,46 +304,83 @@ function CellView({
   )
 }
 
-export function LiveStrip() {
-  const [status, setStatus] = useState<Status>({ k: 'loading' })
-  const [head, setHead] = useState<Head>({ k: 'loading' })
+/* ---------------------------------------------------------------------------
+   Words that depend on the reading
+   --------------------------------------------------------------------------- */
 
-  /* Read once. The fee is configuration, not a ticker: it changes when
-     governance changes it, which is a queued operation behind a timelock, not
-     something that moves between two frames of a landing page. */
+/** Why there is no line over time, computed from the swap count. */
+function seriesNote(a: ProtocolActivity): string {
+  const count = a.swapCount
+  const blocks = a.swapBlocks
+  const first = blocks[0]
+  const last = blocks[blocks.length - 1]
+  if (count === 0 || first === undefined || last === undefined) return ''
+  if (count <= 2) {
+    const where =
+      blocks.length === 1
+        ? `at block ${n(first)}`
+        : `at blocks ${n(first)} and ${n(last)}, ${n(last - first)} blocks apart`
+    return (
+      `No chart over time: the protocol’s whole history is ${count === 1 ? 'one swap' : 'two swaps'}, ${where}. ` +
+      `${count === 1 ? 'One reading' : 'Two readings'} cannot make a trend, so these are lifetime totals, not a line.`
+    )
+  }
+  return (
+    `${n(count)} swaps between blocks ${n(first)} and ${n(last)}. ` +
+    'These are lifetime totals; no series over time is drawn on this page.'
+  )
+}
+
+function cutCheckText(a: ProtocolActivity): string {
+  switch (a.cutCheck.k) {
+    case 'verified':
+      return `each pool’s sum equal to its totalTaken counter (${n(a.cutCheck.pairs)} checked)`
+    case 'unavailable':
+      return (
+        `${n(a.cutCheck.verified)} of ${n(a.cutCheck.pairs)} checked against totalTaken; ` +
+        'the rest are on a hook that predates that counter'
+      )
+    case 'none':
+      return 'with nothing yet to check against totalTaken'
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   View
+   --------------------------------------------------------------------------- */
+
+export function LiveStrip() {
+  const [head, setHead] = useState<Head>({ k: 'loading' })
+  const [activity, setActivity] = useState<Activity>({ k: 'loading' })
+  const [selected, setSelected] = useState(0)
+
+  /* One read per session: `readProtocolActivity` caches its promise. Started
+     after mount, so it never holds up first paint. */
   useEffect(() => {
     let off = false
-    readProtocolStatus()
-      .then((s) => !off && setStatus({ k: 'ready', status: s }))
-      .catch((e) => !off && setStatus({ k: 'error', message: reasonOf(e) }))
+    readProtocolActivity()
+      .then((a) => !off && setActivity({ k: 'ready', a }))
+      .catch((e: unknown) => !off && setActivity({ k: 'error', message: reasonOf(e) }))
     return () => {
       off = true
     }
   }, [])
 
-  /* Poll the head. See BLOCK_POLL_MS for why this is not per-block. */
+  /* Poll the head. One request at a time: a poll fired while the previous one
+     is in flight turns a slow RPC into a queue that never drains. */
   useEffect(() => {
     let off = false
-    /* One request at a time. These endpoints rate-limit by request count, and a
-       poll that fires while the previous one is still in flight turns a slow
-       RPC into a queue that never drains. */
     let inFlight = false
-
     const tick = (): void => {
       if (inFlight) return
       inFlight = true
       readBlockNumber()
-        .then((h) => {
-          if (!off) setHead({ k: 'ready', height: h })
-        })
-        .catch((e) => {
-          if (!off) setHead({ k: 'error', message: reasonOf(e) })
-        })
+        .then((h) => !off && setHead({ k: 'ready', height: h }))
+        .catch((e: unknown) => !off && setHead({ k: 'error', message: reasonOf(e) }))
         .finally(() => {
           inFlight = false
         })
     }
-
     tick()
     const timer = window.setInterval(tick, BLOCK_POLL_MS)
     return () => {
@@ -406,25 +389,118 @@ export function LiveStrip() {
     }
   }, [])
 
+  const tokens = activity.k === 'ready' ? activity.a.tokens : []
+  const token = tokens[selected] ?? tokens[0]
+  const unit = token ? unitOf(token) : null
+
   return (
-    <section
-      /* No `.section` box: this is full-bleed chrome above the hero, not a
-         section of content. Its own `.wrap` supplies the inner gutter. */
-      className={styles['wrap']}
-      aria-label={`Live protocol status on ${CHAIN.name}`}
-    >
-      <div className={styles['strip']}>
-        <CellView label="CHAIN" cell={chainCell} text />
-        <CellView label="BLOCK" cell={headCell(head)} liveRegion pulse flashOnUpdate />
-        <CellView label="FEE" cell={feeCell(status)} />
-        <CellView label="CONTRACTS" cell={contractsCell()} />
+    <section className={styles['wrap']} aria-labelledby="activity-title">
+      <div className={styles['head']}>
+        <div className={styles['headText']}>
+          <h2 id="activity-title" className={styles['title']}>
+            Protocol activity on {CHAIN.name}
+          </h2>
+          <p className={styles['caption']}>
+            Lifetime totals read from the deployed contracts, in token units.
+            {tokens.length > 1 ? ' Pick a token to read its figures.' : ''}
+          </p>
+        </div>
+        {tokens.length > 1 ? (
+          <div className={styles['toggle']} role="group" aria-label="Token the figures are shown in">
+            {tokens.map((t, i) => (
+              <button
+                key={t.address}
+                type="button"
+                className={cx(styles['tab'], t === token && styles['tabOn'])}
+                aria-pressed={t === token}
+                onClick={() => setSelected(i)}
+              >
+                {unitOf(t)}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
-      {/* Provenance, per surface. "Read from chain" and "counted from the
-          address book" are different claims and the reader is entitled to know
-          which one each cell is making. */}
+
+      <div className={styles['strip']}>
+        <CellView label="BLOCK" cell={headCell(head)} liveRegion pulse flashOnUpdate className={styles['cellBlock']} />
+        <CellView label="VOLUME" cell={volumeCell(activity, token)} />
+        <CellView label="FEES" cell={feesCell(activity, token)} />
+        <CellView label="CREATOR REVENUE" cell={creatorCell(activity, token)} />
+        <CellView label="PROTOCOL REVENUE" cell={protocolCell(activity, token)} />
+      </div>
+
+      <div className={styles['panel']}>
+        {activity.k === 'loading' ? (
+          <div className={styles['stateCard']} data-state="loading" aria-busy="true">
+            <p className={styles['stateText']}>
+              <i className={styles['stateDot']} aria-hidden="true" />
+              Reading every Swap and RevShareTaken log on {CHAIN.name} since block{' '}
+              {n(CHAIN.deployedAtBlock)}…
+            </p>
+          </div>
+        ) : activity.k === 'error' ? (
+          <div className={styles['stateCard']} data-state="error">
+            <p className={styles['stateText']}>
+              {CHAIN.name} is unreachable for a log read, so no totals and no chart are drawn —
+              nothing is estimated in their place.
+            </p>
+            <p className={styles['stateRaw']}>{activity.message}</p>
+          </div>
+        ) : token === undefined || unit === null ? (
+          <div className={styles['stateCard']} data-state="empty">
+            <p className={styles['stateText']}>
+              No swap has happened on {CHAIN.name} between blocks {n(activity.a.fromBlock)} and{' '}
+              {n(activity.a.toBlock)}, so there are no fees to split.
+            </p>
+          </div>
+        ) : (
+          <>
+            <FeeSplit
+              token={token}
+              symbol={unit}
+              cutConfigured={activity.a.cutHooks > 0}
+              chainName={CHAIN.name}
+            />
+            <p className={styles['series']}>
+              {seriesNote(activity.a)}{' '}
+              {token.isTestToken === true
+                ? `${unit} is a test token nothing prices, so no dollar value is shown.`
+                : 'No dollar value is shown: amounts are in the token’s own units.'}
+            </p>
+          </>
+        )}
+      </div>
+
+      {/* Provenance, per figure. A total summed from logs and a counter read
+          in one call are different claims, and the reader is entitled to
+          know which each figure is. */}
       <p className={styles['provenance']}>
-        Block height and fee read from the deployed contracts on {CHAIN.name}; chain id and
-        contract count from the address book this app ships, not a code sweep.
+        <strong>Block</strong>: <code>eth_blockNumber</code>, re-read every {BLOCK_POLL_MS / 1000}s.{' '}
+        {activity.k === 'ready' ? (
+          <>
+            <strong>Volume and swap fees</strong>: summed from all {n(activity.a.swapCount)} Swap
+            logs on both pool managers, blocks {n(activity.a.fromBlock)}–{n(activity.a.toBlock)},
+            input side, split by each swap’s own <code>fee</code> and <code>protocolFee</code>.{' '}
+            <strong>Latch cut and creator revenue</strong>:{' '}
+            {activity.a.cutHooks === 0 ? (
+              <>not read — this chain has no Latch RevShareHook.</>
+            ) : (
+              <>
+                <code>RevShareTaken</code> logs from Latch’s own RevShareHook deployments, over the
+                same blocks, {cutCheckText(activity.a)}.
+              </>
+            )}{' '}
+            <strong>Uncollected protocol fees</strong>: <code>protocolFeesAccrued</code> on both
+            pool managers.
+          </>
+        ) : (
+          <>
+            <strong>Volume, fees and revenue</strong>: summed from Swap and{' '}
+            <code>RevShareTaken</code> logs since block {n(CHAIN.deployedAtBlock)}, then checked
+            against <code>totalTaken</code>.
+          </>
+        )}
       </p>
     </section>
   )

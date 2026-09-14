@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
+import { ChainMarks } from './ChainMarks'
 import { LINKS } from './data'
 import { Ecosystem } from './Ecosystem'
 import { FeeChart } from './FeeChart'
@@ -87,6 +88,9 @@ export default function LandingPage() {
         <div className={styles['kpiBand']}>
           <LiveStrip />
         </div>
+
+        {/* Live chain vs target chains, as marks. No addresses: those are in the docs. */}
+        <ChainMarks />
 
         {/* ONE VERTICAL RHYTHM. Every block from here down is a `.section` box
             (or composes it) and carries exactly `--b-section-pad` above it,
