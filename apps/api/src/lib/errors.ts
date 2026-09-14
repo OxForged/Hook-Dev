@@ -9,6 +9,8 @@ export type ApiErrorCode =
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "NOT_FOUND"
+  | "CONFLICT"
+  | "CAPTCHA_FAILED"
   | "PAYLOAD_TOO_LARGE"
   | "URI_TOO_LONG"
   | "RATE_LIMITED"
@@ -43,6 +45,9 @@ export class ApiError extends Error {
   }
   static notFound(what: string) {
     return new ApiError(404, "NOT_FOUND", `${what} not found`);
+  }
+  static conflict(message: string) {
+    return new ApiError(409, "CONFLICT", message);
   }
   static notIndexed(chainId: number) {
     return new ApiError(503, "NOT_INDEXED", `Chain ${chainId} has not been indexed yet`);

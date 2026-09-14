@@ -35,6 +35,22 @@ export function hasRole(roles: readonly string[], needed: AdminRole): boolean {
   return impliedRoles(roles.filter((r): r is AdminRole => r === "admin" || r === "curator" || r === "viewer")).has(needed);
 }
 
+/**
+ * Why a session holds each role, in words an operator can check against chain
+ * state. Derived from the role and the SDK address book; the grant itself came
+ * from the read described.
+ */
+export function roleGrants(roles: readonly string[], chainId: number): { role: AdminRole; reason: string; source: string }[] {
+  const d = requireDeployment(chainId);
+  const out: { role: AdminRole; reason: string; source: string }[] = [];
+  for (const r of roles) {
+    if (r === "admin") out.push({ role: "admin", reason: "Safe owner", source: `getOwners() on the governance Safe ${d.governanceSafe} (chain ${chainId})` });
+    else if (r === "curator") out.push({ role: "curator", reason: "Registry curator", source: `hasRole(CURATOR_ROLE) on LatchRegistry ${d.registry} (chain ${chainId})` });
+    else if (r === "viewer") out.push({ role: "viewer", reason: "Viewer allowlist", source: "ADMIN_VIEWER_ALLOWLIST (off-chain, read-only)" });
+  }
+  return out;
+}
+
 export class OnChainRoleResolver implements RoleResolver {
   constructor(
     private readonly client: Pick<PublicClient, "readContract">,

@@ -3,7 +3,11 @@ import { Router, type RequestHandler } from "express";
 import { getAddress, verifyMessage, type Address, type Hex, type PublicClient } from "viem";
 import { generateSiweNonce, parseSiweMessage, validateSiweMessage } from "viem/siwe";
 import { z } from "zod";
-import { hasRole, type AdminRole, type RoleResolver } from "../admin/roles.js";
+import { hasRole, roleGrants, type AdminRole, type RoleResolver } from "../admin/roles.js";
+import { AdminService } from "../admin/service.js";
+import type { Simulator } from "../admin/simulate.js";
+import { ReadService } from "../services/read.js";
+import { registerAdminDataRoutes, type AdminDataDeps } from "./adminRoutes.js";
 import {
   clearedCookie,
   parseCookies,
@@ -17,7 +21,6 @@ import {
 } from "../admin/session.js";
 import { logger } from "../config/logger.js";
 import { ApiError } from "../lib/errors.js";
-import { toJsonSafe } from "../lib/serialize.js";
 import { checkRate, type RateLimitStore } from "../ratelimit/limiter.js";
 import { input, validate } from "./middleware.js";
 
@@ -39,6 +42,10 @@ export interface AdminDeps {
   /** Only for ERC-1271 / contract-account signature checks at sign-in. */
   verifyClient: Pick<PublicClient, "verifyMessage"> | null;
   rate: RateLimitStore;
+  /** eth_call simulation of prepared payloads. null = payloads are returned unsimulated, labelled so. */
+  simulator: Simulator | null;
+  /** API-key minting from the panel (admin role). The pepper never leaves this process. */
+  keys: AdminDataDeps["keys"];
   config: {
     origins: string[];
     siweDomain: string;
@@ -167,7 +174,7 @@ export function adminRouter(deps: AdminDeps): Router {
     });
     await writeAudit(deps.prisma, { actor: address, actorRoles: roles, action: "auth.signin", targetType: "session", targetId: session.id.slice(0, 12), requestId: res.locals.requestId, ip: req.ip });
     res.setHeader("Set-Cookie", sessionCookie(cookieName, token, cfg.sessionTtlSeconds, cfg.cookieSecure));
-    res.json({ address: address.toLowerCase(), roles, expiresAt: session.expiresAt.toISOString(), csrfToken: csrf });
+    res.json({ address: address.toLowerCase(), roles, grants: roleGrants(roles, cfg.roleChainId), chainId: cfg.roleChainId, expiresAt: session.expiresAt.toISOString(), csrfToken: csrf });
   });
 
   // --- session guard for everything below -----------------------------------
@@ -224,7 +231,7 @@ export function adminRouter(deps: AdminDeps): Router {
     // Rotate the CSRF token and hand the new one to the same-origin UI.
     const csrf = randomToken();
     await deps.prisma.adminSession.update({ where: { id: a.id }, data: { csrfHash: sha256(csrf) } });
-    res.json({ address: a.address.toLowerCase(), roles: a.roles, csrfToken: csrf });
+    res.json({ address: a.address.toLowerCase(), roles: a.roles, grants: roleGrants(a.roles, cfg.roleChainId), chainId: cfg.roleChainId, csrfToken: csrf });
   });
 
   r.post("/auth/logout", requireSession, async (req, res) => {
@@ -235,60 +242,16 @@ export function adminRouter(deps: AdminDeps): Router {
     res.status(204).end();
   });
 
-  // --- read routes ------------------------------------------------------------
-
-  r.get("/overview", requireSession, requireRole("viewer"), async (_req, res) => {
-    res.json(toJsonSafe(await adminOverview(deps.prisma)));
-  });
+  // --- data routes: every one names its role (src/http/adminRoutes.ts) ----------
+  registerAdminDataRoutes(
+    r,
+    { prisma: deps.prisma, service: new AdminService(deps.prisma, new ReadService(deps.prisma)), simulator: deps.simulator, roleChainId: cfg.roleChainId, keys: deps.keys },
+    { requireSession, requireRole },
+  );
 
   r.use((err: unknown, _req: unknown, _res: unknown, next: (e?: unknown) => void) => {
     if (!(err instanceof ApiError)) logger.error({ name: (err as Error)?.name }, "admin route error");
     next(err);
   });
   return r;
-}
-
-/** One screen of "is anything on fire": every figure read from the indexer tables. */
-export async function adminOverview(prisma: PrismaClient) {
-  const now = new Date();
-  const period = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-  const [checkpoints, reconciliations, ownershipMismatches, ownershipErrors, hazards, opsBalances, feedRows, timelockHazards, listings, keys, usage, ledger] = await Promise.all([
-    prisma.indexerCheckpoint.findMany(),
-    prisma.reconciliation.groupBy({ by: ["chainId", "status"], _count: { _all: true } }),
-    prisma.ownershipSnapshot.findMany({ where: { matches: false } }),
-    prisma.ownershipSnapshot.count({ where: { readError: { not: null } } }),
-    prisma.pendingConfigHazard.findMany({ where: { status: { in: ["ARMED", "UNKNOWN"] } } }),
-    prisma.opsBalance.findMany(),
-    prisma.$queryRaw<{ chainId: number; label: string; proxy: string; heartbeatViolation: boolean | null; stalenessSeconds: number | null; error: string | null; readAt: Date }[]>`
-      SELECT DISTINCT ON ("chainId", proxy) "chainId", label, proxy, "heartbeatViolation", "stalenessSeconds", error, "readAt"
-      FROM feed_observations ORDER BY "chainId", proxy, "readAt" DESC`,
-    prisma.timelockEvent.findMany({ where: { hazard: { not: null }, eventName: "CallScheduled" }, orderBy: { blockNumber: "desc" }, take: 50 }),
-    prisma.listingSubmission.groupBy({ by: ["status"], _count: { _all: true } }),
-    prisma.apiKey.groupBy({ by: ["status"], _count: { _all: true } }),
-    prisma.apiUsageMonthly.aggregate({ where: { period }, _sum: { requests: true } }),
-    prisma.revenueLedgerEntry.groupBy({ by: ["chainId", "source", "token"], _sum: { amount: true }, _count: { _all: true } }),
-  ]);
-  return {
-    generatedAt: now,
-    indexer: checkpoints.map((c) => ({
-      chainId: c.chainId,
-      lastIndexedBlock: c.lastIndexedBlock,
-      headBlock: c.headBlock,
-      lagBlocks: c.headBlock > c.lastIndexedBlock ? c.headBlock - c.lastIndexedBlock : 0n,
-      headObservedAt: c.headObservedAt,
-      contractBlockNumber: c.contractBlockNumber,
-    })),
-    reconciliation: reconciliations.map((r) => ({ chainId: r.chainId, status: r.status, count: r._count._all })),
-    ownership: { mismatches: ownershipMismatches, readErrors: ownershipErrors },
-    pendingConfig: { armedOrUnknown: hazards },
-    opsBalances,
-    feeds: feedRows,
-    timelock: { hazardousScheduledCalls: timelockHazards },
-    listings: listings.map((l) => ({ status: l.status, count: l._count._all })),
-    apiKeys: { byStatus: keys.map((k) => ({ status: k.status, count: k._count._all })), requestsThisMonth: usage._sum.requests ?? 0n, period },
-    revenueLedger: {
-      note: "Raw token units. Flows only; uncollected accruals are in protocol_fee_accrual_snapshots.",
-      totals: ledger.map((l) => ({ chainId: l.chainId, source: l.source, token: l.token, entries: l._count._all, amountRaw: l._sum.amount })),
-    },
-  };
 }

@@ -269,6 +269,7 @@ export function buildWindowRows(ctx: WindowContext, events: readonly IndexedEven
           selector: call.selector,
           functionSignature: call.functionSignature,
           predecessor: e.predecessor,
+          salt: e.salt,
           delaySeconds: e.delaySeconds,
           hazard: call.hazard,
           hazardNote: call.hazardNote,

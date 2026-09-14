@@ -9,6 +9,9 @@ import { logger } from "../config/logger.js";
 import { ApiError } from "../lib/errors.js";
 import { checkRate, type RateLimitStore } from "../ratelimit/limiter.js";
 
+/** Kept here (not imported from listings.ts) so middleware has no route dependency. listings.test pins them equal. */
+export const LISTING_BODY_LIMIT_BYTES = 400 * 1024;
+
 /* ---------------------------------------------------------------------------
    Request context and logging
    --------------------------------------------------------------------------- */
@@ -52,7 +55,9 @@ export const requestLimits: RequestHandler = (req, _res, next) => {
   if (req.originalUrl.length > MAX_URL_LENGTH) return next(new ApiError(414, "URI_TOO_LONG", "URL too long"));
   const len = Number(req.header("content-length") ?? "0");
   const isAdminWrite = req.path.startsWith("/v1/admin/") && req.method === "POST";
-  const maxBody = isAdminWrite ? 16_384 : 0;
+  // The public listing submission carries a base64 icon; its own json() parser enforces the same cap.
+  const isListingSubmit = (req.path === "/v1/listings" || req.path === "/v1/listings/") && req.method === "POST";
+  const maxBody = isAdminWrite ? 16_384 : isListingSubmit ? LISTING_BODY_LIMIT_BYTES : 0;
   if (!Number.isFinite(len) || len > maxBody || (maxBody === 0 && req.header("transfer-encoding"))) {
     return next(new ApiError(413, "PAYLOAD_TOO_LARGE", maxBody === 0 ? "This endpoint takes no request body" : "Request body too large"));
   }

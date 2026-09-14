@@ -1,6 +1,19 @@
 {
   "chainId": 4663,
   "notes": "Public, non-secret operational config for Robinhood Chain. Addresses only; no keys, no RPC URLs. Feeds copied from packages/keeper/feeds.config.robinhood.json (verified on chain 2026-09-13: description(), decimals()=8, aggregator() is a DualAggregator). Ops addresses from CLAUDE.md (The canceller; One wallet, four roles).",
+  "safeApp": {
+    "shortName": "robinhood",
+    "source": "ops/safe/README.md: https://app.safe.global/home?safe=robinhood:0x715a6176946aDbD22c1B2021d321Fb3767ca3432"
+  },
+  "gas": {
+    "referenceGasPriceWei": "78334000",
+    "referenceSource": "CLAUDE.md 'The canceller', re-read 2026-09-13: observed gas price 78,334,000 wei. Used only when the worker's eth_gasPrice read fails; the live price is used otherwise, so a gas spike raises every threshold with it."
+  },
+  "indexerAlerts": {
+    "maxLagBlocks": 20000,
+    "maxHeadAgeSeconds": 900,
+    "rationale": "Robinhood's L2 log clock is ~0.102 s/block (CLAUDE.md 3b), so 20,000 blocks is ~34 minutes behind the head: past INDEX_CONFIRMATIONS (100) plus several 15 s poll intervals, i.e. the worker is falling behind rather than waiting on confirmations. A head observation older than 900 s is 60 missed INDEX_POLL_MS (15 s) ticks: the worker is not running or cannot reach any RPC."
+  },
   "feeds": [
     { "label": "AAPL/USD", "proxy": "0x6B22A786bAa607d76728168703a39Ea9C99f2cD0", "heartbeatSeconds": 86400, "expectedDescription": "Robinhood AAPL / USD" },
     { "label": "TSLA/USD", "proxy": "0x4A1166a659A55625345e9515b32adECea5547C38", "heartbeatSeconds": 86400, "expectedDescription": "RHTSLA / USD" },
@@ -17,7 +30,31 @@
     }
   ],
   "opsAccounts": [
-    { "label": "canceller", "address": "0xe65F304e40b61d7417154cb3e725C0Ee16701142", "purpose": "Sole CANCELLER_ROLE on the timelocks. Must keep gas.", "minWei": "500000000000000" },
-    { "label": "ops-wallet", "address": "0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9", "purpose": "Deployer, keeper, guardian, oracle publisher (CLAUDE.md, decided 2026-09-11). Gas only.", "minWei": "1000000000000000" }
+    {
+      "label": "canceller",
+      "address": "0xe65F304e40b61d7417154cb3e725C0Ee16701142",
+      "purpose": "Sole CANCELLER_ROLE on the custody timelock. Its only power is refusal; it must be able to pay for a cancel at 3am.",
+      "role": "canceller",
+      "gasBudget": {
+        "action": "TimelockController.cancel(bytes32) on the custody timelock",
+        "gasUnits": "250000",
+        "criticalActions": 1,
+        "warnActions": 10,
+        "rationale": "cancel(bytes32) executes an onlyRole check (SLOAD), isOperationPending (SLOAD), deletes _timestamps[id] (SSTORE to zero) and emits Cancelled: ~30-40k L2 execution gas by inspection of OpenZeppelin TimelockController v5, not measured. On Arbitrum Nitro the L1 data fee is charged as extra L2 gas units (L1 cost / L2 base fee); a ~100-byte signed cancel at an L1 base fee up to ~10 gwei adds up to ~200k units at the 78,334,000 wei reference price. 250,000 units covers both. CRITICAL below ONE cancel: CLAUDE.md records the canceller at 1,183,834,050,000 wei, ~15,000 gas, which cannot cancel anything. WARN below TEN: a compromised Safe can queue several operations and each needs its own cancel. Replace gasUnits with an eth_estimateGas + NodeInterface.gasEstimateComponents measurement from this address when one is taken."
+      }
+    },
+    {
+      "label": "ops-wallet",
+      "address": "0x304b0cc019CDBA6C7c767D86a2A34e69FDb3c9a9",
+      "purpose": "Deployer, keeper, guardian, oracle publisher (CLAUDE.md, decided 2026-09-11). Gas only.",
+      "role": "ops",
+      "gasBudget": {
+        "action": "one keeper or guardian transaction (sweep, settleBeneficiaries, applyPendingConfig, closeEpoch, rollover, setPaused, setListing)",
+        "gasUnits": "300000",
+        "criticalActions": 10,
+        "warnActions": 60,
+        "rationale": "Keeper writes are single-contract calls that settle or sweep one currency: ~60-120k L2 execution gas by inspection (sweep calls collectProtocolFees on a pool manager and an ERC-20 transfer), plus the same ~200k-unit L1 data allowance as the canceller; 300,000 units per transaction. CLAUDE.md schedules sweep every 12 h on two managers; with settle/apply/epoch jobs that is budgeted at ~8 transactions per day. CRITICAL below 10 transactions (about one day of keeper work plus one guardian pause, which is the call that must never fail for gas). WARN below 60 (about a week). These are budget assumptions, not measurements; tighten them from the keeper's own receipts."
+      }
+    }
   ]
 }

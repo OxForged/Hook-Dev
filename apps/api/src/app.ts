@@ -4,6 +4,9 @@ import helmet from "helmet";
 import type { KeyResolver, UsageCounter } from "./auth/identity.js";
 import type { AdminDeps } from "./http/admin.js";
 import { adminRouter } from "./http/admin.js";
+import { adminUiRouter } from "./http/adminUi.js";
+import { listingsRouter, type ListingsDeps } from "./http/listings.js";
+import { logger } from "./config/logger.js";
 import {
   errorHandler,
   httpLogger,
@@ -31,6 +34,10 @@ export interface AppDeps {
   ready: () => Promise<Record<string, boolean>>;
   /** null disables /v1/admin entirely (the default). */
   admin: AdminDeps | null;
+  /** Built admin UI directory, served at /admin only when `admin` is non-null. */
+  adminUiDir?: string | null;
+  /** Ecosystem listings (public). null = no /v1/listings routes at all. */
+  listings?: ListingsDeps | null;
   logRequests?: boolean;
 }
 
@@ -66,13 +73,22 @@ export function createApp(deps: AppDeps): Express {
   });
 
   if (deps.admin) {
-    // Admin POST bodies are the only request bodies this service accepts (16 KB cap).
+    // Admin POST bodies are capped at 16 KB.
     app.use("/v1/admin", express.json({ limit: "16kb" }), adminRouter(deps.admin));
+    if (deps.adminUiDir) {
+      const ui = adminUiRouter(deps.adminUiDir);
+      if (ui) app.use("/admin", ui);
+      else logger.warn("ADMIN_UI_DIR has no index.html; the admin UI is not served");
+    }
   } else {
     app.use("/v1/admin", (_req, res) => {
       res.status(404).json({ error: { code: "NOT_FOUND", message: "Admin API is disabled" } });
     });
+    // No admin UI either: /admin falls through to the 404 handler.
   }
+
+  // Public listings: POST (off unless enabled) carries its own body cap, rate limit and captcha.
+  if (deps.listings) app.use("/v1/listings", listingsRouter(deps.listings));
 
   // Public CORS: any origin may READ; no credentials, ever. Keys belong on servers.
   app.use("/v1", (req, res, next) => {

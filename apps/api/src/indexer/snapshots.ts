@@ -6,6 +6,7 @@ import {
   CL_POOL_MANAGER_VIEWS_ABI,
   ERC20_VIEWS_ABI,
   REVSHARE_VIEWS_ABI,
+  STOCK_TOKEN_PAUSE_ABI,
   STOCK_TOKEN_VIEWS_ABI,
 } from "../chain/abis.js";
 import { requireIndexedDeployment, revShareHooksFor } from "../chain/deployments.js";
@@ -41,6 +42,55 @@ export interface SnapshotSummary {
   accruals: number;
   reconciliations: { verified: number; mismatch: number; unavailable: number; error: number };
   hazards: number;
+  stockTokenChanges?: number;
+}
+
+const STOCK_OBSERVATION_HEARTBEAT_MS = 60 * 60 * 1000;
+
+/**
+ * Issuer state of every token that sits in an indexed pool: `tokenPaused()` and
+ * `uiMultiplier()`. Read EVERY snapshot pass (not on the hourly token refresh),
+ * because a pause is exactly the event an operator must see within a minute.
+ * A token that answers neither is not a stock token and writes nothing.
+ * Returns the number of CHANGED observations written.
+ */
+async function refreshStockTokens(prisma: PrismaClient, rpc: ChainRpc, chainId: number, B: bigint): Promise<number> {
+  const pools = await prisma.pool.findMany({ where: { chainId }, select: { currency0: true, currency1: true } });
+  const tokens = [...new Set(pools.flatMap((p) => [p.currency0, p.currency1]))].filter((t) => t !== ZERO);
+  let changes = 0;
+  await mapLimit(tokens, 4, async (token) => {
+    const [paused, ui] = await Promise.allSettled([
+      rpc.reads.readContract({ address: token as Address, abi: STOCK_TOKEN_PAUSE_ABI, functionName: "tokenPaused", blockNumber: B }),
+      rpc.reads.readContract({ address: token as Address, abi: STOCK_TOKEN_VIEWS_ABI, functionName: "uiMultiplier", blockNumber: B }),
+    ]);
+    const pausedVal = paused.status === "fulfilled" ? Boolean(paused.value) : null;
+    const uiVal = ui.status === "fulfilled" ? (ui.value as bigint) : null;
+    const nonRevertErrors = [paused, ui].filter((r) => r.status === "rejected" && !isRevert(r.reason)).map((r) => errText((r as PromiseRejectedResult).reason));
+    if (pausedVal === null && uiVal === null && nonRevertErrors.length === 0) return; // not a stock token
+
+    const last = await prisma.stockTokenObservation.findFirst({ where: { chainId, token }, orderBy: { readAtBlock: "desc" } });
+    const lastUi = last?.uiMultiplier?.toFixed() ?? null;
+    const changed = last !== null && (last.tokenPaused !== pausedVal || lastUi !== (uiVal === null ? null : uiVal.toString()));
+    const due = !last || changed || Date.now() - last.readAt.getTime() > STOCK_OBSERVATION_HEARTBEAT_MS || nonRevertErrors.length > 0;
+    if (due) {
+      await prisma.stockTokenObservation.create({
+        data: {
+          chainId,
+          token,
+          tokenPaused: pausedVal,
+          uiMultiplier: uiVal === null ? null : uiVal.toString(),
+          changed,
+          previousPaused: last?.tokenPaused ?? null,
+          previousUiMultiplier: last?.uiMultiplier ?? null,
+          readAtBlock: B,
+          readError: nonRevertErrors.length ? nonRevertErrors.join("; ").slice(0, 300) : null,
+        },
+      });
+      if (changed) changes += 1;
+    }
+    await prisma.token.updateMany({ where: { chainId, address: token }, data: { tokenPaused: pausedVal, ...(uiVal === null ? {} : { uiMultiplier: uiVal.toString() }) } });
+  });
+  return changes;
 }
 
 export async function snapshotPass(prisma: PrismaClient, rpc: ChainRpc, chainId: number): Promise<SnapshotSummary> {
@@ -86,6 +136,7 @@ export async function snapshotPass(prisma: PrismaClient, rpc: ChainRpc, chainId:
   }
 
   summary.tokens = await refreshTokens(prisma, rpc, d, B);
+  summary.stockTokenChanges = await refreshStockTokens(prisma, rpc, chainId, B);
   summary.pools = await refreshPoolStates(prisma, rpc, chainId, B);
   summary.accruals = await refreshAccruals(prisma, rpc, d, B);
   summary.reconciliations = await reconcileRevShare(prisma, rpc, d, B);

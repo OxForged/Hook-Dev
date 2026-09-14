@@ -45,7 +45,7 @@ export type IndexedEvent =
   | { kind: "RevShareClaimed"; meta: LogMeta; beneficiary: Hex; currency: Hex; to: Hex; amount: bigint }
   | { kind: "ProtocolFeesCollected"; meta: LogMeta; poolManager: Hex; currency: Hex; recipient: Hex; amount: bigint }
   | { kind: "LaunchCreated"; meta: LogMeta; poolId: Hex; launchToken: Hex; operator: Hex; quoteToken: Hex; startContractBlock: bigint; decayContractBlocks: number; initialFeeBips: number; finalFeeBips: number; maxBuyPerTx: bigint; launchTokenIsCurrency0: boolean; preset: number }
-  | { kind: "Timelock"; meta: LogMeta; eventName: string; operationId: Hex | null; callIndex: number | null; target: Hex | null; value: bigint | null; data: Hex | null; predecessor: Hex | null; delaySeconds: bigint | null }
+  | { kind: "Timelock"; meta: LogMeta; eventName: string; operationId: Hex | null; callIndex: number | null; target: Hex | null; value: bigint | null; data: Hex | null; predecessor: Hex | null; salt: Hex | null; delaySeconds: bigint | null }
   | { kind: "Generic"; meta: LogMeta; eventName: string; subject: string | null; args: Record<string, unknown> };
 
 export type DecodeResult =
@@ -277,8 +277,16 @@ function toEvent(meta: LogMeta, role: WatchRole, name: string, a: Record<string,
     case "vault":
       if (name !== "AppRegistered") return null;
       return { kind: "Generic", meta, eventName: name, subject: lowerHex(a.app), args: jsonArgs(a) as Record<string, unknown> };
+    case "clPoolManagerOwner":
+    case "binPoolManagerOwner":
+      if (name !== "PausableRoleGranted" && name !== "PausableRoleRevoked") return null;
+      return { kind: "Generic", meta, eventName: name, subject: lowerHex(a.account), args: jsonArgs(a) as Record<string, unknown> };
     case "timelockCustody":
     case "timelockPolicy":
+      // Role changes are not operations: stored as generic events keyed on the account.
+      if (name === "RoleGranted" || name === "RoleRevoked") {
+        return { kind: "Generic", meta, eventName: name, subject: lowerHex(a.account), args: jsonArgs(a) as Record<string, unknown> };
+      }
       return {
         kind: "Timelock",
         meta,
@@ -289,6 +297,7 @@ function toEvent(meta: LogMeta, role: WatchRole, name: string, a: Record<string,
         value: "value" in a ? big(a.value) : null,
         data: "data" in a ? lowerHex(a.data) : null,
         predecessor: "predecessor" in a ? lowerHex(a.predecessor) : null,
+        salt: "salt" in a ? lowerHex(a.salt) : null,
         delaySeconds: "delay" in a ? big(a.delay) : "newDuration" in a ? big(a.newDuration) : null,
       };
   }

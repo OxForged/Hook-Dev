@@ -268,7 +268,9 @@ supplies before submitting.**
   the limit. Headers: `RateLimit-Limit/Remaining/Reset`, `Retry-After`, `X-Quota-*`.
 - **Usage** is counted in Redis (seeded from Postgres so a Redis restart cannot reset
   a month) and flushed to `api_usage_monthly` every minute with SET, not increment.
-- **Operator CLI only** — there is no HTTP route that mints, lists or revokes keys:
+- **Operator CLI, or the admin panel's API keys page** (`admin` role only: a Safe
+  owner, CSRF-checked, audit-logged with the prefix, never the secret; the secret is
+  returned once in the mint response and never again). The CLI remains:
 
 ```bash
 npm run admin -- accounts:create --name "Acme" --plan pro
@@ -305,12 +307,74 @@ npm run admin -- usage:show --period 2026-09
 - **Never a key, never a transaction.** On-chain actions are returned as Safe
   payloads (`src/admin/safeTx.ts`: CALL only, no nonce baked in, warnings, e.g.
   `prepareCollectProtocolFees` warns if the recipient is not the Safe).
-- Routes today: `auth/nonce`, `auth/verify`, `auth/session`, `auth/logout`,
-  `GET /overview` (viewer+): indexer lag, reconciliation, ownership mismatches,
-  armed/unknown pending configs, ops balances, feed staleness, hazardous timelock
-  calls, listing queue, key counts and monthly usage, revenue-ledger totals.
-  Responses are `Cache-Control: no-store`, rate limited per IP, CORS exact-origin
-  with credentials.
+- Responses are `Cache-Control: no-store`, rate limited per IP, CORS exact-origin
+  with credentials. Every route below names its role in `src/http/adminRoutes.ts`;
+  `test/adminRoutes.test.ts` asserts 401 / 403 / CSRF / audit for every entry.
+
+### 7a. Routes (`/v1/admin`)
+
+| Method | Path | Role | What it does |
+|---|---|---|---|
+| POST | `auth/nonce`, `auth/verify` | none | SIWE sign-in; the response lists each role with its reason (`Safe owner`, `Registry curator`, `Viewer allowlist`) and the read it came from |
+| GET | `auth/session` · POST `auth/logout` | session | session + fresh CSRF token · sign-out |
+| GET | `overview` | viewer | indexer lag, alert counts by severity + top alerts, revenue headlines in token units, queue/key counts |
+| GET | `alerts` | viewer | every alert (`src/admin/alerts.ts`, pure rules over worker reads, each with provenance) |
+| GET | `revenue` | viewer | ledger (filters: `token`, `source`, `window`/`from`/`to`, paging), totals by source incl. `not-deployed` lines (never zero), protocol fees charged / collected / accrued, optional oracle USD on current balances only |
+| GET | `revenue/export.csv` | viewer | same filters as CSV (formula-injection safe, ≤50,000 rows, audited as `revenue.export`) |
+| GET | `protocol` | viewer | pools, swaps, volume and fees by input token, kit launches, registry listings with risk class, Vault app registrations |
+| GET | `governance/ownership` | viewer | expected tier vs `owner()`/`pendingOwner()` (pending read on the owner wrappers, not the pool managers), guardians, treasury, `hasRole` checks, governance alerts |
+| GET | `governance/timelock` | viewer | operations decoded from `CallScheduled`/`CallSalt`/`CallExecuted`/`Cancelled`, status PENDING/READY/EXECUTED/CANCELLED (cancelled has no ready time), do-not-queue flags, the custody-handover operations |
+| GET | `governance/roles` | viewer | PROPOSER/EXECUTOR/CANCELLER per timelock, registry roles, pausable-role holders, replayed from logs |
+| GET | `safety` | viewer | RevShare pending configs (both shapes, contract clock), ops balances vs gas-denominated thresholds, feed staleness, stock-token `tokenPaused`/`uiMultiplier` and changes |
+| GET | `safe/context` | viewer | Safe address, Safe app link, contract addresses |
+| POST | `timelock/execute` | viewer | `execute(target, value, payload, predecessor, salt)` for a READY queued single-call operation, salt from `CallSalt`, refused unless it re-hashes to the id; `isOperationReady` + `eth_call` result (audited) |
+| POST | `safe/fee-controller/collect` · `…/sweep` | admin | Safe payloads for `LatchProtocolFeeControllerV2`, simulated from the Safe (audited) |
+| POST | `registry/listing` | curator | `setListing(hook, Malicious|Active, reason)` as a DIRECT call from the curator's key, simulated from it (audited) |
+| GET | `moderation/listings`, `…/:id`, `…/:id/icon` | curator | queue (no contact), detail (with private contact), processed icon |
+| POST | `moderation/listings/:id/approve` · `reject` · `request-changes` | curator | review with reason; conditional update so two reviewers cannot double-apply (audited) |
+| GET/POST | `keys/accounts` | admin | list / create API accounts (audited) |
+| GET | `keys` | admin | keys (prefix only) with usage by month |
+| POST | `keys` · `keys/:id/revoke` | admin | mint (secret shown once) · revoke with reason, drops the Redis key cache (audited) |
+| GET | `audit` | admin | audit log, filters `actor`, `action` prefix, `targetType`, `from`/`to` |
+
+**There is no schedule builder for the custody handover.** CLAUDE.md "VERIFIED LIVE
+STATE": three `acceptOwnership()` operations are already queued on the custody
+timelock (block 61,325,176, ready 2026-09-14 18:40:43 UTC). A new schedule would
+duplicate them. The ownership alert stays HIGH until `owner()` reads the timelock.
+
+### 7b. Public listings (`/v1/listings`)
+
+| Method | Path | What it does |
+|---|---|---|
+| POST | `/v1/listings` | ecosystem submission; **404 unless `LISTING_SUBMISSIONS_ENABLED=true`**. Field limits mirror `apps/web` `LISTING_LIMITS` (tested against the file), https-only URLs, per-IP `LISTING_SUBMIT_PER_HOUR` (checked before the body is parsed), optional Turnstile (fails closed), 400 KB body, icon PNG ≤256 KB / SVG ≤64 KB. Contact stored privately; the raw IP is not stored (HMAC). |
+| GET | `/v1/listings` | APPROVED listings only, explicit public field allowlist |
+| GET | `/v1/listings/:id/icon` | the processed icon of an approved listing, `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox`, `nosniff` |
+
+Icons (`src/admin/icons.ts`): the uploaded bytes are never stored or served. PNG is
+CRC-checked, IHDR-validated, IDAT inflated under a hard cap and required to match the
+header's size, then rebuilt from critical chunks (text/EXIF/APNG/post-IEND data
+dropped). SVG is parsed against an element/attribute allowlist and **rejected** on
+script, foreignObject, style, image, animation, event handlers, external or `data:`
+references, DOCTYPE/ENTITY, CDATA and PIs; a passing file is re-serialised from the
+parse tree.
+
+### 7c. The operator console (`apps/admin`)
+
+Vite + React, served by this process at `/admin` (same origin as `/v1/admin`) when
+`ADMIN_ENABLED=true` and `ADMIN_UI_DIR` holds a build; strict CSP (`script-src 'self'`,
+`connect-src 'self'`, `frame-ancestors 'none'`), `Referrer-Policy: same-origin` (not
+`no-referrer`, which would send `Origin: null` on POST and fail the Origin check). It is
+not a GitHub Pages site. The fixture mock server for UI testing lives in
+`apps/admin/test/mock-server` and is never bundled.
+
+### 7d. Ops-balance thresholds
+
+`config/chains/<id>.json` `opsAccounts[].gasBudget` states gas units per action,
+critical and warning action counts, and a rationale the schema requires. The worker
+multiplies by the live `eth_gasPrice` (config reference price on failure). At the
+recorded 1,183,834,050,000 wei and 78,334,000 wei/gas the canceller affords zero
+cancels: CRITICAL. The gas units are estimates by inspection; replace them with a
+measured `eth_estimateGas` + L1 component when one is taken.
 
 ---
 
@@ -397,6 +461,24 @@ docker ps --format '{{.Names}}' | grep '^latch-'     # latch-keeper still there
 docker compose -p latch -f docker-compose.yml run --rm api node dist/cli/admin.js accounts:create --name "<name>"
 docker compose -p latch -f docker-compose.yml run --rm api node dist/cli/admin.js keys:create --account <id> --name prod
 
+# 6. Admin panel (optional; owner decision). The console is built into the image at
+#    /repo/apps/api/admin-ui (compose sets ADMIN_UI_DIR). Append to .env, then recreate api:
+{ echo "ADMIN_ENABLED=true"
+  echo "ADMIN_ORIGINS=https://<admin-host>"          # exact origin the browser shows
+  echo "ADMIN_SIWE_DOMAIN=<admin-host>"
+  echo "ADMIN_VIEWER_ALLOWLIST="                      # optional read-only addresses
+  echo "ADMIN_SIMULATION_ENABLED=true"
+  echo "LISTING_SUBMISSIONS_ENABLED=false"            # true only when moderation is staffed
+  echo "TURNSTILE_ENABLED=false"; } >> .env
+docker compose -p latch -f docker-compose.yml build api
+docker compose -p latch -f docker-compose.yml up migrate           # applies 20260914000000_admin_panel
+docker compose -p latch -f docker-compose.yml up -d api indexer
+curl -sI 127.0.0.1:8093/admin/ | grep -i content-security-policy
+curl -s 127.0.0.1:8093/v1/admin/auth/session                        # 401 = enabled, 404 = disabled
+#    The migration's new watched events (timelock RoleGranted/RoleRevoked, PausableRole*)
+#    change the address-set hash: the first indexer pass re-reads history from
+#    deployedAtBlock by design. Watch `logs indexer` until the checkpoint is back at head.
+
 # Stop / update: named services only.
 docker compose -p latch -f docker-compose.yml stop api indexer
 ```
@@ -420,6 +502,25 @@ api.latch.guru {
 }
 ```
 
+The admin console needs the same origin for `/admin` and `/v1/admin` (cookie
+`SameSite=Strict`, Origin check). Serving it from the API host needs no extra block;
+a separate admin host would be (owner applies; restrict by IP if the Safe owners
+have stable addresses):
+
+```
+admin.latch.guru {
+    encode zstd gzip
+    @admin path /admin /admin/* /v1/admin/*
+    handle @admin {
+        reverse_proxy latch-api:4000
+    }
+    respond 404
+}
+```
+
+`TRUST_PROXY` must name the proxy's subnet once Caddy fronts it, or the per-IP admin
+and submission limits see every request as coming from Caddy.
+
 ---
 
 ## 11. Known limits and open questions
@@ -428,8 +529,10 @@ api.latch.guru {
 - Domain for the API and admin UI (`latch.guru` is recorded as provisional).
 - Where DEX Screener submission happens (their docs route it to Discord) and the
   authoritative adapter spec to check the endpoints against.
-- `config/chains/4663.json` `opsAccounts[].minWei` thresholds are placeholders for
-  the owner to set.
+- `config/chains/4663.json` ops thresholds are gas budgets with written rationales
+  (§7d); the gas units are estimates, not measurements.
+- `tokenPaused()` is the name used by the launchpad's `PausableStockToken` fixture; it
+  has not been read against the live Stock implementation.
 - `uiMultiplier` semantics assumed `shares = raw × uiMultiplier / 1e18` from the
   token's own naming and the 2026-09-13 reads; confirm against `Stock.sol`
   (Sourcify) before USD is shown to users. `newUIMultiplier`/`effectiveAt`

@@ -16,6 +16,14 @@
 !apps/api/src/**
 !apps/api/config/**
 
+# Operator console sources only (no test/mock-server, no node_modules, no dist).
+!apps/admin/package.json
+!apps/admin/package-lock.json
+!apps/admin/tsconfig*.json
+!apps/admin/vite.config.ts
+!apps/admin/index.html
+!apps/admin/src/**
+
 # Belt and braces: never, even if a pattern above is widened later.
 **/.env
 **/.env.*

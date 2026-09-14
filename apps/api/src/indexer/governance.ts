@@ -1,10 +1,11 @@
 import type { LatchDeployment } from "@latchprotocol/sdk";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { keccak256, toHex, type Address, type Hex } from "viem";
-import { ACCESS_CONTROL_VIEWS_ABI, CHAINLINK_AGGREGATOR_ABI, OWNABLE_VIEWS_ABI } from "../chain/abis.js";
+import { registry as sdkRegistry } from "@latchprotocol/sdk";
+import { keccak256, parseAbi, toHex, type Address, type Hex } from "viem";
+import { ACCESS_CONTROL_VIEWS_ABI, CHAINLINK_AGGREGATOR_ABI, GUARDIAN_VIEWS_ABI, OWNABLE_VIEWS_ABI, TREASURY_VIEWS_ABI } from "../chain/abis.js";
 import { requireIndexedDeployment } from "../chain/deployments.js";
 import type { ChainRpc } from "../chain/rpc.js";
-import { chainConfig } from "../config/chainConfig.js";
+import { chainConfig, gasThresholds } from "../config/chainConfig.js";
 import { logger } from "../config/logger.js";
 import { mapLimit } from "./indexer.js";
 import { isRevert } from "./snapshots.js";
@@ -22,14 +23,21 @@ export const ROLES = {
   PROPOSER_ROLE: role("PROPOSER_ROLE"),
   EXECUTOR_ROLE: role("EXECUTOR_ROLE"),
   CANCELLER_ROLE: role("CANCELLER_ROLE"),
+  CURATOR_ROLE: sdkRegistry.CURATOR_ROLE as Hex,
+  GUARDIAN_ROLE: sdkRegistry.GUARDIAN_ROLE as Hex,
 };
+
+/** role hash -> name, for rendering RoleGranted/RoleRevoked. */
+export const ROLE_NAMES: ReadonlyMap<string, string> = new Map(Object.entries(ROLES).map(([k, v]) => [v.toLowerCase(), k]));
+
+const PAUSABLE_ROLE_VIEWS_ABI = parseAbi(["function hasPausableRole(address account) view returns (bool)"]);
 
 type Expected = { tier: string; address: string | null };
 
 export interface OwnershipCheck {
   contractKey: string;
   address: string;
-  check: "owner" | "pendingOwner" | `hasRole:${string}:${string}`;
+  check: "owner" | "pendingOwner" | "guardian" | "treasury" | `hasRole:${string}:${string}` | `hasPausableRole:${string}`;
   expected: Expected;
   /** For hasRole checks: the account whose role is asked about. */
   account?: string;
@@ -41,25 +49,46 @@ export interface OwnershipCheck {
  * TIERS and resolve them to SDK addresses; nothing here restates an address
  * except the canceller, which lives in config/chains/<id>.json.
  */
-export function ownershipChecks(d: LatchDeployment, canceller: string | null): OwnershipCheck[] {
+export function ownershipChecks(
+  d: LatchDeployment,
+  canceller: string | null,
+  opts: { ops?: string | null; retiredRevShareHook?: string | null } = {},
+): OwnershipCheck[] {
   const custody = { tier: "Custody (48h timelock)", address: d.timelockCustody.toLowerCase() };
   const safe = { tier: "Safe", address: d.governanceSafe.toLowerCase() };
   const noPending = { tier: "none pending", address: ZERO };
   const out: OwnershipCheck[] = [];
-  const owned = (key: string, addr: Address | null, exp: Expected) => {
+  const owned = (key: string, addr: Address | null, exp: Expected, withPending = true) => {
     if (!addr) return;
     const a = addr.toLowerCase();
     out.push({ contractKey: key, address: a, check: "owner", expected: exp });
-    out.push({ contractKey: key, address: a, check: "pendingOwner", expected: noPending });
+    if (withPending) out.push({ contractKey: key, address: a, check: "pendingOwner", expected: noPending });
   };
   owned("vault", d.vault, custody);
+  // The handover state lives on the OWNER WRAPPERS: pendingOwner() is read there,
+  // not on the pool managers (whose owner is the wrapper and whose pendingOwner
+  // says nothing about the custody tier).
   owned("clPoolManagerOwner", d.clPoolManagerOwner, custody);
   owned("binPoolManagerOwner", d.binPoolManagerOwner, custody);
-  if (d.clPoolManagerOwner) owned("clPoolManager", d.clPoolManager, { tier: "CLPoolManagerOwner wrapper", address: d.clPoolManagerOwner.toLowerCase() });
-  if (d.binPoolManagerOwner) owned("binPoolManager", d.binPoolManager, { tier: "BinPoolManagerOwner wrapper", address: d.binPoolManagerOwner.toLowerCase() });
+  if (d.clPoolManagerOwner) owned("clPoolManager", d.clPoolManager, { tier: "CLPoolManagerOwner wrapper", address: d.clPoolManagerOwner.toLowerCase() }, false);
+  if (d.binPoolManagerOwner) owned("binPoolManager", d.binPoolManager, { tier: "BinPoolManagerOwner wrapper", address: d.binPoolManagerOwner.toLowerCase() }, false);
   owned("feeController", d.feeController, safe);
   owned("revShareHook", d.revShareHook, safe);
   owned("clPositionDescriptor", d.clPositionDescriptor, safe);
+  // The retired RevShareHook still hosts LTT1/LTT2 (CLAUDE.md "Deployed and unfixable"):
+  // renounce is live there, so its owner is worth watching as long as the pool lives.
+  if (opts.retiredRevShareHook && opts.retiredRevShareHook.toLowerCase() !== d.revShareHook.toLowerCase()) {
+    owned("revShareHookRetired", opts.retiredRevShareHook as Address, safe);
+  }
+
+  // Guardians and treasury. Ops tier = the ops wallet named in config/chains (CLAUDE.md
+  // "One wallet, four roles"). The treasury must be the Safe (no separate treasury).
+  const ops = opts.ops ? { tier: "Ops (guardian may only reduce)", address: opts.ops.toLowerCase() } : null;
+  if (ops) {
+    out.push({ contractKey: "feeController", address: d.feeController.toLowerCase(), check: "guardian", expected: ops });
+    out.push({ contractKey: "revShareHook", address: d.revShareHook.toLowerCase(), check: "guardian", expected: ops });
+  }
+  out.push({ contractKey: "feeController", address: d.feeController.toLowerCase(), check: "treasury", expected: { tier: "Safe (protocol fees go to the Safe)", address: safe.address } });
 
   const hasRole = (key: string, addr: Address | null, name: keyof typeof ROLES, account: string, tier: string) => {
     if (!addr) return;
@@ -73,6 +102,13 @@ export function ownershipChecks(d: LatchDeployment, canceller: string | null): O
     });
   };
   hasRole("registry", d.registry, "DEFAULT_ADMIN_ROLE", safe.address, "Safe holds DEFAULT_ADMIN_ROLE");
+  if (ops) {
+    hasRole("registry", d.registry, "GUARDIAN_ROLE", ops.address, "Ops holds GUARDIAN_ROLE (flagging must be immediate)");
+    for (const [key, wrapper] of [["clPoolManagerOwner", d.clPoolManagerOwner], ["binPoolManagerOwner", d.binPoolManagerOwner]] as const) {
+      if (!wrapper) continue;
+      out.push({ contractKey: key, address: wrapper.toLowerCase(), check: `hasPausableRole:${ops.address}`, expected: { tier: "Ops holds the pausable role", address: "true" }, account: ops.address });
+    }
+  }
   for (const [key, tl] of [["timelockCustody", d.timelockCustody], ["timelockPolicy", d.timelockPolicy]] as const) {
     hasRole(key, tl, "PROPOSER_ROLE", safe.address, "Safe is proposer");
     hasRole(key, tl, "EXECUTOR_ROLE", ZERO, "address(0) is executor (permissionless execution)");
@@ -85,8 +121,10 @@ export async function governancePass(prisma: PrismaClient, rpc: ChainRpc, chainI
   const d = requireIndexedDeployment(chainId);
   const cfg = chainConfig(chainId);
   const B = await rpc.reads.getBlockNumber();
-  const canceller = cfg.opsAccounts.find((a) => a.label === "canceller")?.address ?? null;
-  const checks = ownershipChecks(d, canceller);
+  const canceller = cfg.opsAccounts.find((a) => a.role === "canceller" || a.label === "canceller")?.address ?? null;
+  const ops = cfg.opsAccounts.find((a) => a.role === "ops")?.address ?? null;
+  const demo = d.demoPool ? await prisma.pool.findUnique({ where: { chainId_poolId: { chainId, poolId: d.demoPool.id.toLowerCase() } }, select: { hooks: true } }) : null;
+  const checks = ownershipChecks(d, canceller, { ops, retiredRevShareHook: demo?.hooks ?? null });
   let mismatches = 0;
 
   await mapLimit(checks, 4, async (c) => {
@@ -96,6 +134,12 @@ export async function governancePass(prisma: PrismaClient, rpc: ChainRpc, chainI
     try {
       if (c.check === "owner" || c.check === "pendingOwner") {
         observed = String(await rpc.reads.readContract({ address: c.address as Address, abi: OWNABLE_VIEWS_ABI, functionName: c.check, blockNumber: B })).toLowerCase();
+      } else if (c.check === "guardian") {
+        observed = String(await rpc.reads.readContract({ address: c.address as Address, abi: GUARDIAN_VIEWS_ABI, functionName: "guardian", blockNumber: B })).toLowerCase();
+      } else if (c.check === "treasury") {
+        observed = String(await rpc.reads.readContract({ address: c.address as Address, abi: TREASURY_VIEWS_ABI, functionName: "treasury", blockNumber: B })).toLowerCase();
+      } else if (c.check.startsWith("hasPausableRole:")) {
+        observed = String(await rpc.reads.readContract({ address: c.address as Address, abi: PAUSABLE_ROLE_VIEWS_ABI, functionName: "hasPausableRole", args: [c.account as Address], blockNumber: B }));
       } else {
         observed = String(await rpc.reads.readContract({ address: c.address as Address, abi: ACCESS_CONTROL_VIEWS_ABI, functionName: "hasRole", args: [c.roleHash!, c.account as Address], blockNumber: B }));
       }
@@ -122,19 +166,43 @@ export async function governancePass(prisma: PrismaClient, rpc: ChainRpc, chainI
     await prisma.ownershipSnapshot.upsert({ where: { id }, create: { id, ...row }, update: row });
   });
 
+  // Thresholds are gas-denominated (config gasBudget): the live gas price, or the
+  // config's documented reference price when the read fails. Never a bare wei guess.
+  let gasPrice: bigint | null = null;
+  let gasPriceSource: string | null = null;
+  try {
+    gasPrice = await rpc.reads.getGasPrice();
+    gasPriceSource = `eth_gasPrice, read beside block ${B}`;
+  } catch {
+    if (cfg.gas) {
+      gasPrice = BigInt(cfg.gas.referenceGasPriceWei);
+      gasPriceSource = "config reference price (eth_gasPrice read failed)";
+    }
+  }
+
   let balances = 0;
   await mapLimit(cfg.opsAccounts, 4, async (acct) => {
     try {
       const wei = await rpc.reads.getBalance({ address: acct.address as Address, blockNumber: B });
-      const min = acct.minWei === undefined ? null : BigInt(acct.minWei);
+      const t = acct.gasBudget && gasPrice !== null ? gasThresholds(wei, acct.gasBudget, gasPrice) : null;
+      const min = t ? t.warnWei : acct.minWei === undefined ? null : BigInt(acct.minWei);
+      const dec = (v: bigint | null) => (v === null ? null : new Prisma.Decimal(v.toString()));
       const row = {
         chainId,
         label: acct.label,
         address: acct.address,
         purpose: acct.purpose,
         balanceWei: new Prisma.Decimal(wei.toString()),
-        minWei: min === null ? null : new Prisma.Decimal(min.toString()),
+        minWei: dec(min),
         belowMin: min === null ? null : wei < min,
+        criticalWei: dec(t?.criticalWei ?? null),
+        gasPriceWei: t ? dec(gasPrice) : null,
+        gasPriceSource: t ? gasPriceSource : null,
+        actionsAffordable: dec(t?.actionsAffordable ?? null),
+        severity: t?.severity ?? null,
+        rationale: acct.gasBudget
+          ? `${acct.gasBudget.action}: ${acct.gasBudget.gasUnits} gas each; CRITICAL below ${acct.gasBudget.criticalActions}, WARN below ${acct.gasBudget.warnActions}. ${acct.gasBudget.rationale}`
+          : null,
         readAtBlock: B,
         readAt: new Date(),
       };

@@ -115,12 +115,18 @@ enum ListingKind {
   LAUNCH
   LAUNCHPAD
   TOKEN
+  /// An ecosystem directory entry (apps/web/src/routes/ecosystem): a third-party
+  /// project, submitted through the public POST /v1/listings.
+  PROJECT
 }
 
 enum ListingStatus {
   PENDING
   APPROVED
   REJECTED
+  /// A moderator asked the submitter for changes. Terminal for this row: the
+  /// submitter re-submits, which creates a new row.
+  CHANGES_REQUESTED
 }
 
 enum ProposalStatus {
@@ -503,6 +509,9 @@ model TimelockEvent {
   /// Human signature when the selector is one we know.
   functionSignature String?
   predecessor       String?
+  /// CallSalt's salt (on the CallSalt row). Needed to build execute(...) for a queued
+  /// operation; the operation id commits to it, so it is verified by re-hashing.
+  salt              String?
   delaySeconds      BigInt?
   /// Non-null when the call is on the CLAUDE.md do-not-queue list.
   hazard            String?
@@ -565,12 +574,36 @@ model Token {
   /// Robinhood stock tokens: `uiMultiplier()` (1e18 = 1 share per token). Null
   /// when the token does not answer it.
   uiMultiplier   Decimal? @db.Decimal(78, 0)
+  /// Robinhood stock tokens: `tokenPaused()`. Null when the token does not answer it.
+  tokenPaused    Boolean?
   readAtBlock    BigInt?
   readAt         DateTime?
   readError      String?
 
   @@unique([chainId, address])
   @@map("tokens")
+}
+
+/// Issuer-controlled state of a stock token that sits in a Latch pool, read by
+/// the worker every snapshot pass. A row is written when a value CHANGES (or
+/// hourly), so the table is a change history, not a poll log.
+model StockTokenObservation {
+  id           String   @id @default(cuid())
+  chainId      Int
+  token        String
+  tokenPaused  Boolean?
+  uiMultiplier Decimal? @db.Decimal(78, 0)
+  /// True when tokenPaused or uiMultiplier differs from the previous row.
+  changed      Boolean  @default(false)
+  previousPaused       Boolean?
+  previousUiMultiplier Decimal? @db.Decimal(78, 0)
+  readAtBlock  BigInt
+  readAt       DateTime @default(now())
+  readError    String?
+
+  @@index([chainId, token, readAtBlock(sort: Desc)])
+  @@index([chainId, changed, readAt(sort: Desc)])
+  @@map("stock_token_observations")
 }
 
 model PoolState {
@@ -696,8 +729,21 @@ model OpsBalance {
   address     String
   purpose     String
   balanceWei  Decimal  @db.Decimal(78, 0)
+  /// WARN threshold (kept under its original name). gasUnits x gasPrice x warnActions.
   minWei      Decimal? @db.Decimal(78, 0)
   belowMin    Boolean?
+  /// CRITICAL threshold: gasUnits x gasPrice x criticalActions.
+  criticalWei Decimal? @db.Decimal(78, 0)
+  /// Gas price the thresholds were computed with, and where it came from
+  /// ("eth_gasPrice@<block>" or "config reference").
+  gasPriceWei    Decimal? @db.Decimal(78, 0)
+  gasPriceSource String?
+  /// How many of the account's action this balance pays for at gasPriceWei.
+  actionsAffordable Decimal? @db.Decimal(78, 0)
+  /// "CRITICAL" | "WARN" | "OK" | null (no budget configured)
+  severity    String?
+  /// The config's gas-cost rationale, copied so a reader sees why the threshold is what it is.
+  rationale   String?
   readAtBlock BigInt
   readAt      DateTime
 
@@ -710,18 +756,31 @@ model OpsBalance {
 
 model ListingSubmission {
   id               String        @id @default(cuid())
-  chainId          Int
+  /// Null for a PROJECT submission, which names its chains in `chains`.
+  chainId          Int?
   kind             ListingKind
   subjectAddress   String?
   poolId           String?
   name             String
   description      String
   websiteUrl       String?
-  /// Reference into an asset store, never an inline blob.
+  /// ListingAsset.id. Never an inline blob.
   iconAssetRef     String?
   /// PRIVATE. Never serialised by a public route.
   contactPrivate   String?
   submittedBy      String?
+  /// Ecosystem fields, limits mirrored from apps/web ecosystem.ts LISTING_LIMITS.
+  category         String?
+  categoryOther    String?
+  sourceUrl        String?
+  /// LatchKind values ("launch-guard", "rev-share", ...).
+  uses             String[]      @default([])
+  ownLatch         String?
+  chains           Int[]         @default([])
+  iconSourceUrl    String?
+  /// sha256(pepper, ip) — for abuse review; the IP itself is not stored.
+  submitterIpHash  String?
+  turnstileVerified Boolean      @default(false)
   status           ListingStatus @default(PENDING)
   reviewer         String?
   reviewNotes      String?
@@ -731,6 +790,24 @@ model ListingSubmission {
 
   @@index([status, createdAt])
   @@map("listing_submissions")
+}
+
+/// A listing icon AFTER server-side processing: PNG re-chunked to critical
+/// chunks only, SVG parsed against an allowlist and re-serialised. The bytes
+/// the uploader sent are never stored or served.
+model ListingAsset {
+  id          String   @id @default(cuid())
+  /// "image/png" | "image/svg+xml"
+  contentType String
+  bytes       Bytes
+  byteLength  Int
+  width       Int?
+  height      Int?
+  sha256      String
+  createdAt   DateTime @default(now())
+
+  @@index([sha256])
+  @@map("listing_assets")
 }
 
 // ===========================================================================

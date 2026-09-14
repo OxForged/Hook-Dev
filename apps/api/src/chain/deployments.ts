@@ -11,6 +11,7 @@ import { toEventSelector, type Abi, type AbiEvent, type Address, type Hex } from
 import {
   FEE_CONTROLLER_V2_EVENTS_ABI,
   LAUNCH_REGISTRY_EVENTS_ABI,
+  POOL_MANAGER_OWNER_EVENTS_ABI,
   REVSHARE_EVENTS_ABI,
   TIMELOCK_EVENTS_ABI,
 } from "./abis.js";
@@ -36,6 +37,8 @@ export type WatchRole =
   | "launchRegistry"
   | "timelockCustody"
   | "timelockPolicy"
+  | "clPoolManagerOwner"
+  | "binPoolManagerOwner"
   | "revShareHook";
 
 export interface WatchedContract {
@@ -63,8 +66,14 @@ export const CORE_EVENTS = {
     "RoleRevoked",
   ],
   launchRegistry: ["LaunchRegistered", "LaunchTokenInfoUpdated", "LaunchMetadataUpdated", "LaunchListingChanged"],
-  timelockCustody: ["CallScheduled", "CallExecuted", "CallSalt", "Cancelled", "MinDelayChange"],
-  timelockPolicy: ["CallScheduled", "CallExecuted", "CallSalt", "Cancelled", "MinDelayChange"],
+  // RoleGranted/RoleRevoked: the admin panel enumerates PROPOSER/EXECUTOR/CANCELLER
+  // holders from these. Adding them changed addressSetHash, so the first pass after
+  // this change re-reads history from deployedAtBlock (by design; see indexPass).
+  timelockCustody: ["CallScheduled", "CallExecuted", "CallSalt", "Cancelled", "MinDelayChange", "RoleGranted", "RoleRevoked"],
+  timelockPolicy: ["CallScheduled", "CallExecuted", "CallSalt", "Cancelled", "MinDelayChange", "RoleGranted", "RoleRevoked"],
+  // PausableRole holders on the pool-manager owner wrappers (CLAUDE.md: Ops tier).
+  clPoolManagerOwner: ["PausableRoleGranted", "PausableRoleRevoked"],
+  binPoolManagerOwner: ["PausableRoleGranted", "PausableRoleRevoked"],
   revShareHook: ["RevShareTaken", "Claimed"],
 } as const satisfies Record<WatchRole, readonly string[]>;
 
@@ -78,6 +87,8 @@ const ABI: Record<WatchRole, Abi> = {
   launchRegistry: LAUNCH_REGISTRY_EVENTS_ABI as unknown as Abi,
   timelockCustody: TIMELOCK_EVENTS_ABI as unknown as Abi,
   timelockPolicy: TIMELOCK_EVENTS_ABI as unknown as Abi,
+  clPoolManagerOwner: POOL_MANAGER_OWNER_EVENTS_ABI as unknown as Abi,
+  binPoolManagerOwner: POOL_MANAGER_OWNER_EVENTS_ABI as unknown as Abi,
   revShareHook: REVSHARE_EVENTS_ABI as unknown as Abi,
 };
 
@@ -118,6 +129,8 @@ export function staticContractsFor(d: LatchDeployment): WatchedContract[] {
     ...watched("launchRegistry", d.launchRegistry),
     ...watched("timelockCustody", d.timelockCustody),
     ...watched("timelockPolicy", d.timelockPolicy),
+    ...watched("clPoolManagerOwner", d.clPoolManagerOwner),
+    ...watched("binPoolManagerOwner", d.binPoolManagerOwner),
   ];
 }
 

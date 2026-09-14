@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- same-origin, NOT no-referrer: under no-referrer a same-origin POST carries
+         `Origin: null`, and the API refuses every mutation whose Origin is not on
+         ADMIN_ORIGINS. Cross-origin navigations (the Safe app link) still send nothing. -->
+    <meta name="referrer" content="same-origin" />
+    <title>Latch Operator Console</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

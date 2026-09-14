@@ -98,6 +98,24 @@ const EnvSchema = z.object({
   /** Roles are re-read on chain after this many seconds within a session. */
   ADMIN_ROLE_RECHECK_SECONDS: z.coerce.number().int().min(15).max(3_600).default(300),
   ADMIN_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(120),
+  /**
+   * eth_call simulation of prepared payloads (read-only; no key exists to sign with).
+   * When false, payloads are returned with simulation "unavailable".
+   */
+  ADMIN_SIMULATION_ENABLED: bool("true"),
+  /**
+   * Built admin UI (apps/admin/dist) served at /admin, same origin as /v1/admin.
+   * Served only when ADMIN_ENABLED=true AND this directory has an index.html.
+   */
+  ADMIN_UI_DIR: z.string().optional(),
+
+  // --- ecosystem listing submissions (public POST /v1/listings) ---------------
+  /** Off by default: no public write surface unless asked for. GET of approved listings is always on. */
+  LISTING_SUBMISSIONS_ENABLED: bool("false"),
+  LISTING_SUBMIT_PER_HOUR: z.coerce.number().int().min(1).max(1_000).default(5),
+  /** Cloudflare Turnstile on submissions. Off by default; when on it fails closed. */
+  TURNSTILE_ENABLED: bool("false"),
+  TURNSTILE_SECRET_KEY: z.string().optional(),
 
   /** Set false for a local http:// admin session. Never false in production. */
   COOKIE_SECURE: bool("true"),
@@ -114,6 +132,9 @@ function parseEnv(): Env {
     throw new Error(`Invalid environment configuration:\n${issues}\n\nSee .env.example.`);
   }
   const env = result.data;
+  if (env.TURNSTILE_ENABLED && !env.TURNSTILE_SECRET_KEY) {
+    throw new Error("TURNSTILE_ENABLED requires TURNSTILE_SECRET_KEY.");
+  }
   if (env.NODE_ENV === "production") {
     if (!env.API_KEY_PEPPER || env.API_KEY_PEPPER.length < 32) {
       throw new Error("API_KEY_PEPPER must be set (>= 32 chars) in production.");

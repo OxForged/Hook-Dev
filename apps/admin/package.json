@@ -1,0 +1,28 @@
+{
+  "name": "@latchprotocol/admin",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Latch operator console: governance, revenue, safety and moderation over the hosted API's /v1/admin. Served by the API container at /admin. Not deployed to GitHub Pages.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "node test/mock-server/server.mjs",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "preview": "vite preview",
+    "check-tokens": "node scripts/check-tokens.mjs"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.2"
+  }
+}

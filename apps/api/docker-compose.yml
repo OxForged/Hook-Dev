@@ -36,6 +36,8 @@ x-app: &app
     DATABASE_URL: postgresql://latch:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/latch?schema=public&connection_limit=10&pool_timeout=10&socket_timeout=20
     REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
     API_KEY_PEPPER: ${API_KEY_PEPPER:?set API_KEY_PEPPER in .env}
+    # Built into the image; served at /admin only when ADMIN_ENABLED=true in .env.
+    ADMIN_UI_DIR: /repo/apps/api/admin-ui
   networks: [latch_net]
   restart: unless-stopped
   read_only: true

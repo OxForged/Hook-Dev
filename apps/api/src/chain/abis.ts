@@ -41,13 +41,57 @@ export const LAUNCH_REGISTRY_EVENTS_ABI = parseAbi([
   "event LaunchListingChanged(bytes32 indexed poolId, address indexed actor, uint8 previous, uint8 current, string reason)",
 ]);
 
-/** OpenZeppelin TimelockController (v5). */
+/**
+ * OpenZeppelin TimelockController (v5). RoleGranted/RoleRevoked come from its
+ * AccessControl base and are how PROPOSER/EXECUTOR/CANCELLER holders are
+ * enumerated (constructor grants emit them too).
+ */
 export const TIMELOCK_EVENTS_ABI = parseAbi([
   "event CallScheduled(bytes32 indexed id, uint256 indexed index, address target, uint256 value, bytes data, bytes32 predecessor, uint256 delay)",
   "event CallExecuted(bytes32 indexed id, uint256 indexed index, address target, uint256 value, bytes data)",
   "event CallSalt(bytes32 indexed id, bytes32 salt)",
   "event Cancelled(bytes32 indexed id)",
   "event MinDelayChange(uint256 oldDuration, uint256 newDuration)",
+  "event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)",
+  "event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)",
+]);
+
+/**
+ * Timelock functions the admin panel PREPARES calldata for. Read from
+ * packages/governance/foundry-out/LatchTimelock.sol/LatchTimelock.json 2026-09-14.
+ */
+export const TIMELOCK_FUNCTIONS_ABI = parseAbi([
+  "function execute(address target, uint256 value, bytes payload, bytes32 predecessor, bytes32 salt) payable",
+  "function hashOperation(address target, uint256 value, bytes data, bytes32 predecessor, bytes32 salt) pure returns (bytes32)",
+  "function isOperationReady(bytes32 id) view returns (bool)",
+  "function isOperationDone(bytes32 id) view returns (bool)",
+  "function getTimestamp(bytes32 id) view returns (uint256)",
+  "function getMinDelay() view returns (uint256)",
+  "function cancel(bytes32 id)",
+]);
+
+export const OWNABLE2STEP_FUNCTIONS_ABI = parseAbi(["function acceptOwnership()"]);
+
+/** CLPoolManagerOwner / BinPoolManagerOwner (packages/core PausableRole). */
+export const POOL_MANAGER_OWNER_EVENTS_ABI = parseAbi([
+  "event PausableRoleGranted(address indexed account)",
+  "event PausableRoleRevoked(address indexed account)",
+]);
+
+/** LatchRegistry.setListing — Listing enum: 0 Active, 1 Deprecated, 2 Malicious (ILatchRegistry.sol). */
+export const REGISTRY_FUNCTIONS_ABI = parseAbi([
+  "function setListing(address hook, uint8 status, string reason)",
+]);
+export const REGISTRY_LISTING = { Active: 0, Deprecated: 1, Malicious: 2 } as const;
+/** LatchRegistry.MAX_NOTE_BYTES. */
+export const REGISTRY_MAX_NOTE_BYTES = 512;
+
+/** `guardian()` on LatchProtocolFeeControllerV2 and RevShareHook; `treasury()` on the V2 controller. */
+export const GUARDIAN_VIEWS_ABI = parseAbi([
+  "function guardian() view returns (address)",
+]);
+export const TREASURY_VIEWS_ABI = parseAbi([
+  "function treasury() view returns (address)",
 ]);
 
 /** Views the snapshot jobs read. Worker-only: no HTTP route reaches these. */
@@ -76,6 +120,17 @@ export const ERC20_VIEWS_ABI = parseAbi([
 /** Robinhood stock token (beacon proxy over `Stock`). Read 2026-09-13 on NVDA. */
 export const STOCK_TOKEN_VIEWS_ABI = parseAbi([
   "function uiMultiplier() view returns (uint256)",
+]);
+
+/**
+ * `tokenPaused()` — the issuer's global pause. The name is taken from the
+ * `PausableStockToken` fixture in packages/launchpad/test/utils/LockerFixture.sol,
+ * which models the Stock token's issuer powers; it has NOT been read against the
+ * live Stock implementation from here. A token that reverts on it records null
+ * ("does not answer"), never false.
+ */
+export const STOCK_TOKEN_PAUSE_ABI = parseAbi([
+  "function tokenPaused() view returns (bool)",
 ]);
 
 export const CHAINLINK_AGGREGATOR_ABI = parseAbi([
@@ -125,6 +180,36 @@ export const KNOWN_SELECTORS: ReadonlyMap<Hex, string> = new Map(
     "function setTreasury(address)",
     "function schedule(address,uint256,bytes,bytes32,bytes32,uint256)",
     "function execute(address,uint256,bytes,bytes32,bytes32)",
+    "function scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)",
+    "function executeBatch(address[],uint256[],bytes[],bytes32,bytes32)",
     "function cancel(bytes32)",
+    "function sweep(address,address)",
+    "function setListing(address,uint8,string)",
+    "function unpausePoolManager()",
+    "function pausePoolManager()",
   ].map((sig) => [toFunctionSelector(sig), sig]),
 );
+
+/**
+ * ABI used to DECODE the arguments of a queued timelock call for display. Covers
+ * the hazard list and the known list above; anything else shows selector + raw data.
+ */
+export const TIMELOCK_CALL_DECODE_ABI = parseAbi([
+  "function renounceOwnership()",
+  "function updateDelay(uint256 newDelay)",
+  "function registerApp(address app)",
+  "function grantRole(bytes32 role, address account)",
+  "function revokeRole(bytes32 role, address account)",
+  "function renounceRole(bytes32 role, address callerConfirmation)",
+  "function setProtocolFeeController(address controller)",
+  "function transferPoolManagerOwnership(address newPoolManagerOwner)",
+  "function transferOwnership(address newOwner)",
+  "function acceptOwnership()",
+  "function setPaused(bool paused)",
+  "function setGuardian(address guardian)",
+  "function collect(address poolManager, address currency, uint256 amount, address recipient)",
+  "function sweep(address poolManager, address currency)",
+  "function setTreasury(address treasury)",
+  "function setListing(address hook, uint8 status, string reason)",
+  "function cancel(bytes32 id)",
+]);

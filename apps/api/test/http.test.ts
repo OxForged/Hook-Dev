@@ -91,6 +91,8 @@ function build(overrides: Partial<AppDeps> = {}, roles: AdminRole[] = ["viewer"]
       roles: roleResolver,
       verifyClient: null,
       rate,
+      simulator: null,
+      keys: { pepper: PEPPER, defaultRpm: 600, defaultQuota: 1_000_000, invalidate: async () => {} },
       config: { origins: ["https://admin.example"], siweDomain: "admin.example", roleChainId: 4663, sessionTtlSeconds: 600, roleRecheckSeconds: 300, perMinute: 100, cookieSecure: true },
     },
     ...overrides,
