@@ -25,6 +25,7 @@ import { ChainTag } from '../../../components/ChainTag.tsx'
 import { DEPLOYMENTS, explorerAddress, explorerTx } from '../../../lib/chain'
 import { BarList } from '../components/charts.tsx'
 import { Gauge } from '../components/series-charts.tsx'
+import { HexReveal } from '../components/HexReveal.tsx'
 import type { LabelledBar, SeriesColor } from '../data/types.ts'
 import {
   fmtCountdown,
@@ -69,9 +70,18 @@ function LiveBadge() {
 
 function AddrLink({ chainId, address }: { chainId: GovernanceData['chainId']; address: string }) {
   return (
-    <a href={explorerAddress(chainId, address)} target="_blank" rel="noopener noreferrer" className="gov-addr" data-hit>
-      {shortAddr(address)}
-    </a>
+    <HexReveal value={address}>
+      <a
+        href={explorerAddress(chainId, address)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="gov-addr"
+        title={address}
+        data-hit
+      >
+        {shortAddr(address)}
+      </a>
+    </HexReveal>
   )
 }
 
@@ -315,7 +325,16 @@ function OwnershipCard({ d }: { d: GovernanceData }) {
             {d.ownership.map((row) => (
               <tr key={row.contractAddress} className={row.isEOAOwned ? 'gov-row--danger' : undefined}>
                 <th scope="row" data-label="CONTRACT">
-                  <span className="gov-contract-name">{row.contractName}</span>
+                  <span className="gov-contract-name">
+                    {row.contractName}
+                    {/* The row's red ground is colour; this says it in words, so
+                        the danger survives a stacked phone card, a
+                        high-contrast mode and a colour-blind reader. Derived
+                        from the same `isEOAOwned` read that colours the row. */}
+                    {row.isEOAOwned ? (
+                      <span className="dapp-badge dapp-badge--danger gov-eoa-badge">EOA OWNER</span>
+                    ) : null}
+                  </span>
                   <br />
                   <AddrLink chainId={d.chainId} address={row.contractAddress} />
                 </th>

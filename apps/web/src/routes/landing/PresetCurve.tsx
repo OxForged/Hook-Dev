@@ -10,36 +10,45 @@
    `LaunchGuardHook._decayedFee` re-implemented literally, in integer
    arithmetic, from `packages/hooks/src/launch/LaunchGuardHook.sol:444`:
 
-       if (elapsed >= decayBlocks) return finalFee;
+       if (elapsed >= decaySeconds) return finalFee;
        spread   = initialFee - finalFee;
-       discount = (spread * elapsed) / decayBlocks;   // Solidity floor division
+       discount = (spread * elapsed) / decaySeconds;  // Solidity floor division
        return initialFee - discount;
+
+   (The block-numbered hook still deployed on Robinhood runs the identical
+   arithmetic with `decayBlocks` in place of `decaySeconds`.)
 
    It would have been faster to interpolate two endpoints with a bezier and
    call it a fee curve. That is exactly the thing CLAUDE.md's "No invented data
    in the UI" rule forbids: a smoothed shape is a claim about what a contract
    charges, made by a chart component rather than by the contract. So the
    discount is floored the way Solidity floors it, the fee rounds UP toward the
-   LPs, and the boundary at `elapsed == decayBlocks` is exact rather than
+   LPs, and the boundary at `elapsed == window` is exact rather than
    asymptotic. If the drawn curve ever disagrees with a swap, this file is
    wrong and the Solidity is right.
 
-   THE CURVE IS A STAIRCASE, NOT A LINE. The fee is a function of the BLOCK
-   NUMBER, so it is constant for the whole of a block and steps at the
-   boundary. Where a preset's window is short enough that every block fits on
-   the chart, the steps are drawn as steps. Where it is not, the plot samples
-   real block numbers and joins them — see `buildPath`, which says which of the
-   two it did and why the distinction matters.
+   THE CURVE IS A STAIRCASE, NOT A LINE. The fee is a function of the hook's
+   clock, so it is constant for the whole of one tick and steps at the
+   boundary. A tick is one second of `block.timestamp` on a timestamp kit, and
+   one contract block on the block-numbered kit. Where a window is short enough
+   that every tick fits on the chart, the steps are drawn as steps; otherwise
+   real ticks are sampled and joined — see `buildPath`.
 
-   WHY BLOCKS ARE SHOWN BESIDE THE SECONDS. `PRESET_PARAMS.windowSeconds` is
-   wall clock, but nothing on chain stores wall clock: the kit converts to a
-   block count at deploy time and `LaunchGuardHook` compares block numbers
-   forever after. And the block it compares is the CONTRACT's block: on
-   Robinhood Chain (Arbitrum Nitro) `block.number` inside the EVM is Ethereum's
-   block number, ~12 s per block, not the ~0.1 s L2 block the RPC reports. The
-   live kit converted at 0.1 s, so its "5 minute" window is 3,000 contract
-   blocks, which is about TEN HOURS. A card that showed "5 minutes" and hid
-   that would be telling a launcher something false about a deployed contract.
+   WHICH KIT, AND WHY IT DECIDES WHAT THIS CARD SAYS. `LatchDeployment.
+   durationClocks.launchpadKit` in the SDK address book names the clock of the
+   kit this chain actually has, and it moves in the same edit as the kit's
+   address. It is never inferred here.
+
+     timestamp       (Option B, 2026-09-13) the kit writes a preset's seconds
+                     to the hook unconverted and the hook compares them with
+                     `block.timestamp`. FairLaunch is five minutes, and the card
+                     says so.
+     contract-block  the kit still deployed on Robinhood converts seconds to
+                     blocks at its declared 0.1 s, but inside the EVM
+                     `block.number` is Ethereum's ~12 s block. Its "5 minute"
+                     window is 3,000 contract blocks, about TEN HOURS. A card
+                     that showed "5 minutes" there would be telling a launcher
+                     something false about a deployed contract, so it shows both.
 
    WHY `doesNotProtectAgainst` IS NOT COLLAPSIBLE. It is the sentence that
    decides whether a preset is the right one, and it is the sentence a preset's
@@ -70,10 +79,14 @@ import styles from './presetcurve.module.css'
 import { cx } from './ui'
 
 /* ----------------------------------------------------------------------------
-   THE TWO BLOCK TIMES, AND WHY THEY DISAGREE BY 120x.
+   THE KIT'S CLOCK, from the deployment record.
 
-   Neither is read from chain at render time — this component makes no RPC
-   call — so both are stated with their sources named.
+   On a TIMESTAMP kit nothing below the next line matters: a tick is a second
+   and the label is the behaviour.
+
+   On the BLOCK-NUMBERED kit there are two block times, and they disagree by
+   120x. Neither is read from chain at render time — this component makes no
+   RPC call — so both are stated with their sources named.
 
    DECLARED is the divisor the deployed KIT uses to turn a preset's seconds
    into blocks. It is a constructor argument, `blockTimeCentis`, and reads 10
@@ -90,8 +103,8 @@ import { cx } from './ui'
    this card used to call "measured" is the L2 block time — the LOG clock — and
    says nothing about how fast `LaunchGuardHook`'s windows elapse.
 
-   So every live preset window runs 120x its label until the kit and hook are
-   redeployed with the real cadence. Shown, not smoothed: a launcher timing an
+   So every preset window on that kit runs 120x its label until the address
+   book points at the timestamp kit. Shown, not smoothed: a launcher timing an
    announcement to the end of the tax is entitled to the truth.
 
    `LaunchpadKit` is deployed on Robinhood and nowhere else (`launchpadKit`
@@ -102,14 +115,29 @@ import { cx } from './ui'
 /** The chain this card describes, named from the SDK address book. */
 const CHAIN = DEPLOYMENTS[ROBINHOOD_CHAIN_ID]
 
-/** `blockTimeCentis` as the deployed kit and hook were constructed with it. */
+/**
+ * The clock of the kit this chain's address book points at. `null` would mean no
+ * kit is deployed here; the card then describes the timestamp source presets and
+ * says that nothing is deployed.
+ */
+const KIT_CLOCK = CHAIN.durationClocks.launchpadKit
+const BLOCK_KIT = KIT_CLOCK === 'contract-block'
+
+/**
+ * `blockTimeCentis` as the block-numbered kit 0x2a4C…bcA7 and hook 0x8b4F…575c were
+ * constructed with it (read 2026-09-13). Used ONLY while `KIT_CLOCK` is
+ * `contract-block`; a timestamp kit has no such argument.
+ */
 const BLOCK_TIME_CENTIS_DECLARED = 10
 
 /** Real cadence of the hook's `block.number` on this chain, from the SDK address book. */
 const CONTRACT_BLOCK_TIME_CENTIS = CHAIN.contractBlockTimeCentis
 
-/** How much longer every window really runs than the kit declared. 120 on Robinhood today. */
-const STRETCH = CONTRACT_BLOCK_TIME_CENTIS / BLOCK_TIME_CENTIS_DECLARED
+/** How much longer every window really runs than its label. 120 on the block kit, 1 on a timestamp kit. */
+const STRETCH = BLOCK_KIT ? CONTRACT_BLOCK_TIME_CENTIS / BLOCK_TIME_CENTIS_DECLARED : 1
+
+/** One chart tick: a second of `block.timestamp`, or one contract block. */
+const TICK = BLOCK_KIT ? 'block' : 'second'
 
 /* ----------------------------------------------------------------------------
    Which presets are selectable.
@@ -145,7 +173,8 @@ const LABELS: Readonly<Record<LivePresetName, string>> = {
    ---------------------------------------------------------------------------- */
 
 /**
- * `LaunchGuardHook._decayedFee`, verbatim (LaunchGuardHook.sol:444).
+ * `LaunchGuardHook._decayedFee`, verbatim. `elapsed` and `window` are ticks:
+ * seconds on the timestamp hook, contract blocks on the block-numbered one.
  *
  * Floor division is the whole point: Solidity's `/` truncates, so the
  * SUBTRACTED discount is floored and the resulting fee rounds UP — toward the
@@ -158,30 +187,25 @@ const LABELS: Readonly<Record<LivePresetName, string>> = {
  * is needed and none is used. That bound is a property of the presets, not of
  * the hook — a `Custom` launch with `MAX_DECAY_BLOCKS` blocks would need one.
  */
-function decayedFeePips(
-  initialFee: number,
-  finalFee: number,
-  elapsedBlocks: number,
-  decayBlocks: number,
-): number {
-  if (elapsedBlocks >= decayBlocks) return finalFee
+function decayedFeePips(initialFee: number, finalFee: number, elapsed: number, window: number): number {
+  if (elapsed >= window) return finalFee
   const spread = initialFee - finalFee
-  const discount = Math.floor((spread * elapsedBlocks) / decayBlocks)
+  const discount = Math.floor((spread * elapsed) / window)
   return initialFee - discount
 }
 
 /**
- * `LaunchGuardHook.feeAt` for a configured launch (LaunchGuardHook.sol:405).
+ * `LaunchGuardHook.feeAt` for a configured launch.
  *
  * The `enabled` branch comes FIRST in the contract and is unconditional: a
- * disabled launch returns `finalFeeBips` at every block, before any window
+ * disabled launch returns `finalFeeBips` at every tick, before any window
  * arithmetic happens. That is why `NoTax` draws flat rather than decaying over
- * its one-second window — the window exists only because the hook rejects
- * `decayBlocks == 0`, and it is never consulted.
+ * its window — the window exists only because the hook validates every config
+ * against its bounds, and it is never consulted.
  */
-function feeAtBlock(p: PresetParams, elapsedBlocks: number, decayBlocks: number): number {
+function feeAtTick(p: PresetParams, elapsed: number, window: number): number {
   if (!p.enabled) return p.finalFeeBips
-  return decayedFeePips(p.initialFeeBips, p.finalFeeBips, elapsedBlocks, decayBlocks)
+  return decayedFeePips(p.initialFeeBips, p.finalFeeBips, elapsed, window)
 }
 
 /* ----------------------------------------------------------------------------
@@ -230,11 +254,11 @@ interface Frame {
 interface Plot {
   line: string
   area: string
-  /** True when every block in the window is plotted, so the steps are real. */
-  steppedPerBlock: boolean
+  /** True when every tick in the window is plotted, so the steps are real. */
+  steppedPerTick: boolean
 }
 
-const xFor = (f: Frame, block: number): number => PL + (block / f.xMax) * f.iw
+const xFor = (f: Frame, tick: number): number => PL + (tick / f.xMax) * f.iw
 const yFor = (f: Frame, pips: number): number => PT + IH - (pips / f.yMax) * IH
 
 /**
@@ -251,7 +275,7 @@ const yFor = (f: Frame, pips: number): number => PT + IH - (pips / f.yMax) * IH
  * two minutes is 1,200 blocks). On a 12-second chain FairLaunch's five minutes
  * would be twenty-five blocks — a visibly coarse staircase.
  */
-function buildPath(p: PresetParams, decayBlocks: number, f: Frame): Plot {
+function buildPath(p: PresetParams, window: number, f: Frame): Plot {
   const baseline = PT + IH
   const parts: string[] = []
   const close = (line: string): string =>
@@ -260,36 +284,36 @@ function buildPath(p: PresetParams, decayBlocks: number, f: Frame): Plot {
   if (!p.enabled) {
     const y = yFor(f, p.finalFeeBips)
     const line = `M ${xFor(f, 0)} ${y} L ${xFor(f, f.xMax)} ${y}`
-    return { line, area: close(line), steppedPerBlock: false }
+    return { line, area: close(line), steppedPerTick: false }
   }
 
-  const steppedPerBlock = decayBlocks + 1 <= MAX_SAMPLES
+  const steppedPerTick = window + 1 <= MAX_SAMPLES
 
-  if (steppedPerBlock) {
-    parts.push(`M ${xFor(f, 0)} ${yFor(f, feeAtBlock(p, 0, decayBlocks))}`)
-    for (let b = 0; b < decayBlocks; b++) {
-      parts.push(`H ${xFor(f, b + 1)}`)
-      parts.push(`V ${yFor(f, feeAtBlock(p, b + 1, decayBlocks))}`)
+  if (steppedPerTick) {
+    parts.push(`M ${xFor(f, 0)} ${yFor(f, feeAtTick(p, 0, window))}`)
+    for (let t = 0; t < window; t++) {
+      parts.push(`H ${xFor(f, t + 1)}`)
+      parts.push(`V ${yFor(f, feeAtTick(p, t + 1, window))}`)
     }
   } else {
     for (let i = 0; i < MAX_SAMPLES; i++) {
-      const b = Math.round((i / (MAX_SAMPLES - 1)) * decayBlocks)
-      parts.push(`${i === 0 ? 'M' : 'L'} ${xFor(f, b)} ${yFor(f, feeAtBlock(p, b, decayBlocks))}`)
+      const t = Math.round((i / (MAX_SAMPLES - 1)) * window)
+      parts.push(`${i === 0 ? 'M' : 'L'} ${xFor(f, t)} ${yFor(f, feeAtTick(p, t, window))}`)
     }
   }
 
-  /* At and after `decayBlocks` the fee is exactly `finalFeeBips`, forever. */
+  /* At and after the window end the fee is exactly `finalFeeBips`, forever. */
   parts.push(`L ${xFor(f, f.xMax)} ${yFor(f, p.finalFeeBips)}`)
 
   const line = parts.join(' ')
-  return { line, area: close(line), steppedPerBlock }
+  return { line, area: close(line), steppedPerTick }
 }
 
-/** Seconds, at the DECLARED block time — what the preset's label promises. */
-const declaredSeconds = (blocks: number): number => (blocks * BLOCK_TIME_CENTIS_DECLARED) / 100
+/** Seconds the label promises for `ticks`: the seconds themselves, or blocks at the kit's DECLARED time. */
+const declaredSeconds = (ticks: number): number => (BLOCK_KIT ? (ticks * BLOCK_TIME_CENTIS_DECLARED) / 100 : ticks)
 
-/** Seconds, at the REAL contract block cadence — what a wall clock reports on this chain. */
-const realSeconds = (blocks: number): number => (blocks * CONTRACT_BLOCK_TIME_CENTIS) / 100
+/** Seconds a wall clock reports for `ticks`: exact on a timestamp kit, the REAL block cadence on a block kit. */
+const realSeconds = (ticks: number): number => (BLOCK_KIT ? (ticks * CONTRACT_BLOCK_TIME_CENTIS) / 100 : ticks)
 
 const int = (n: number): string => Math.round(n).toLocaleString('en-US')
 
@@ -324,26 +348,29 @@ export function PresetCurve() {
 
   const params = PRESET_PARAMS[selected]
 
-  /* The kit's own conversion, from the SDK, at the deployed block time. */
-  const decayBlocks = Number(secondsToBlocks(params.windowSeconds, BLOCK_TIME_CENTIS_DECLARED))
+  /* The window in ticks. A timestamp kit writes the preset's seconds as-is; the
+     block kit converts with its own arithmetic, from the SDK, at its declared time. */
+  const window = BLOCK_KIT
+    ? Number(secondsToBlocks(params.windowSeconds, BLOCK_TIME_CENTIS_DECLARED))
+    : params.windowSeconds
 
   const W = Math.max(measuredWidth, MIN_W)
   const frame: Frame = {
     iw: W - PL - PR,
     /* ~18% past the window so the floor plateau reads as a plateau. */
-    xMax: params.enabled ? Math.ceil(decayBlocks * 1.18) : decayBlocks,
+    xMax: params.enabled ? Math.ceil(window * 1.18) : window,
     yMax: params.initialFeeBips * 1.12,
   }
 
-  const plot = buildPath(params, decayBlocks, frame)
+  const plot = buildPath(params, window, frame)
   const scrubbable = params.enabled
 
-  const block = scrubbable
-    ? Math.min(Math.max(cursor ?? Math.round(decayBlocks / 2), 0), frame.xMax)
+  const tick = scrubbable
+    ? Math.min(Math.max(cursor ?? Math.round(window / 2), 0), frame.xMax)
     : 0
-  const fee = feeAtBlock(params, block, decayBlocks)
+  const fee = feeAtTick(params, tick, window)
 
-  function blockAtClientX(e: PointerEvent<HTMLDivElement>): number | null {
+  function tickAtClientX(e: PointerEvent<HTMLDivElement>): number | null {
     const r = e.currentTarget.getBoundingClientRect()
     if (r.width === 0) return null
     const x = e.clientX - r.left
@@ -352,7 +379,7 @@ export function PresetCurve() {
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>): void {
     if (!scrubbable) return
-    const b = blockAtClientX(e)
+    const b = tickAtClientX(e)
     if (b === null) return
     /* Capture, so a drag that leaves the plot keeps steering the cursor. */
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -365,7 +392,7 @@ export function PresetCurve() {
     /* Hover previews on a mouse; on touch only a drag moves it, so a finger
        scrolling past the chart does not yank the cursor. */
     if (!dragging && e.pointerType !== 'mouse') return
-    const b = blockAtClientX(e)
+    const b = tickAtClientX(e)
     if (b !== null) setCursor(b)
   }
 
@@ -374,10 +401,10 @@ export function PresetCurve() {
     const unit = Math.max(1, Math.round(frame.xMax / 100))
     const step = e.shiftKey ? unit * 10 : unit
     let next: number | null = null
-    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = block + step
-    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = block - step
-    else if (e.key === 'PageUp') next = block + unit * 10
-    else if (e.key === 'PageDown') next = block - unit * 10
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = tick + step
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = tick - step
+    else if (e.key === 'PageUp') next = tick + unit * 10
+    else if (e.key === 'PageDown') next = tick - unit * 10
     else if (e.key === 'Home') next = 0
     else if (e.key === 'End') next = frame.xMax
     if (next === null) return
@@ -385,26 +412,29 @@ export function PresetCurve() {
     setCursor(Math.min(Math.max(next, 0), frame.xMax))
   }
 
-  const windowEndX = xFor(frame, decayBlocks)
+  const windowEndX = xFor(frame, window)
   const floorY = yFor(frame, params.finalFeeBips)
   const openY = yFor(frame, params.initialFeeBips)
-  const cursorX = xFor(frame, block)
+  const cursorX = xFor(frame, tick)
   const cursorY = yFor(frame, fee)
   /* The value label flips to the left of the cursor in the right third, so it
      never runs off the plot. */
   const labelLeft = cursorX > PL + frame.iw * 0.66
 
-  const valueText =
-    `${formatPips(fee)} at block +${int(block)}, about ${humanDuration(realSeconds(block))} from the open on ${CHAIN.name}` +
-    (block >= decayBlocks ? ', past the window, at the floor' : '')
+  const valueText = BLOCK_KIT
+    ? `${formatPips(fee)} at block +${int(tick)}, about ${humanDuration(realSeconds(tick))} from the open on ${CHAIN.name}` +
+      (tick >= window ? ', past the window, at the floor' : '')
+    : `${formatPips(fee)} at ${humanDuration(tick)} from the open` + (tick >= window ? ', past the window, at the floor' : '')
 
-  const summary = params.enabled
-    ? `${LABELS[selected]} preset: the LP fee decays from ${formatPips(params.initialFeeBips)} at the open ` +
-      `to a floor of ${formatPips(params.finalFeeBips)} over ${int(decayBlocks)} blocks. The preset is labelled ` +
-      `${humanDuration(params.windowSeconds)}, but on the deployed ${CHAIN.name} kit those blocks really take ` +
-      `about ${humanDuration(realSeconds(decayBlocks))}.`
-    : `${LABELS[selected]} preset: the gate is off, so the LP fee is a flat ` +
-      `${formatPips(params.finalFeeBips)} at every block.`
+  const summary = !params.enabled
+    ? `${LABELS[selected]} preset: the gate is off, so the LP fee is a flat ${formatPips(params.finalFeeBips)} throughout.`
+    : BLOCK_KIT
+      ? `${LABELS[selected]} preset: the LP fee decays from ${formatPips(params.initialFeeBips)} at the open ` +
+        `to a floor of ${formatPips(params.finalFeeBips)} over ${int(window)} blocks. The preset is labelled ` +
+        `${humanDuration(params.windowSeconds)}, but on the deployed ${CHAIN.name} kit those blocks really take ` +
+        `about ${humanDuration(realSeconds(window))}.`
+      : `${LABELS[selected]} preset: the LP fee decays from ${formatPips(params.initialFeeBips)} at the open ` +
+        `to a floor of ${formatPips(params.finalFeeBips)} over ${humanDuration(params.windowSeconds)} of block.timestamp.`
 
   const lineClass = cx(
     styles['line'],
@@ -418,7 +448,7 @@ export function PresetCurve() {
         <header className={styles['head']}>
           <div className={styles['headText']}>
             <h2 className={styles['title']} id="preset-curve-title">
-              What the pool charges, block by block
+              What the pool charges, {TICK} by {TICK}
             </h2>
             <p className={styles['sub']}>
               Four launch presets, each a decaying LP fee applied by{' '}
@@ -459,7 +489,7 @@ export function PresetCurve() {
             aria-label={scrubbable ? `Fee cursor. ${summary}` : summary}
             aria-valuemin={scrubbable ? 0 : undefined}
             aria-valuemax={scrubbable ? frame.xMax : undefined}
-            aria-valuenow={scrubbable ? block : undefined}
+            aria-valuenow={scrubbable ? tick : undefined}
             aria-valuetext={scrubbable ? valueText : undefined}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -531,7 +561,7 @@ export function PresetCurve() {
                     y2={PT + IH}
                   />
                   <text className={styles['windowLabel']} x={windowEndX + 8} y={PT + 12}>
-                    window ends · {int(decayBlocks)} blocks
+                    window ends · {BLOCK_KIT ? `${int(window)} blocks` : humanDuration(window)}
                   </text>
                 </g>
               ) : null}
@@ -556,12 +586,14 @@ export function PresetCurve() {
                     )
                   })}
                   <text className={styles['axisNote']} x={PL + frame.iw / 2} y={H - PB + 38} textAnchor="middle">
-                    real time from the open on {CHAIN.name} · one hook block ≈ {CONTRACT_BLOCK_TIME_CENTIS / 100}s
+                    {BLOCK_KIT
+                      ? `real time from the open on ${CHAIN.name} · one hook block ≈ ${CONTRACT_BLOCK_TIME_CENTIS / 100}s`
+                      : 'time from the open · block.timestamp seconds'}
                   </text>
                 </>
               ) : (
                 <text className={styles['axisNote']} x={PL + frame.iw / 2} y={H - PB + 20} textAnchor="middle">
-                  the fee does not vary with the block — the gate is off
+                  the fee does not vary with time — the gate is off
                 </text>
               )}
 
@@ -600,14 +632,15 @@ export function PresetCurve() {
             <>
               <span className={styles['readFee']}>{formatPips(fee)}</span>
               <span className={styles['readMeta']}>
-                block +{int(block)} · ~{humanDuration(realSeconds(block))} real · labelled as{' '}
-                {declaredSeconds(block).toFixed(1)}s
-                {block >= decayBlocks ? ' · past the window, at the floor' : ''}
+                {BLOCK_KIT
+                  ? `block +${int(tick)} · ~${humanDuration(realSeconds(tick))} real · labelled as ${declaredSeconds(tick).toFixed(1)}s`
+                  : `+${humanDuration(tick)} from the open`}
+                {tick >= window ? ' · past the window, at the floor' : ''}
               </span>
             </>
           ) : (
             <span className={styles['readMeta']}>
-              Flat {formatPips(params.finalFeeBips)} at every block — nothing to scrub.
+              Flat {formatPips(params.finalFeeBips)} throughout — nothing to scrub.
             </span>
           )}
         </div>
@@ -624,30 +657,50 @@ export function PresetCurve() {
           <div className={styles['fact']}>
             <dt>Window, really</dt>
             <dd>
-              {params.enabled ? `~${humanDuration(realSeconds(decayBlocks))}` : 'none'}
+              {!params.enabled
+                ? 'none'
+                : BLOCK_KIT
+                  ? `~${humanDuration(realSeconds(window))}`
+                  : humanDuration(params.windowSeconds)}
               <span className={styles['factSub']}>
-                {params.enabled
-                  ? `labelled ${humanDuration(params.windowSeconds)} · ${STRETCH}x longer on the live kit`
-                  : 'the gate is off'}
+                {!params.enabled
+                  ? 'the gate is off'
+                  : BLOCK_KIT
+                    ? `labelled ${humanDuration(params.windowSeconds)} · ${STRETCH}x longer on the live kit`
+                    : 'exactly as labelled · block.timestamp'}
               </span>
             </dd>
           </div>
-          <div className={styles['fact']}>
-            <dt>In blocks on {CHAIN.name}</dt>
-            <dd>
-              {int(decayBlocks)}
-              <span className={styles['factSub']}>
-                {params.enabled
-                  ? `converted at the kit's declared ${BLOCK_TIME_CENTIS_DECLARED / 100}s; elapsing every ~${CONTRACT_BLOCK_TIME_CENTIS / 100}s`
-                  : 'exists only because zero is rejected'}
-              </span>
-            </dd>
-          </div>
+          {BLOCK_KIT ? (
+            <div className={styles['fact']}>
+              <dt>In blocks on {CHAIN.name}</dt>
+              <dd>
+                {int(window)}
+                <span className={styles['factSub']}>
+                  {params.enabled
+                    ? `converted at the kit's declared ${BLOCK_TIME_CENTIS_DECLARED / 100}s; elapsing every ~${CONTRACT_BLOCK_TIME_CENTIS / 100}s`
+                    : 'exists only because zero is rejected'}
+                </span>
+              </dd>
+            </div>
+          ) : (
+            <div className={styles['fact']}>
+              <dt>Clock</dt>
+              <dd>
+                seconds
+                <span className={styles['factSub']}>
+                  {KIT_CLOCK === null
+                    ? `no kit is deployed on ${CHAIN.name}; these are the source presets`
+                    : 'the kit writes these seconds to the hook unconverted'}
+                </span>
+              </dd>
+            </div>
+          )}
         </dl>
 
         {/* Not behind a disclosure, for the same reason as the limit below: it
             is true of the deployed contracts today and it changes the decision. */}
-        {STRETCH !== 1 ? (
+        {BLOCK_KIT && STRETCH !== 1 ? (
           <p className={styles['requireOn']}>
             <strong>
               The deployed {CHAIN.name} kit runs every preset about {STRETCH}x longer than its label.
@@ -657,9 +710,10 @@ export function PresetCurve() {
             Ethereum&rsquo;s block number, which advances about every {CONTRACT_BLOCK_TIME_CENTIS / 100}s. A
             {' '}
             {humanDuration(params.windowSeconds)} preset therefore taxes for about{' '}
-            {humanDuration(realSeconds(decayBlocks))}, and a start delay waits {STRETCH}x as long as requested.
+            {humanDuration(realSeconds(window))}, and a start delay waits {STRETCH}x as long as requested.
             Durations in the preset descriptions, including the sentence below, are the labels, not the live
-            behaviour. This holds until the kit and hook are redeployed with the real block cadence.
+            behaviour. This holds until the address book points at the timestamp kit, whose windows are
+            seconds of <code>block.timestamp</code> and mean what they say.
           </p>
         ) : null}
 
@@ -682,14 +736,26 @@ export function PresetCurve() {
           <code>PRESET_PARAMS</code> (MIT SDK, parity-tested against <code>LaunchPresets.sol</code>)
           through <code>LaunchGuardHook._decayedFee</code> with Solidity&rsquo;s floor division —{' '}
           {!params.enabled
-            ? 'with enabled = false the hook returns finalFeeBips at every block'
-            : plot.steppedPerBlock
-              ? 'every block plotted'
-              : 'real blocks sampled and joined'}
-          . Blocks at the deployed <code>blockTimeCentis = {BLOCK_TIME_CENTIS_DECLARED}</code>; wall
-          clock at the hook&rsquo;s real <code>block.number</code> cadence of ~{CONTRACT_BLOCK_TIME_CENTIS / 100}s
-          (SDK <code>contractBlockTimeCentis</code>, measured 2026-09-13). Nothing is read from chain —{' '}
-          <code>previewSchedule(params)</code> on the kit is the runtime authority for the block count.
+            ? 'with enabled = false the hook returns finalFeeBips throughout'
+            : plot.steppedPerTick
+              ? `every ${TICK} plotted`
+              : `real ${TICK}s sampled and joined`}
+          .{' '}
+          {BLOCK_KIT ? (
+            <>
+              Kit clock from the SDK address book: <code>contract-block</code>. Blocks at the deployed{' '}
+              <code>blockTimeCentis = {BLOCK_TIME_CENTIS_DECLARED}</code>; wall clock at the hook&rsquo;s real{' '}
+              <code>block.number</code> cadence of ~{CONTRACT_BLOCK_TIME_CENTIS / 100}s (SDK{' '}
+              <code>contractBlockTimeCentis</code>, measured 2026-09-13).
+            </>
+          ) : (
+            <>
+              Kit clock from the SDK address book: <code>{KIT_CLOCK ?? 'none deployed'}</code>. Windows are
+              seconds of <code>block.timestamp</code>, written to the hook unconverted.
+            </>
+          )}{' '}
+          Nothing is read from chain — <code>previewSchedule(params)</code> on the kit is the runtime
+          authority.
           {CHAIN.launchGuardHook !== null ? (
             <>
               {' '}

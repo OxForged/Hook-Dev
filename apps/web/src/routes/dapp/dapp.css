@@ -43,6 +43,9 @@
   display: grid;
   grid-template-columns: 206px minmax(0, 1fr);
   min-height: 100vh;
+  /* The dynamic unit where it exists: a phone's 100vh includes the browser bar
+     it is currently showing, so the shell over-ran the screen by that much. */
+  min-height: 100dvh;
   background: var(--panel-alt);
   color: var(--ink);
   font-size: var(--b-body);
@@ -124,6 +127,65 @@
   background: var(--dapp-sidebar-bg);
   scrollbar-width: thin;
   scrollbar-color: var(--hairline-blue) transparent;
+}
+
+/* Lockup row. As a drawer it also carries the Close button. */
+.dapp-sidebar__top { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.dapp-sidebar__top .dapp-lockup { flex: 0 1 auto; min-width: 0; }
+
+/* The drawer's own Close: the burger that opened it is under the scrim. The
+   secondary-button box, at the 44px touch size. */
+.dapp-drawer-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  margin-right: var(--s3);
+  border: 1px solid var(--cta-border);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color var(--b-dur), color var(--b-dur);
+}
+.dapp-drawer-close:hover { border-color: var(--border-hover); color: var(--latch-blue); }
+.dapp-drawer-close:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 2px; }
+.dapp-drawer-close__x {
+  position: relative;
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.dapp-drawer-close__x::before,
+.dapp-drawer-close__x::after {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 1.5px;
+  margin-top: -0.75px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  content: '';
+}
+.dapp-drawer-close__x::before { transform: rotate(45deg); }
+.dapp-drawer-close__x::after { transform: rotate(-45deg); }
+
+/* The wallet-network switcher, when the compact header hands it to the drawer. */
+.dapp-sidebar__network { display: grid; gap: var(--s1); padding-bottom: var(--s2); border-bottom: 1px solid var(--hairline); }
+.dapp-sidebar__network .dapp-sidebar__network-label { padding: 0; }
+.dapp-sidebar__network .latch-chain { display: block; }
+.dapp-sidebar__chain .latch-chain__trigger { width: 100%; min-height: 44px; }
+/* It sits at the foot of the drawer, so its menu opens UPWARD, into the list,
+   instead of below the last pixel of a scroll container that clips it. */
+.dapp-sidebar__chain .latch-chain__menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: auto;
+  max-width: calc(100vw - 2 * var(--s4));
+  max-height: min(360px, 60dvh);
 }
 
 /* The link box around the shared lockup (components/BrandLockup, `lg`). The
@@ -394,11 +456,123 @@ span.dapp-netchip__mark {
     width: 274px;
     max-width: 86vw;
     height: auto;
+    /* NOT the desktop `align-self: start`. On an absolutely positioned box
+       with both top and bottom set, a non-stretch self-alignment means "fit
+       the content" (CSS Box Alignment), so the drawer grew to its full ~1024px
+       list and sat past the bottom of a phone screen with nothing to scroll:
+       the MORE links and the foot were unreachable on any short viewport. */
+    align-self: stretch;
+    /* Safe areas: a notch in landscape sits on the left edge, the home
+       indicator on the bottom. The rail's own 16px stays the minimum. */
+    padding-top: max(var(--s4), env(safe-area-inset-top));
+    padding-bottom: max(var(--s4), env(safe-area-inset-bottom));
+    padding-left: env(safe-area-inset-left);
+    /* The end of the nav list must not hand the scroll to the (locked) page. */
+    overscroll-behavior: contain;
     transform: translateX(-100%);
-    transition: transform var(--dur) var(--dapp-ease);
+    /* `visibility` follows the slide out, so a closed drawer paints nothing —
+       not even its shadow edge — and cannot be reached by find-in-page. */
+    visibility: hidden;
+    transition: transform var(--dur) var(--dapp-ease), visibility 0s linear var(--dur);
   }
-  .dapp-sidebar.is-open { transform: none; box-shadow: var(--shadow-2); }
+  .dapp-sidebar.is-open {
+    transform: none;
+    visibility: visible;
+    box-shadow: var(--shadow-2);
+    transition: transform var(--dur) var(--dapp-ease), visibility 0s;
+  }
+  /* The drawer is a touch surface: every row a full 44px target. */
+  .dapp-sidebar .dapp-nav__row { min-height: 44px; }
+  .dapp-sidebar .dapp-lockup { min-height: 44px; }
 }
+
+/* ---- the wallet CTA's ink ---------------------------------------------------
+   packages/connect paints its disconnected CTA with `--ink-bright` on the brand
+   blue. That token is #0f1621 on paper — 3.5:1 at the top stop, under the
+   4.5:1 its 13px label needs (tokens.css, --on-accent, records the same
+   failure on the landing's buttons). The package is MIT and standalone, so it
+   is corrected here, where the host owns the ground, not in the package. */
+.dapp .latch-connect__btn--cta,
+.dapp .latch-connect__btn--cta:hover { color: var(--on-accent); }
+/* The same control's glyph reads `--latch-connect-plug-mask`, which the
+   package documents as host-supplied and nothing here ever supplied — so it
+   masked with `none` and painted a solid square beside "Connect wallet". A
+   plug, drawn as an alpha mask; the colour still comes from the button. */
+.dapp {
+  --latch-connect-plug-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5.5 1.5v3.5M10.5 1.5v3.5M8 12.5v2.5' stroke='%23000' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath d='M3 5h10v2.5a5 5 0 0 1-10 0z'/%3E%3C/svg%3E");
+}
+
+/* ---- compact header (under 720px) -------------------------------------------
+   TopBar renders `.dapp-headwrap--compact` below 720px: row 1 is burger, title
+   and wallet; row 2 is `.dapp-statusrow`, ONE line of chips and price rails
+   that scrolls sideways inside itself. See TopBar.tsx for why each piece sits
+   where it does. Safe-area insets are honoured on every edge the bar touches. */
+.dapp-headwrap--compact .dapp-header {
+  flex-wrap: nowrap;
+  gap: var(--s2);
+  padding: max(var(--s2), env(safe-area-inset-top)) max(var(--s4), env(safe-area-inset-right)) var(--s2)
+    max(var(--s4), env(safe-area-inset-left));
+  min-height: 60px;
+}
+.dapp-headwrap--compact .dapp-burger { width: 44px; height: 44px; }
+.dapp-headwrap--compact .dapp-header__meta { flex: 1 1 auto; min-width: 0; }
+/* Two lines before an ellipsis: "Latch Marketplace" beside a wallet button
+   at 360px is wider than one line, and a title cut to "Latch Marke…" names
+   nothing. The subtitle stays one line — it qualifies, the title names. */
+.dapp-headwrap--compact .dapp-header__title {
+  font-size: var(--b-lede);
+  line-height: 1.2;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.dapp-headwrap--compact .dapp-header__subtitle { margin-top: 1px; font-size: var(--b-label); line-height: 1.4; }
+.dapp-header__wallet { flex: 0 0 auto; display: flex; align-items: center; }
+.dapp-headwrap--compact .latch-connect__btn { min-height: 44px; padding: var(--s2) var(--s3); gap: var(--s2); }
+
+.dapp-statusrow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) max(var(--s4), env(safe-area-inset-right)) var(--s2) max(var(--s4), env(safe-area-inset-left));
+  border-bottom: 1px solid var(--dapp-sidebar-line);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  /* A fade on the trailing edge says "there is more this way" without a
+     control. Alpha-only mask, so any opaque token is the keep stop. */
+  -webkit-mask-image: linear-gradient(90deg, var(--ink) calc(100% - 20px), transparent);
+  mask-image: linear-gradient(90deg, var(--ink) calc(100% - 20px), transparent);
+}
+.dapp-statusrow::-webkit-scrollbar { display: none; }
+.dapp-statusrow:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: -2px; }
+.dapp-statusrow__chips { display: flex; align-items: center; gap: var(--s2); flex: 0 0 auto; }
+.dapp-statusrow .dapp-tickers { flex: 0 0 auto; flex-direction: row; align-items: center; gap: var(--s2); padding-right: var(--s4); }
+.dapp-statusrow .dapp-tickers__divider { display: none; }
+/* Each rail becomes a pill the width of a phone, so a marquee is still a
+   marquee and the pair scrolls into view one at a time. */
+.dapp-statusrow .dapp-tickers__rail.ltk--dapp {
+  flex: 0 0 min(300px, 78vw);
+  min-height: 32px;
+  padding-block: 0;
+  padding-inline: var(--s3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  background: var(--panel);
+}
+/* A rail showing a MESSAGE (not configured, unreachable) sizes to the whole
+   sentence instead of ellipsising it: this row already scrolls, and "Not
+   configured — US equity quotes need a Finnhub API ke…" is a disclosure with
+   its reason cut off. */
+.dapp-statusrow .dapp-tickers__rail.ltk--dapp:has(> .ltk-msg) { flex-basis: auto; }
+.dapp-statusrow .ltk-msg { overflow: visible; text-overflow: clip; }
+/* Legible type in the rails: TickerStrip scales itself to ~11px at phone
+   width; the dapp's floor is 12px outside uppercase micro-labels. */
+.dapp-statusrow .ltk { font-size: var(--b-label); }
+.dapp-statusrow :is(.ltk-flat, .ltk-note) { font-size: var(--b-label); }
+.dapp-statusrow :is(.ltk-meta, .ltk-badge) { font-size: var(--b-micro); }
 
 /* ==========================================================================
    SHARED PRIMITIVES
@@ -1391,6 +1565,79 @@ img.dapp-netchip__mark { object-fit: contain; }
 
 .hx-addr { text-decoration: none; color: var(--muted-ink); }
 .hx-addr:hover { color: var(--signal-blue); text-decoration: underline; }
+
+/* ---- HexReveal (components/HexReveal.tsx) ---------------------------------
+   A truncated address plus one quiet toggle that shows the full value and
+   copies it. The toggle is 20px drawn and 44px hit on touch (the ::after), so
+   it never pushes a dense row apart; the revealed value breaks anywhere,
+   because a 42-character hex string is one word to the browser. */
+.dapp-hex { display: inline; }
+.dapp-hex__btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  /* Its 44px touch target is the ::after below, not the box: a global
+     coarse-pointer min-height on buttons would otherwise open a 24px gap
+     under every address in a dense card. */
+  min-width: 0;
+  min-height: 0;
+  margin-left: 2px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-micro);
+  background: none;
+  color: var(--muted-ink);
+  vertical-align: -4px;
+  cursor: pointer;
+  transition: color var(--b-dur), border-color var(--b-dur), background var(--b-dur);
+}
+.dapp-hex__btn:hover { color: var(--signal-blue); border-color: var(--hairline-blue); }
+.dapp-hex__btn[aria-expanded='true'] { color: var(--latch-blue); border-color: var(--dapp-badge-info-border); background: var(--accent-soft); }
+.dapp-hex__btn:focus-visible { outline: 2px solid var(--latch-blue); outline-offset: 1px; }
+/* Two offset squares: the copy glyph, drawn so it takes currentColor. */
+.dapp-hex__glyph { position: relative; display: block; width: 11px; height: 11px; }
+.dapp-hex__glyph::before,
+.dapp-hex__glyph::after {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  content: '';
+}
+.dapp-hex__glyph::before { top: 0; left: 0; opacity: 0.55; }
+.dapp-hex__glyph::after { right: 0; bottom: 0; background: var(--panel); }
+.dapp-hex__btn[aria-expanded='true'] .dapp-hex__glyph::after { background: var(--accent-soft); }
+@media (pointer: coarse) {
+  .dapp-hex__btn::after { position: absolute; inset: -12px; content: ''; }
+}
+.dapp-hex__full {
+  display: block;
+  margin: var(--s1) 0 2px;
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-micro);
+  background: var(--code-ground);
+  text-align: left;
+  font-weight: 400;
+}
+.dapp-hex__value {
+  font-family: var(--font-mono);
+  font-size: var(--b-label);
+  line-height: 1.5;
+  color: var(--ink);
+  word-break: break-all;
+  user-select: all;
+}
+.dapp-hex__status {
+  display: block;
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+}
+.dapp-hex__status:empty { display: none; }
 .hx-muted { color: var(--muted-ink); }
 
 .hx-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
@@ -2357,6 +2604,8 @@ img.dapp-netchip__mark { object-fit: contain; }
 .gov-table thead th:nth-child(2) { width: 48%; }
 .gov-table thead th:nth-child(3) { width: 22%; }
 .gov-contract-name { display: block; margin-bottom: 2px; font-size: var(--b-caption); font-weight: 560; line-height: 1.5; color: var(--ink); }
+/* The EOA-owner row says so in words, not only in its red ground. */
+.gov-eoa-badge { margin-left: var(--s2); }
 .gov-chain { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--b-label); }
 .gov-chain__hop { display: inline-flex; align-items: center; gap: 6px; }
 .gov-chain__hop a { color: var(--signal-blue); text-decoration: none; }
@@ -2572,6 +2821,13 @@ img.dapp-netchip__mark { object-fit: contain; }
 .swap-screen__what-is-l[open] > summary { margin-bottom: var(--s1); }
 
 .swap-panel { display: grid; gap: var(--s3); max-width: 560px; }
+/* Grid items default to `min-width: auto`, and a native <input> has an
+   intrinsic width of ~20 characters at the amount's 18-24px type. At 360px
+   that minimum widened the panel's one track past the card and the page
+   scrolled sideways by 13px. `width: 0` + flex-grow lets the field take the
+   space that is actually there. */
+.swap-panel > * { min-width: 0; }
+.swap-input { width: 0; }
 
 .swap-pair-chip {
   padding: 1px var(--s2);
@@ -2895,7 +3151,22 @@ img.dapp-netchip__mark { object-fit: contain; }
   .dapp-pool-stats { margin-left: 0; gap: var(--s3) var(--s4); }
   .dapp-latch__foot { gap: var(--s3) var(--s4); }
 
-  /* Tables become stacked label/value rows. */
+  /* TABLES BECOME STACKED LABEL/VALUE CARDS.
+
+     Each row is a card, each cell a line: the column's name on the left (from
+     `data-label` — written by hand on Portfolio and Governance, copied from the
+     header row for every other table by useTableLabels in lib/dom.ts), the
+     value on the right. The row's own heading cell (`th scope="row"`) leads the
+     card at full width with its label above it.
+
+     The label is a FLOAT inside a flow-root cell, not a flex item. Cells hold
+     mixed inline content — two amounts split by <br>, a symbol then an explorer
+     link, a badge then a second badge — and as flex items those became
+     separate columns squeezed beside the label. Floated, the value keeps its
+     own inline flow and wraps under itself. */
+  .dapp-table {
+    --dapp-cell-label: 7.25rem;
+  }
   .dapp-table thead {
     position: absolute;
     width: 1px;
@@ -2906,32 +3177,58 @@ img.dapp-netchip__mark { object-fit: contain; }
   }
   .dapp-table,
   .dapp-table tbody,
-  .dapp-table tbody tr,
-  .dapp-table tbody th,
-  .dapp-table tbody td { display: block; width: auto; }
+  .dapp-table tbody tr { display: block; width: auto; }
   .dapp-table tbody tr { padding: var(--s3) var(--s4); border-bottom: 1px solid var(--hairline); }
   .dapp-table tbody tr:last-child { border-bottom: none; }
   .dapp-table tbody th,
   .dapp-table tbody td {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s3);
-    padding: 6px 0;
+    display: flow-root;
+    width: auto;
+    padding: 5px 0 5px calc(var(--dapp-cell-label) + var(--s3));
     border-bottom: none;
+    overflow-wrap: anywhere;
   }
   .dapp-table tbody th::before,
   .dapp-table tbody td::before {
     content: attr(data-label);
-    flex: 0 0 auto;
+    float: left;
+    width: var(--dapp-cell-label);
+    margin-left: calc(-1 * (var(--dapp-cell-label) + var(--s3)));
+    padding-top: 2px;
     font-family: var(--font-body);
     font-weight: 640;
     font-size: var(--b-micro);
-    letter-spacing: 0.08em;
+    line-height: 1.5;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--faint-ink);
+    overflow-wrap: normal;
+    /* --muted-ink, not the desktop header's --faint-ink: in a card the label
+       is the only thing saying which figure this is. */
+    color: var(--muted-ink);
   }
+  /* No label (a spanning cell, or a table with no header row): full width. */
+  .dapp-table tbody :is(th, td):not([data-label]),
+  .dapp-table tbody :is(th, td)[data-label=''] { padding-left: 0; }
+  .dapp-table tbody :is(th, td):not([data-label])::before,
+  .dapp-table tbody :is(th, td)[data-label='']::before { content: none; }
+  /* The row heading leads the card: label above, value at full width. */
+  .dapp-table tbody th[scope='row'] { padding: 0 0 var(--s2); font-weight: 600; color: var(--ink); }
+  .dapp-table tbody th[scope='row']::before {
+    float: none;
+    display: block;
+    width: auto;
+    margin: 0 0 2px;
+    padding: 0;
+  }
+
+  /* EOA-OWNED ROWS stay loud as a card: the danger ground fills the whole card
+     (not just the cells, which left white bands in the row padding) and the
+     3px red rule moves from the first cell to the card's edge. */
   .gov-row--danger th:first-child { box-shadow: none; }
+  .dapp-table tbody tr.gov-row--danger {
+    background: var(--dapp-badge-danger-bg);
+    box-shadow: inset 3px 0 0 0 var(--error);
+  }
 }
 
 @media (max-width: 720px) {
@@ -2943,8 +3240,12 @@ img.dapp-netchip__mark { object-fit: contain; }
   .dapp-pool-head__pair { font-size: var(--b-lede); }
   .dapp-kpis { grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
   .dapp-cols { height: 170px; }
-  .dapp-steps { flex-wrap: wrap; }
-  .dapp-step { flex: 1 1 100%; border-right: none; border-bottom: 1px solid var(--hairline); }
+  /* Four steps as a 2 x 2 grid, not four full-width rows: the stepper is
+     orientation, and at ~70px a row it pushed the form a screen down. */
+  .dapp-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dapp-step { gap: var(--s2); padding: var(--s3); border-right: none; border-bottom: 1px solid var(--hairline); }
+  .dapp-step:nth-child(odd) { border-right: 1px solid var(--hairline); }
+  .dapp-step:nth-last-child(-n + 2):nth-child(odd),
   .dapp-step:last-child { border-bottom: none; }
   .dapp-card--donut { flex-wrap: wrap; }
   .po-row { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
@@ -2952,6 +3253,138 @@ img.dapp-netchip__mark { object-fit: contain; }
   .lc-stats { grid-template-columns: minmax(0, 1fr); }
   .lc-row { grid-template-columns: minmax(0, 1fr); gap: var(--s1); }
   .lc-row__v { text-align: left; }
+}
+
+/* ==========================================================================
+   PHONE — under 720px (tokens.css BREAKPOINTS: "tables stack; compact")
+   The dapp is a developer tool, so the phone layout stays dense: one column,
+   the same data, smaller gutters — never a marketing page's air.
+   ========================================================================== */
+@media (max-width: 720px) {
+  /* TYPE FLOOR. Nothing under 12px except the uppercase micro-label
+     (--b-micro, 11px). --b-axis (10.5px) sets mono sub-lines, chain ids,
+     domains, raw revert text and axis ticks — all read as values on a phone —
+     so it is lifted for this subtree only. Scoped to `.dapp`: landing and docs
+     mount the same chart primitives and keep their own scale. */
+  .dapp { --b-axis: 12px; }
+  /* Badges are not always uppercase ("claimed", "global, not per pool"). */
+  .dapp :is(.dapp-badge, .live-badge, .lx-ledger__verdict) { font-size: var(--b-label); letter-spacing: 0.02em; }
+  /* A badge carrying a sentence ("awaiting postRoot (owner) · rollover from
+     …", "armed · applicable by anyone now") wraps inside its pill rather
+     than running past the card or being clipped by a table's rounded box. */
+  .dapp .dapp-badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+  .dapp-content {
+    padding-left: max(var(--s4), env(safe-area-inset-left));
+    padding-right: max(var(--s4), env(safe-area-inset-right));
+    padding-bottom: max(var(--s6), calc(env(safe-area-inset-bottom) + var(--s5)));
+  }
+
+  /* ---- forms ----
+     16px in every text field: iOS Safari zooms the page on focus for anything
+     smaller, and a zoomed page is a page that scrolls sideways. */
+  .dapp :is(.dp-input, .po-input, .dapp-search__input, .swap-slippage__custom) { font-size: 16px; }
+  .dapp :is(.dp-input, .po-input) { min-height: 44px; }
+  .dapp .dp-input--area { min-height: 88px; }
+  .dapp-search { flex-basis: 100%; min-height: 44px; padding-block: var(--s2); }
+  .swap-panel { max-width: none; }
+  .swap-slippage__custom { flex: 1 1 96px; min-height: 36px; }
+  .swap-field { padding: var(--s3); }
+  .dapp .po-rowactions .dapp-btn { flex: 1 1 auto; }
+  .dapp-pref { flex-wrap: wrap; gap: var(--s3); }
+  .dapp-pref__copy { flex: 1 1 100%; }
+
+  /* ---- sticky primary actions ----
+     SWAP. The final Swap button follows the reader down the panel until they
+     reach it. `display: contents` on its two wrappers makes the button a
+     direct child of the tall panel, which is what sticky needs to travel.
+
+     NEVER WHILE A HAZARD IS ON THE PANEL. If an armed or queued config change
+     (`.swap-pending`, CLAUDE.md "Deployed and unfixable" 5) or a failure is
+     rendered, the button stays in flow below it: a floating Swap would let a
+     thumb confirm the trade before the warning has scrolled into view, which
+     is exactly the weakening this layout must not introduce. Approvals never
+     float either — only the one primary send.
+
+     DEPLOY. Register is enabled only after `register()` simulated, and sits at
+     the foot of its own card, so it floats only while the form is on screen. */
+  .swap-panel:not(:has(.swap-pending, .swap-failure)):has(.swap-send > .dapp-btn--primary) .swap-steps,
+  .swap-panel:not(:has(.swap-pending, .swap-failure)) .swap-send:has(> .dapp-btn--primary) { display: contents; }
+  .swap-panel:not(:has(.swap-pending, .swap-failure)) .swap-send > .dapp-btn--primary,
+  .dapp-card--config > .dapp-btn--primary.dapp-btn--block {
+    position: sticky;
+    bottom: max(var(--s3), env(safe-area-inset-bottom));
+    z-index: 2;
+    min-height: 48px;
+    box-shadow: 0 0 0 var(--s2) var(--panel), var(--shadow-2);
+  }
+  /* Floating over content, a translucent button shows the text beneath it.
+     Disabled and busy stay unmistakable, but opaque. */
+  .swap-panel .swap-send > .dapp-btn--primary:disabled,
+  .dapp-card--config > .dapp-btn--primary.dapp-btn--block:disabled {
+    opacity: 1;
+    border-color: var(--hairline-blue);
+    background: var(--deep-panel);
+    color: var(--muted-ink);
+  }
+  .swap-panel .swap-send > .dapp-btn--primary[data-busy='true'],
+  .dapp-card--config > .dapp-btn--primary.dapp-btn--block[data-busy='true'] { opacity: 1; }
+
+  /* ---- hazard UI keeps its full weight ----
+     Nothing here truncates, clamps or collapses a warning. These restate the
+     wrapping the desktop rules already allow, so a future `nowrap` on a
+     parent cannot quietly clip one. */
+  .dapp :is(.swap-pending, .po-block--danger, .hx-alert, .hx-flagged, .hx-caps--danger, .lx-ribbon) {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  .dapp :is(.swap-pending__head, .swap-pending__body, .hx-alert, .hx-flagged__note) { overflow-wrap: anywhere; }
+  .swap-pending { padding: var(--s3); }
+  .po-block { padding: var(--s3); }
+  /* The unarmed freezeConfig button: at the base rule's 50% opacity it was
+     pink-on-pink and read as absent. Disarmed is said by a dashed rule and no
+     ground; the label stays at full danger strength so the reader can see
+     exactly what typing FREEZE will arm. */
+  .dapp .po-btn--danger:disabled { opacity: 1; border-style: dashed; border-color: var(--error); background: transparent; }
+  /* A multi-line badge is a rounded box, not a stretched pill. */
+  .dapp .dapp-badge { border-radius: var(--r-badge); }
+  /* Inline code in prose sits at 0.92em — 11.5px on a 12.5px line. */
+  .dapp :is(.swap-pending, .live-note, .dapp-note, .dp-lede, .dp-gap, .dp-ok, .dp-hint, .dapp-method__body, .lx-rail__note, .hx-alert, .swap-row__note) code { font-size: max(12px, 0.92em); }
+  /* Governance's contract cell is a block name, a <br>, then the address:
+     in a stacked card the <br> after a block renders as an empty line. */
+  .dapp-table .gov-contract-name + br { display: none; }
+
+  /* ---- misc dense-layout fixes ---- */
+  .dapp-card__head,
+  .dapp-card__bar { gap: var(--s2); }
+  .dapp-switcher { margin-left: 0; max-width: 100%; overflow-x: auto; }
+  .lx-strip--lg .lx-strip__cell { flex-basis: 132px; }
+  .lx-bits--lg i { width: 12px; height: 20px; }
+  .dapp-contract__addr { flex-basis: 100%; }
+  .gov-summary__block { flex-basis: 100%; }
+  .gov-addr { white-space: normal; overflow-wrap: anywhere; }
+  .an-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dapp-bitgrid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 128px), 1fr)); }
+  /* Columns never force the card wider: the Epochs chart draws one column per
+     epoch with no cap, and 6px + a 6px gap each ran out of width at ~25. */
+  .dapp-cols { gap: 3px; }
+  .dapp-cols__col { min-width: 2px; }
+  .dapp-donut { width: 88px; height: 88px; }
+  .dapp-gauge svg { width: 116px; height: 116px; }
+}
+
+/* 360-class phones: the last 30px. */
+@media (max-width: 400px) {
+  .dapp-headwrap--compact .latch-connect__plug { display: none; }
+  .dapp-card,
+  .dapp-pool-head { padding: var(--s3); }
+  .lx-card,
+  .lx-hero { --lx-pad: var(--s3); }
+  .dapp-table { --dapp-cell-label: 6.25rem; }
+  .dapp-table tbody tr { padding-inline: var(--s3); }
+  .dapp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3); }
+  .dapp-kpi__value { font-size: var(--b-lede); }
 }
 
 /* Hit targets stay >= 44px on touch. */
@@ -2962,7 +3395,24 @@ img.dapp-netchip__mark { object-fit: contain; }
   .dapp-pill,
   .dapp-btn,
   .swap-chip,
-  .swap-pool { min-height: 44px; }
+  .swap-pool,
+  .dapp-serieskey__btn,
+  .dapp-legend__row--btn,
+  .dapp-bitgrid__cell,
+  .dapp-bars__row { min-height: 44px; }
+  .dapp .latch-connect__btn,
+  .dapp .latch-chain__trigger { min-height: 44px; }
+  .swap-flip { width: 44px; height: 44px; margin: -10px 0; }
+  /* Text-only controls get their 44px from a hit area, not a taller box that
+     would push the label off the line it sits in. */
+  .swap-max,
+  .hx-linkbtn { position: relative; }
+  .swap-max::after,
+  .hx-linkbtn::after { position: absolute; inset: -12px -8px; content: ''; }
+  .dapp-method > summary,
+  .swap-panel__how-bound > summary,
+  .swap-screen__what-is-l > summary,
+  .swap-costs > summary { min-height: 44px; }
 }
 
 /* ==========================================================================
@@ -3001,6 +3451,11 @@ img.dapp-netchip__mark { object-fit: contain; }
   .dapp-btn:hover { transform: none !important; }
 
   .dapp-cols__bar { animation: none !important; transform: none !important; }
+
+  /* The drawer appears and disappears; it does not slide. `visibility` is
+     delayed by the slide's duration on close, and a delay is not a duration,
+     so it is cancelled explicitly or a closed drawer lingers visible. */
+  .dapp-sidebar { transition: none !important; }
 
   .dapp-series__line {
     animation: none !important;

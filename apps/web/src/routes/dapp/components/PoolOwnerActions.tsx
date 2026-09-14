@@ -38,7 +38,7 @@
    ============================================================================ */
 
 import { LatchConnectButton } from '@latchprotocol/connect'
-import { contractBlocksToSeconds, humanDuration } from '@latchprotocol/sdk'
+import { formatClockSpan } from '../../../lib/pendingConfig'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Abi, Address } from 'viem'
 import { isAddress } from 'viem'
@@ -508,20 +508,26 @@ function ProposeConfig({
     }
   }, [feePips, lp, ben, dist, distributor, enabled])
 
-  const delayBlocks = o.configDelayBlocks
-  /* Real time at the hook's own block cadence — ~12 s per `block.number` on
-     Robinhood, where the hook sees Ethereum's block number. The live hook was
-     sized for 0.1 s blocks, so 432,000 blocks is ~60 days, not 12 hours. */
-  const delayReal = humanDuration(contractBlocksToSeconds(delayBlocks, REVSHARE_CHAIN_ID))
+  /* The delay in the hook's own unit. A timestamp hook states seconds exactly.
+     A block hook states contract blocks, whose real time is an ESTIMATE at the
+     hook's own block cadence — ~12 s per `block.number` on Robinhood, where the
+     hook sees Ethereum's block number. The live 0xfC00 hook was sized for 0.1 s
+     blocks, so its 432,000 blocks are ~60 days, not 12 hours. */
+  const timestampHook = o.configDelay.clock === 'timestamp'
+  const delayUnits = `${o.configDelay.value.toString()} ${timestampHook ? 'seconds' : 'blocks'}`
+  const delayReal =
+    formatClockSpan(o.configDelay.clock, o.configDelay.value, REVSHARE_CHAIN_ID) ?? 'an unknown span of time'
+  const delayGetter = timestampHook ? 'CONFIG_DELAY_SECONDS' : 'CONFIG_DELAY_BLOCKS'
   const raising = parsed.args !== null && parsed.args[0] > c.feePips
 
   return (
     <div className="po-block">
       <h4 className="po-block__title">Propose a configuration change</h4>
       <p className="live-note">
-        Queues the change; it becomes applicable {delayBlocks.toString()} blocks later — about{' '}
-        <strong>{delayReal}</strong> of real time on this chain
-        (<code>CONFIG_DELAY_BLOCKS</code>), and anyone may then call{' '}
+        Queues the change; it becomes applicable {delayUnits} later —{' '}
+        <strong>{delayReal}</strong>
+        {timestampHook ? '' : ' of real time on this chain (estimated)'} (<code>{delayGetter}</code>), and
+        anyone may then call{' '}
         <code>applyPendingConfig</code> — the delay is the protection, not the caller. Only
         escalation waits: to <em>lower</em> the take use <code>reduceFee</code> below, which applies
         immediately.
@@ -569,13 +575,13 @@ function ProposeConfig({
       {raising && (
         <p className="dp-hint dp-hint--warn">
           This raises the take from {c.feePips} to {parsed.args?.[0]} pips. That is the case the delay
-          exists for — traders get {delayBlocks.toString()} blocks (about {delayReal}) of notice.
+          exists for — traders get {delayUnits} ({delayReal}) of notice.
         </p>
       )}
 
       <OwnerAction
         label="proposeConfig"
-        describes={`Writes the proposal. It cannot be applied for ${delayBlocks.toString()} blocks (about ${delayReal}), and it replaces any proposal already outstanding.`}
+        describes={`Writes the proposal. It cannot be applied for ${delayUnits} (${delayReal}), and it replaces any proposal already outstanding.`}
         hook={o.hook}
         functionName="proposeConfig"
         args={parsed.args === null ? [] : [keyTuple(poolKey), parsed.args]}
@@ -583,7 +589,7 @@ function ProposeConfig({
         onConfirmed={onConfirmed}
       />
 
-      {o.pending.effectiveBlock > 0n && (
+      {o.pending.effective > 0n && (
         <OwnerAction
           label="cancelPendingConfig"
           describes="Withdraws the outstanding proposal. The live configuration is untouched."

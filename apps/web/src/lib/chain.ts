@@ -1457,7 +1457,7 @@ async function readActivityUncached(
 /**
  * Current head of the chain — the LOG clock. Used by the dapp shell's block
  * chip and for `getLogs` ranges. Never compare a contract-stored block number
- * (`effectiveBlock`, `expiryBlock`, `startBlock`) against this; use
+ * (a block-numbered hook's `effective` / `expiry`, the block kit's `startBlock`) against this; use
  * `readContractClockReading`.
  */
 export async function readBlockNumber(

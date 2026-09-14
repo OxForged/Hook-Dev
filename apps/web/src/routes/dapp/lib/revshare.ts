@@ -84,7 +84,11 @@ import {
   REV_SHARE_TAKEN_EVENT,
   SNAPSHOT_DISTRIBUTOR_ABI,
 } from './revshareAbi'
-import { readPendingConfig, type PendingConfigShape } from '../../../lib/pendingConfig'
+import {
+  readPendingConfig,
+  type DecodedPendingConfig,
+  type DurationClock,
+} from '../../../lib/pendingConfig'
 
 export const REVSHARE_CHAIN_ID: DeployedChainId = ACTIVE_CHAIN_ID
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
@@ -357,23 +361,13 @@ export interface ConfigParams {
   enabled: boolean
 }
 
-export interface PendingConfig {
-  /**
-   * Which `PendingConfig` layout the hook returned: 7 words on the hooks
-   * deployed before proposal expiry existed (Robinhood 0x23CE…, Sepolia
-   * 0x1C86…), 8 on the current source. See `lib/pendingConfig.ts`.
-   */
-  shape: PendingConfigShape
-  /** 0 means no proposal outstanding. */
-  effectiveBlock: bigint
-  /**
-   * Last applicable block on the current shape. NULL on the legacy shape, which
-   * has no expiry: a matured proposal there stays armed until cancelled or
-   * frozen. Never replaced with a number.
-   */
-  expiryBlock: bigint | null
-  params: ConfigParams
-}
+/**
+ * A decoded `getPendingConfig`, in the hook's own shape and clock. See
+ * `lib/pendingConfig.ts`: `effective` / `expiry` are unix seconds on a
+ * timestamp hook and CONTRACT block numbers on a block hook, and `expiry` is
+ * null on the no-expiry hook — never replaced with a number.
+ */
+export type PendingConfig = DecodedPendingConfig
 
 export interface Beneficiary {
   recipient: Address
@@ -495,14 +489,20 @@ export interface PoolOverview {
   distributor: Address | null
   pendingOwner: Address | null
   paused: boolean
-  configDelayBlocks: bigint
+  /**
+   * The fee-raise delay, in the hook's own unit: `CONFIG_DELAY_SECONDS` on a
+   * timestamp hook, `CONFIG_DELAY_BLOCKS` (contract blocks) on a block hook.
+   */
+  configDelay: { clock: DurationClock; value: bigint }
   /** `eth_blockNumber` — the log clock. The L2 head on Robinhood. */
   blockNumber: bigint
   /**
-   * The hook's own `block.number` — Ethereum's on Robinhood. `pending.effectiveBlock`
-   * and `expiryBlock` are on THIS clock and are only ever compared to it.
+   * The hook's own `block.number` — Ethereum's on Robinhood. A block hook's
+   * `pending.effective` / `expiry` are on THIS clock and only ever compared to it.
    */
   contractBlockNumber: bigint
+  /** `block.timestamp` of the latest block. A timestamp hook's pending window is compared to THIS. */
+  timestamp: bigint
   poolManager: Address
   resolution: KeyResolution | null
   /**
@@ -561,24 +561,29 @@ export async function readPoolOverview(hook: Address, poolId: Hex): Promise<Pool
   }
   if (rawConfig.owner === ZERO_ADDRESS) return { k: 'not-configured', hook, poolId }
 
-  /* `getPendingConfig` is read RAW and decoded by length — never through
-     `read`. Two struct shapes exist on chain and a typed ABI throws on one and
-     silently misreads the other. A failure here throws into the screen's error
-     state; it is never caught into "no proposal". */
-  const [pending, rawBeneficiaries, totalWeight, distributorRaw, pendingOwnerRaw, paused, delay, clock, poolManager] =
+  /* `getPendingConfig` is read RAW and decoded in the hook's own shape — never
+     through `read`. Three struct shapes exist on chain and two share a length.
+     A failure here throws into the screen's error state; it is never caught
+     into "no proposal". */
+  const [pending, rawBeneficiaries, totalWeight, distributorRaw, pendingOwnerRaw, paused, clock, poolManager] =
     await Promise.all([
-      readPendingConfig(c, hook, poolId),
+      readPendingConfig(c, REVSHARE_CHAIN_ID, hook, poolId),
       read<readonly Beneficiary[]>('getBeneficiaries', [poolId]),
       read<bigint>('totalWeight', [poolId]),
       read<Address>('distributorOf', [poolId]),
       read<Address>('pendingPoolOwner', [poolId]),
       read<boolean>('paused', []),
-      read<bigint>('CONFIG_DELAY_BLOCKS', []),
-      /* Both clocks in one read. `getBlockNumber()` alone was compared against
-         `effectiveBlock` and is the L2 head on Robinhood — a different clock. */
+      /* Both clocks in one read: `timestamp` for a timestamp hook, the contract
+         block number for a block hook. `getBlockNumber()` is the L2 head on
+         Robinhood and neither of those. */
       readContractClockReading(REVSHARE_CHAIN_ID),
       read<Address>('poolManager', []),
     ])
+  /* The delay getter exists under exactly one name per build. */
+  const delayValue =
+    pending.durationClock === 'timestamp'
+      ? await read<number | bigint>('CONFIG_DELAY_SECONDS', [])
+      : await read<bigint>('CONFIG_DELAY_BLOCKS', [])
 
   const distributor = distributorRaw === ZERO_ADDRESS ? null : distributorRaw
 
@@ -628,9 +633,10 @@ export async function readPoolOverview(hook: Address, poolId: Hex): Promise<Pool
       distributor,
       pendingOwner: pendingOwnerRaw === ZERO_ADDRESS ? null : pendingOwnerRaw,
       paused,
-      configDelayBlocks: BigInt(delay),
+      configDelay: { clock: pending.durationClock, value: BigInt(delayValue) },
       blockNumber: clock.rpcBlockNumber,
       contractBlockNumber: clock.contractBlockNumber,
+      timestamp: clock.timestamp,
       poolManager,
       resolution,
       currencies,
@@ -649,10 +655,12 @@ export interface OwnedPool {
   poolId: Hex
   config: PoolConfig
   distributor: Address | null
-  /** `getPendingConfig().effectiveBlock`; 0 when nothing is proposed. */
-  pendingEffectiveBlock: bigint
-  /** `expiryBlock` on the current hook; null on a legacy hook, which has no expiry. */
-  pendingExpiryBlock: bigint | null
+  /** `getPendingConfig()`'s effective point; 0 when nothing is proposed. */
+  pendingEffective: bigint
+  /** The expiry, inclusive; null on the no-expiry hook. */
+  pendingExpiry: bigint | null
+  /** Unit of the two fields above. */
+  pendingDurationClock: DurationClock
 }
 
 export interface OwnedPools {
@@ -664,8 +672,10 @@ export interface OwnedPools {
   toBlock: bigint
   /** `eth_blockNumber` at scan time. Equal to `toBlock`. */
   blockNumber: bigint
-  /** The hook's `block.number`. Pending-proposal status is judged against this, never `blockNumber`. */
+  /** The hook's `block.number`. A block hook's proposal status is judged against this, never `blockNumber`. */
   contractBlockNumber: bigint
+  /** `block.timestamp`. A timestamp hook's proposal status is judged against this. */
+  timestamp: bigint
 }
 
 /**
@@ -737,9 +747,9 @@ export async function readOwnedPools(hook: Address, owner: Address): Promise<Own
     const [config, distributorRaw, pending] = await Promise.all([
       read<PoolConfig>('getConfig', [poolId]),
       read<Address>('distributorOf', [poolId]),
-      /* Raw, by length — see `readPendingConfig`. A throw fails the whole list
-         rather than listing this pool as having no proposal. */
-      readPendingConfig(c, hook, poolId),
+      /* Raw, in the hook's own shape — see `readPendingConfig`. A throw fails the
+         whole list rather than listing this pool as having no proposal. */
+      readPendingConfig(c, REVSHARE_CHAIN_ID, hook, poolId),
     ])
     pools.push({
       poolId,
@@ -753,15 +763,24 @@ export async function readOwnedPools(hook: Address, owner: Address): Promise<Own
         frozen: config.frozen,
       },
       distributor: distributorRaw === ZERO_ADDRESS ? null : distributorRaw,
-      pendingEffectiveBlock: pending.effectiveBlock,
-      pendingExpiryBlock: pending.expiryBlock,
+      pendingEffective: pending.effective,
+      pendingExpiry: pending.expiry,
+      pendingDurationClock: pending.durationClock,
     })
   }
 
   /* Read AFTER the per-pool reads so no proposal can look older than the clock
      it is judged against. */
   const clock = await readContractClockReading(REVSHARE_CHAIN_ID)
-  return { pools, transferredAway, fromBlock, toBlock, blockNumber: toBlock, contractBlockNumber: clock.contractBlockNumber }
+  return {
+    pools,
+    transferredAway,
+    fromBlock,
+    toBlock,
+    blockNumber: toBlock,
+    contractBlockNumber: clock.contractBlockNumber,
+    timestamp: clock.timestamp,
+  }
 }
 
 /**

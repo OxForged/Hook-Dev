@@ -35,6 +35,21 @@
    status you read once, and pinning it spent a third of a 1080p viewport on
    chrome. The claim here was left behind by that change. Corrected rather than
    acted on: nothing should be made sticky on the strength of a stale comment.
+
+   COMPACT, under 720px (`isCompact`). A phone got every piece of the desktop
+   bar wrapped onto its own line — ~300px of chrome before the first card. The
+   condensed bar is two rows:
+
+     1  burger · title + subtitle · wallet button
+     2  LIVE chip · network chip · block · crypto rail · equity rail
+
+   Row 2 is ONE line that scrolls sideways inside itself (`.dapp-statusrow`),
+   so it can never widen the page. It is a focusable, named region so a
+   keyboard user can scroll it. Its order is the honesty order: the LIVE ·
+   TESTNET chip is first and is on screen without scrolling at every width.
+   Nothing is dropped, only moved: the chain switcher goes to the drawer foot
+   (its absolutely positioned menu would be clipped by a scrolling row), and
+   "Deploy Latch" is the drawer's "Deploy a Latch" row.
    ============================================================================ */
 
 import { Link } from 'react-router-dom'
@@ -57,6 +72,8 @@ interface TopBarProps {
   net: ChainRow
   deployHref: string
   isDrawer: boolean
+  /** Under 720px: the two-row condensed bar. */
+  isCompact: boolean
   navOpen: boolean
   onToggleNav: () => void
 }
@@ -67,65 +84,120 @@ export function TopBar({
   net,
   deployHref,
   isDrawer,
+  isCompact,
   navOpen,
   onToggleNav,
 }: TopBarProps) {
   const crypto = useMarketFeed(coinGeckoCrypto)
   const stocks = useMarketFeed(finnhubStocks)
 
+  const burger = isDrawer ? (
+    <button
+      type="button"
+      className="dapp-burger"
+      aria-expanded={navOpen}
+      aria-controls="dapp-nav"
+      onClick={onToggleNav}
+    >
+      <span className="dapp-burger__bars" aria-hidden="true" />
+      <span className="dapp-sr">{navOpen ? 'Close navigation' : 'Open navigation'}</span>
+    </button>
+  ) : null
+
+  const titleBlock = (
+    <div className="dapp-header__meta">
+      <h1 className="dapp-header__title">{meta.title}</h1>
+      <p className="dapp-header__subtitle">{meta.subtitle}</p>
+    </div>
+  )
+
+  const sampleChip = (
+    <p
+      className="dapp-sample-chip"
+      title={`Every figure in this dapp is read from the deployed ${net.name} contracts. Nothing here is sample data.`}
+    >
+      <span aria-hidden="true">{IS_TESTNET_BUILD ? 'LIVE · TESTNET' : 'LIVE · MAINNET'}</span>
+      <span className="dapp-sr">
+        Live. Every figure in this dapp is read from the deployed {net.name} contracts,
+        and nothing here is sample data.
+        {IS_TESTNET_BUILD ? ' Testnet only.' : ''}
+      </span>
+    </p>
+  )
+
+  const netChip = (
+    <p className="dapp-net-chip">
+      <ChainMark brand={net.brand} size={18} className="dapp-net-chip__mark" />
+      <span className="dapp-net-chip__name">{net.name}</span>
+      <span className="dapp-net-chip__id tabular">{net.chainId}</span>
+      <span className={net.deployed ? 'dapp-badge dapp-badge--ok' : 'dapp-badge dapp-badge--mute'}>
+        {net.deployed ? 'DEPLOYED' : 'NO DEPLOYMENT'}
+      </span>
+    </p>
+  )
+
+  const blockChip = (
+    <p className="dapp-block">
+      <span className="dapp-dot dapp-dot--success dapp-dot--pulse dapp-dot--sm" aria-hidden="true" />
+      <span>{block === null ? 'BLOCK —' : `BLOCK ${block.toLocaleString('en-US')}`}</span>
+    </p>
+  )
+
+  const rails = (
+    <>
+      <TickerStrip provider={coinGeckoCrypto} state={crypto} className="ltk--dapp dapp-tickers__rail" />
+      <span className="dapp-tickers__divider" aria-hidden="true" />
+      <TickerStrip
+        provider={finnhubStocks}
+        state={stocks}
+        configured={stocksConfigured()}
+        className="ltk--dapp dapp-tickers__rail"
+      />
+    </>
+  )
+
+  if (isCompact) {
+    return (
+      <div className="dapp-headwrap dapp-headwrap--compact">
+        <header className="dapp-header">
+          {burger}
+          {titleBlock}
+          <div className="dapp-header__wallet">
+            <LatchConnectButton variant="inline" />
+          </div>
+        </header>
+        {/* A scroll container a keyboard can reach: tabIndex 0 plus a name. */}
+        <div className="dapp-statusrow" role="region" aria-label="Network status and reference prices" tabIndex={0}>
+          <div className="dapp-statusrow__chips">
+            {sampleChip}
+            {netChip}
+            {blockChip}
+          </div>
+          <div className="dapp-tickers">{rails}</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="dapp-headwrap">
       <header className="dapp-header">
-        {isDrawer ? (
-          <button
-            type="button"
-            className="dapp-burger"
-            aria-expanded={navOpen}
-            aria-controls="dapp-nav"
-            onClick={onToggleNav}
-          >
-            <span className="dapp-burger__bars" aria-hidden="true" />
-            <span className="dapp-sr">{navOpen ? 'Close navigation' : 'Open navigation'}</span>
-          </button>
-        ) : null}
-
-        <div className="dapp-header__meta">
-          <h1 className="dapp-header__title">{meta.title}</h1>
-          <p className="dapp-header__subtitle">{meta.subtitle}</p>
-        </div>
+        {burger}
+        {titleBlock}
 
         <div className="dapp-header__right">
           {/* State chips: where the CONTRACTS are (sample-data disclosure, then
               network). Grouped separately from the interactive controls below
               so the two wrap as independent units — see dapp.css for why. */}
           <div className="dapp-header__status">
-            <p
-              className="dapp-sample-chip"
-              title={`Every figure in this dapp is read from the deployed ${net.name} contracts. Nothing here is sample data.`}
-            >
-              <span aria-hidden="true">{IS_TESTNET_BUILD ? 'LIVE · TESTNET' : 'LIVE · MAINNET'}</span>
-              <span className="dapp-sr">
-                Live. Every figure in this dapp is read from the deployed {net.name} contracts,
-                and nothing here is sample data.
-                {IS_TESTNET_BUILD ? ' Testnet only.' : ''}
-              </span>
-            </p>
+            {sampleChip}
 
             {/* Protocol state, NOT wallet state. This chip says where the CONTRACTS
                 are; the two controls after it say where the WALLET is. Keeping them
                 adjacent but distinct matters — this chip reading "Ethereum Sepolia"
                 while a wallet sits on another network is the normal case, not a
                 contradiction, and the pairing is what makes that legible. */}
-            <p className="dapp-net-chip">
-              <ChainMark brand={net.brand} size={18} className="dapp-net-chip__mark" />
-              <span className="dapp-net-chip__name">{net.name}</span>
-              <span className="dapp-net-chip__id tabular">{net.chainId}</span>
-              <span
-                className={net.deployed ? 'dapp-badge dapp-badge--ok' : 'dapp-badge dapp-badge--mute'}
-              >
-                {net.deployed ? 'DEPLOYED' : 'NO DEPLOYMENT'}
-              </span>
-            </p>
+            {netChip}
           </div>
 
           {/* Interactive controls: where the WALLET is, plus the primary action.
@@ -148,10 +220,7 @@ export function TopBar({
             />
             <LatchConnectButton variant="inline" />
 
-            <p className="dapp-block">
-              <span className="dapp-dot dapp-dot--success dapp-dot--pulse dapp-dot--sm" aria-hidden="true" />
-              <span>{block === null ? 'BLOCK —' : `BLOCK ${block.toLocaleString('en-US')}`}</span>
-            </p>
+            {blockChip}
 
             <Link to={deployHref} className="dapp-btn dapp-btn--primary dapp-btn--sm">
               Deploy Latch
@@ -164,20 +233,7 @@ export function TopBar({
           `.dapp-tickers` in dapp.css. TickerStrip itself is untouched: each
           rail keeps its own accessible name and loading/unconfigured/error
           state, just narrower once there's room for both side by side. */}
-      <div className="dapp-tickers">
-        <TickerStrip
-          provider={coinGeckoCrypto}
-          state={crypto}
-          className="ltk--dapp dapp-tickers__rail"
-        />
-        <span className="dapp-tickers__divider" aria-hidden="true" />
-        <TickerStrip
-          provider={finnhubStocks}
-          state={stocks}
-          configured={stocksConfigured()}
-          className="ltk--dapp dapp-tickers__rail"
-        />
-      </div>
+      <div className="dapp-tickers">{rails}</div>
     </div>
   )
 }

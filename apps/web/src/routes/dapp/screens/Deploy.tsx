@@ -429,6 +429,10 @@ export default function Deploy() {
           type="text"
           spellCheck={false}
           autoComplete="off"
+          /* Phone keyboards otherwise capitalise the first letter of a URI and
+             "correct" hex into words. */
+          autoCapitalize="off"
+          autoCorrect="off"
           className={props.mono ? 'dp-input dp-input--mono' : 'dp-input'}
           value={value}
           placeholder={props.placeholder}

@@ -42,6 +42,7 @@ import {
   type TokenMeta,
 } from './revshare'
 import { dappPath } from '../paths'
+import { HexReveal } from '../components/HexReveal'
 
 const CHAIN = DEPLOYMENTS[REVSHARE_CHAIN_ID]
 
@@ -52,7 +53,7 @@ export function Money({ v, token }: { v: bigint; token: TokenMeta }) {
 }
 
 export function Addr({ value, label }: { value: string; label?: string }) {
-  return (
+  const link = (
     <a
       className="hx-addr"
       href={explorer(`address/${value}`)}
@@ -63,6 +64,11 @@ export function Addr({ value, label }: { value: string; label?: string }) {
       {label ?? shortHex(value)}
     </a>
   )
+  /* A custom label (the "↗" beside a token symbol) is an explorer shortcut,
+     not a rendering of the address, so it gets no reveal. An empty value (a
+     hook not yet resolved) has nothing to reveal either. */
+  if (label !== undefined || value === '') return link
+  return <HexReveal value={value}>{link}</HexReveal>
 }
 
 export function PoolIdText({ value }: { value: string }) {
@@ -213,6 +219,8 @@ export function PoolIdLookup({ withHook }: { withHook: (path: string) => string 
         onChange={(e) => setValue(e.target.value)}
         spellCheck={false}
         autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
       />
       {trimmed !== '' && !valid && (
         <p className="dp-hint dp-hint--err">A pool id is 32 bytes — 0x followed by 64 hex characters.</p>

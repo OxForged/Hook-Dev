@@ -1,96 +1,62 @@
 /* ============================================================================
-   RevShareHook.getPendingConfig — two struct shapes on chain, one decoder.
+   RevShareHook.getPendingConfig — THREE struct shapes on chain, chosen by address.
 
-     legacy   7 words  (uint48 effectiveBlock, ConfigParams{6})
-              Robinhood 0x23CE34E8…E446 (the LTT1/LTT2 pool), Sepolia 0x1C86dc77…BE28
-     current  8 words  (uint48 effectiveBlock, uint48 expiryBlock, ConfigParams{6})
-              Robinhood 0xfC00485A…2aD2 and the current source
+     block-no-expiry        7 words  (uint48 effectiveBlock, ConfigParams{6})
+                            Robinhood 0x23CE34E8…E446 (the LTT1/LTT2 pool), Sepolia 0x1C86dc77…BE28
+     block-with-expiry      8 words  (uint48 effectiveBlock, uint48 expiryBlock, ConfigParams{6})
+                            Robinhood 0xfC00485A…2aD2
+     timestamp-with-expiry  8 words  (uint40 effectiveAt, uint40 expiresAt, ConfigParams{6})
+                            the timestamp source (Option B, 2026-09-13), not yet deployed
 
-   Confirmed on Robinhood on 2026-09-13 with a raw `cast call` for pool
-   0xcb1f…50e8: 224 bytes from the legacy hook, 256 from the current one, and an
-   8-field decode of the legacy return failed outright.
+   This file used to decode by LENGTH: 7 words legacy, 8 words current. That is
+   no longer enough. The timestamp hook returns 8 words laid out exactly like
+   0xfC00, and reading one through the other throws nothing — a contract block
+   around 26 million becomes a 1970 date, a unix time around 1.79 billion
+   becomes a block decades away, and an armed proposal renders as dead.
 
-   A TYPED ABI IS RIGHT ON EXACTLY ONE OF THEM, and wrong in two different ways:
-     · the 7-word return through the 8-field ABI THROWS — so a screen reading the
-       LTT1/LTT2 pool could never show its armed proposal, and one that caught
-       the throw would drop it silently;
-     · the 8-word return through the 7-field ABI decodes WITHOUT ERROR and puts
-       `expiryBlock` into `feePips` — a block number printed as a fee.
+   So the SHAPE comes from the SDK address book (`revShareHookRecord`) by the
+   hook's address. Only for a hook the address book does not know is it probed:
+   `CLOCK_MODE()` answers "mode=timestamp" only on the timestamp build, and a
+   REVERT means a block build — while a TRANSPORT failure means nothing and is
+   thrown, never read as a revert. Anything that still matches no known build
+   throws; nothing here guesses at a layout.
 
-   So the call is made raw and decoded by the LENGTH of what came back, exactly
-   as `decodePendingConfig` in packages/keeper/src/decode.ts does. Any other
-   length throws; nothing here guesses at a layout.
-
-   `expiryBlock` is `null` on the legacy shape. That hook has NO expiry: a
+   `expiry` is `null` on the block-no-expiry shape. That hook has NO expiry: a
    matured proposal stays armed, applicable by anyone, until the owner cancels
-   or freezes. Never substitute a number for it — a made-up expiry that has
-   passed would render an armed 10% proposal as dead (CLAUDE.md hazard item 5).
+   or freezes. Never substitute a number for it (CLAUDE.md hazard item 5).
    ============================================================================ */
 
-import { decodeAbiParameters, encodeFunctionData, parseAbi, type Address, type Hex, type PublicClient } from 'viem'
+import {
+  BaseError,
+  CallExecutionError,
+  ContractFunctionRevertedError,
+  ExecutionRevertedError,
+  decodeAbiParameters,
+  type Address,
+  type Hex,
+  type PublicClient,
+} from 'viem'
+import {
+  CLOCK_MODE_CALLDATA,
+  contractBlocksToSeconds,
+  getContractClock,
+  humanDuration,
+  decodeRevSharePendingConfig,
+  encodeGetPendingConfig,
+  inferRevSharePendingShape,
+  revShareHookRecord,
+  revShareProposalStatus,
+  type DecodedRevSharePendingConfig,
+  type DurationClock,
+  type DurationNow,
+  type RevSharePendingShape,
+  type RevShareProposalStatus,
+} from '@latchprotocol/sdk'
 
-/**
- * Selector-only. The declared return type is never used to decode; it exists
- * so the selector is computed from a signature rather than pasted in.
- */
-const GET_PENDING_CONFIG_SELECTOR_ABI = parseAbi([
-  'function getPendingConfig(bytes32 poolId) view returns (bytes)',
-])
-
-export type PendingConfigShape = 'legacy' | 'current'
-
-export interface DecodedPendingParams {
-  feePips: number
-  lpDonateBps: number
-  beneficiaryBps: number
-  distributorBps: number
-  distributor: Address
-  enabled: boolean
-}
-
-export interface DecodedPendingConfig {
-  /** Which struct layout the hook returned. */
-  shape: PendingConfigShape
-  /** 0 means no proposal outstanding. */
-  effectiveBlock: bigint
-  /** Null on the legacy shape, which has no expiry at all. Never a default. */
-  expiryBlock: bigint | null
-  params: DecodedPendingParams
-}
-
-const WORD = 32
-const LEGACY_WORDS = 7
-const CURRENT_WORDS = 8
-
-const PARAMS_COMPONENTS = [
-  { name: 'feePips', type: 'uint24' },
-  { name: 'lpDonateBps', type: 'uint16' },
-  { name: 'beneficiaryBps', type: 'uint16' },
-  { name: 'distributorBps', type: 'uint16' },
-  { name: 'distributor', type: 'address' },
-  { name: 'enabled', type: 'bool' },
-] as const
-
-const LEGACY_TYPES = [
-  {
-    type: 'tuple',
-    components: [
-      { name: 'effectiveBlock', type: 'uint48' },
-      { name: 'params', type: 'tuple', components: PARAMS_COMPONENTS },
-    ],
-  },
-] as const
-
-const CURRENT_TYPES = [
-  {
-    type: 'tuple',
-    components: [
-      { name: 'effectiveBlock', type: 'uint48' },
-      { name: 'expiryBlock', type: 'uint48' },
-      { name: 'params', type: 'tuple', components: PARAMS_COMPONENTS },
-    ],
-  },
-] as const
+export type PendingConfigShape = RevSharePendingShape
+export type DecodedPendingConfig = DecodedRevSharePendingConfig
+export type ProposalStatus = RevShareProposalStatus
+export type { DurationClock, DurationNow }
 
 export class UnrecognisedPendingConfigError extends Error {
   constructor(message: string) {
@@ -99,102 +65,132 @@ export class UnrecognisedPendingConfigError extends Error {
   }
 }
 
-function toParams(p: {
-  feePips: number
-  lpDonateBps: number
-  beneficiaryBps: number
-  distributorBps: number
-  distributor: Address
-  enabled: boolean
-}): DecodedPendingParams {
-  return {
-    feePips: Number(p.feePips),
-    lpDonateBps: Number(p.lpDonateBps),
-    beneficiaryBps: Number(p.beneficiaryBps),
-    distributorBps: Number(p.distributorBps),
-    distributor: p.distributor,
-    enabled: p.enabled,
-  }
-}
-
-/** Decode by length. Throws `UnrecognisedPendingConfigError` on anything but 7 or 8 words. */
-export function decodePendingConfig(data: Hex): DecodedPendingConfig {
-  if (!/^0x([0-9a-fA-F]{2})*$/.test(data)) {
-    throw new UnrecognisedPendingConfigError('getPendingConfig returned data that is not whole bytes of hex')
-  }
-  const bytes = (data.length - 2) / 2
-  if (bytes % WORD !== 0) {
-    throw new UnrecognisedPendingConfigError(
-      `getPendingConfig returned ${bytes} bytes, which is not a whole number of words`,
-    )
-  }
-  const words = bytes / WORD
-
-  if (words === LEGACY_WORDS) {
-    const [t] = decodeAbiParameters(LEGACY_TYPES, data)
-    return { shape: 'legacy', effectiveBlock: BigInt(t.effectiveBlock), expiryBlock: null, params: toParams(t.params) }
-  }
-  if (words === CURRENT_WORDS) {
-    const [t] = decodeAbiParameters(CURRENT_TYPES, data)
-    return {
-      shape: 'current',
-      effectiveBlock: BigInt(t.effectiveBlock),
-      expiryBlock: BigInt(t.expiryBlock),
-      params: toParams(t.params),
-    }
-  }
-  throw new UnrecognisedPendingConfigError(
-    `getPendingConfig returned ${words} words; this build knows the 7-word (legacy) and 8-word (current) shapes only, and refuses to guess at another.`,
+/** A contract-level revert, as opposed to the endpoint failing to answer. */
+function isExecutionRevert(e: unknown): boolean {
+  if (!(e instanceof BaseError)) return false
+  return (
+    e.walk(
+      (x) =>
+        x instanceof ExecutionRevertedError ||
+        x instanceof ContractFunctionRevertedError ||
+        (x instanceof CallExecutionError && /revert/i.test(x.shortMessage)),
+    ) !== null
   )
 }
 
 /**
- * `getPendingConfig(poolId)`, called raw and decoded by length.
- *
- * Throws on a revert, on no return data, and on an unrecognised length. Callers
- * must surface a throw — catching it into "no proposal" is exactly the silent
- * drop this module exists to prevent.
+ * `CLOCK_MODE()` on a hook the address book does not know. `null` means the call
+ * REVERTED (a block-numbered build). Transport failures throw.
  */
-export async function readPendingConfig(
-  c: Pick<PublicClient, 'call'>,
-  hook: Address,
-  poolId: Hex,
-): Promise<DecodedPendingConfig> {
-  const { data } = await c.call({
-    to: hook,
-    data: encodeFunctionData({ abi: GET_PENDING_CONFIG_SELECTOR_ABI, functionName: 'getPendingConfig', args: [poolId] }),
-  })
-  if (data === undefined || data === '0x') {
-    throw new UnrecognisedPendingConfigError(`getPendingConfig on ${hook} returned no data`)
+async function readClockMode(c: Pick<PublicClient, 'call'>, hook: Address): Promise<string | null> {
+  try {
+    const { data } = await c.call({ to: hook, data: CLOCK_MODE_CALLDATA })
+    if (data === undefined || data === '0x') return null
+    const [mode] = decodeAbiParameters([{ type: 'string' }], data)
+    return mode
+  } catch (e) {
+    if (isExecutionRevert(e)) return null
+    throw e
   }
-  return decodePendingConfig(data)
 }
 
 /**
- * Where a proposal stands at `contractBlockNumber`, on either shape.
- *
- *   none      effectiveBlock == 0
- *   queued    effectiveBlock > contractBlockNumber
- *   armed     matured and applicable by anyone right now. On the legacy shape
- *             this is permanent until the owner cancels or freezes.
- *   expired   current shape only, contractBlockNumber > expiryBlock:
- *             `applyPendingConfig` reverts `PendingConfigExpired`.
- *
- * `contractBlockNumber` MUST be `block.number` as the hook sees it —
- * `readContractBlockNumber` from `@latchprotocol/sdk` — and NEVER
- * `getBlockNumber()`. On Robinhood (Arbitrum Nitro) the hook stores Ethereum
- * block numbers (~26M) while the RPC head is the L2 block (~62M); against the
- * RPC head a proposal queued for weeks reads "expired", and a legacy-hook
- * proposal still queued reads "armed".
+ * The shape of `hook` on `chainId`: the address book first, a probe second.
+ * Throws `UnrecognisedPendingConfigError` when neither identifies a known build.
  */
-export type ProposalStatus = 'none' | 'queued' | 'armed' | 'expired'
+export async function resolvePendingShape(
+  c: Pick<PublicClient, 'call'>,
+  chainId: number,
+  hook: Address,
+  returnedWords: number,
+): Promise<PendingConfigShape> {
+  const known = revShareHookRecord(chainId, hook)
+  if (known !== undefined) return known.pendingShape
+  const shape = inferRevSharePendingShape(await readClockMode(c, hook), returnedWords)
+  if (shape === undefined) {
+    throw new UnrecognisedPendingConfigError(
+      `${hook} is not in the address book and its CLOCK_MODE() and ${returnedWords}-word getPendingConfig ` +
+        'match no known RevShareHook build. Refusing to guess a layout.',
+    )
+  }
+  return shape
+}
 
+/**
+ * `getPendingConfig(poolId)`, called raw and decoded as the hook's own shape.
+ *
+ * Throws on a revert, on no return data, on an unknown shape and on a length
+ * that contradicts the shape. Callers must surface a throw — catching it into
+ * "no proposal" is exactly the silent drop this module exists to prevent.
+ */
+export async function readPendingConfig(
+  c: Pick<PublicClient, 'call'>,
+  chainId: number,
+  hook: Address,
+  poolId: Hex,
+): Promise<DecodedPendingConfig> {
+  const { data } = await c.call({ to: hook, data: encodeGetPendingConfig(poolId) })
+  if (data === undefined || data === '0x') {
+    throw new UnrecognisedPendingConfigError(`getPendingConfig on ${hook} returned no data`)
+  }
+  const bytes = (data.length - 2) / 2
+  const shape = await resolvePendingShape(c, chainId, hook, bytes / 32)
+  return decodeRevSharePendingConfig(data, shape)
+}
+
+/**
+ * Where a proposal stands, on the clock the hook stores:
+ *
+ *   none      effective == 0
+ *   queued    not yet applicable
+ *   armed     applicable by anyone right now. On block-no-expiry this is
+ *             permanent until the owner cancels or freezes.
+ *   expired   past `expiry`: `applyPendingConfig` reverts `PendingConfigExpired`.
+ *
+ * `now.timestamp` is `block.timestamp` of the latest block. `now.contractBlockNumber`
+ * MUST be `block.number` as the hook sees it (`readContractBlockNumber`), never
+ * `getBlockNumber()`: on Robinhood the block hooks store Ethereum block numbers
+ * (~26M) while the RPC head is the L2 block (~62M).
+ */
 export function proposalStatus(
-  p: Pick<DecodedPendingConfig, 'effectiveBlock' | 'expiryBlock'>,
-  contractBlockNumber: bigint,
+  p: Pick<DecodedPendingConfig, 'durationClock' | 'effective' | 'expiry'>,
+  now: DurationNow,
 ): ProposalStatus {
-  if (p.effectiveBlock === 0n) return 'none'
-  if (contractBlockNumber < p.effectiveBlock) return 'queued'
-  if (p.expiryBlock !== null && contractBlockNumber > p.expiryBlock) return 'expired'
-  return 'armed'
+  return revShareProposalStatus(p, now)
+}
+
+/**
+ * True when `disable()` / `reduceFee()` leave this shape's proposal armed.
+ * Only the first, no-expiry hook; both later builds clear it.
+ */
+export function reductionsLeaveProposalArmed(shape: PendingConfigShape): boolean {
+  return shape === 'block-no-expiry'
+}
+
+/** A unit label for a stored `effective` / `expiry` value. */
+export function clockUnit(clock: DurationClock): string {
+  return clock === 'timestamp' ? 'block.timestamp' : 'contract block'
+}
+
+/**
+ * A stored `effective` / `expiry` value, rendered in its own unit. A timestamp is
+ * shown as a UTC date WITH the raw value; a block as a contract block number.
+ */
+export function formatClockPoint(clock: DurationClock, value: bigint): string {
+  if (clock === 'timestamp') {
+    const iso = new Date(Number(value) * 1000).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')
+    return `${iso} (block.timestamp ${value.toString()})`
+  }
+  return `contract block ${value.toString()}`
+}
+
+/**
+ * A span of `units` on `clock`, in words. Exact for seconds. For contract blocks
+ * an ESTIMATE at the chain's real contract cadence, marked with "~", or null
+ * when the chain's cadence is not in the address book.
+ */
+export function formatClockSpan(clock: DurationClock, units: bigint, chainId: number): string | null {
+  if (clock === 'timestamp') return humanDuration(Number(units))
+  if (getContractClock(chainId) === undefined) return null
+  return `~${humanDuration(contractBlocksToSeconds(units, chainId))}`
 }

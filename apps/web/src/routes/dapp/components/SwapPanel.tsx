@@ -696,7 +696,12 @@ export function SwapPanel({ context, pool, hook, compact = false, onTraded }: Sw
         </details>
       </div>
 
-      <PendingConfigWarning hook={hook} chainId={context.chainId} contractBlockNumber={context.contractBlockNumber} />
+      <PendingConfigWarning
+        hook={hook}
+        chainId={context.chainId}
+        contractBlockNumber={context.contractBlockNumber}
+        timestamp={context.timestamp}
+      />
 
       {/* ---- slippage ---- */}
       <div className="swap-slippage">
@@ -896,21 +901,28 @@ function PendingConfigWarning({
   hook,
   chainId,
   contractBlockNumber,
+  timestamp,
 }: {
   hook: HookTake | null
   chainId: number
   /** The hook's `block.number` — Ethereum's on Robinhood, not the L2 head. */
   contractBlockNumber: bigint
+  /** `block.timestamp` of the latest block. */
+  timestamp: bigint
 }) {
   if (hook === null || !hook.readable || hook.pending === null) return null
   const p = hook.pending
+  const timestampHook = p.durationClock === 'timestamp'
+  const reductionsLeaveArmed = p.shape === 'block-no-expiry'
 
   return (
     <div className={p.applicable ? 'swap-pending swap-pending--armed' : 'swap-pending'} role="note">
       <p className="swap-pending__head">
         {p.applicable
           ? 'A configuration change is armed and can be applied by anyone, right now'
-          : `A configuration change is queued for contract block ${p.effectiveBlock}`}
+          : timestampHook
+            ? `A configuration change is queued until ${new Date(Number(p.effective) * 1000).toISOString()} (block.timestamp)`
+            : `A configuration change is queued for contract block ${p.effective}`}
       </p>
       <p className="swap-pending__body">
         The pool owner has proposed a cut of <strong>{pipsPct(p.feePips)}</strong>
@@ -919,14 +931,31 @@ function PendingConfigWarning({
           <>
             The delay has elapsed. <code>applyPendingConfig</code> is <strong>permissionless</strong>
             , so any address at all can land it in the next block — including in the same block as
-            your swap. Neither <code>disable()</code> nor <code>reduceFee()</code> clears a matured
-            proposal, so a pool advertising a low cut can still have this waiting.
+            your swap.{' '}
+            {reductionsLeaveArmed ? (
+              <>
+                On this hook neither <code>disable()</code> nor <code>reduceFee()</code> clears a
+                matured proposal, and it has no expiry, so a pool advertising a low cut can still have
+                this waiting.
+              </>
+            ) : (
+              <>
+                On this hook <code>disable()</code> and <code>reduceFee()</code> do clear it, and it
+                expires if nobody applies it in time.
+              </>
+            )}
+          </>
+        ) : timestampHook ? (
+          <>
+            {p.secondsRemaining === null ? 'Some time' : `About ${humanDuration(p.secondsRemaining)}`} remains
+            (the hook's <code>block.timestamp</code> is {timestamp.toString()}). Once the delay elapses,{' '}
+            <code>applyPendingConfig</code> is permissionless and anyone can land it.
           </>
         ) : (
           <>
-            {p.blocksRemaining.toString()} contract blocks remain, about{' '}
-            {humanDuration(p.secondsRemaining)} (the hook's <code>block.number</code> is{' '}
-            {contractBlockNumber.toString()}
+            {p.remaining.toString()} contract blocks remain
+            {p.secondsRemaining === null ? '' : `, about ${humanDuration(p.secondsRemaining)} (estimated)`}{' '}
+            (the hook's <code>block.number</code> is {contractBlockNumber.toString()}
             {getContractClock(chainId)?.clock === 'parent-l1'
               ? "; on this chain that is Ethereum's block number, not the L2 head shown in the pool list"
               : ''}

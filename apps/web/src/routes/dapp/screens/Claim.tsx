@@ -257,6 +257,8 @@ export default function Claim() {
                 onChange={(e) => setExtraToken(e.target.value)}
                 spellCheck={false}
                 autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
               />
               <p className="dp-hint">
                 The list below comes from <code>RevShareTaken</code> logs, bounded by what this RPC
@@ -384,6 +386,8 @@ export default function Claim() {
                 onChange={(e) => setDistributorInput(e.target.value)}
                 spellCheck={false}
                 autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
               />
               {distributorInput.trim() !== '' && !distributor && (
                 <p className="dp-hint dp-hint--err">Not a 20-byte hex address.</p>
@@ -402,6 +406,8 @@ export default function Claim() {
                 onChange={(e) => setAccountInput(e.target.value)}
                 spellCheck={false}
                 autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
               />
               <p className="dp-hint">
                 Blank uses the connected address{address ? ` (${address})` : ''}.{' '}
@@ -624,7 +630,7 @@ function SnapshotClaims({
               <PermissionlessAction
                 key={`claim-${s.epochId.toString()}`}
                 label={`claim · epoch ${s.epochId.toString()}`}
-                describes={`Pays this epoch's share to ${account}. The submitter is permissionless — you may send this for an address that is not yours, and the funds still go to that address.`}
+                describes={`Pays this epoch's share to ${account}. The funds always go to that address. On a distributor built from current source, a contract account (a Safe, a vault, any address with code) must submit its own claim, so a stranger cannot pay a contract that can never move the tokens; for a plain wallet anyone may submit.`}
                 address={common.address}
                 abi={SNAPSHOT_DISTRIBUTOR_ABI}
                 functionName="claim"

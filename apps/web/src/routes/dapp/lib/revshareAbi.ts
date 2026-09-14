@@ -37,15 +37,13 @@ import { keccak256, parseAbi, parseAbiItem, toHex, type Hex } from 'viem'
 export const REV_SHARE_HOOK_ABI = parseAbi([
   /* --- reads ------------------------------------------------------------ */
   'function getConfig(bytes32 poolId) view returns ((address owner, uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, bool enabled, bool frozen))',
-  /* `getPendingConfig` is deliberately NOT in this ABI. It has two shapes on
-     chain — 7 words on the hooks deployed before proposal expiry existed
-     (Robinhood 0x23CE…E446, which carries the LTT1/LTT2 pool; Sepolia
-     0x1C86…BE28), 8 words on the current source — and a typed ABI is right on
-     exactly one: the 8-field ABI THROWS on the 7-word return, and the 7-field
-     ABI silently reads the 8-word return's `expiryBlock` as `feePips`. It is
-     called raw and decoded by length in `lib/pendingConfig.ts`. Do not add a
-     typed entry back: a `readContract` against it would compile and be wrong
-     on one of the two hooks. */
+  /* `getPendingConfig` is deliberately NOT in this ABI. It has THREE shapes on
+     chain — 7 words on the first hooks (Robinhood 0x23CE…E446, which carries
+     the LTT1/LTT2 pool; Sepolia 0x1C86…BE28), 8 block-numbered words on
+     0xfC00…2aD2, and 8 TIMESTAMP words on the current source — and a typed ABI
+     is right on at most one. The two 8-word shapes decode through each other
+     without an error. It is called raw and decoded in the hook's own shape, by
+     address, in `lib/pendingConfig.ts`. Do not add a typed entry back. */
   'function getBeneficiaries(bytes32 poolId) view returns ((address recipient, uint96 weight)[])',
   'function totalWeight(bytes32 poolId) view returns (uint256)',
   'function poolOwner(bytes32 poolId) view returns (address)',
@@ -60,11 +58,18 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   'function guardian() view returns (address)',
   'function poolManager() view returns (address)',
   'function vault() view returns (address)',
+  /* Block builds only. */
   'function CONFIG_DELAY_BLOCKS() view returns (uint48)',
+  /* Timestamp build only (Option B). */
+  'function CONFIG_DELAY_SECONDS() view returns (uint40)',
+  'function CONFIG_PROPOSAL_TTL_SECONDS() view returns (uint40)',
+  'function CLOCK_MODE() view returns (string)',
   'function MAX_FEE_PIPS() view returns (uint24)',
   'function PIPS_DENOMINATOR() view returns (uint24)',
   'function SPLIT_DENOMINATOR() view returns (uint16)',
   'function MAX_BENEFICIARIES() view returns (uint256)',
+  /* Timestamp build only: a repoint escrows the old distributor's uncollected pot for it. */
+  'function retiredDistributorPot(bytes32 poolId, address distributor, address currency) view returns (uint256)',
 
   /* --- writes (permissionless, every one) -------------------------------- */
   'function settleBeneficiaries((address currency0, address currency1, address hooks, address poolManager, uint24 fee, bytes32 parameters) key, address currency)',
@@ -83,9 +88,13 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   'error PoolAlreadyConfigured(bytes32 poolId)',
   'error NotPoolOwner(bytes32 poolId, address caller)',
   'error NoPendingConfig(bytes32 poolId)',
+  /* Both generations, by selector: uint48 blocks on the block builds, uint40
+     seconds on the timestamp build. The no-expiry hook never raises Expired. */
   'error PendingConfigNotDue(bytes32 poolId, uint48 effectiveBlock)',
-  /* Current hook only. The legacy hook has no expiry and never raises it. */
   'error PendingConfigExpired(bytes32 poolId, uint48 expiryBlock)',
+  'error PendingConfigNotDue(bytes32 poolId, uint40 effectiveAt)',
+  'error PendingConfigExpired(bytes32 poolId, uint40 expiresAt)',
+  'error NotDistributor(bytes32 poolId, address caller)',
   'error ConfigFrozen(bytes32 poolId)',
   'error HookMismatch(address declared)',
   'error PoolManagerMismatch(address declared)',
@@ -206,6 +215,8 @@ export const SNAPSHOT_DISTRIBUTOR_ABI = parseAbi([
   'error ClaimWindowClosed(uint256 epochId, uint64 expiresAt)',
   'error NotExpiredYet(uint256 epochId, uint64 expiresAt)',
   'error AlreadyRolledOver(uint256 epochId)',
+  /* Current source only: a contract account must claim for itself. */
+  'error ContractAccountMustClaimItself(address account, address caller)',
 ])
 
 /** `MerkleEpochDistributor`. Field 5 of the epoch is `root`, not a supply. */

@@ -24,6 +24,14 @@
 
    Under 1024px it becomes a drawer: fixed panel + scrim, focus trapped,
    Escape closes, and it is `inert` while closed so nothing inside is tabbable.
+
+   AS A DRAWER it is a modal dialog while open (role + aria-modal, and the
+   shell makes everything behind it `inert` and locks page scroll), carries its
+   own Close button beside the lockup — the burger that opened it is under the
+   scrim — and pads itself by the safe-area insets so the notch and the home
+   indicator never sit on a row. Under 720px (`isCompact`) the wallet-network
+   switcher lives in its foot: in the condensed header it would sit inside a
+   row that scrolls sideways, and that row clips the switcher's menu.
    ============================================================================ */
 
 import { ACTIVE_CHAIN_ID, DEPLOYMENTS, IS_TESTNET_BUILD } from '../../../lib/chain'
@@ -34,6 +42,9 @@ import type { ShellData } from '../data/shell.ts'
 import { useFocusTrap } from '../lib/dom.ts'
 import { externalLinks } from '../data/shell'
 import { NavIcon } from '../../../components/NavIcon'
+import { LatchChainSwitcher } from '@latchprotocol/connect'
+import { ChainMark } from '../../../components/ChainMark.tsx'
+import { CHAIN_ROWS } from '../../../data/chains.ts'
 
 /** Group headings become element ids for `aria-labelledby`, so they have to
  *  survive being renamed to something with a space or an ampersand in it. */
@@ -43,11 +54,13 @@ interface SidebarProps {
   shell: ShellData
   base: string
   isDrawer: boolean
+  /** Under 720px: the header has condensed and the chain switcher lives here. */
+  isCompact: boolean
   open: boolean
   onClose: () => void
 }
 
-export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) {
+export function Sidebar({ shell, base, isDrawer, isCompact, open, onClose }: SidebarProps) {
   const ref = useRef<HTMLElement>(null)
   useFocusTrap(ref, isDrawer && open, onClose)
 
@@ -66,17 +79,26 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
         className={className}
         aria-label="Dapp navigation"
         inert={isDrawer && !open}
+        {...(isDrawer && open ? { role: 'dialog', 'aria-modal': true } : {})}
       >
         {/* The lockup goes home. It is the one element every dapp user already
             expects to be clickable, and until now it was inert — leaving no way
             back to the marketing site from inside the app except the browser
             button. `Link`, not NavLink: it navigates out of the dapp, so it
             never carries an active state. */}
-        <Link to="/" className="dapp-lockup" aria-label="Latch Protocol — home">
-          {/* The shared lockup: the same mark, theme swap and proportions as
-              the landing and docs headers (components/BrandLockup). */}
-          <BrandLockup size="lg" />
-        </Link>
+        <div className="dapp-sidebar__top">
+          <Link to="/" className="dapp-lockup" aria-label="Latch Protocol — home">
+            {/* The shared lockup: the same mark, theme swap and proportions as
+                the landing and docs headers (components/BrandLockup). */}
+            <BrandLockup size="lg" />
+          </Link>
+          {isDrawer ? (
+            <button type="button" className="dapp-drawer-close" onClick={onClose}>
+              <span className="dapp-drawer-close__x" aria-hidden="true" />
+              <span className="dapp-sr">Close navigation</span>
+            </button>
+          ) : null}
+        </div>
 
         {/* GROUPED, with a quiet micro-label over each block. The groups and the
             reasoning behind them live in data/shell.ts, next to the rows — a
@@ -174,6 +196,23 @@ export function Sidebar({ shell, base, isDrawer, open, onClose }: SidebarProps) 
         </nav>
 
         <div className="dapp-sidebar__foot">
+          {isDrawer && isCompact ? (
+            <div className="dapp-sidebar__network" role="group" aria-labelledby="dapp-drawer-wallet-net">
+              <p className="dapp-navgroup__label dapp-sidebar__network-label" id="dapp-drawer-wallet-net">
+                Wallet network
+              </p>
+              {/* Same render prop as the header's copy (TopBar): the dapp's
+                  ChainMark, so an unmapped chain falls back to the package's
+                  own monogram. Only one of the two is ever mounted. */}
+              <LatchChainSwitcher
+                className="dapp-header__chain dapp-sidebar__chain"
+                renderIcon={(chain) => {
+                  const row = CHAIN_ROWS.find((r) => r.chainId === chain.id)
+                  return row ? <ChainMark brand={row.brand} size={18} /> : null
+                }}
+              />
+            </div>
+          ) : null}
           <p className="dapp-sample-note">
             Live on {DEPLOYMENTS[ACTIVE_CHAIN_ID].name}
             {IS_TESTNET_BUILD ? ' · testnet only' : ''}

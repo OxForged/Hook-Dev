@@ -65,7 +65,9 @@ async function loadSwapScreen(): Promise<SwapScreenData> {
     /* The hook's own clock, not the RPC head: on Robinhood the hook stores
        Ethereum block numbers, and against the L2 head every queued proposal
        read as armed or expired. */
-    hooked.map((p) => readHookTake(p.hooks, p.poolId, context.contractBlockNumber)),
+    hooked.map((p) =>
+      readHookTake(p.hooks, p.poolId, { timestamp: context.timestamp, contractBlockNumber: context.contractBlockNumber }),
+    ),
   )
 
   const hooks: Record<string, HookTake> = {}

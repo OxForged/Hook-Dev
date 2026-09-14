@@ -17,12 +17,12 @@
    ============================================================================ */
 
 import { LatchConnectButton } from '@latchprotocol/connect'
-import { contractBlocksToSeconds, humanDuration } from '@latchprotocol/sdk'
+import { humanDuration } from '@latchprotocol/sdk'
 import { Link } from 'react-router-dom'
 import { useAccount, useSwitchChain } from 'wagmi'
 
 import { DEPLOYMENTS } from '../../../lib/chain'
-import { proposalStatus } from '../../../lib/pendingConfig'
+import { formatClockPoint, formatClockSpan, proposalStatus } from '../../../lib/pendingConfig'
 import { BarList } from '../components/charts'
 import { Methodology } from '../components/ProtocolCharts'
 import {
@@ -53,38 +53,47 @@ const CHAIN = DEPLOYMENTS[REVSHARE_CHAIN_ID]
 
 /**
  * A pool's outstanding proposal, by where it stands on the HOOK's clock.
- * Hazard item 5: `armed` is shown as armed — a legacy 7-word hook's matured
+ * Hazard item 5: `armed` is shown as armed — the no-expiry hook's matured
  * proposal never expires, so on 0x23CE… it reads armed however old it is.
  *
- * `contractBlock` is the hook's `block.number`, not the RPC head: on Robinhood
- * the first is Ethereum's block number and the second the L2 block, and mixing
- * them showed queued proposals as armed or expired.
+ * A timestamp hook is judged against `block.timestamp`; a block hook against its
+ * own `block.number` (Ethereum's on Robinhood), never the RPC head.
  */
-function PendingBadge({ pool, contractBlock }: { pool: OwnedPool; contractBlock: bigint }) {
+function PendingBadge({
+  pool,
+  contractBlock,
+  timestamp,
+}: {
+  pool: OwnedPool
+  contractBlock: bigint
+  timestamp: bigint
+}) {
+  const clock = pool.pendingDurationClock
   const status = proposalStatus(
-    { effectiveBlock: pool.pendingEffectiveBlock, expiryBlock: pool.pendingExpiryBlock },
-    contractBlock,
+    { durationClock: clock, effective: pool.pendingEffective, expiry: pool.pendingExpiry },
+    { timestamp, contractBlockNumber: contractBlock },
   )
   if (status === 'none') return null
   if (status === 'queued') {
-    const secs = contractBlocksToSeconds(pool.pendingEffectiveBlock - contractBlock, REVSHARE_CHAIN_ID)
+    const units = pool.pendingEffective - (clock === 'timestamp' ? timestamp : contractBlock)
     return (
       <span className="dapp-badge dapp-badge--info">
-        change at contract block {pool.pendingEffectiveBlock.toString()} · ~{humanDuration(secs)}
+        change at {formatClockPoint(clock, pool.pendingEffective)} ·{' '}
+        {clock === 'timestamp' ? humanDuration(Number(units)) : (formatClockSpan(clock, units, REVSHARE_CHAIN_ID) ?? 'unknown time')}
       </span>
     )
   }
   if (status === 'expired') {
     return (
       <span className="dapp-badge dapp-badge--mute">
-        proposal expired at contract block {pool.pendingExpiryBlock?.toString()}
+        proposal expired at {pool.pendingExpiry === null ? 'unknown' : formatClockPoint(clock, pool.pendingExpiry)}
       </span>
     )
   }
   return (
     <span className="dapp-badge dapp-badge--warn">
       change armed · applicable by anyone
-      {pool.pendingExpiryBlock === null ? ' · never expires' : ` until block ${pool.pendingExpiryBlock.toString()}`}
+      {pool.pendingExpiry === null ? ' · never expires' : ` until ${formatClockPoint(clock, pool.pendingExpiry)}`}
     </span>
   )
 }
@@ -136,7 +145,7 @@ export default function ProtocolRevenue() {
             </li>
             <li>
               <span>Whether a config change is waiting to be applied</span>
-              <span className="live-fee">getPendingConfig(poolId).effectiveBlock</span>
+              <span className="live-fee">getPendingConfig(poolId), in the hook&rsquo;s own shape</span>
             </li>
           </ul>
           <div className="dapp-mt-3">
@@ -204,8 +213,8 @@ export default function ProtocolRevenue() {
             />
             <Kpi
               label="CHANGES PENDING"
-              value={state.data.pools.filter((p) => p.pendingEffectiveBlock !== 0n).length}
-              sub="getPendingConfig(poolId).effectiveBlock ≠ 0"
+              value={state.data.pools.filter((p) => p.pendingEffective !== 0n).length}
+              sub="getPendingConfig(poolId) effective ≠ 0"
             />
           </div>
 
@@ -292,7 +301,7 @@ export default function ProtocolRevenue() {
                           {p.config.enabled ? 'enabled' : 'disabled'}
                         </span>{' '}
                         {p.config.frozen && <span className="dapp-badge dapp-badge--info">frozen</span>}{' '}
-                        <PendingBadge pool={p} contractBlock={state.data.contractBlockNumber} />
+                        <PendingBadge pool={p} contractBlock={state.data.contractBlockNumber} timestamp={state.data.timestamp} />
                       </td>
                     </tr>
                   ))}

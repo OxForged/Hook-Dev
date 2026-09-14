@@ -39,14 +39,14 @@
    chip says LIVE · TESTNET for exactly that pair of reasons.
    ============================================================================ */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { chainByKey } from '../../data/chains.ts'
 import { Sidebar } from './components/Sidebar.tsx'
 import { TopBar } from './components/TopBar.tsx'
 import { loadShell } from './data/shell.ts'
 import type { Screen } from './data/types.ts'
-import { useMediaQuery } from './lib/dom.ts'
+import { useMediaQuery, useScrollLock, useTableLabels } from './lib/dom.ts'
 import { DAPP_BASE, dappPath } from './paths.ts'
 import Analytics from './screens/Analytics.tsx'
 import Claim from './screens/Claim.tsx'
@@ -67,6 +67,12 @@ import './dapp.css'
 
 /** README § Dapp shell: the sidebar collapses to a drawer under ~1024px. */
 const DRAWER_QUERY = '(max-width: 1023.98px)'
+
+/** tokens.css BREAKPOINTS, 720: "tables stack; compact layouts". Below it the
+ *  header condenses to title + wallet and the status chips and price rails
+ *  share one row that scrolls inside itself; the wallet-network switcher moves
+ *  into the drawer, where its menu is not clipped by that row. */
+const COMPACT_QUERY = '(max-width: 720px)'
 
 const SCREEN_BY_SEGMENT: Record<string, Screen> = {
   '': 'dashboard',
@@ -110,7 +116,18 @@ function Shell() {
   const { screen, block, net, resetDeployment } = useDapp()
   const location = useLocation()
   const isDrawer = useMediaQuery(DRAWER_QUERY)
+  const isCompact = useMediaQuery(COMPACT_QUERY)
   const [navOpen, setNavOpen] = useState(false)
+  const contentRef = useRef<HTMLElement>(null)
+
+  /* Stable identities: the sidebar's focus trap reads these, and the shell
+     re-renders on every block tick. */
+  const closeNav = useCallback(() => setNavOpen(false), [])
+  const toggleNav = useCallback(() => setNavOpen((open) => !open), [])
+
+  const drawerOpen = isDrawer && navOpen
+  useScrollLock(drawerOpen)
+  useTableLabels(contentRef, location.pathname)
 
   /* The reference clears the simulation whenever the screen changes. */
   useEffect(() => {
@@ -125,7 +142,7 @@ function Shell() {
   const meta = shell.meta[screen]
 
   return (
-    <div className={isDrawer ? 'dapp is-drawer' : 'dapp'}>
+    <div className={['dapp', isDrawer ? 'is-drawer' : '', isCompact ? 'is-compact' : ''].filter(Boolean).join(' ')}>
       <a className="dapp-skip" href="#dapp-content">
         Skip to content
       </a>
@@ -134,22 +151,26 @@ function Shell() {
         shell={shell}
         base={DAPP_BASE}
         isDrawer={isDrawer}
+        isCompact={isCompact}
         open={navOpen}
-        onClose={() => setNavOpen(false)}
+        onClose={closeNav}
       />
 
-      <div className="dapp-main">
+      {/* `inert` while the drawer is open: the focus trap keeps Tab inside the
+          drawer, and this keeps a screen reader's virtual cursor there too. */}
+      <div className="dapp-main" inert={drawerOpen}>
         <TopBar
           meta={meta}
           block={block}
           net={chainByKey(net)}
           deployHref={dappPath('deploy')}
           isDrawer={isDrawer}
+          isCompact={isCompact}
           navOpen={navOpen}
-          onToggleNav={() => setNavOpen((open) => !open)}
+          onToggleNav={toggleNav}
         />
 
-        <main id="dapp-content" className="dapp-content" key={location.pathname}>
+        <main id="dapp-content" className="dapp-content" key={location.pathname} ref={contentRef}>
           <Routes>
             <Route index element={<Dashboard />} />
             {/* The one route here that can move a user's funds. */}

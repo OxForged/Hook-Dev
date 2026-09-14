@@ -122,7 +122,7 @@ import {
   type Hex,
 } from 'viem'
 
-import { contractBlocksToSeconds } from '@latchprotocol/sdk'
+import { contractBlocksToSeconds, getContractClock, secondsUntil } from '@latchprotocol/sdk'
 
 import {
   ACTIVE_CHAIN_ID,
@@ -132,7 +132,14 @@ import {
   scanWindows,
   type DeployedChainId,
 } from './chain'
-import { proposalStatus, readPendingConfig, type DecodedPendingConfig } from './pendingConfig'
+import {
+  proposalStatus,
+  readPendingConfig,
+  type DecodedPendingConfig,
+  type DurationClock,
+  type DurationNow,
+  type PendingConfigShape,
+} from './pendingConfig'
 import { priceFromSqrtX96 } from './prices'
 import { clQuoterAbi } from './abi/clQuoter'
 import { permit2Abi } from './abi/permit2'
@@ -247,14 +254,14 @@ const ERC20_ABI = parseAbi([
  */
 const REV_SHARE_READ_ABI = parseAbi([
   'function getConfig(bytes32 poolId) view returns ((address owner, uint24 feePips, uint16 lpDonateBps, uint16 beneficiaryBps, uint16 distributorBps, bool enabled, bool frozen))',
-  /* `getPendingConfig` is NOT typed here. This entry used to be the 7-word
-     legacy shape, which is right on 0x23CE…E446 and SILENTLY WRONG on the
-     current 8-word hook: `expiryBlock` decoded as `feePips` and every field
-     after it shifted by one, so a trader would have been shown a block number
-     as a proposed fee. It is read raw and decoded by length — see
-     `lib/pendingConfig.ts`. */
+  /* `getPendingConfig` is NOT typed here. There are three shapes on chain and
+     two of them are the same length; it is read raw and decoded by the hook's
+     own shape — see `lib/pendingConfig.ts`. */
   'function paused() view returns (bool)',
+  /* Block builds (0x23CE…, 0xfC00…) expose the delay in contract blocks; the
+     timestamp build in seconds. Exactly one exists on any given hook. */
   'function CONFIG_DELAY_BLOCKS() view returns (uint256)',
+  'function CONFIG_DELAY_SECONDS() view returns (uint40)',
 ])
 
 /** `PIPS_DENOMINATOR` in both core and the hook. */
@@ -324,13 +331,17 @@ export interface HookTake {
   beneficiaryBps: number
   distributorBps: number
   /**
-   * Null when there is nothing that can still land: `effectiveBlock == 0` (no
-   * proposal), or — on the current 8-word hook only — a proposal past its
-   * `expiryBlock`, which `applyPendingConfig` refuses. A legacy 7-word hook's
-   * matured proposal never expires and is never null here.
+   * Null when there is nothing that can still land: `effective == 0` (no
+   * proposal), or — on a hook with an expiry — a proposal past it, which
+   * `applyPendingConfig` refuses. The no-expiry hook's matured proposal never
+   * expires and is never null here.
    */
   pending: {
-    effectiveBlock: bigint
+    /** Which `getPendingConfig` layout, by the hook's address. */
+    shape: PendingConfigShape
+    /** The unit of `effective`: unix seconds, or the hook's contract `block.number`. */
+    durationClock: DurationClock
+    effective: bigint
     feePips: number
     lpDonateBps: number
     beneficiaryBps: number
@@ -338,18 +349,21 @@ export interface HookTake {
     enabled: boolean
     /** True once the delay has elapsed: anyone can land it in the next block. */
     applicable: boolean
-    /** CONTRACT blocks still to wait (the hook's `block.number`). Zero once applicable. */
-    blocksRemaining: bigint
+    /** Units of `durationClock` still to wait. Zero once applicable. */
+    remaining: bigint
     /**
-     * `blocksRemaining` as real seconds, at the chain's contract block cadence
-     * (12 s on Robinhood). An estimate: the parent-chain number the hook reads
-     * advances with Ethereum's slots, not on a fixed timer.
+     * `remaining` in seconds. EXACT on a timestamp hook. On a block hook an
+     * ESTIMATE at the chain's contract block cadence (12 s on Robinhood), and
+     * null when that cadence is not in the address book.
      */
-    secondsRemaining: number
+    secondsRemaining: number | null
+    secondsRemainingIsEstimate: boolean
   } | null
+  /** Contract blocks, on block-numbered hooks only. Null on a timestamp hook or when unreadable. */
   configDelayBlocks: bigint | null
-  /** `CONFIG_DELAY_BLOCKS` in real seconds at the contract cadence. Null when the delay was unreadable. */
+  /** The delay in seconds: exact on a timestamp hook, estimated on a block hook, null when unreadable. */
   configDelaySeconds: number | null
+  configDelayIsEstimate: boolean
 }
 
 export interface SwapContext {
@@ -365,9 +379,11 @@ export interface SwapContext {
   blockNumber: bigint
   /**
    * `block.number` as the hook sees it — Ethereum's block on Robinhood. Every
-   * comparison against a hook-stored block (`effectiveBlock`) uses THIS.
+   * comparison against a block hook's stored `effective` uses THIS.
    */
   contractBlockNumber: bigint
+  /** `block.timestamp` of the latest block. Every comparison against a timestamp hook uses THIS. */
+  timestamp: bigint
 }
 
 /* ---------------------------------------------------------------------------
@@ -501,6 +517,7 @@ export async function readSwapContext(): Promise<SwapContext> {
     routerPaused,
     blockNumber: clock.rpcBlockNumber,
     contractBlockNumber: clock.contractBlockNumber,
+    timestamp: clock.timestamp,
   }
 }
 
@@ -515,8 +532,11 @@ export async function readSwapContext(): Promise<SwapContext> {
 export async function readHookTake(
   hook: Address,
   poolId: Hex,
-  /** `SwapContext.contractBlockNumber` — NOT `blockNumber`. See `lib/pendingConfig.ts`. */
-  contractBlockNumber: bigint,
+  /**
+   * `{ timestamp, contractBlockNumber }` from `SwapContext` — the contract block
+   * number, NOT `blockNumber`. See `lib/pendingConfig.ts`.
+   */
+  now: DurationNow,
 ): Promise<HookTake> {
   const c = client(SWAP_CHAIN_ID)
 
@@ -534,6 +554,7 @@ export async function readHookTake(
     pending: null,
     configDelayBlocks: null,
     configDelaySeconds: null,
+    configDelayIsEstimate: false,
   }
 
   /* The pending read keeps its failure as a value rather than collapsing it to
@@ -541,16 +562,15 @@ export async function readHookTake(
      failed", so a transport blip — or the shape mismatch described above
      REV_SHARE_READ_ABI — rendered a pool with an armed proposal as a pool with
      none. That is the one disclosure a trader cannot get anywhere else. */
-  const [config, pendingRead, paused, delay] = await Promise.all([
+  const [config, pendingRead, paused] = await Promise.all([
     c
       .readContract({ address: hook, abi: REV_SHARE_READ_ABI, functionName: 'getConfig', args: [poolId] })
       .catch(() => null),
-    readPendingConfig(c, hook, poolId).then(
+    readPendingConfig(c, SWAP_CHAIN_ID, hook, poolId).then(
       (p): { ok: true; p: DecodedPendingConfig } => ({ ok: true, p }),
       (): { ok: false } => ({ ok: false }),
     ),
     c.readContract({ address: hook, abi: REV_SHARE_READ_ABI, functionName: 'paused' }).catch(() => null),
-    c.readContract({ address: hook, abi: REV_SHARE_READ_ABI, functionName: 'CONFIG_DELAY_BLOCKS' }).catch(() => null),
   ])
 
   if (config === null) return blank
@@ -562,6 +582,14 @@ export async function readHookTake(
   if (!pendingRead.ok) return blank
   const pending = pendingRead.p
 
+  /* The delay getter follows the shape: seconds on the timestamp build, blocks
+     on the two block builds. Reading the wrong one reverts, which is null here. */
+  const timestampHook = pending.durationClock === 'timestamp'
+  const delay = await (timestampHook
+    ? c.readContract({ address: hook, abi: REV_SHARE_READ_ABI, functionName: 'CONFIG_DELAY_SECONDS' })
+    : c.readContract({ address: hook, abi: REV_SHARE_READ_ABI, functionName: 'CONFIG_DELAY_BLOCKS' })
+  ).catch(() => null)
+
   /* `getConfig` is a plain mapping read: an unclaimed pool returns a ZEROED
      struct rather than reverting, and a zeroed struct renders as "0% fee,
      disabled" — indistinguishable from a real, deliberately disabled config.
@@ -569,16 +597,21 @@ export async function readHookTake(
      can never write zero. */
   const configured = config.owner !== ZERO
 
-  /* Four states, not two. `expired` exists only on the current 8-word hook:
-     past `expiryBlock`, `applyPendingConfig` reverts `PendingConfigExpired`, so
-     the proposal can never land as-is and a re-proposal restarts the full
-     delay — there is nothing armed to warn about. The legacy 7-word hook has
-     no expiry, so a matured proposal there is `armed` for as long as it
-     stands, however old. */
-  const status = proposalStatus(pending, contractBlockNumber)
-  const effectiveBlock = pending.effectiveBlock
+  /* Four states, not two. `expired` exists only on hooks with an expiry: past
+     it, `applyPendingConfig` reverts `PendingConfigExpired`, so the proposal can
+     never land as-is and a re-proposal restarts the full delay — there is
+     nothing armed to warn about. The no-expiry hook's matured proposal is
+     `armed` for as long as it stands, however old. Each is judged on the clock
+     the hook stores: `block.timestamp` or the contract block number. */
+  const status = proposalStatus(pending, now)
+  const effective = pending.effective
   const hasPending = status === 'queued' || status === 'armed'
-  const blocksRemaining = status === 'armed' ? 0n : effectiveBlock - contractBlockNumber
+  const contractClock = getContractClock(SWAP_CHAIN_ID)
+  const remaining =
+    status === 'armed'
+      ? 0n
+      : effective - (timestampHook ? now.timestamp : (now.contractBlockNumber ?? effective))
+  const secondsRemaining = status === 'armed' ? 0 : secondsUntil(pending.durationClock, effective, now, contractClock)
 
   return {
     hook,
@@ -594,19 +627,24 @@ export async function readHookTake(
     pending:
       hasPending
         ? {
-            effectiveBlock,
+            shape: pending.shape,
+            durationClock: pending.durationClock,
+            effective,
             feePips: pending.params.feePips,
             lpDonateBps: pending.params.lpDonateBps,
             beneficiaryBps: pending.params.beneficiaryBps,
             distributorBps: pending.params.distributorBps,
             enabled: pending.params.enabled,
             applicable: status === 'armed',
-            blocksRemaining,
-            secondsRemaining: contractBlocksToSeconds(blocksRemaining, SWAP_CHAIN_ID),
+            remaining,
+            secondsRemaining,
+            secondsRemainingIsEstimate: !timestampHook,
           }
         : null,
-    configDelayBlocks: delay === null ? null : BigInt(delay),
-    configDelaySeconds: delay === null ? null : contractBlocksToSeconds(BigInt(delay), SWAP_CHAIN_ID),
+    configDelayBlocks: delay === null || timestampHook ? null : BigInt(delay),
+    configDelaySeconds:
+      delay === null ? null : timestampHook ? Number(delay) : contractBlocksToSeconds(BigInt(delay), SWAP_CHAIN_ID),
+    configDelayIsEstimate: delay !== null && !timestampHook,
   }
 }
 

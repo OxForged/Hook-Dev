@@ -31,10 +31,15 @@
    ============================================================================ */
 
 import { Link, useParams } from 'react-router-dom'
-import { contractBlocksToSeconds, getContractClock, humanDuration } from '@latchprotocol/sdk'
+import { getContractClock, humanDuration } from '@latchprotocol/sdk'
 
 import { DEPLOYMENTS } from '../../../lib/chain'
-import { proposalStatus } from '../../../lib/pendingConfig'
+import {
+  formatClockPoint,
+  formatClockSpan,
+  proposalStatus,
+  reductionsLeaveProposalArmed,
+} from '../../../lib/pendingConfig'
 import { BarList } from '../components/charts'
 import { PoolOwnerActions } from '../components/PoolOwnerActions'
 import { Methodology } from '../components/ProtocolCharts'
@@ -200,18 +205,22 @@ function PoolBody({
       : null
 
   /* Hazard item 5: a matured proposal is ARMED — applicable by anyone, in the
-     next block — whatever `getConfig` says. On the legacy 7-word hook
-     (0x23CE…, the LTT1/LTT2 pool) it has no expiry and stays armed until the
-     owner cancels or freezes; only the current 8-word hook can say `expired`. */
+     next block — whatever `getConfig` says. On the no-expiry hook (0x23CE…, the
+     LTT1/LTT2 pool) it stays armed until the owner cancels or freezes; only the
+     hooks with an expiry can say `expired`. */
   const pending = o.pending
-  /* Judged on the hook's OWN clock. `o.blockNumber` is the RPC head — the L2
-     block on Robinhood, ~2.4x the value the hook stored — and against it a
-     queued proposal read as expired (current hook) or armed (legacy hook). */
-  const status = proposalStatus(pending, o.contractBlockNumber)
+  /* Judged on the hook's OWN clock: `block.timestamp` for a timestamp hook, the
+     contract `block.number` for a block hook. `o.blockNumber` is the RPC head —
+     the L2 block on Robinhood — and is neither. */
+  const now = { timestamp: o.timestamp, contractBlockNumber: o.contractBlockNumber }
+  const status = proposalStatus(pending, now)
   const hasPending = status !== 'none'
-  const blocksToGo = status === 'queued' ? pending.effectiveBlock - o.contractBlockNumber : 0n
+  const timestampHook = pending.durationClock === 'timestamp'
+  const toGo = status === 'queued' ? pending.effective - (timestampHook ? o.timestamp : o.contractBlockNumber) : 0n
   const pendingDue = status === 'armed'
   const parentClock = getContractClock(REVSHARE_CHAIN_ID)?.clock === 'parent-l1'
+  const delaySpan = formatClockSpan(o.configDelay.clock, o.configDelay.value, REVSHARE_CHAIN_ID)
+  const leftArmedByReductions = reductionsLeaveProposalArmed(pending.shape)
 
   const lifetimeTotal = (row: { lpDonated: bigint; toBeneficiaries: bigint; toDistributor: bigint }) =>
     row.lpDonated + row.toBeneficiaries + row.toDistributor
@@ -352,48 +361,65 @@ function PoolBody({
                 ? 'armed · applicable by anyone now'
                 : status === 'expired'
                   ? 'expired · cannot be applied'
-                  : `${blocksToGo.toString()} contract blocks · ~${humanDuration(contractBlocksToSeconds(blocksToGo, REVSHARE_CHAIN_ID))} to go`}
+                  : timestampHook
+                    ? `${humanDuration(Number(toGo))} to go`
+                    : `${toGo.toString()} contract blocks · ${formatClockSpan('contract-block', toGo, REVSHARE_CHAIN_ID) ?? 'unknown time'} to go`}
             </span>
           </div>
-          <p className="live-note">
-            <code>proposeConfig</code> put this change behind {o.configDelayBlocks.toString()} blocks
-            (<code>CONFIG_DELAY_BLOCKS</code>), which is about{' '}
-            {humanDuration(contractBlocksToSeconds(o.configDelayBlocks, REVSHARE_CHAIN_ID))} of real
-            time here. It becomes applicable at contract block {pending.effectiveBlock.toString()}; the
-            hook&rsquo;s <code>block.number</code> is {o.contractBlockNumber.toString()}
-            {parentClock ? (
-              <>
-                {' '}
-                (this chain&rsquo;s EVM reports Ethereum&rsquo;s block number, advancing about every 12 s;
-                the RPC head, {o.blockNumber.toString()}, is a different clock and is not what the hook
-                compares against)
-              </>
-            ) : null}
-            . Applying it is <strong>permissionless</strong> — deliberately, so a proposal cannot be
-            stranded by an owner who proposed it and walked away.
-          </p>
+          {timestampHook ? (
+            <p className="live-note">
+              <code>proposeConfig</code> put this change behind {o.configDelay.value.toString()} seconds
+              (<code>CONFIG_DELAY_SECONDS</code>, {delaySpan}). It becomes applicable at{' '}
+              {formatClockPoint('timestamp', pending.effective)}; the latest block&rsquo;s{' '}
+              <code>block.timestamp</code> is {o.timestamp.toString()}. Applying it is{' '}
+              <strong>permissionless</strong> — deliberately, so a proposal cannot be stranded by an owner
+              who proposed it and walked away.
+            </p>
+          ) : (
+            <p className="live-note">
+              <code>proposeConfig</code> put this change behind {o.configDelay.value.toString()} blocks
+              (<code>CONFIG_DELAY_BLOCKS</code>), which is {delaySpan ?? 'an unknown span'} of real time
+              here (estimated at the contract block cadence). It becomes applicable at contract block{' '}
+              {pending.effective.toString()}; the hook&rsquo;s <code>block.number</code> is{' '}
+              {o.contractBlockNumber.toString()}
+              {parentClock ? (
+                <>
+                  {' '}
+                  (this chain&rsquo;s EVM reports Ethereum&rsquo;s block number, advancing about every 12 s;
+                  the RPC head, {o.blockNumber.toString()}, is a different clock and is not what the hook
+                  compares against)
+                </>
+              ) : null}
+              . Applying it is <strong>permissionless</strong> — deliberately, so a proposal cannot be
+              stranded by an owner who proposed it and walked away.
+            </p>
+          )}
           <p className="live-note dapp-mt-2">
-            {pending.expiryBlock === null ? (
+            {pending.expiry === null ? (
               <>
                 <strong>This hook&rsquo;s proposals never expire.</strong> It returns the older
-                seven-word <code>getPendingConfig</code>, which has no <code>expiryBlock</code>: once
-                matured, this change stays applicable by anyone until the owner calls{' '}
-                <code>cancelPendingConfig</code> or <code>freezeConfig</code>.{' '}
-                <code>disable</code> and <code>reduceFee</code> do not clear it.
+                seven-word <code>getPendingConfig</code>, which has no expiry: once matured, this change
+                stays applicable by anyone until the owner calls <code>cancelPendingConfig</code> or{' '}
+                <code>freezeConfig</code>.{' '}
+                {leftArmedByReductions ? (
+                  <>
+                    <code>disable</code> and <code>reduceFee</code> do not clear it.
+                  </>
+                ) : null}
               </>
             ) : status === 'expired' ? (
               <>
-                Its window closed at contract block {pending.expiryBlock.toString()}.{' '}
+                Its window closed at {formatClockPoint(pending.durationClock, pending.expiry)}.{' '}
                 <code>applyPendingConfig</code> now reverts <code>PendingConfigExpired</code>, so it
                 cannot land; re-proposing restarts the full delay.
               </>
             ) : (
               <>
-                It stays applicable through contract block {pending.expiryBlock.toString()}, about{' '}
-                {humanDuration(contractBlocksToSeconds(pending.expiryBlock - pending.effectiveBlock, REVSHARE_CHAIN_ID))}{' '}
-                after it matures (
-                <code>expiryBlock</code>), then expires. <code>disable</code> and{' '}
-                <code>reduceFee</code> do not clear it before then.
+                It stays applicable through {formatClockPoint(pending.durationClock, pending.expiry)},{' '}
+                {formatClockSpan(pending.durationClock, pending.expiry - pending.effective, REVSHARE_CHAIN_ID) ??
+                  'an unknown span'}{' '}
+                after it matures, then expires. On this hook <code>disable</code> and{' '}
+                <code>reduceFee</code> clear it immediately.
               </>
             )}
           </p>
