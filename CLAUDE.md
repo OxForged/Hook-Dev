@@ -379,6 +379,43 @@ Design consequence: the fee controller is a separate `onlyOwner` contract, so bu
 replaceable/upgradeable while the Vault stays immutable. It governs protocol revenue, so it sits
 behind the same multisig + timelock as `registerApp`.
 
+## Kit fees: decided by the owner, 2026-09-13
+
+**The principle.** Revenue is enforced by the CONTRACTS Latch deploys on the shared core, never by
+SDK code. The SDK is MIT and free; it is the easy path to contracts that charge. A fee written
+into the SDK is one deleted line away from zero. A full fork that deploys its own contracts pays
+nothing — the GPL permits it — so every fee must stay cheaper than the work of forking.
+
+**Launch shapes: both CL and Bin.** Single-sided CL ranges (the constant-product "bonding curve")
+and shaped Bin distributions (linear, exponential, stepped — shapes a V2-style launchpad cannot
+express). Tradable on the real pool from the first block: no separate curve contract, no
+graduation migration. "Graduation" is a milestone computed from the position, with optional
+keeper-run unlocks. No V2 pools, no V3 fork, no fee-on-transfer tax tokens — tax is a hook fee.
+
+**Split model: range + integrator slot.** Every revenue split has three parties — creator,
+protocol, integrator (the tenant launchpad's fee wallet). Hard caps are immutable in the
+contract; per-launch values are fixed forever at creation; tenants choose anything inside the
+bounds, and nobody can go below the protocol floor.
+
+| Fee layer | Enforced by | Latch default | Tenant control |
+|---|---|---|---|
+| Launch fee | `LaunchpadKit` v2 `createLaunch` | flat, ≈ $1–2 in native, set in wei by the Safe | may add their own launch fee on top |
+| Locked-LP fees | `LatchLPLocker` | **min 20%** of LP fees to protocol, forever per lock | creator/integrator split of the rest; may raise protocol share |
+| Launch tax (buy/sell hook fee) | Creator Economy hook | **min 10% of the tax** to protocol | rates, expiry, buckets, integrator share |
+| Core swap protocol fee | pool manager via fee controller | **0 on kit-created locked pools** (no double-dip); normal DEX pools keep the core fee | none |
+
+Integrator share cap: up to 20% where a split exists. Protocol share cap: 50% (immutable).
+
+**Changing Latch's numbers.** Only inside the immutable caps. The Safe sets current values;
+increases take effect after a public notice delay (≈7 days); decreases are immediate (delay never
+sits on privilege reduction); nothing is retroactive — a launch's split and tax are frozen at
+creation. A USD-denominated launch fee needs an oracle and is out of scope: the Safe sets wei and
+re-prices by hand.
+
+**Second revenue line: a hosted API tier.** Indexer, charts, quotes and DexScreener-format token
+metadata served from Latch infrastructure, with a rate-limited free tier and paid API keys. Code
+can be forked; a maintained, indexed data service cannot be copied in an afternoon.
+
 
 ---
 
