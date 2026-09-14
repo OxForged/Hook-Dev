@@ -7,11 +7,15 @@
    Three contract facts govern the layout, and the screen states each one
    rather than working around it:
 
-   · TOTAL TAKEN IS SUMMED FROM LOGS. `RevShareHook` keeps no
-     `totalTaken(poolId, currency)`. The hero decomposes `RevShareTaken` into
-     its three fields — `lpDonated`, `toBeneficiaries`, `toDistributor` — and
-     prints the block range it summed over, every time. It is a total over a
-     scanned window and is labelled as one.
+   · TOTAL TAKEN IS SUMMED FROM LOGS, AND CHECKED. The hero decomposes
+     `RevShareTaken` into its three fields — `lpDonated`, `toBeneficiaries`,
+     `toDistributor` — and prints the block range it summed over. Where the hook
+     keeps `totalTaken(poolId, currency)` (both Robinhood hooks do) the counter
+     is shown beside the sum, so a short scan is visible.
+
+   · THE HOOK COMES FROM THE POOL'S KEY. Unless `?hook=` pins one, the hook read
+     is `poolIdToPoolKey(poolId).hooks` on the CL pool manager — the hook is part
+     of the pool id, so no other answer can be right.
 
    · A PoolKey CANNOT BE DERIVED FROM A PoolId, and every write takes one.
      Where the key resolves (a distributor's `poolKey()`, or the CL pool
@@ -33,7 +37,7 @@
 import { Link, useParams } from 'react-router-dom'
 import { getContractClock, humanDuration } from '@latchprotocol/sdk'
 
-import { DEPLOYMENTS } from '../../../lib/chain'
+import { DEPLOYMENTS, type ReadFailureKind } from '../../../lib/chain'
 import {
   formatClockPoint,
   formatClockSpan,
@@ -54,6 +58,8 @@ import {
   pipsPct,
   readPoolOverview,
   shortHex,
+  resolvePoolHook,
+  type HookRef,
   type PoolLoad,
   type PoolOverview,
 } from '../lib/revshare'
@@ -91,21 +97,48 @@ const MAX_FEE_PIPS = 100_000
 /** The three-way split, in the order the contract stores it. */
 const SPLIT_TOTAL_BPS = 10_000
 
+type ScreenLoad =
+  | { k: 'not-initialized' }
+  | { k: 'no-hook' }
+  | { k: 'loaded'; hook: HookRef; load: PoolLoad }
+
 export default function ProtocolPool() {
   const { poolId: raw } = useParams<{ poolId: string }>()
-  const { ref: hook, malformed, withHook } = useHookRef()
+  const { ref: pinned, refs, malformed, withHook } = useHookRef()
 
   const poolId = raw && isPoolId(raw) ? (raw.trim() as `0x${string}`) : null
-  const key = hook && poolId ? `pool:${hook.address}:${poolId}` : null
+  const key = refs.length > 0 && poolId ? `pool:${pinned?.address ?? 'by-key'}:${poolId}` : null
 
-  const { state, reload } = useChainRead<PoolLoad>(key, async () => {
-    if (!hook || !poolId) throw new Error('unreachable')
-    return readPoolOverview(hook.address, poolId)
+  const { state: outer, reload } = useChainRead<ScreenLoad>(key, async () => {
+    if (!poolId) throw new Error('unreachable')
+    let hook: HookRef
+    if (pinned) {
+      hook = pinned
+    } else {
+      const r = await resolvePoolHook(poolId)
+      if (r.k === 'not-initialized') return { k: 'not-initialized' }
+      if (r.k === 'no-hook') return { k: 'no-hook' }
+      hook = r.hook
+    }
+    return { k: 'loaded', hook, load: await readPoolOverview(hook.address, poolId) }
   })
+
+  const hook = outer.k === 'ready' && outer.data.k === 'loaded' ? outer.data.hook : pinned
+  /* The inner PoolLoad, re-wrapped so the render below reads one state. */
+  const state:
+    | { k: 'idle' }
+    | { k: 'loading' }
+    | { k: 'error'; message: string; kind: ReadFailureKind }
+    | { k: 'ready'; data: PoolLoad } =
+    outer.k === 'ready'
+      ? outer.data.k === 'loaded'
+        ? { k: 'ready', data: outer.data.load }
+        : { k: 'idle' }
+      : outer
 
   return (
     <>
-      <ScreenIntro title="Revenue share for one pool" hook={hook ?? undefined}>
+      <ScreenIntro title="Revenue share for one pool" hook={hook ?? undefined} live={outer.k === 'ready'}>
         <p>
           {poolId ? (
             <>
@@ -124,9 +157,29 @@ export default function ProtocolPool() {
         </p>
       </ScreenIntro>
 
-      {!hook && <NotDeployed malformed={malformed} />}
+      {refs.length === 0 && <NotDeployed malformed={malformed} />}
 
-      {hook && !poolId && (
+      {outer.k === 'ready' && outer.data.k === 'not-initialized' && (
+        <Empty title="No pool with this id is initialized">
+          <p>
+            <code>poolIdToPoolKey</code> on the CL pool manager{' '}
+            <Addr value={CHAIN.clPoolManager} /> returns an empty key for{' '}
+            {poolId ? <PoolIdText value={poolId} /> : 'this id'}, so no pool with this id exists on{' '}
+            {CHAIN.name}&rsquo;s CL manager. A RevShareHook serves CL pools only.
+          </p>
+        </Empty>
+      )}
+
+      {outer.k === 'ready' && outer.data.k === 'no-hook' && (
+        <Empty title="This pool has no hook attached">
+          <p>
+            The pool exists, and its key names <code>address(0)</code> as its hook. With no hook there
+            is no revenue share to read — the pool takes only its LP fee and any protocol fee.
+          </p>
+        </Empty>
+      )}
+
+      {refs.length > 0 && !poolId && (
         <Empty title="That is not a pool id">
           <p>
             A pool id is 32 bytes — <code>0x</code> followed by 64 hex characters. The URL carries{' '}
@@ -136,7 +189,7 @@ export default function ProtocolPool() {
       )}
 
       {state.k === 'loading' && <Reading what="this pool’s configuration and log history" />}
-      {state.k === 'error' && <Unreachable message={state.message} onRetry={reload} />}
+      {state.k === 'error' && <Unreachable message={state.message} kind={state.kind} onRetry={reload} />}
 
       {state.k === 'ready' && state.data.k === 'no-code' && (
         <Empty title="There is no contract at that address">
@@ -331,12 +384,31 @@ function PoolBody({
           <strong>Summed from logs since block {o.lifetime.fromBlock.toString()}</strong> (head{' '}
           {o.lifetime.toBlock.toString()}) — a window total, not a lifetime total.
         </p>
-        <Methodology label="Why there is no lifetime total to read">
+        {o.lifetime.rows.some((r) => r.counter !== null) && (
+          <ul className="live-list dapp-mt-2">
+            {o.lifetime.rows.map((r) => (
+              <li key={`counter-${r.token.address}`}>
+                <span>
+                  {r.token.symbol}: <code>totalTaken</code>{' '}
+                  {r.counter === null ? 'not available on this hook' : amountWithUnit(r.counter, r.token)}
+                </span>
+                <span className="live-fee">
+                  {r.counter === null
+                    ? 'reverted'
+                    : r.counter === lifetimeTotal(r)
+                      ? 'matches the log sum'
+                      : `differs from the log sum (${amountWithUnit(lifetimeTotal(r), r.token)}) — the scan may be short`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Methodology label="Why the total is summed from logs">
           <p className="live-note">
-            <code>RevShareHook</code> keeps no cumulative counter: there is no{' '}
-            <code>totalTaken(poolId, currency)</code>, so this is a sum over the scanned window
-            only, bounded by how far back this RPC serves logs. The three columns are the three
-            fields of <code>RevShareTaken</code>, so they add up to exactly what the swap path took.
+            The three columns are the three fields of <code>RevShareTaken</code>, so they add up to
+            exactly what the swap path took — a split the hook&rsquo;s lifetime{' '}
+            <code>totalTaken(poolId, currency)</code> counter does not carry. Where the hook has that
+            counter it is read at the same head block and shown above as a check on the scan.
           </p>
         </Methodology>
       </section>
@@ -603,7 +675,11 @@ function PoolBody({
             <p className="an-empty__title">No beneficiaries set</p>
             <p className="live-note">
               <code>getBeneficiaries</code> is empty. Anything accrued for beneficiaries waits in{' '}
-              <code>pendingBeneficiary</code> rather than being lost.
+              <code>pendingBeneficiary</code> — but only until the pool is frozen. A freeze removes{' '}
+              <code>setBeneficiaries</code>, after which that pot can never be paid to anyone.
+              {o.config.frozen && o.config.beneficiaryBps > 0 ? (
+                <strong> This pool IS frozen with a live beneficiary share, so every beneficiary cut it takes accrues to nobody.</strong>
+              ) : null}
             </p>
           </div>
         ) : (

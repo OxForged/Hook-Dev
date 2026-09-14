@@ -14,11 +14,13 @@
    ============================================================================ */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { classifyReadFailure, type ReadFailureKind } from '../../../lib/chain'
 
 export type ReadState<T> =
   | { k: 'idle' }
   | { k: 'loading' }
-  | { k: 'error'; message: string }
+  /** `kind` separates a scan that ran out of time from an unreachable chain. */
+  | { k: 'error'; message: string; kind: ReadFailureKind }
   | { k: 'ready'; data: T }
 
 type Settled<T> = Extract<ReadState<T>, { k: 'error' } | { k: 'ready' }>
@@ -57,7 +59,7 @@ export function useChainRead<T>(
         if (!off) {
           setSettled({
             key: full,
-            s: { k: 'error', message: e instanceof Error ? e.message : String(e) },
+            s: { k: 'error', message: e instanceof Error ? e.message : String(e), kind: classifyReadFailure(e) },
           })
         }
       })

@@ -162,7 +162,7 @@ const navGroups: readonly NavGroup[] = [
     heading: 'Latches',
     items: [
       { screen: 'marketplace', label: 'Latch Marketplace', path: 'marketplace', icon: 'explorer' },
-      { screen: 'deploy', label: 'Deploy a Latch', path: 'deploy', icon: 'deploy' },
+      { screen: 'deploy', label: 'List a Latch', path: 'deploy', icon: 'deploy' },
     ],
   },
   {
@@ -207,7 +207,10 @@ const meta: Record<Screen, ScreenMeta> = {
     title: 'Latch Marketplace',
     subtitle: `On-chain registry · ${DEPLOYMENTS[ACTIVE_CHAIN_ID].name}`,
   },
-  deploy: { title: 'Deploy a Latch', subtitle: 'List a Latch in the on-chain registry' },
+  /* "List", not "Deploy": this screen registers an ALREADY-deployed hook in
+     LatchRegistry. It deploys nothing. The route stays /app/deploy so shipped
+     links keep working. */
+  deploy: { title: 'List a Latch', subtitle: 'Register a deployed hook in the on-chain registry' },
   /* No pair or fee here any more. This meta is static, and the screen reads the
      real pair, fee and vault balances off chain — a hardcoded "ETH / USDC · 0.05%"
      in the subtitle contradicted the "ltUSD / ltETH · 0.30%" the page itself

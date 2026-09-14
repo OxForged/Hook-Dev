@@ -202,7 +202,7 @@ export default function Analytics() {
       <section className="dapp-card dapp-card--chart">
         <div className="dapp-card__bar">
           <h2 className="dapp-microlabel">PROTOCOL ANALYTICS</h2>
-          <LiveBadge />
+          {state.k === 'error' ? <span className="dapp-badge dapp-badge--warn">NOT READ</span> : null}
         </div>
         <p className={`live-note ${state.k === 'error' ? 'live-note--err' : 'dapp-state--loading'}`} role="status">
           {state.k === 'loading'

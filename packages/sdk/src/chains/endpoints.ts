@@ -398,3 +398,61 @@ export function resolveEndpoints(
   // de-dupe while preserving order, private first
   return [...new Set([...priv, ...pub])]
 }
+
+/**
+ * Public endpoints VERIFIED to answer a whole-history `eth_getLogs` in ONE request,
+ * per chain. Each URL must also appear in that chain's `CHAIN_RPCS` list; this table
+ * only REORDERS, it never adds an endpoint.
+ *
+ * WHY A SEPARATE ORDERING, RATHER THAN MOVING THESE FIRST IN `CHAIN_RPCS`. The two
+ * orderings answer different questions. `CHAIN_RPCS` is ranked by `eth_blockNumber`
+ * latency, which is what an `eth_call` cares about. A log scan cares about something
+ * the latency probe never measured: the maximum block span an endpoint will serve.
+ * On Robinhood the fastest endpoints refuse a wide range outright, and with
+ * `rank: false` a fallback transport restarts at endpoint 1 on EVERY request — so a
+ * windowed scan of ~280 windows paid a refusal or a 429 at each of the first four
+ * endpoints before reaching the one that would have served the whole range at once.
+ * Reordering reads globally to fix logs would trade a measured read order for an
+ * unmeasured one; routing only `eth_getLogs` through this list fixes logs and leaves
+ * reads exactly as probed.
+ *
+ * Probed 2026-09-14 from a residential connection, `eth_getLogs` over the CL pool
+ * manager from the protocol's deployment block (60,111,836) to `latest` — a span of
+ * 2,540,270 blocks:
+ *
+ *   rpc.mainnet.chain.robinhood.com   served it, 6 of 6 sequential requests, 0.15-0.21 s,
+ *                                     CORS `access-control-allow-origin: *`
+ *   rpc.nodeflare.app/robinhood/public served it once, then HTTP 429 "1 per 10s" per IP
+ *   rpc-robinhood.blockmachine.io     -32602 "span 2540270 blocks exceeds maximum 10000"
+ *   rpc.ordofi.network                -32005 "the network is busy"
+ *   robinhood.rpc.blxrbdn.com         HTTP 403 "Request forbidden by administrative rules"
+ *
+ * Only the first is listed: one successful request followed by a 10-second lockout
+ * is not "verified for full-range logs". Re-probe before adding anything.
+ */
+export const LOG_RANGE_ENDPOINTS: Readonly<Record<number, readonly string[]>> = {
+  4663: ["https://rpc.mainnet.chain.robinhood.com"],
+};
+
+/**
+ * Ordered endpoint URLs for `eth_getLogs` on a chain: private providers first (as in
+ * `resolveEndpoints`), then the endpoints verified for full-range logs in
+ * `LOG_RANGE_ENDPOINTS`, then every other public endpoint in its probed order.
+ *
+ * The SET of URLs is exactly `resolveEndpoints(chainId, env)`; only the order differs.
+ *
+ * @param chainId target chain
+ * @param env process environment, injected so this stays testable and browser-safe
+ */
+export function resolveLogEndpoints(
+  chainId: number,
+  env: Record<string, string | undefined> = {},
+): string[] {
+  const all = resolveEndpoints(chainId, env);
+  const priv = (env[`LATCH_RPC_${chainId}`] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const verified = (LOG_RANGE_ENDPOINTS[chainId] ?? []).filter((u) => all.includes(u));
+  return [...new Set([...priv, ...verified, ...all])];
+}

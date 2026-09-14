@@ -146,10 +146,14 @@ function PoolCard({ pools, crypto }: { pools: PoolPriceState; crypto: MarketFeed
         <h2 id="pool-price-h" className="dapp-microlabel">
           POOL PRICE · FROM sqrtPriceX96
         </h2>
-        <span className="live-badge">
+        {pools.k === 'ready' ? (
+          <span className="live-badge">
           <span className="live-dot" aria-hidden="true" />
           ON CHAIN
         </span>
+        ) : pools.k === 'error' ? (
+          <span className="dapp-badge dapp-badge--warn">NOT READ</span>
+        ) : null}
         {pools.k === 'ready' && (
           <span className="dapp-dot--end dapp-stat__label">READ {fmtTime(pools.fetchedAt)}</span>
         )}
@@ -464,7 +468,9 @@ function ReferenceCard({ crypto, stocks }: { crypto: MarketFeedState; stocks: Ma
       </div>
 
       <FeedBlock provider={coinGeckoCrypto} state={crypto} configured />
-      <FeedBlock provider={finnhubStocks} state={stocks} configured={stocksConfigured()} />
+      {/* Absent rather than "not configured" when the key is unset: that fact
+          is stated once, in Settings → Build configuration. */}
+      {stocksConfigured() && <FeedBlock provider={finnhubStocks} state={stocks} configured />}
 
       <p className="dapp-note">
         External quotes for the markets Latch targets, in USD. Refreshed every {POLL_SECONDS}s

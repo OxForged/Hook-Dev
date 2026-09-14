@@ -424,10 +424,14 @@ export default function Explorer() {
             <h2 id="hx-h" className="dapp-card__title dapp-card__title--lg">
               Every Latch listed on chain
             </h2>
-            <span className="live-badge">
-              <span className="live-dot" aria-hidden="true" />
-              LIVE
-            </span>
+{state.k === 'ready' ? (
+              <span className="live-badge">
+                <span className="live-dot" aria-hidden="true" />
+                LIVE
+              </span>
+            ) : state.k === 'error' ? (
+              <span className="dapp-badge dapp-badge--warn">NOT READ</span>
+            ) : null}
           </div>
           {/* Two sentences, and the second is the caveat that changes how every
               card is read: half of a listing is unverified prose. Cutting it to

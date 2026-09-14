@@ -25,13 +25,18 @@
    ============================================================================ */
 
 import { parseAbi, zeroAddress, type Address, type Hex } from 'viem'
-import { client, DEPLOYMENTS, scanWindowsMulti, type DeployedChainId } from '../../../lib/chain'
+import { classifyReadFailure, client, DEPLOYMENTS, scanWindowsMulti, type DeployedChainId } from '../../../lib/chain'
 
 /** Deployed identically on Robinhood Chain (4663) and Ethereum Sepolia — see
  *  CLAUDE.md "The governance Safe". On Robinhood it owns every contract in the
  *  table below; on Sepolia it exists but owns nothing there (the deployer EOA
  *  still does). Which is true for a given chain is read, not assumed here. */
 export const SAFE_ADDRESS: Address = '0x715a6176946aDbD22c1B2021d321Fb3767ca3432'
+
+/** The dedicated cancel-only key (CLAUDE.md "The canceller"). An IDENTIFIER,
+ *  like SAFE_ADDRESS: whether it actually holds CANCELLER_ROLE on each
+ *  timelock, and whether it holds gas to act, is read live below. */
+export const CANCELLER_ADDRESS: Address = '0xe65F304e40b61d7417154cb3e725C0Ee16701142'
 
 /* --------------------------------------------------------------------------
    ABIs — only what is read.
@@ -57,6 +62,7 @@ const TIMELOCK_ABI = parseAbi([
   'function minDelayFloor() view returns (uint256)',
   'function PROPOSER_ROLE() view returns (bytes32)',
   'function EXECUTOR_ROLE() view returns (bytes32)',
+  'function CANCELLER_ROLE() view returns (bytes32)',
   'function DEFAULT_ADMIN_ROLE() view returns (bytes32)',
   'function hasRole(bytes32 role, address account) view returns (bool)',
   'function isOperationPending(bytes32 id) view returns (bool)',
@@ -119,6 +125,10 @@ export interface TimelockStatus {
   selfAdmin: boolean
   safeHasAdmin: boolean
   zeroHasAdmin: boolean
+  /** hasRole(CANCELLER_ROLE, CANCELLER_ADDRESS) — the dedicated cancel-only key. */
+  cancellerKeyHasRole: boolean
+  /** hasRole(CANCELLER_ROLE, SAFE_ADDRESS) — OZ grants it to every proposer. */
+  safeCanCancel: boolean
 }
 
 export async function readTimelockStatus(
@@ -127,20 +137,23 @@ export async function readTimelockStatus(
   tier: TimelockTier,
 ): Promise<TimelockStatus> {
   const c = client(chainId)
-  const [minDelaySec, minDelayFloorSec, proposerRole, executorRole, adminRole] = await Promise.all([
+  const [minDelaySec, minDelayFloorSec, proposerRole, executorRole, adminRole, cancellerRole] = await Promise.all([
     c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'getMinDelay' }),
     c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'minDelayFloor' }),
     c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'PROPOSER_ROLE' }),
     c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'EXECUTOR_ROLE' }),
     c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'DEFAULT_ADMIN_ROLE' }),
+    c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'CANCELLER_ROLE' }),
   ])
 
-  const [safeIsProposer, executionOpen, selfAdmin, safeHasAdmin, zeroHasAdmin] = await Promise.all([
+  const [safeIsProposer, executionOpen, selfAdmin, safeHasAdmin, zeroHasAdmin, cancellerKeyHasRole, safeCanCancel] = await Promise.all([
     c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'hasRole', args: [proposerRole, SAFE_ADDRESS] }),
     c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'hasRole', args: [executorRole, zeroAddress] }),
     c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'hasRole', args: [adminRole, address] }),
     c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'hasRole', args: [adminRole, SAFE_ADDRESS] }),
     c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'hasRole', args: [adminRole, zeroAddress] }),
+    c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'hasRole', args: [cancellerRole, CANCELLER_ADDRESS] }),
+    c.readContract({ address, abi: TIMELOCK_ABI, functionName: 'hasRole', args: [cancellerRole, SAFE_ADDRESS] }),
   ])
 
   return {
@@ -154,7 +167,30 @@ export async function readTimelockStatus(
     selfAdmin,
     safeHasAdmin,
     zeroHasAdmin,
+    cancellerKeyHasRole,
+    safeCanCancel,
   }
+}
+
+/** Both timelocks plus the canceller key's gas balance, which decides whether
+ *  its role is usable at all. */
+export async function readTimelocks(
+  chainId: DeployedChainId,
+): Promise<{
+  timelocks: readonly [TimelockStatus, TimelockStatus]
+  cancellerBalanceWei: bigint
+  /** `eth_gasPrice` at read time, so the balance can be stated as gas it buys. */
+  gasPriceWei: bigint
+}> {
+  const d = DEPLOYMENTS[chainId]
+  const c = client(chainId)
+  const [custody, policy, cancellerBalanceWei, gasPriceWei] = await Promise.all([
+    readTimelockStatus(chainId, d.timelockCustody, 'Custody'),
+    readTimelockStatus(chainId, d.timelockPolicy, 'Policy'),
+    c.getBalance({ address: CANCELLER_ADDRESS }),
+    c.getGasPrice(),
+  ])
+  return { timelocks: [custody, policy], cancellerBalanceWei, gasPriceWei }
 }
 
 /* --------------------------------------------------------------------------
@@ -174,16 +210,43 @@ async function resolveOwnerName(chainId: DeployedChainId, address: Address): Pro
   const lower = address.toLowerCase()
   if (lower === SAFE_ADDRESS.toLowerCase()) return { address, kind: 'safe', label: 'Safe' }
   if (lower === d.timelockCustody.toLowerCase()) {
-    return { address, kind: 'custody-timelock', label: 'Custody timelock (48h)' }
+    return { address, kind: 'custody-timelock', label: 'Custody timelock' }
   }
   if (lower === d.timelockPolicy.toLowerCase()) {
-    return { address, kind: 'policy-timelock', label: 'Policy timelock (6h)' }
+    return { address, kind: 'policy-timelock', label: 'Policy timelock' }
+  }
+  if (d.clPoolManagerOwner && lower === d.clPoolManagerOwner.toLowerCase()) {
+    return { address, kind: 'contract', label: 'CLPoolManagerOwner' }
+  }
+  if (d.binPoolManagerOwner && lower === d.binPoolManagerOwner.toLowerCase()) {
+    return { address, kind: 'contract', label: 'BinPoolManagerOwner' }
   }
   const code = await client(chainId).getCode({ address })
   const hasCode = Boolean(code && code !== '0x')
   return hasCode
     ? { address, kind: 'contract', label: `Unrecognized contract (${shortAddr(address)})` }
     : { address, kind: 'eoa', label: `EOA (${shortAddr(address)})` }
+}
+
+/**
+ * What CLAUDE.md's "Ownership: decided here, not at deploy time" table assigns a
+ * contract to. Taken from the repository, not the chain — which is the point:
+ * the row compares the two.
+ *
+ *   custody      owner() must end at the 48h custody timelock
+ *   safe         owner() must end at the Safe
+ *   safe-admin   AccessControl: DEFAULT_ADMIN_ROLE must be held by the Safe
+ *   none         no privileged role exists, and none should be added
+ *   untabulated  the table does not list this contract
+ */
+export type ExpectedHolder = 'custody' | 'safe' | 'safe-admin' | 'none' | 'untabulated'
+
+export const EXPECTED_LABEL: Record<ExpectedHolder, string> = {
+  custody: 'Custody timelock',
+  safe: 'Safe',
+  'safe-admin': 'Safe (DEFAULT_ADMIN_ROLE)',
+  none: 'none — do not add one',
+  untabulated: 'not in the table',
 }
 
 export interface OwnershipRow {
@@ -196,8 +259,24 @@ export interface OwnershipRow {
    *  CLPoolManager -> CLPoolManagerOwner -> Safe. Nothing here is inferred;
    *  each entry came from a real `owner()` call. */
   chain: ResolvedOwner[]
+  /**
+   * `pendingOwner()` read on the contract that holds the FINAL ownership link —
+   * the wrapper for a pool manager, the contract itself otherwise. A pool
+   * manager is a plain Ownable owned by its `*PoolManagerOwner` wrapper; the
+   * two-step nomination lives on the WRAPPER, so reading `pendingOwner` on the
+   * manager reverted and the screen showed one pending transfer instead of three.
+   */
   pendingOwner: Address | null
+  /** Where `pendingOwner` was read. */
+  pendingOwnerAt: Address | null
   isEOAOwned: boolean
+  expected: ExpectedHolder
+  /** For AccessControl contracts expected `safe-admin`: hasRole(DEFAULT_ADMIN_ROLE, Safe). */
+  safeHasAdminRole: boolean | null
+  /** Whether the chain agrees with the table. `null` where the table says nothing. */
+  matches: boolean | null
+  /** A short, contract-specific fact worth printing beside the row. */
+  note: string | null
 }
 
 const MAX_OWNER_HOPS = 4
@@ -215,16 +294,18 @@ async function followOwnerChain(
     let owner: Address
     try {
       owner = (await c.readContract({ address: current, abi: OWNABLE_ABI, functionName: 'owner' })) as Address
-    } catch {
+    } catch (e) {
+      /* A revert means "not Ownable" — a fact about the contract. A transport
+         failure means nothing about it and must not be rendered as one. */
+      if (classifyReadFailure(e) === 'transport') throw e
       break
     }
     ownableAtAll = true
     const resolved = await resolveOwnerName(chainId, owner)
     chain.push(resolved)
     // Safe, a known timelock, or an EOA all terminate the chain cleanly. Only
-    // an unrecognized CONTRACT is worth another hop — that is exactly the
-    // *PoolManagerOwner wrapper case, discovered from chain rather than
-    // hardcoded.
+    // a CONTRACT is worth another hop — that is exactly the
+    // *PoolManagerOwner wrapper case.
     if (resolved.kind !== 'contract') break
     current = owner
   }
@@ -232,60 +313,118 @@ async function followOwnerChain(
   return { ownable: ownableAtAll, chain }
 }
 
-/** Every Ownable contract this deployment carries, plus LatchRegistry — which
- *  is included specifically to show it is NOT Ownable (it is AccessControl,
- *  governed by DEFAULT_ADMIN_ROLE instead), so its absence from `owner()`
- *  reads as a checked fact rather than an omission. */
-function ownableTargets(chainId: DeployedChainId): { name: string; address: Address }[] {
-  const d = DEPLOYMENTS[chainId]
-  return [
-    { name: 'Vault', address: d.vault },
-    { name: 'CLPoolManager', address: d.clPoolManager },
-    { name: 'BinPoolManager', address: d.binPoolManager },
-    { name: 'LatchProtocolFeeController', address: d.feeController },
-    { name: 'LatchRegistry', address: d.registry },
-    { name: 'CLPositionDescriptor', address: d.clPositionDescriptor },
-    { name: 'UniversalRouter', address: d.universalRouter },
-    { name: 'Create3Factory', address: d.create3Factory },
-    { name: 'CLPositionManager', address: d.clPositionManager },
-    { name: 'BinPositionManager', address: d.binPositionManager },
-    { name: 'CLQuoter', address: d.clQuoter },
-    { name: 'BinQuoter', address: d.binQuoter },
-  ]
+interface Target {
+  name: string
+  address: Address
+  expected: ExpectedHolder
+  note?: string
 }
+
+/** Every contract this deployment carries that the ownership table speaks to,
+ *  plus the periphery it does not, so an owner there is visible too. */
+function ownableTargets(chainId: DeployedChainId): Target[] {
+  const d = DEPLOYMENTS[chainId]
+  const out: Target[] = [
+    { name: 'Vault', address: d.vault, expected: 'custody', note: 'registerApp is irreversible' },
+    { name: 'CLPoolManager', address: d.clPoolManager, expected: 'custody', note: 'held via CLPoolManagerOwner' },
+    { name: 'BinPoolManager', address: d.binPoolManager, expected: 'custody', note: 'held via BinPoolManagerOwner' },
+  ]
+  if (d.clPoolManagerOwner) out.push({ name: 'CLPoolManagerOwner', address: d.clPoolManagerOwner, expected: 'custody' })
+  if (d.binPoolManagerOwner) out.push({ name: 'BinPoolManagerOwner', address: d.binPoolManagerOwner, expected: 'custody' })
+  out.push(
+    { name: 'LatchProtocolFeeController', address: d.feeController, expected: 'safe' },
+    { name: 'LatchRegistry', address: d.registry, expected: 'safe-admin' },
+    { name: 'CLPositionDescriptor', address: d.clPositionDescriptor, expected: 'safe', note: 'metadata URI, cosmetic' },
+  )
+  for (const h of d.revShareHooks) {
+    out.push({
+      name: `RevShareHook (${h.status})`,
+      address: h.address,
+      expected: 'safe',
+      ...(h.status === 'retired' ? { note: 'retired in the address book; its pools still live' } : {}),
+    })
+  }
+  if (d.launchGuardHook) out.push({ name: 'LaunchGuardHook', address: d.launchGuardHook, expected: 'none' })
+  if (d.launchpadKit) out.push({ name: 'LaunchpadKit (v1)', address: d.launchpadKit, expected: 'none' })
+  if (d.launchRegistry) out.push({ name: 'LaunchRegistry', address: d.launchRegistry, expected: 'untabulated' })
+  out.push(
+    { name: 'UniversalRouter', address: d.universalRouter, expected: 'untabulated' },
+    { name: 'Create3Factory', address: d.create3Factory, expected: 'untabulated' },
+    { name: 'CLPositionManager', address: d.clPositionManager, expected: 'untabulated' },
+    { name: 'BinPositionManager', address: d.binPositionManager, expected: 'untabulated' },
+    { name: 'CLQuoter', address: d.clQuoter, expected: 'untabulated' },
+    { name: 'BinQuoter', address: d.binQuoter, expected: 'untabulated' },
+  )
+  return out
+}
+
+const ACCESS_CONTROL_ABI = parseAbi([
+  'function DEFAULT_ADMIN_ROLE() view returns (bytes32)',
+  'function hasRole(bytes32 role, address account) view returns (bool)',
+])
 
 export async function readOwnershipTable(chainId: DeployedChainId): Promise<OwnershipRow[]> {
   const c = client(chainId)
 
   return Promise.all(
-    ownableTargets(chainId).map(async ({ name, address }) => {
+    ownableTargets(chainId).map(async ({ name, address, expected, note }): Promise<OwnershipRow> => {
       const { ownable, chain } = await followOwnerChain(chainId, address)
 
+      /* The contract holding the final link: the parent of the last hop. */
+      const holder = chain.length >= 2 ? (chain[chain.length - 2]?.address ?? address) : address
       let pendingOwner: Address | null = null
+      let pendingOwnerAt: Address | null = null
       if (ownable) {
         try {
-          const p = (await c.readContract({
-            address,
-            abi: OWNABLE_ABI,
-            functionName: 'pendingOwner',
-          })) as Address
+          const p = (await c.readContract({ address: holder, abi: OWNABLE_ABI, functionName: 'pendingOwner' })) as Address
           pendingOwner = p === zeroAddress ? null : p
-        } catch {
-          // Plain Ownable (no two-step transfer), or the call reverted for
-          // some other reason — either way there is no pending transfer to
-          // show, which is the honest default.
-          pendingOwner = null
+          pendingOwnerAt = holder
+        } catch (e) {
+          if (classifyReadFailure(e) === 'transport') throw e
+          // Plain Ownable (no two-step transfer): no nomination to show.
+        }
+      }
+
+      let safeHasAdminRole: boolean | null = null
+      if (expected === 'safe-admin') {
+        try {
+          const role = await c.readContract({ address, abi: ACCESS_CONTROL_ABI, functionName: 'DEFAULT_ADMIN_ROLE' })
+          safeHasAdminRole = await c.readContract({
+            address,
+            abi: ACCESS_CONTROL_ABI,
+            functionName: 'hasRole',
+            args: [role, SAFE_ADDRESS],
+          })
+        } catch (e) {
+          if (classifyReadFailure(e) === 'transport') throw e
+          safeHasAdminRole = false
         }
       }
 
       const final = chain[chain.length - 1]
+      const matches: boolean | null =
+        expected === 'custody'
+          ? final?.kind === 'custody-timelock'
+          : expected === 'safe'
+            ? final?.kind === 'safe'
+            : expected === 'safe-admin'
+              ? safeHasAdminRole === true
+              : expected === 'none'
+                ? !ownable
+                : null
+
       return {
         contractName: name,
         contractAddress: address,
         ownable,
         chain,
         pendingOwner,
+        pendingOwnerAt,
         isEOAOwned: final?.kind === 'eoa',
+        expected,
+        safeHasAdminRole,
+        matches,
+        note: note ?? null,
       }
     }),
   )
@@ -295,7 +434,9 @@ export async function readOwnershipTable(chainId: DeployedChainId): Promise<Owne
    Queued timelock operations
    -------------------------------------------------------------------------- */
 
-export type OperationStatus = 'pending' | 'ready' | 'done' | 'unknown'
+/** `cancelled`: the id has a CallScheduled log but `getTimestamp` reads 0 and it
+ *  is not done — OZ deletes the timestamp on `cancel`. It must never be dated. */
+export type OperationStatus = 'pending' | 'ready' | 'done' | 'cancelled'
 
 export interface QueuedOperation {
   chainId: DeployedChainId
@@ -413,7 +554,15 @@ async function readQueuedOperationsAcross(
         c.readContract({ address: s.timelockAddress, abi: TIMELOCK_ABI, functionName: 'isOperationDone', args: [s.id] }),
         c.readContract({ address: s.timelockAddress, abi: TIMELOCK_ABI, functionName: 'getTimestamp', args: [s.id] }),
       ])
-      const status: OperationStatus = done ? 'done' : ready ? 'ready' : pending ? 'pending' : 'unknown'
+      const status: OperationStatus = done
+        ? 'done'
+        : ready
+          ? 'ready'
+          : pending
+            ? 'pending'
+            : timestamp === 0n
+              ? 'cancelled'
+              : 'pending'
 
       const op: QueuedOperation = {
         chainId,
@@ -455,18 +604,6 @@ export async function readQueuedOperations(
    One fetch for the whole screen
    -------------------------------------------------------------------------- */
 
-export interface GovernanceData {
-  chainId: DeployedChainId
-  safe: SafeStatus
-  timelocks: readonly [TimelockStatus, TimelockStatus]
-  ownership: OwnershipRow[]
-  operations: QueuedOperation[]
-  latestBlock: bigint
-}
-
-/** A name for any address this screen already knows, for labelling an
- *  operation's target — falls back to `null` (render the raw address) rather
- *  than guessing. */
 export function nameForAddress(chainId: DeployedChainId, address: Address): string | null {
   const d = DEPLOYMENTS[chainId]
   const lower = address.toLowerCase()
@@ -479,40 +616,31 @@ export function nameForAddress(chainId: DeployedChainId, address: Address): stri
   return null
 }
 
-export async function readGovernanceData(chainId: DeployedChainId): Promise<GovernanceData> {
+/**
+ * Queued operations on both timelocks, over one shared scan.
+ *
+ * SPLIT FROM THE REST OF THE SCREEN. This used to be one `Promise.all` with the
+ * Safe, the timelocks and the ownership table, so a slow `CallScheduled` scan
+ * failed every card — including the ones that need only `eth_call`s. The
+ * screen now reads each part on its own.
+ */
+export async function readOperations(
+  chainId: DeployedChainId,
+): Promise<{ operations: QueuedOperation[]; latestBlock: bigint; fromBlock: bigint }> {
   const d = DEPLOYMENTS[chainId]
-  const c = client(chainId)
-
-  /* The head is read FIRST and then handed to the scan, so both timelocks are
-     scanned over exactly the same range and one shared window walk can serve
-     them. Two independent scans would also double the requests in flight
-     against an endpoint that rate-limits by request count. */
-  const latestBlock = await c.getBlockNumber()
-
-  const [safe, custody, policy, ownership, operations] = await Promise.all([
-    readSafeStatus(chainId),
-    readTimelockStatus(chainId, d.timelockCustody, 'Custody'),
-    readTimelockStatus(chainId, d.timelockPolicy, 'Policy'),
-    readOwnershipTable(chainId),
-    readQueuedOperationsAcross(
-      chainId,
-      [
-        { address: d.timelockCustody, tier: 'Custody' },
-        { address: d.timelockPolicy, tier: 'Policy' },
-      ],
-      d.deployedAtBlock,
-      latestBlock,
-    ),
-  ])
-
-  return {
+  /* The head is read FIRST and handed to the scan, so both timelocks are
+     scanned over exactly the same range. */
+  const latestBlock = await client(chainId).getBlockNumber()
+  const operations = await readQueuedOperationsAcross(
     chainId,
-    safe,
-    timelocks: [custody, policy],
-    ownership,
-    operations,
+    [
+      { address: d.timelockCustody, tier: 'Custody' },
+      { address: d.timelockPolicy, tier: 'Policy' },
+    ],
+    d.deployedAtBlock,
     latestBlock,
-  }
+  )
+  return { operations, latestBlock, fromBlock: d.deployedAtBlock }
 }
 
 /* --------------------------------------------------------------------------

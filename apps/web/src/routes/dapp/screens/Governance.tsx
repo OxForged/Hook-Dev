@@ -2,48 +2,56 @@
    Governance — the Safe, both LatchTimelocks, who owns what, and every
    operation ever queued behind a delay.
 
-   Robinhood Chain mainnet went live today. A 2-of-3 Safe owns every contract
-   there and the handover to the two timelocks below is queued — a timelock's
-   entire value is the public window between "queued" and "executable", and
-   until this screen existed the only way to see that window was `cast`.
-
    EVERYTHING HERE IS READ LIVE. `ops/safe/robinhood-deployment.md` records
    what was true at the last verification, but ownership is mid-migration on
-   Robinhood, so this screen calls `owner()`, `getThreshold()`, `hasRole` and
-   `CallScheduled` logs itself rather than trusting that file — see
-   `lib/governance.ts` for why and how.
+   Robinhood, so this screen calls `owner()`, `pendingOwner()`, `getThreshold()`,
+   `hasRole` and `CallScheduled` logs itself — see `lib/governance.ts`.
 
-   Sepolia and Robinhood are told straight, not softened into one script: on
-   Sepolia the deployer EOA still owns everything and both timelocks own
-   nothing; on Robinhood the Safe owns everything and the handover is queued.
-   Which is true for the selected chain comes from the reads below, never from
-   a hardcoded assumption about which chain is "the real one".
+   FOUR INDEPENDENT READS (2026-09-14). The screen used to be one
+   `Promise.all` over the Safe, both timelocks, the ownership table and the
+   operations scan, so a slow log scan left every card — including three that
+   need only `eth_call`s — on "Reading…" or on one shared error. Each section
+   now loads, fails and retries on its own, and its LIVE badge appears only
+   when its own reading is in.
+
+   THE CUSTODY HANDOVER IS ITS OWN CARD. CLAUDE.md "VERIFIED LIVE STATE":
+   the Safe owns the Vault and both `*PoolManagerOwner` wrappers directly, and
+   three `acceptOwnership()` operations are queued on the custody timelock.
+   The card pairs each queued operation with the target's CURRENT `owner()` —
+   the read, not the queue, is the proof the handover happened.
    ============================================================================ */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChainTag } from '../../../components/ChainTag.tsx'
-import { DEPLOYMENTS, explorerAddress, explorerTx } from '../../../lib/chain'
+import { DEPLOYMENTS, explorerAddress, explorerTx, formatUnits, type ReadFailureKind } from '../../../lib/chain'
 import { BarList } from '../components/charts.tsx'
 import { Gauge } from '../components/series-charts.tsx'
 import { HexReveal } from '../components/HexReveal.tsx'
 import type { LabelledBar, SeriesColor } from '../data/types.ts'
 import {
+  CANCELLER_ADDRESS,
+  EXPECTED_LABEL,
   fmtCountdown,
   fmtHours,
   fmtWhen,
   nameForAddress,
-  readGovernanceData,
+  readOperations,
+  readOwnershipTable,
+  readSafeStatus,
+  readTimelocks,
   secondsRemaining,
   shortAddr,
-  type GovernanceData,
   type OperationStatus,
   type OwnerKind,
   type OwnershipRow,
   type QueuedOperation,
+  type SafeStatus,
   type TimelockStatus,
 } from '../lib/governance.ts'
-import { useChainRead } from '../lib/useChainRead.ts'
+import { useChainRead, type ReadState } from '../lib/useChainRead.ts'
 import { useDapp } from '../state.tsx'
+
+type ChainId = SafeStatus['chainId']
 
 /** Ticks once a second so long as at least one queued operation is still
  *  pending — a countdown that never moves is just a static timestamp with
@@ -68,7 +76,7 @@ function LiveBadge() {
   )
 }
 
-function AddrLink({ chainId, address }: { chainId: GovernanceData['chainId']; address: string }) {
+function AddrLink({ chainId, address }: { chainId: ChainId; address: string }) {
   return (
     <HexReveal value={address}>
       <a
@@ -85,56 +93,109 @@ function AddrLink({ chainId, address }: { chainId: GovernanceData['chainId']; ad
   )
 }
 
+function failureCopy(kind: ReadFailureKind, chainName: string): string {
+  if (kind === 'scan-timeout') return `The log scan on ${chainName} did not finish in time — the chain answered; the scan ran out of budget.`
+  if (kind === 'transport') return `${chainName} did not answer.`
+  if (kind === 'contract') return `A contract on ${chainName} reverted the read.`
+  return `Could not read this from ${chainName}.`
+}
+
+/** One section's card: title, its own badge, and its own four states. */
+function Section<T>({
+  title,
+  state,
+  chainName,
+  onRetry,
+  loading,
+  className = 'dapp-card gov-card',
+  children,
+}: {
+  title: string
+  state: ReadState<T>
+  chainName: string
+  onRetry: () => void
+  loading: string
+  className?: string
+  children: (d: T) => ReactNode
+}) {
+  return (
+    <section className={className}>
+      <div className="dapp-card__head">
+        <h2 className="dapp-card__title">{title}</h2>
+        {state.k === 'ready' ? <LiveBadge /> : state.k === 'error' ? <span className="dapp-badge dapp-badge--warn">NOT READ</span> : null}
+      </div>
+      {(state.k === 'loading' || state.k === 'idle') && (
+        <p className="live-note dapp-state--loading" role="status">
+          {loading}
+        </p>
+      )}
+      {state.k === 'error' && (
+        <div role="status">
+          <p className="live-note live-note--err">
+            {failureCopy(state.kind, chainName)} Nothing shown rather than placeholder figures.
+          </p>
+          <p className="dp-failure__raw dapp-mt-2">{state.message}</p>
+          <button type="button" className="dapp-btn dapp-btn--sm dapp-mt-2" onClick={onRetry}>
+            Try again
+          </button>
+        </div>
+      )}
+      {state.k === 'ready' && children(state.data)}
+    </section>
+  )
+}
+
 /* --------------------------------------------------------------------------
    1 — The Safe
    -------------------------------------------------------------------------- */
 
-function SafeCard({ d }: { d: GovernanceData }) {
-  const ownsAnything = d.ownership.some((row) => row.chain.some((hop) => hop.kind === 'safe'))
+function SafeBody({ safe, ownership }: { safe: SafeStatus; ownership: ReadState<OwnershipRow[]> }) {
+  const chainName = DEPLOYMENTS[safe.chainId].name
   return (
-    <section className="dapp-card gov-card">
-      <div className="dapp-card__head">
-        <h2 className="dapp-card__title">Governance Safe</h2>
-        <LiveBadge />
-      </div>
+    <>
       <dl className="lc-stats">
         <div className="lc-stat">
           <dt className="dapp-microlabel">THRESHOLD</dt>
           <dd className="lc-stat__v">
             <span className="tabular">
-              {d.safe.threshold} of {d.safe.owners.length}
+              {safe.threshold} of {safe.owners.length}
             </span>
           </dd>
         </div>
         <div className="lc-stat">
           <dt className="dapp-microlabel">NONCE</dt>
           <dd className="lc-stat__v">
-            <span className="tabular">{d.safe.nonce.toString()}</span>
+            <span className="tabular">{safe.nonce.toString()}</span>
           </dd>
         </div>
         <div className="lc-stat">
           <dt className="dapp-microlabel">ADDRESS</dt>
           <dd className="lc-stat__v">
-            <AddrLink chainId={d.chainId} address={d.safe.address} />
+            <AddrLink chainId={safe.chainId} address={safe.address} />
           </dd>
         </div>
       </dl>
       <ul className="lc-rows gov-owners">
-        {d.safe.owners.map((owner, i) => (
+        {safe.owners.map((owner, i) => (
           <li key={owner} className="lc-row">
             <span className="lc-row__name gov-owner-idx">Signer {i + 1}</span>
             <span className="lc-row__v tabular">
-              <AddrLink chainId={d.chainId} address={owner} />
+              <AddrLink chainId={safe.chainId} address={owner} />
             </span>
           </li>
         ))}
       </ul>
-      <p className="live-note gov-note">
-        {ownsAnything
-          ? `This Safe owns at least one contract tracked below on ${DEPLOYMENTS[d.chainId].name}.`
-          : `This Safe holds no ownership over the contracts tracked below on ${DEPLOYMENTS[d.chainId].name} — it is deployed here but governs nothing on this chain.`}
-      </p>
-    </section>
+      {ownership.k === 'ready' && (
+        <p className="live-note gov-note">
+          {(() => {
+            const owned = ownership.data.filter((row) => row.chain[row.chain.length - 1]?.kind === 'safe')
+            return owned.length > 0
+              ? `This Safe is the final owner of ${owned.length} tracked contract${owned.length === 1 ? '' : 's'} on ${chainName}: ${owned.map((r) => r.contractName).join(', ')}.`
+              : `This Safe is the final owner of none of the tracked contracts on ${chainName}.`
+          })()}
+        </p>
+      )}
+    </>
   )
 }
 
@@ -142,7 +203,7 @@ function SafeCard({ d }: { d: GovernanceData }) {
    2 — Both timelocks
    -------------------------------------------------------------------------- */
 
-function TimelockBlock({ t, chainId }: { t: TimelockStatus; chainId: GovernanceData['chainId'] }) {
+function TimelockBlock({ t, chainId }: { t: TimelockStatus; chainId: ChainId }) {
   const adminIsClean = !t.safeHasAdmin && !t.zeroHasAdmin
   return (
     <div className="gov-timelock">
@@ -173,6 +234,12 @@ function TimelockBlock({ t, chainId }: { t: TimelockStatus; chainId: GovernanceD
             : 'EXECUTOR_ROLE is NOT open — execution is restricted to specific addresses.'}
         </li>
         <li>
+          <span className={`dapp-dot dapp-dot--sm ${t.cancellerKeyHasRole ? 'dapp-dot--success' : 'dapp-dot--error'}`} aria-hidden="true" />
+          {t.cancellerKeyHasRole
+            ? `The dedicated canceller key ${shortAddr(CANCELLER_ADDRESS)} holds CANCELLER_ROLE.`
+            : `The dedicated canceller key ${shortAddr(CANCELLER_ADDRESS)} does NOT hold CANCELLER_ROLE here${t.safeCanCancel ? ' — only the Safe (as proposer) can cancel, so a compromised Safe’s queued operation has no veto' : ''}.`}
+        </li>
+        <li>
           <span className={`dapp-dot dapp-dot--sm ${adminIsClean ? 'dapp-dot--success' : 'dapp-dot--error'}`} aria-hidden="true" />
           {adminIsClean
             ? `DEFAULT_ADMIN_ROLE is held only by the timelock itself, never by the Safe or address(0)${t.selfAdmin ? '.' : ' — though the self-grant read back false, worth a second look.'}`
@@ -190,19 +257,35 @@ function TimelockBlock({ t, chainId }: { t: TimelockStatus; chainId: GovernanceD
   )
 }
 
-function TimelocksCard({ d }: { d: GovernanceData }) {
+function TimelocksBody({
+  d,
+  chainId,
+}: {
+  d: Awaited<ReturnType<typeof readTimelocks>>
+  chainId: ChainId
+}) {
+  const native = DEPLOYMENTS[chainId].nativeCurrency
+  const gasBought = d.gasPriceWei > 0n ? d.cancellerBalanceWei / d.gasPriceWei : null
   return (
-    <section className="dapp-card gov-card">
-      <div className="dapp-card__head">
-        <h2 className="dapp-card__title">Timelocks</h2>
-        <LiveBadge />
-      </div>
+    <>
       <div className="gov-timelocks">
         {d.timelocks.map((t) => (
-          <TimelockBlock key={t.address} t={t} chainId={d.chainId} />
+          <TimelockBlock key={t.address} t={t} chainId={chainId} />
         ))}
       </div>
-    </section>
+      <p className="live-note gov-note">
+        Canceller key <AddrLink chainId={chainId} address={CANCELLER_ADDRESS} /> holds{' '}
+        {formatUnits(d.cancellerBalanceWei, native.decimals, 8)} {native.symbol}
+        {gasBought !== null ? (
+          <>
+            {' '}
+            — {gasBought.toLocaleString('en-US')} gas at the current <code>eth_gasPrice</code> of{' '}
+            {d.gasPriceWei.toLocaleString('en-US')} wei, before any L1 data fee
+          </>
+        ) : null}
+        . A canceller that cannot pay for a transaction cannot cancel one.
+      </p>
+    </>
   )
 }
 
@@ -210,9 +293,16 @@ function TimelocksCard({ d }: { d: GovernanceData }) {
    3 — Ownership table
    -------------------------------------------------------------------------- */
 
-function OwnerChainCell({ row, chainId }: { row: OwnershipRow; chainId: GovernanceData['chainId'] }) {
+function OwnerChainCell({ row, chainId }: { row: OwnershipRow; chainId: ChainId }) {
   if (!row.ownable) {
-    return <span className="live-fee">not Ownable — no owner() function</span>
+    return (
+      <span className="live-fee">
+        not Ownable — no owner() function
+        {row.safeHasAdminRole !== null
+          ? ` · Safe holds DEFAULT_ADMIN_ROLE: ${row.safeHasAdminRole ? 'yes' : 'NO'}`
+          : ''}
+      </span>
+    )
   }
   if (row.chain.length === 0) {
     return <span className="live-fee">owner() reverted</span>
@@ -231,27 +321,6 @@ function OwnerChainCell({ row, chainId }: { row: OwnershipRow; chainId: Governan
   )
 }
 
-/* ============================================================================
-   Ownership, counted — the table above as one shape.
-
-   FED BY THE SAME READS AS THE TABLE. Each bar counts the LAST hop of a real
-   `owner()` chain, the one `followOwnerChain` walked hop by hop from the
-   contract itself. Nothing is assumed from the deployment record: a row lands
-   in the Safe bucket because `owner()` answered with the Safe's address, and in
-   the EOA bucket because the final address has no code.
-
-   WHY NON-OWNABLE CONTRACTS ARE NOT A BAR. `LatchRegistry` is AccessControl,
-   not Ownable, so it has no owner to count and a sixth "not Ownable" bar would
-   put a contract that cannot be owned next to five that can. It stays in the
-   table, which says so in words, and the caption below states how many rows the
-   bars actually cover so the two totals can be reconciled.
-
-   WHY THE EOA BAR IS DRAWN AT ZERO. Every other empty bucket is dropped, but
-   "nothing answers to an EOA" is the single most reassuring reading this screen
-   can produce, and it has no other voice — the red banner above appears only
-   when the answer is the opposite. A dropped row would leave the good news
-   indistinguishable from a bucket nobody thought to check.
-   ============================================================================ */
 const OWNER_BUCKETS: ReadonlyArray<{ kind: OwnerKind; label: string; color: SeriesColor }> = [
   { kind: 'safe', label: 'Governance Safe', color: 'success' },
   { kind: 'custody-timelock', label: 'Custody timelock', color: 'primary' },
@@ -275,41 +344,52 @@ function ownerBars(rows: readonly OwnershipRow[]): { bars: LabelledBar[]; counte
   return { bars, counted: finals.length }
 }
 
-function OwnershipCard({ d }: { d: GovernanceData }) {
-  const eoaOwned = d.ownership.filter((row) => row.isEOAOwned)
-  const pending = d.ownership.filter((row) => row.pendingOwner !== null)
-  const { bars, counted } = useMemo(() => ownerBars(d.ownership), [d.ownership])
+function OwnershipBody({ rows, chainId }: { rows: OwnershipRow[]; chainId: ChainId }) {
+  const chainName = DEPLOYMENTS[chainId].name
+  const eoaOwned = rows.filter((row) => row.isEOAOwned)
+  /* One nomination per contract that holds it — a pool manager and its wrapper
+     both surface the wrapper's nomination, and it is one transfer, not two. */
+  const nominations = [
+    ...new Map(
+      rows
+        .filter((r) => r.pendingOwner !== null && r.pendingOwnerAt !== null)
+        .map((r) => [r.pendingOwnerAt?.toLowerCase(), r] as const),
+    ).values(),
+  ]
+  const differs = rows.filter((r) => r.matches === false)
+  const { bars, counted } = useMemo(() => ownerBars(rows), [rows])
 
   return (
-    <section className="dapp-card gov-card">
-      <div className="dapp-card__head">
-        <h2 className="dapp-card__title">Ownership</h2>
-        <LiveBadge />
-      </div>
-
+    <>
       {eoaOwned.length > 0 && (
         <p className="hx-alert hx-alert--danger gov-alert" role="alert">
-          {eoaOwned.length} contract{eoaOwned.length === 1 ? '' : 's'} on {DEPLOYMENTS[d.chainId].name} still{' '}
+          {eoaOwned.length} contract{eoaOwned.length === 1 ? '' : 's'} on {chainName} still{' '}
           {eoaOwned.length === 1 ? 'answers' : 'answer'} to an EOA: {eoaOwned.map((r) => r.contractName).join(', ')}.
         </p>
       )}
 
-      {pending.length > 0 && (
+      {nominations.length > 0 && (
         <p className="live-note live-note--err gov-note">
-          {pending.length} transfer{pending.length === 1 ? '' : 's'} nominated but not accepted:{' '}
-          {pending.map((r) => r.contractName).join(', ')} — the previous owner keeps full control until
-          acceptOwnership() is called.
+          {nominations.length} transfer{nominations.length === 1 ? '' : 's'} nominated but not accepted:{' '}
+          {nominations
+            .map((r) => `${nameForAddress(chainId, r.pendingOwnerAt as `0x${string}`) ?? shortAddr(r.pendingOwnerAt ?? '')} → ${nameForAddress(chainId, r.pendingOwner as `0x${string}`) ?? shortAddr(r.pendingOwner ?? '')}`)
+            .join('; ')}
+          . The current owner keeps full control until <code>acceptOwnership()</code> executes.
         </p>
       )}
 
-      <BarList
-        items={bars}
-        valueLabel="contracts"
-        shareLabel="of the contracts that expose owner()"
-      />
+      {differs.length > 0 && (
+        <p className="live-note live-note--err gov-note">
+          {differs.length} contract{differs.length === 1 ? '' : 's'} differ from CLAUDE.md&rsquo;s ownership
+          table: {differs.map((r) => `${r.contractName} (table: ${EXPECTED_LABEL[r.expected]})`).join(', ')}.
+        </p>
+      )}
+
+      <BarList items={bars} valueLabel="contracts" shareLabel="of the contracts that expose owner()" />
       <p className="live-note gov-note">
-        Counted from the last hop of each <code>owner()</code> chain — {counted} of{' '}
-        {d.ownership.length} tracked contracts answer <code>owner()</code> at all.
+        Counted from the last hop of each <code>owner()</code> chain — {counted} of {rows.length} tracked
+        contracts answer <code>owner()</code> at all. &ldquo;Table says&rdquo; is CLAUDE.md&rsquo;s
+        ownership table, a repository fact; the match column compares it with the chain.
       </p>
 
       <div className="dapp-table-wrap gov-table-wrap">
@@ -319,90 +399,113 @@ function OwnershipCard({ d }: { d: GovernanceData }) {
               <th scope="col">CONTRACT</th>
               <th scope="col">OWNER (owner() CHAIN)</th>
               <th scope="col">PENDING OWNER</th>
+              <th scope="col">TABLE SAYS</th>
             </tr>
           </thead>
           <tbody>
-            {d.ownership.map((row) => (
+            {rows.map((row) => (
               <tr key={row.contractAddress} className={row.isEOAOwned ? 'gov-row--danger' : undefined}>
                 <th scope="row" data-label="CONTRACT">
                   <span className="gov-contract-name">
                     {row.contractName}
-                    {/* The row's red ground is colour; this says it in words, so
-                        the danger survives a stacked phone card, a
-                        high-contrast mode and a colour-blind reader. Derived
-                        from the same `isEOAOwned` read that colours the row. */}
                     {row.isEOAOwned ? (
                       <span className="dapp-badge dapp-badge--danger gov-eoa-badge">EOA OWNER</span>
                     ) : null}
                   </span>
                   <br />
-                  <AddrLink chainId={d.chainId} address={row.contractAddress} />
+                  <AddrLink chainId={chainId} address={row.contractAddress} />
+                  {row.note ? <span className="live-fee"> · {row.note}</span> : null}
                 </th>
                 <td data-label="OWNER">
-                  <OwnerChainCell row={row} chainId={d.chainId} />
+                  <OwnerChainCell row={row} chainId={chainId} />
                 </td>
                 <td data-label="PENDING OWNER">
                   {row.pendingOwner ? (
-                    <AddrLink chainId={d.chainId} address={row.pendingOwner} />
+                    <>
+                      <AddrLink chainId={chainId} address={row.pendingOwner} />
+                      <span className="live-fee">
+                        {' '}
+                        {nameForAddress(chainId, row.pendingOwner) ?? ''}
+                        {row.pendingOwnerAt && row.pendingOwnerAt.toLowerCase() !== row.contractAddress.toLowerCase()
+                          ? ` · on ${nameForAddress(chainId, row.pendingOwnerAt) ?? shortAddr(row.pendingOwnerAt)}`
+                          : ''}
+                      </span>
+                    </>
                   ) : (
                     <span className="live-fee">none</span>
                   )}
+                </td>
+                <td data-label="TABLE SAYS">
+                  <span className="live-fee">{EXPECTED_LABEL[row.expected]}</span>{' '}
+                  {row.matches === true && <span className="dapp-badge dapp-badge--ok">MATCHES</span>}
+                  {row.matches === false && <span className="dapp-badge dapp-badge--danger">DIFFERS</span>}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </section>
+    </>
   )
 }
 
 /* --------------------------------------------------------------------------
-   4 — Queued timelock operations
+   4 — The custody handover, and every queued operation
    -------------------------------------------------------------------------- */
 
 const STATUS_BADGE: Record<OperationStatus, string> = {
   pending: 'dapp-badge--warn',
   ready: 'dapp-badge--ok',
   done: 'dapp-badge--mute',
-  unknown: 'dapp-badge--mute',
+  cancelled: 'dapp-badge--mute',
 }
 
-/* ============================================================================
-   How far through its delay one queued operation is.
-
-   BOTH NUMBERS ARE READ, THE SUBTRACTION IS NOT AN ESTIMATE. `max` is the
-   `delay` field of this operation's own `CallScheduled` log; `readyAtSec` is
-   `getTimestamp(id)` off the timelock. Elapsed is `delay - (readyAt - now)`,
-   which reduces to `now - scheduledAt` — wall-clock against a chain timestamp,
-   the one comparison this screen cannot avoid making and the reason the clock
-   ticks locally while the chain data does not.
-
-   ONLY FOR A PENDING OPERATION. A ready one has elapsed PAST its ceiling, and
-   `Gauge` renders anything over its max in the error colour with "above the
-   cap" — correct for a fee that exceeded a bound, a lie about an operation that
-   simply matured. Ready and done keep the plain line they already had.
-   ============================================================================ */
+/* How far through its delay one PENDING operation is. `max` is the delay from
+   its own CallScheduled log and `readyAtSec` is `getTimestamp(id)`; the
+   remaining time is wall clock against that chain timestamp. */
 function DelayGauge({ op, remaining }: { op: QueuedOperation; remaining: number }) {
   const delay = Number(op.delaySec)
-  /* Clamped at zero only against clock skew between the browser and the chain;
-     it is not a floor on a real reading. */
   const elapsed = Math.max(0, delay - remaining)
-
   return (
     <Gauge
-      value={elapsed}
+      value={Math.min(elapsed, delay)}
       max={delay}
       color="amber"
       label={`Time elapsed of the ${op.tier} tier delay`}
-      valueText={fmtHours(BigInt(Math.floor(elapsed)))}
+      valueText={fmtHours(BigInt(Math.floor(Math.min(elapsed, delay))))}
       maxText={fmtHours(op.delaySec)}
       caption="elapsed since this operation was queued"
     />
   )
 }
 
-function OperationRow({ op, chainId, nowSec }: { op: QueuedOperation; chainId: GovernanceData['chainId']; nowSec: number }) {
+function OpStatusLine({ op, nowSec }: { op: QueuedOperation; nowSec: number }) {
+  const remaining = secondsRemaining(op.readyAtSec, nowSec)
+  if (op.status === 'pending') {
+    return (
+      <p className="gov-op__countdown tabular">
+        {remaining <= 0
+          ? 'delay elapsed by this browser’s clock — status not re-read yet'
+          : `${fmtCountdown(remaining)} remaining · executable ${fmtWhen(op.readyAtSec)}`}
+      </p>
+    )
+  }
+  if (op.status === 'ready') {
+    return (
+      <p className="gov-op__countdown gov-op__countdown--ready">
+        ready to execute since {fmtWhen(op.readyAtSec)} — anyone may call execute
+      </p>
+    )
+  }
+  if (op.status === 'done') return <p className="gov-op__countdown gov-op__countdown--done">executed</p>
+  return (
+    <p className="gov-op__countdown gov-op__countdown--done">
+      cancelled — <code>getTimestamp</code> reads 0, so it can never execute
+    </p>
+  )
+}
+
+function OperationRow({ op, chainId, nowSec }: { op: QueuedOperation; chainId: ChainId; nowSec: number }) {
   const targetName = nameForAddress(chainId, op.target)
   const remaining = secondsRemaining(op.readyAtSec, nowSec)
 
@@ -425,50 +528,99 @@ function OperationRow({ op, chainId, nowSec }: { op: QueuedOperation; chainId: G
         <a href={explorerTx(chainId, op.scheduledTxHash)} target="_blank" rel="noopener noreferrer" data-hit>
           {op.scheduledAtBlock.toString()}
         </a>{' '}
-        · delay {fmtHours(op.delaySec)}
-        {op.status !== 'done' && (
-          <>
-            {' '}
-            · executable {fmtWhen(op.readyAtSec)}
-          </>
-        )}
+        · delay {fmtHours(op.delaySec)} · id <code>{shortAddr(op.id, 10, 4)}</code>
       </p>
-      {op.status === 'pending' && (
-        <>
-          <DelayGauge op={op} remaining={remaining} />
-          {/* The local clock can cross readyAt before the next chain read
-              reclassifies the operation. Saying so beats "ready now remaining". */}
-          <p className="gov-op__countdown tabular">
-            {remaining <= 0 ? 'delay elapsed — status not re-read yet' : `${fmtCountdown(remaining)} remaining`}
-          </p>
-        </>
-      )}
-      {op.status === 'ready' && <p className="gov-op__countdown gov-op__countdown--ready">ready to execute</p>}
-      {op.status === 'done' && <p className="gov-op__countdown gov-op__countdown--done">executed</p>}
+      {op.status === 'pending' && remaining > 0 && <DelayGauge op={op} remaining={remaining} />}
+      <OpStatusLine op={op} nowSec={nowSec} />
     </li>
   )
 }
 
-function OperationsCard({ d, nowSec }: { d: GovernanceData; nowSec: number }) {
+function HandoverCard({
+  chainId,
+  ops,
+  ownership,
+  nowSec,
+}: {
+  chainId: ChainId
+  ops: ReadState<Awaited<ReturnType<typeof readOperations>>>
+  ownership: ReadState<OwnershipRow[]>
+  nowSec: number
+}) {
+  const d = DEPLOYMENTS[chainId]
+  const targets = [d.vault, d.clPoolManagerOwner, d.binPoolManagerOwner]
+    .filter((a): a is `0x${string}` => a !== null)
+    .map((a) => a.toLowerCase())
+
+  const accepts =
+    ops.k === 'ready'
+      ? ops.data.operations.filter(
+          (op) =>
+            op.tier === 'Custody' &&
+            op.decodedCall === 'acceptOwnership()' &&
+            targets.includes(op.target.toLowerCase()),
+        )
+      : []
+
   return (
     <section className="dapp-card gov-card">
       <div className="dapp-card__head">
-        <h2 className="dapp-card__title">Queued timelock operations</h2>
-        <LiveBadge />
+        <h2 className="dapp-card__title">Custody handover</h2>
+        {ops.k === 'ready' ? <LiveBadge /> : ops.k === 'error' ? <span className="dapp-badge dapp-badge--warn">NOT READ</span> : null}
       </div>
-      {d.operations.length === 0 ? (
-        <div className="an-empty">
-          <p className="an-empty__title">Nothing has ever been queued</p>
-          <p className="live-note">
-            Neither timelock on {DEPLOYMENTS[d.chainId].name} has emitted a CallScheduled event since block{' '}
-            {DEPLOYMENTS[d.chainId].deployedAtBlock.toString()}.
-          </p>
-        </div>
-      ) : (
+      <p className="live-note">
+        The Vault and both pool-manager wrappers are meant to answer to the custody timelock. Each needs
+        its own queued <code>acceptOwnership()</code> to execute on that timelock. After it does,{' '}
+        <code>owner()</code> should read the custody timelock — that read, not the queued operation, is
+        the proof.
+      </p>
+      {(ops.k === 'loading' || ops.k === 'idle') && (
+        <p className="live-note dapp-state--loading" role="status">
+          Reading CallScheduled logs on the custody timelock&hellip;
+        </p>
+      )}
+      {ops.k === 'error' && (
+        <p className="live-note live-note--err" role="status">
+          {failureCopy(ops.kind, d.name)} {ops.message}
+        </p>
+      )}
+      {ops.k === 'ready' && accepts.length === 0 && (
+        <p className="live-note">
+          No <code>acceptOwnership()</code> for the Vault or the wrappers has been scheduled on the custody
+          timelock since block {ops.data.fromBlock.toString()}.
+        </p>
+      )}
+      {accepts.length > 0 && (
         <ul className="gov-ops">
-          {d.operations.map((op) => (
-            <OperationRow key={`${op.id}-${op.index}`} op={op} chainId={d.chainId} nowSec={nowSec} />
-          ))}
+          {accepts.map((op) => {
+            const row =
+              ownership.k === 'ready'
+                ? ownership.data.find((r) => r.contractAddress.toLowerCase() === op.target.toLowerCase())
+                : undefined
+            const final = row?.chain[row.chain.length - 1]
+            return (
+              <li key={`${op.id}-${op.index}`} className="gov-op">
+                <div className="gov-op__head">
+                  <span className={`dapp-badge ${STATUS_BADGE[op.status]}`}>{op.status.toUpperCase()}</span>
+                  <span className="dapp-microlabel gov-op__tier">
+                    {nameForAddress(chainId, op.target) ?? shortAddr(op.target)}
+                  </span>
+                </div>
+                <OpStatusLine op={op} nowSec={nowSec} />
+                <p className="live-note gov-op__meta">
+                  <code>owner()</code> now:{' '}
+                  {ownership.k === 'ready'
+                    ? final
+                      ? `${final.label}${final.kind === 'custody-timelock' ? ' — handover confirmed by read' : ' — not handed over yet'}`
+                      : 'owner() reverted'
+                    : ownership.k === 'error'
+                      ? 'not read'
+                      : 'reading…'}
+                  {' · '}operation id <code>{shortAddr(op.id, 10, 4)}</code>
+                </p>
+              </li>
+            )
+          })}
         </ul>
       )}
     </section>
@@ -480,58 +632,88 @@ function OperationsCard({ d, nowSec }: { d: GovernanceData; nowSec: number }) {
    -------------------------------------------------------------------------- */
 
 export default function Governance() {
-  const { browsingChain } = useDapp()
-  const { state } = useChainRead<GovernanceData>(`governance:${browsingChain}`, () =>
-    readGovernanceData(browsingChain),
-  )
-  const chainName = DEPLOYMENTS[browsingChain].name
+  const { browsingChain: chainId } = useDapp()
+  const chainName = DEPLOYMENTS[chainId].name
 
-  const hasPending = state.k === 'ready' && state.data.operations.some((op) => op.status === 'pending')
+  const safe = useChainRead(`gov:safe:${chainId}`, () => readSafeStatus(chainId))
+  const timelocks = useChainRead(`gov:timelocks:${chainId}`, () => readTimelocks(chainId))
+  const ownership = useChainRead(`gov:ownership:${chainId}`, () => readOwnershipTable(chainId))
+  const ops = useChainRead(`gov:ops:${chainId}`, () => readOperations(chainId))
+
+  const hasPending = ops.state.k === 'ready' && ops.state.data.operations.some((op) => op.status === 'pending')
   const nowSec = useNowSeconds(hasPending)
 
-  const eoaCount = useMemo(
-    () => (state.k === 'ready' ? state.data.ownership.filter((r) => r.isEOAOwned).length : 0),
-    [state],
-  )
-
-  if (state.k !== 'ready') {
-    return (
-      <section className="dapp-card" role="status">
-        <div className="dapp-card__bar">
-          <h2 className="dapp-microlabel">GOVERNANCE</h2>
-          <ChainTag chainId={browsingChain} />
-        </div>
-        <p className={`live-note ${state.k === 'error' ? 'live-note--err' : 'dapp-state--loading'}`}>
-          {state.k === 'error'
-            ? `Could not reach ${chainName}: ${state.message}. Nothing shown rather than placeholder figures.`
-            : `Reading the Safe, both timelocks, ownership and queued operations from ${chainName}…`}
-        </p>
-      </section>
-    )
-  }
-
-  const d = state.data
+  const eoaCount = ownership.state.k === 'ready' ? ownership.state.data.filter((r) => r.isEOAOwned).length : 0
 
   return (
     <div className="dapp-stack gov-screen">
       <div className="dapp-card__bar gov-summary">
         <h2 className="dapp-microlabel">GOVERNANCE · {chainName.toUpperCase()}</h2>
-        <ChainTag chainId={browsingChain} />
-        {eoaCount > 0 && (
-          <span className="dapp-badge dapp-badge--danger">
-            {eoaCount} EOA-OWNED
-          </span>
+        <ChainTag chainId={chainId} />
+        {eoaCount > 0 && <span className="dapp-badge dapp-badge--danger">{eoaCount} EOA-OWNED</span>}
+        {ops.state.k === 'ready' && (
+          <span className="live-fee gov-summary__block">head block {ops.state.data.latestBlock.toString()}</span>
         )}
-        <span className="live-fee gov-summary__block">head block {d.latestBlock.toString()}</span>
       </div>
 
       <div className="dapp-row dapp-row--pool">
-        <SafeCard d={d} />
-        <TimelocksCard d={d} />
+        <Section
+          title="Governance Safe"
+          state={safe.state}
+          chainName={chainName}
+          onRetry={safe.reload}
+          loading={`Reading the Safe from ${chainName}…`}
+        >
+          {(s) => <SafeBody safe={s} ownership={ownership.state} />}
+        </Section>
+        <Section
+          title="Timelocks"
+          state={timelocks.state}
+          chainName={chainName}
+          onRetry={timelocks.reload}
+          loading={`Reading both timelocks’ delays and roles from ${chainName}…`}
+        >
+          {(t) => <TimelocksBody d={t} chainId={chainId} />}
+        </Section>
       </div>
 
-      <OwnershipCard d={d} />
-      <OperationsCard d={d} nowSec={nowSec} />
+      <HandoverCard chainId={chainId} ops={ops.state} ownership={ownership.state} nowSec={nowSec} />
+
+      <Section
+        title="Ownership"
+        state={ownership.state}
+        chainName={chainName}
+        onRetry={ownership.reload}
+        loading={`Reading owner() and pendingOwner() on every tracked contract from ${chainName}…`}
+      >
+        {(rows) => <OwnershipBody rows={rows} chainId={chainId} />}
+      </Section>
+
+      <Section
+        title="Queued timelock operations"
+        state={ops.state}
+        chainName={chainName}
+        onRetry={ops.reload}
+        loading={`Reading CallScheduled logs on both timelocks from ${chainName}…`}
+      >
+        {(o) =>
+          o.operations.length === 0 ? (
+            <div className="an-empty">
+              <p className="an-empty__title">Nothing has ever been queued</p>
+              <p className="live-note">
+                Neither timelock on {chainName} has emitted a CallScheduled event between block{' '}
+                {o.fromBlock.toString()} and {o.latestBlock.toString()}.
+              </p>
+            </div>
+          ) : (
+            <ul className="gov-ops">
+              {o.operations.map((op) => (
+                <OperationRow key={`${op.id}-${op.index}`} op={op} chainId={chainId} nowSec={nowSec} />
+              ))}
+            </ul>
+          )
+        }
+      </Section>
     </div>
   )
 }

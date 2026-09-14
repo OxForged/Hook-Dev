@@ -22,8 +22,7 @@ import type { ChainKey } from '../../data/chains.ts'
 import type { DappState, Filter, Flags, Range, Screen } from './data/types.ts'
 import { loadDeploy } from './data/deploy.ts'
 import { loadSettings } from './data/settings.ts'
-import { readBlockNumber, ROBINHOOD_CHAIN_ID, isDeployed } from '../../lib/chain'
-import { useAccount } from 'wagmi'
+import { ACTIVE_CHAIN_ID, readBlockNumber } from '../../lib/chain'
 import type { DeployedChainId } from '../../lib/chain'
 
 /** README § Interactions: "Block ticker — +1 every 4000ms". */
@@ -36,21 +35,14 @@ interface DappStore extends Omit<DappState, 'screen'> {
   screen: Screen
 
   /**
-   * The chain whose data the dapp is READING.
+   * The chain whose data the dapp is READING. Always the BUILD's chain,
+   * `ACTIVE_CHAIN_ID` — never the wallet's.
    *
-   * Deliberately separate from the wallet's chain. Browsing is a read, and a read
-   * needs no wallet at all — a visitor with no wallet, or a wallet sitting on
-   * Base, should still be able to look at what exists on Sepolia. Conflating the
-   * two is why the portfolio used to render nothing whenever the wallet happened
-   * to be on the wrong network: the data was there, the wallet's chain was simply
-   * being used as a gate on reading it.
-   *
-   * The wallet's chain still constrains WRITES, and must: you cannot send a
-   * transaction to a chain you are not connected to. That check belongs at the
-   * button, not at the query.
+   * Browsing is a read, and a read needs no wallet at all. The wallet's chain
+   * constrains WRITES only, and that check belongs at the button (and in the
+   * shell's switch prompt), not at the query.
    */
   browsingChain: DeployedChainId
-  setBrowsingChain: (chainId: DeployedChainId) => void
   setRange: (range: Range) => void
   setFilter: (filter: Filter) => void
   toggleCallback: (name: string) => void
@@ -67,7 +59,16 @@ export function DappStateProvider({ screen, children }: { screen: Screen; childr
   const deployDefaults = useMemo(loadDeploy, [])
   const settingsDefaults = useMemo(loadSettings, [])
 
-  /* WHICH CHAIN THE SCREENS READ.
+  /* WHICH CHAIN THE SCREENS READ — the build's, full stop.
+
+     2026-09-14: this followed the WALLET. A mainnet build with a wallet on
+     Sepolia therefore read Sepolia contracts under a "LIVE · MAINNET" header —
+     a testnet figure under mainnet chrome, the same class of error as an
+     invented number. One build serves one chain (lib/chain.ts), so reads now
+     go to ACTIVE_CHAIN_ID whatever the wallet is on, and the shell shows a
+     switch prompt when the two differ. The history below is kept for context.
+
+     PREVIOUSLY:
 
      This used to be `useState(SEPOLIA_CHAIN_ID)` with a comment saying it was
      "the one chain with contracts" — true when written, false since Robinhood
@@ -84,20 +85,7 @@ export function DappStateProvider({ screen, children }: { screen: Screen; childr
      With no wallet, or a wallet on a chain we have no contracts for, it falls
      back to the mainnet rather than the testnet. A visitor with no wallet must
      still get a chain to look at, and that chain should be the real one. */
-  const { chainId: walletChainId } = useAccount()
-  const [override, setOverride] = useState<DeployedChainId | null>(null)
-
-  const browsingChain: DeployedChainId =
-    override ??
-    (walletChainId !== undefined && isDeployed(walletChainId)
-      ? walletChainId
-      : ROBINHOOD_CHAIN_ID)
-
-  const setBrowsingChain = useCallback((chainId: DeployedChainId) => {
-    // Guard rather than trust: a chain with no DEPLOYMENTS entry has no contracts
-    // and no client, so switching to it would turn every read into a throw.
-    if (isDeployed(chainId)) setOverride(chainId)
-  }, [])
+  const browsingChain: DeployedChainId = ACTIVE_CHAIN_ID
 
   const [range, setRange] = useState<Range>('30D')
   const [filter, setFilter] = useState<Filter>('All')
@@ -171,7 +159,6 @@ export function DappStateProvider({ screen, children }: { screen: Screen; childr
     () => ({
       screen,
       browsingChain,
-      setBrowsingChain,
       range,
       filter,
       cbs,
@@ -193,7 +180,6 @@ export function DappStateProvider({ screen, children }: { screen: Screen; childr
     [
       screen,
       browsingChain,
-      setBrowsingChain,
       range,
       filter,
       cbs,

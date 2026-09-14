@@ -19,9 +19,8 @@
 import { LatchConnectButton } from '@latchprotocol/connect'
 import { humanDuration } from '@latchprotocol/sdk'
 import { Link } from 'react-router-dom'
-import { useAccount, useSwitchChain } from 'wagmi'
+import { useAccount } from 'wagmi'
 
-import { DEPLOYMENTS } from '../../../lib/chain'
 import { formatClockPoint, formatClockSpan, proposalStatus } from '../../../lib/pendingConfig'
 import { BarList } from '../components/charts'
 import { Methodology } from '../components/ProtocolCharts'
@@ -48,8 +47,6 @@ import { readOwnedPools } from '../lib/revshare'
 import { useChainRead } from '../lib/useChainRead'
 import { useHookRef } from '../lib/useHookRef'
 import { dappPath } from '../paths'
-
-const CHAIN = DEPLOYMENTS[REVSHARE_CHAIN_ID]
 
 /**
  * A pool's outstanding proposal, by where it stands on the HOOK's clock.
@@ -99,22 +96,26 @@ function PendingBadge({
 }
 
 export default function ProtocolRevenue() {
-  const { ref: hook, malformed, withHook } = useHookRef()
-  const { address, isConnected, chainId } = useAccount()
-  const { switchChain, isPending: switching } = useSwitchChain()
+  const { refs, malformed, withHook } = useHookRef()
+  const { address, isConnected } = useAccount()
+  /* The hooks exist for the rest of this component as `hook` (truthy when there
+     is anything to read) so the gates below read as before. */
+  const hook = refs[0] ?? null
 
-  const onChain = chainId === REVSHARE_CHAIN_ID
-  const readable = hook !== null && address !== undefined && onChain
-  const key = readable ? `owned:${hook.address}:${address}` : null
+  /* READS DO NOT WAIT FOR THE WALLET'S CHAIN. Ownership is an address, and a
+     read goes to this build's chain whatever the wallet is on; the shell
+     prompts a switch before anything is sent. */
+  const readable = refs.length > 0 && address !== undefined
+  const key = readable ? `owned:${refs.map((r) => r.address).join(',')}:${address}` : null
 
   const { state, reload } = useChainRead<OwnedPools>(key, async () => {
-    if (!hook || !address) throw new Error('unreachable')
-    return readOwnedPools(hook.address, address)
+    if (!address) throw new Error('unreachable')
+    return readOwnedPools(refs, address)
   })
 
   return (
     <>
-      <ScreenIntro title="Revenue share you operate" hook={hook ?? undefined}>
+      <ScreenIntro title="Revenue share you operate" hooks={refs} live={state.k === 'ready'}>
         <p>Pools whose RevShareHook configuration is owned by the connected address.</p>
         <Methodology label="How ownership is established">
           <p className="live-note">
@@ -159,32 +160,21 @@ export default function ProtocolRevenue() {
         </section>
       )}
 
-      {hook && isConnected && !onChain && (
-        <section className="dapp-card dp-gate dp-gate--warn">
-          <p className="dp-gate__title">Wrong network</p>
-          <p className="dp-gate__body">
-            The contracts these screens read exist on {CHAIN.name} only. Your wallet is on chain{' '}
-            {chainId ?? 'unknown'}.
-          </p>
-          <button
-            type="button"
-            className="dapp-btn dapp-btn--sm"
-            onClick={() => switchChain({ chainId: REVSHARE_CHAIN_ID })}
-            disabled={switching}
-          >
-            {switching ? 'Switching…' : `Switch to ${CHAIN.name}`}
-          </button>
-        </section>
-      )}
-
       {state.k === 'loading' && <Reading what="pool ownership logs" />}
-      {state.k === 'error' && <Unreachable message={state.message} onRetry={reload} />}
+      {state.k === 'error' && <Unreachable message={state.message} kind={state.kind} onRetry={reload} />}
 
       {state.k === 'ready' && state.data.pools.length === 0 && (
         <Empty title="This address owns no revenue-share pools">
           <p>
-            No pool on <Addr value={hook?.address ?? ''} /> currently names this address as its
-            owner. That is a real answer from the chain, not a failed read — the scan covered
+            No pool on{' '}
+            {refs.map((r, i) => (
+              <span key={r.address}>
+                {i > 0 ? ' or ' : ''}
+                <Addr value={r.address} />
+                {r.status ? ` (${r.status})` : ''}
+              </span>
+            ))}{' '}
+            currently names this address as its owner. That is a real answer from the chain, not a failed read — the scan covered
             blocks {state.data.fromBlock.toString()} to {state.data.toBlock.toString()} and found{' '}
             {state.data.transferredAway === 0
               ? 'no pools at all for this address'
@@ -269,6 +259,7 @@ export default function ProtocolRevenue() {
                 <thead>
                   <tr>
                     <th scope="col">Pool</th>
+                    <th scope="col">Hook</th>
                     <th scope="col">Cut</th>
                     <th scope="col">LP / beneficiaries / distributor</th>
                     <th scope="col">Distributor</th>
@@ -283,6 +274,10 @@ export default function ProtocolRevenue() {
                           <PoolIdText value={p.poolId} />
                         </Link>
                       </th>
+                      <td>
+                        <Addr value={p.hook.address} />
+                        {p.hook.status ? <span className="dapp-microlabel"> {p.hook.status}</span> : null}
+                      </td>
                       <td className="dapp-table__num">
                         {pipsPct(p.config.feePips)}
                         <span className="dapp-microlabel"> {p.config.feePips} pips</span>

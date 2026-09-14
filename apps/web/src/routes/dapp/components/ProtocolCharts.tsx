@@ -159,10 +159,14 @@ export function SwapVolumeCard() {
     <section className="dapp-card dapp-card--chart">
       <div className="dapp-card__bar">
         <h2 className="dapp-card__title">Swaps by block</h2>
-        <span className="live-badge">
+        {state.k === 'ready' ? (
+          <span className="live-badge">
           <span className="live-dot" aria-hidden="true" />
           LIVE
         </span>
+        ) : state.k === 'error' ? (
+          <span className="dapp-badge dapp-badge--warn">NOT READ</span>
+        ) : null}
       </div>
 
       {state.k === 'loading' && (
@@ -221,10 +225,14 @@ export function ActivityMixCard() {
     <section className="dapp-card" style={{ animationDelay: '0.08s' }}>
       <div className="dapp-card__bar">
         <h2 className="dapp-microlabel">ACTIVITY MIX</h2>
-        <span className="live-badge">
+        {state.k === 'ready' ? (
+          <span className="live-badge">
           <span className="live-dot" aria-hidden="true" />
           LIVE
         </span>
+        ) : state.k === 'error' ? (
+          <span className="dapp-badge dapp-badge--warn">NOT READ</span>
+        ) : null}
       </div>
 
       {state.k === 'ready' && state.events.length > 0 ? (

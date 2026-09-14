@@ -52,6 +52,7 @@ export const REV_SHARE_HOOK_ABI = parseAbi([
   'function pendingBeneficiary(bytes32 poolId, address currency) view returns (uint256)',
   'function pendingDistributorShare(bytes32 poolId, address currency) view returns (uint256)',
   'function claimable(address recipient, address currency) view returns (uint256)',
+  'function totalTaken(bytes32 poolId, address currency) view returns (uint256)',
   'function totalOwed(address currency) view returns (uint256)',
   'function backing(address currency) view returns (uint256)',
   'function paused() view returns (bool)',

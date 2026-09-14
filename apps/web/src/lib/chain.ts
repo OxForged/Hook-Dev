@@ -1,4 +1,11 @@
 import {
+  BaseError,
+  ContractFunctionRevertedError,
+  ContractFunctionZeroDataError,
+  HttpRequestError,
+  LimitExceededRpcError,
+  RpcRequestError,
+  TimeoutError,
   createPublicClient,
   http,
   fallback,
@@ -6,6 +13,7 @@ import {
   type Address,
   type Hex,
   type PublicClient,
+  type Transport,
 } from 'viem'
 
 import {
@@ -13,6 +21,7 @@ import {
   isLatchChainId,
   readContractClock,
   resolveEndpoints,
+  resolveLogEndpoints,
   type ContractClockReading,
   type LatchChainId,
 } from '@latchprotocol/sdk'
@@ -107,17 +116,29 @@ export function isDeployed(chainId: number): chainId is DeployedChainId {
 /* ============================================================================
    RPC ENDPOINTS ARE ALSO NO LONGER RESTATED HERE.
 
-   This file used to carry its own copy of the ten public endpoints with a
-   comment saying it "mirrors" the SDK's probed list. It did mirror it, right up
-   until one of them rotted — a mirror is a copy with a promise attached, and
-   the promise is the part that fails silently.
-
    `resolveEndpoints` is the same function the SDK's own transport uses. It puts
    any keyed provider from the environment first and the probed public list
-   behind it as a safety net, so nothing here has to know which is which. It is
-   called per request rather than snapshotted, because the alternative is a
-   build-time freeze of a list whose whole point is that it changes.
+   behind it as a safety net, so nothing here has to know which is which.
+
+   THE ENVIRONMENT IS ACTUALLY PASSED NOW. This file used to call
+   `resolveEndpoints(chainId)` with no env argument, so the "keyed provider
+   first" half could never happen in the browser. Vite exposes only `VITE_`
+   variables, so a keyed RPC for this build is `VITE_LATCH_RPC_<chainId>`
+   (comma-separated for several), mapped here onto the SDK's `LATCH_RPC_<id>`.
+   Anything in a `VITE_` variable is shipped in the bundle and readable by every
+   visitor — use a key restricted to this site's origin, never a secret one.
    ============================================================================ */
+
+/** `VITE_LATCH_RPC_<id>` from the build, renamed to the SDK's `LATCH_RPC_<id>`. */
+const RPC_ENV: Record<string, string | undefined> = (() => {
+  const env = import.meta.env as Record<string, string | undefined>
+  const out: Record<string, string | undefined> = {}
+  for (const [k, v] of Object.entries(env)) {
+    const m = /^VITE_(LATCH_RPC_\d+)$/.exec(k)
+    if (m?.[1] && typeof v === 'string' && v.trim() !== '') out[m[1]] = v
+  }
+  return out
+})()
 
 /**
  * One client per chain, cached by chain id.
@@ -131,14 +152,52 @@ export function isDeployed(chainId: number): chainId is DeployedChainId {
 const clients = new Map<number, PublicClient>()
 
 /**
- * The endpoints configured for a chain, in the order the fallback tries them.
+ * The endpoints configured for a chain, in the order the fallback tries them
+ * for READS (`eth_call`, `eth_blockNumber`, …).
  *
  * Exposed so the Settings screen can show what the app is ACTUALLY talking to,
  * rather than describing it in prose that drifts from the array.
  */
 export function rpcsFor(chainId: DeployedChainId): readonly string[] {
-  return resolveEndpoints(chainId)
+  return resolveEndpoints(chainId, RPC_ENV)
 }
+
+/**
+ * The same endpoints in the order `eth_getLogs` tries them: keyed providers,
+ * then the public endpoints the SDK has verified to serve a whole-history range
+ * in one request (`LOG_RANGE_ENDPOINTS`), then the rest.
+ */
+export function logRpcsFor(chainId: DeployedChainId): readonly string[] {
+  return resolveLogEndpoints(chainId, RPC_ENV)
+}
+
+/**
+ * Route `eth_getLogs` to one fallback and everything else to another.
+ *
+ * WHY. With `rank: false` a fallback restarts at endpoint 1 on every request.
+ * On Robinhood endpoint 1 allows one request per ten seconds and endpoints 2-4
+ * refuse any log range wider than 10,000 blocks, so every log request paid
+ * three or four refusals before reaching the canonical endpoint — the one that
+ * serves the protocol's entire 2.5M-block history in a single request. Reads
+ * keep their probed latency order; only logs are reordered.
+ */
+function routedTransport(reads: Transport, logs: Transport): Transport {
+  return (params) => {
+    const r = reads(params)
+    const l = logs(params)
+    const request = ((args: { method: string; params?: unknown }) =>
+      args.method === 'eth_getLogs' ? l.request(args as never) : r.request(args as never)) as typeof r.request
+    return {
+      config: { ...r.config, key: 'latch-routed', name: 'Latch (reads · logs)' },
+      request,
+      value: r.value,
+    }
+  }
+}
+
+/** Per-request timeout for a log call. A whole-history range on a healthy
+    endpoint answers in well under a second; this is the ceiling, not the norm. */
+const LOG_REQUEST_TIMEOUT_MS = 15_000
 
 /**
  * The dapp's read client FOR ONE CHAIN.
@@ -149,12 +208,15 @@ export function rpcsFor(chainId: DeployedChainId): readonly string[] {
  * one pass asks all five before any is asked twice. `rank: false` keeps the measured
  * order and avoids viem's background re-ranking traffic, which would spend the same
  * per-minute budget we are trying to conserve.
+ *
+ * `eth_getLogs` goes through a second fallback in `logRpcsFor` order — see
+ * `routedTransport`.
  */
 export function client(chainId: DeployedChainId = ACTIVE_CHAIN_ID): PublicClient {
   const hit = clients.get(chainId)
   if (hit) return hit
 
-  const urls = resolveEndpoints(chainId)
+  const urls = rpcsFor(chainId)
   if (urls.length === 0) {
     // Louder than returning some other chain's client, which is what the old
     // single-cache version effectively did.
@@ -166,9 +228,15 @@ export function client(chainId: DeployedChainId = ACTIVE_CHAIN_ID): PublicClient
   }
 
   const made = createPublicClient({
-    transport: fallback(
-      urls.map((u) => http(u, { timeout: 12_000, retryCount: 0 })),
-      { rank: false, retryCount: 2 },
+    transport: routedTransport(
+      fallback(
+        urls.map((u) => http(u, { timeout: 12_000, retryCount: 0 })),
+        { rank: false, retryCount: 2 },
+      ),
+      fallback(
+        logRpcsFor(chainId).map((u) => http(u, { timeout: LOG_REQUEST_TIMEOUT_MS, retryCount: 0 })),
+        { rank: false, retryCount: 1 },
+      ),
     ),
   })
   clients.set(chainId, made)
@@ -176,79 +244,123 @@ export function client(chainId: DeployedChainId = ACTIVE_CHAIN_ID): PublicClient
 }
 
 /* ---------------------------------------------------------------------------
-   LOG SCANS MUST BE CHUNKED. THE RPC REFUSES ANYTHING ELSE.
+   HOW A LOG SCAN RUNS: ONE REQUEST FIRST, WINDOWS ONLY IF EVERY ENDPOINT REFUSES.
 
    Every log reader here used to ask for `fromBlock: deployedAtBlock, toBlock:
-   'latest'` in one call. On Robinhood that is now ~1.58 MILLION blocks, and the
-   endpoint answers:
+   'latest'` in one call against whichever endpoint the fallback reached first,
+   and on Robinhood the first endpoints answer
 
      -32602  block range too large: span 1580086 blocks exceeds maximum 10000
 
-   So the call threw, the landing page rendered `0 POOLS INITIALIZED` and
-   `0 SWAPS EXECUTED` against a chain holding one pool and two swaps, and it did
-   it quietly. Under-reporting is the same class of failure as an invented
-   number — a reader cannot tell which zeros are real.
+   So scans were windowed into 9,000-block slices — ~280 of them today, each one
+   restarting at endpoint 1 — and eight screens sat on "Reading contract logs…"
+   until the 25 s deadline killed them.
 
-   It got worse with time rather than failing on day one: at launch the span was
-   small enough to pass, and it crossed the limit as the chain advanced. A
-   0.102s block time burns 10,000 blocks every seventeen minutes.
+   The pattern `lib/protocolActivity.ts` proved on the landing page is now the
+   shared one: ask for the WHOLE range once. The request goes through the log
+   ordering (`logRpcsFor`), so it reaches the endpoint verified to serve it
+   first, and the fallback tries each other endpoint once if it refuses. Only
+   when every endpoint refuses does the windowed scan run, under its own
+   deadline.
    --------------------------------------------------------------------------- */
+
+/**
+ * A log scan that ran out of time. Distinct from a transport failure on
+ * purpose: "the chain is unreachable" and "the chain answered but a scan of N
+ * windows was too slow" are different statements, and the UI makes both.
+ */
+export class LogScanTimeoutError extends Error {
+  override readonly name = 'LogScanTimeoutError'
+  /** Windows (or single-range queries) that came back before the deadline. */
+  readonly served: number
+  /** Windows the scan needed. */
+  readonly planned: number
+  constructor(message: string, served: number, planned: number) {
+    super(message)
+    this.served = served
+    this.planned = planned
+  }
+}
+
+/** What kind of failure a read hit — for choosing the error card's words. */
+export type ReadFailureKind = 'scan-timeout' | 'transport' | 'contract' | 'other'
+
+export function classifyReadFailure(e: unknown): ReadFailureKind {
+  if (e instanceof LogScanTimeoutError) return 'scan-timeout'
+  if (e instanceof BaseError) {
+    if (e.walk((x) => x instanceof ContractFunctionRevertedError || x instanceof ContractFunctionZeroDataError)) {
+      return 'contract'
+    }
+    if (
+      e.walk(
+        (x) =>
+          x instanceof HttpRequestError ||
+          x instanceof TimeoutError ||
+          x instanceof RpcRequestError ||
+          x instanceof LimitExceededRpcError,
+      )
+    ) {
+      return 'transport'
+    }
+  }
+  if (e instanceof Error && /fetch|network|failed to fetch|timed? ?out/i.test(e.message)) return 'transport'
+  return 'other'
+}
+
+/** Reject if `p` has not settled in `ms`. The work is not cancelled — nothing
+    here can cancel an in-flight fetch — it is merely no longer waited on. */
+function withDeadline<T>(p: Promise<T>, ms: number, fail: () => Error): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(fail()), ms)
+    }),
+  ]).finally(() => clearTimeout(timer))
+}
 
 /** How long a whole-history log scan may take before it is treated as unread. */
 const LOG_SCAN_DEADLINE_MS = 8_000
 
-/** Reject if `p` has not settled in `ms`. The work is not cancelled — nothing
-    here can cancel an in-flight fetch — it is merely no longer waited on. */
-function withDeadline<T>(p: Promise<T>, ms: number, why: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(why)), ms)),
-  ])
-}
-
-/** Hard cap the endpoint enforces. The window below leaves headroom under it. */
+/** Hard cap the windowed fallback slices at. The window leaves headroom under
+    the 10,000-block maximum the refusing endpoints enforce. */
 const MAX_LOG_SPAN = 9_000n
 
-/** Requests in flight during an exhaustive scan. These endpoints rate-limit by
-    request count as well as by span, so this stays low deliberately.
-
-    DO NOT RAISE IT. The public Robinhood endpoints meter by request count per
-    minute as well as by span, and the failure mode of exceeding that budget is
-    a 429 that viem retries with backoff — which presents to a screen as a
-    promise that never settles, not as an error. A scan that is too eager does
-    not go faster, it goes silent. */
+/** Requests in flight during a windowed scan. DO NOT RAISE IT: the public
+    endpoints meter by request count per minute, and exceeding the budget
+    presents as a 429 that viem retries with backoff — a scan that is too eager
+    does not go faster, it goes silent. */
 const SCAN_CONCURRENCY = 3
 
+/** The single-range attempt: every query over the whole range, once. */
+const SINGLE_RANGE_DEADLINE_MS = 15_000
+
 /**
- * The backstop every scan below runs under.
+ * The backstop the WINDOWED fallback runs under.
  *
  * Not a latency budget — a "this will never finish" detector. A rate-limited
  * endpoint leaves viem retrying with backoff, so an unbounded scan hangs rather
- * than throwing, and a screen sits on its loading state forever. An indefinite
- * spinner is its own kind of false claim: it reads as "almost there" when the
- * answer is "never". Past this, the scan REJECTS, and the caller's error state
- * says what could not be read.
+ * than throwing, and a screen sits on its loading state forever. Past this, the
+ * scan REJECTS with `LogScanTimeoutError`, and the caller's error state says what
+ * could not be read and that it was a timeout, not an outage.
  */
 const SCAN_DEADLINE_MS = 25_000
 
 /**
- * Windows one scan may plan before it is refused outright.
+ * Windows one windowed scan may plan before it is refused outright.
  *
- * A guard against the one mistake that makes a scan unfinishable rather than
- * merely slow: `fromBlock: 0n` or `'earliest'`. Robinhood is past 62,000,000
+ * A guard against `fromBlock: 0n` or `'earliest'`: Robinhood is past 62,000,000
  * blocks, which is ~6,900 windows; the protocol's own history from
- * `deployedAtBlock` (60,111,836) is ~215 today. Refusing up front, with the
- * cause named in the message, beats discovering it as a timeout.
- *
- * IT WILL EVENTUALLY BITE AN HONEST SCAN, and that is deliberate rather than
- * overlooked. Robinhood mines ~847,000 blocks a day, so the protocol's own
- * history grows by ~94 windows a day and reaches this ceiling in under two
- * months. Long before then a whole-history sweep stops being viable on a public
- * endpoint at all — the answer is an indexer, not a bigger number here, and a
- * hard stop with a legible message is how that arrives as a decision instead of
- * as a screen that quietly got slower.
+ * `deployedAtBlock` (60,111,836) is ~280 today and grows ~94 a day. The
+ * single-range request does not need this guard — it is one request whatever
+ * the span — but a windowed fallback that large is unfinishable.
  */
 const MAX_SCAN_WINDOWS = 5_000
+
+function windowCount(fromBlock: bigint, toBlock: bigint): bigint {
+  if (toBlock < fromBlock) return 0n
+  return (toBlock - fromBlock + 1n + MAX_LOG_SPAN) / (MAX_LOG_SPAN + 1n)
+}
 
 /** Slice `[fromBlock, toBlock]` into spans the endpoint will accept, or throw
     if the range is so large it can only be a missing `deployedAtBlock`. */
@@ -257,7 +369,7 @@ function planWindows(fromBlock: bigint, toBlock: bigint): Array<[bigint, bigint]
   if (toBlock < fromBlock) return []
 
   const span = toBlock - fromBlock + 1n
-  const count = (span + MAX_LOG_SPAN) / (MAX_LOG_SPAN + 1n)
+  const count = windowCount(fromBlock, toBlock)
   if (count > BigInt(MAX_SCAN_WINDOWS)) {
     throw new Error(
       `log scan refused: ${span} blocks is ${count} windows of ${MAX_LOG_SPAN}, past the ` +
@@ -277,13 +389,6 @@ function planWindows(fromBlock: bigint, toBlock: bigint): Array<[bigint, bigint]
 
 /* ---------------------------------------------------------------------------
    ONE SCAN PER QUESTION, PER RENDER.
-
-   A screen routinely asks two modules for the same reading — Analytics wants
-   the registry AND the metrics, and the metrics want the pool list, which the
-   swap surface may already be scanning. Each of those was an independent walk
-   over the protocol's whole history, against endpoints that meter by request
-   count. Doubling the requests does not double the answers; past the limit it
-   returns 429s that viem retries into a hang.
 
    This dedupes only IN-FLIGHT work: the promise is dropped from the map as soon
    as it settles, so a later caller always starts a fresh read. Nothing is
@@ -315,116 +420,146 @@ async function pooled(count: number, run: (i: number) => Promise<void>): Promise
   await Promise.all(Array.from({ length: Math.min(SCAN_CONCURRENCY, count) }, worker))
 }
 
-/* ---------------------------------------------------------------------------
-   THE FOUR SCAN PRIMITIVES ARE EXPORTED, AND THAT IS THE POINT.
+const shortReason = (e: unknown): string => {
+  const raw = e instanceof BaseError ? e.shortMessage : e instanceof Error ? e.message : String(e)
+  return raw.split('\n')[0]?.slice(0, 160) ?? 'refused'
+}
 
-   They used to be module-private, so every log reader OUTSIDE this file —
-   revshare.ts, governance.ts, portfolio.ts, swap.ts — wrote a raw
-   `getLogs({ fromBlock: deployedAtBlock, toBlock: 'latest' })` instead. The
-   endpoint refused each one with `block range too large`, the promise rejected
-   or hung, and five dapp panels sat on "Reading contract logs…" forever. A
-   shared primitive that cannot be shared is not a mitigation.
+type WindowFetch<T> = (from: bigint, to: bigint) => Promise<readonly T[]>
+
+/**
+ * Every query over `[fromBlock, toBlock]` in ONE request each. Returns the
+ * per-query results in query order, or throws with the reason every endpoint
+ * refused.
+ */
+async function singleRange<T>(
+  fromBlock: bigint,
+  toBlock: bigint,
+  fetches: readonly WindowFetch<T>[],
+  label: string,
+): Promise<(readonly T[])[]> {
+  const out: (readonly T[])[] = new Array<readonly T[]>(fetches.length).fill([])
+  let served = 0
+  await withDeadline(
+    pooled(fetches.length, async (i) => {
+      const f = fetches[i]
+      if (!f) return
+      out[i] = await f(fromBlock, toBlock)
+      served += 1
+    }),
+    SINGLE_RANGE_DEADLINE_MS,
+    () =>
+      new LogScanTimeoutError(
+        `${label}: the single-range request did not complete within ${SINGLE_RANGE_DEADLINE_MS / 1000}s`,
+        served,
+        fetches.length,
+      ),
+  )
+  return out
+}
+
+/* ---------------------------------------------------------------------------
+   THE FOUR SCAN PRIMITIVES.
 
    EVERY ONE TAKES A CALLBACK RATHER THAN A QUERY OBJECT, and that is the whole
-   design. The first version accepted a `LogQuery` and called `c.getLogs`
-   itself, which meant the `event` argument passed through a widened type — viem
-   then lost the ABI it needed to infer `args`, and every `l.args.currency0` in
-   this file stopped compiling while `blockNumber` silently became nullable.
-   Windowing is about the RANGE; it has no business touching the query's type.
-   The call site keeps full inference and these helpers never see an ABI.
-
-   Pick by shape of the question:
+   design: the call site keeps viem's full event inference, and these helpers
+   only decide the RANGE each callback is asked for — first the whole range,
+   then, if refused, 9,000-block windows.
 
      scanWindows              one query, every match — a count, a sum, a list
      scanWindowsMulti         several queries over the same range, sharing one
                               concurrency budget
      scanWindowsBackward      one query, the newest `limit` matches
      scanWindowsBackwardMulti several queries, ONE backward walk between them
-
-   The `Multi` pair exists because `Promise.all([scanWindows(a), scanWindows(b),
-   scanWindows(c)])` runs three pools of three, i.e. nine requests in flight
-   against an endpoint sized for three. Passing the queries together keeps the
-   budget the budget.
    --------------------------------------------------------------------------- */
 
 /**
- * Run `fetchWindow` over a block range in slices the endpoint will accept, and
- * return every match.
+ * Every match of `fetchWindow` over a block range.
  *
  * Exhaustive, so use it wherever a partial answer would be a WRONG answer — a
  * pool count, a fee total, an ownership candidate list. `fromBlock` must be a
  * real starting height (`DEPLOYMENTS[chainId].deployedAtBlock` for a protocol
- * contract, a pool's `createdAtBlock` for a pool); genesis is refused.
+ * contract, a pool's `createdAtBlock` for a pool).
  *
- * Rejects rather than truncating: if the endpoint refuses or stalls past
- * `SCAN_DEADLINE_MS`, the caller gets an error to render, never a short list
- * that reads as a complete one.
+ * Rejects rather than truncating: if every endpoint refuses and the windowed
+ * fallback stalls past `SCAN_DEADLINE_MS`, the caller gets a
+ * `LogScanTimeoutError`, never a short list that reads as a complete one.
  */
 export async function scanWindows<T>(
   fromBlock: bigint,
   toBlock: bigint,
-  fetchWindow: (from: bigint, to: bigint) => Promise<readonly T[]>,
+  fetchWindow: WindowFetch<T>,
   label = 'log scan',
 ): Promise<T[]> {
   return scanWindowsMulti(fromBlock, toBlock, [fetchWindow], label)
 }
 
 /**
- * `scanWindows` for several queries over the SAME range, sharing one pool.
+ * `scanWindows` for several queries over the SAME range.
  *
- * Results come back window-ascending and flattened, so give every callback the
- * same result type — map inside the callback, where viem's inference is intact.
+ * Results come back grouped by query (single-range) or window-ascending
+ * (windowed), flattened either way — so give every callback the same result
+ * type, and sort by block where order matters.
  *
  * `label` names the scan in its failure message. It is what a screen's error
- * state ends up printing, so make it say which reading is missing rather than
- * which function failed.
+ * state ends up printing, so make it say which reading is missing.
  */
 export async function scanWindowsMulti<T>(
   fromBlock: bigint,
   toBlock: bigint,
-  fetchWindows: readonly ((from: bigint, to: bigint) => Promise<readonly T[]>)[],
+  fetchWindows: readonly WindowFetch<T>[],
   label = 'log scan',
 ): Promise<T[]> {
-  const windows = planWindows(fromBlock, toBlock)
-  if (windows.length === 0 || fetchWindows.length === 0) return []
+  if (fromBlock < 0n) throw new Error(`log scan: negative fromBlock ${fromBlock}`)
+  if (toBlock < fromBlock || fetchWindows.length === 0) return []
 
-  /* Window-major so a single-query scan comes back in block order. */
-  const tasks: Array<{ window: [bigint, bigint]; fetch: (f: bigint, t: bigint) => Promise<readonly T[]> }> = []
+  let refusal: string
+  try {
+    return (await singleRange(fromBlock, toBlock, fetchWindows, label)).flat()
+  } catch (e) {
+    refusal = shortReason(e)
+  }
+
+  const windows = planWindows(fromBlock, toBlock)
+  const tasks: Array<{ window: [bigint, bigint]; fetch: WindowFetch<T> }> = []
   for (const window of windows) {
     for (const fetch of fetchWindows) tasks.push({ window, fetch })
   }
 
   const results: (readonly T[])[] = new Array<readonly T[]>(tasks.length).fill([])
+  let served = 0
   const expiresAt = Date.now() + SCAN_DEADLINE_MS
-  const why =
-    `${label}: the endpoint did not answer within ${SCAN_DEADLINE_MS / 1000}s ` +
-    `(${windows.length} window${windows.length === 1 ? '' : 's'} of ${MAX_LOG_SPAN} blocks × ` +
-    `${fetchWindows.length} quer${fetchWindows.length === 1 ? 'y' : 'ies'})`
+  const timeout = () =>
+    new LogScanTimeoutError(
+      `${label}: no endpoint served the range in one request (${refusal}), and the windowed ` +
+        `fallback did not finish within ${SCAN_DEADLINE_MS / 1000}s — ${served} of ${tasks.length} ` +
+        `window request${tasks.length === 1 ? '' : 's'} (${MAX_LOG_SPAN}-block windows × ` +
+        `${fetchWindows.length} quer${fetchWindows.length === 1 ? 'y' : 'ies'}) came back`,
+      served,
+      tasks.length,
+    )
 
   await withDeadline(
     pooled(tasks.length, async (i) => {
       const t = tasks[i]
       if (!t) return
-      /* Checked between windows as well as raced above: once the deadline has
-         passed there is no point spending more of a metered budget on an
-         answer nobody is waiting for. */
-      if (Date.now() > expiresAt) throw new Error(why)
+      /* Checked between windows as well as raced: once the deadline has passed
+         there is no point spending more of a metered budget. */
+      if (Date.now() > expiresAt) throw timeout()
       results[i] = await t.fetch(t.window[0], t.window[1])
+      served += 1
     }),
     SCAN_DEADLINE_MS,
-    why,
+    timeout,
   )
 
   return results.flat()
 }
 
 /**
- * The most recent `limit` results, walking BACKWARD from the head and stopping
- * as soon as there are enough.
- *
- * A "latest N" reader has no business scanning from the deployment: forward, the
- * last 25 swaps cost one request per window of the protocol's whole history and
- * discard all but the tail. Backward, the answer is usually in the first window.
+ * The most recent `limit` results. Single-range first (which returns every
+ * match; callers slice to `limit`), then a BACKWARD windowed walk from the head
+ * that stops as soon as there are enough.
  *
  * `fromBlock` still matters — it is where the walk gives up — so pass the
  * deployment block, not genesis.
@@ -433,46 +568,56 @@ export async function scanWindowsBackward<T>(
   fromBlock: bigint,
   toBlock: bigint,
   limit: number,
-  fetchWindow: (from: bigint, to: bigint) => Promise<readonly T[]>,
+  fetchWindow: WindowFetch<T>,
   label = 'log scan',
 ): Promise<T[]> {
   return scanWindowsBackwardMulti(fromBlock, toBlock, limit, [fetchWindow], label)
 }
 
 /**
- * `scanWindowsBackward` for several queries that share ONE backward walk.
- *
- * The saving is not cosmetic. Run four "latest 12" scans independently and an
- * event type that has never fired — `Donate`, say — walks the entire history on
- * its own looking for twelve of something that does not exist, while the three
- * that found their twelve immediately have already stopped. Walking together,
- * `limit` counts across all four and the whole feed stops at the same window.
- *
- * Every callback must return the same result type; map inside the callback.
+ * `scanWindowsBackward` for several queries that share ONE backward walk, so
+ * `limit` counts across all of them and an event type that never fired does
+ * not walk the whole history alone. Every callback must return the same result
+ * type; callers sort by block.
  */
 export async function scanWindowsBackwardMulti<T>(
   fromBlock: bigint,
   toBlock: bigint,
   limit: number,
-  fetchWindows: readonly ((from: bigint, to: bigint) => Promise<readonly T[]>)[],
+  fetchWindows: readonly WindowFetch<T>[],
   label = 'log scan',
 ): Promise<T[]> {
-  /* Same budget precondition as the forward scan — a backward walk from
-     genesis is no more finishable for being backward. */
-  planWindows(fromBlock, toBlock)
+  if (fromBlock < 0n) throw new Error(`log scan: negative fromBlock ${fromBlock}`)
   if (fetchWindows.length === 0 || toBlock < fromBlock) return []
 
+  let refusal: string
+  try {
+    return (await singleRange(fromBlock, toBlock, fetchWindows, label)).flat()
+  } catch (e) {
+    refusal = shortReason(e)
+  }
+
+  /* Same budget precondition as the forward scan. */
+  const planned = Number(windowCount(fromBlock, toBlock))
+  planWindows(fromBlock, toBlock)
+
+  let served = 0
   const expiresAt = Date.now() + SCAN_DEADLINE_MS
-  const why =
-    `${label}: the endpoint did not answer within ${SCAN_DEADLINE_MS / 1000}s while walking back ` +
-    `from block ${toBlock} for the newest ${limit}`
+  const timeout = () =>
+    new LogScanTimeoutError(
+      `${label}: no endpoint served the range in one request (${refusal}), and the backward ` +
+        `windowed walk from block ${toBlock} for the newest ${limit} did not finish within ` +
+        `${SCAN_DEADLINE_MS / 1000}s — ${served} window${served === 1 ? '' : 's'} came back`,
+      served,
+      planned,
+    )
 
   const walk = async (): Promise<T[]> => {
     const out: (readonly T[])[] = []
     let count = 0
     let stop = toBlock
     while (stop >= fromBlock && count < limit) {
-      if (Date.now() > expiresAt) throw new Error(why)
+      if (Date.now() > expiresAt) throw timeout()
       const start = stop - MAX_LOG_SPAN < fromBlock ? fromBlock : stop - MAX_LOG_SPAN
 
       const batches: (readonly T[])[] = new Array<readonly T[]>(fetchWindows.length).fill([])
@@ -481,10 +626,8 @@ export async function scanWindowsBackwardMulti<T>(
         if (!fetch) return
         batches[i] = await fetch(start, stop)
       })
+      served += 1
 
-      /* One window's queries land as one group, so windows stay in ascending
-         order in the output. Ordering WITHIN a window is not meaningful across
-         different event types; callers that need it sort by block. */
       const inWindow = batches.flat()
       if (inWindow.length > 0) {
         out.unshift(inWindow)
@@ -497,7 +640,7 @@ export async function scanWindowsBackwardMulti<T>(
     return out.flat()
   }
 
-  return withDeadline(walk(), SCAN_DEADLINE_MS, why)
+  return withDeadline(walk(), SCAN_DEADLINE_MS, timeout)
 }
 
 /* ---------------------------------------------------------------------------
@@ -898,6 +1041,142 @@ export async function readGovernanceStatus(
 }
 
 /* ---------------------------------------------------------------------------
+   Who actually holds the custody powers — read, not assumed from the table.
+
+   The dashboard used to print "CUSTODY DELAY 48h · Vault + managers" beside the
+   custody timelock's `getMinDelay()`. The delay was real; the claim that it
+   governs the Vault and the managers was not. `owner()` on the Vault and on
+   both `*PoolManagerOwner` wrappers read the Safe DIRECTLY on 2026-09-13, with
+   the custody timelock only NOMINATED (`pendingOwner`) — so `registerApp` needed
+   2-of-3 signatures and no delay at all. A delay is only a property of a
+   contract if the timelock is its owner, so this reads the owner.
+   --------------------------------------------------------------------------- */
+
+const OWNABLE_2STEP = parseAbi([
+  'function owner() view returns (address)',
+  'function pendingOwner() view returns (address)',
+])
+
+export type HolderKind = 'custody-timelock' | 'policy-timelock' | 'safe' | 'other'
+
+export interface HeldContract {
+  name: string
+  address: Address
+  owner: Address
+  ownerKind: HolderKind
+  /** `pendingOwner()`; null when zero or when the contract has no such getter. */
+  pendingOwner: Address | null
+  pendingKind: HolderKind | null
+}
+
+export interface CustodyStatus {
+  chainId: DeployedChainId
+  custodyDelaySec: bigint
+  policyDelaySec: bigint
+  contracts: HeldContract[]
+}
+
+function holderKind(d: (typeof DEPLOYMENTS)[DeployedChainId], a: Address): HolderKind {
+  const l = a.toLowerCase()
+  if (l === d.timelockCustody.toLowerCase()) return 'custody-timelock'
+  if (l === d.timelockPolicy.toLowerCase()) return 'policy-timelock'
+  if (l === d.governanceSafe.toLowerCase()) return 'safe'
+  return 'other'
+}
+
+export async function readCustodyStatus(
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
+): Promise<CustodyStatus> {
+  const d = DEPLOYMENTS[chainId]
+  const c = client(chainId)
+  const tracked: { name: string; address: Address | null }[] = [
+    { name: 'Vault', address: d.vault },
+    { name: 'CLPoolManagerOwner', address: d.clPoolManagerOwner },
+    { name: 'BinPoolManagerOwner', address: d.binPoolManagerOwner },
+    { name: 'LatchProtocolFeeController', address: d.feeController },
+    { name: 'CLPositionDescriptor', address: d.clPositionDescriptor },
+  ]
+
+  const [custodyDelaySec, policyDelaySec, contracts] = await Promise.all([
+    c.readContract({ address: d.timelockCustody, abi: TIMELOCK, functionName: 'getMinDelay' }),
+    c.readContract({ address: d.timelockPolicy, abi: TIMELOCK, functionName: 'getMinDelay' }),
+    Promise.all(
+      tracked
+        .filter((t): t is { name: string; address: Address } => t.address !== null)
+        .map(async (t): Promise<HeldContract> => {
+          const owner = await c.readContract({ address: t.address, abi: OWNABLE_2STEP, functionName: 'owner' })
+          /* A plain Ownable has no `pendingOwner` and reverts; that is "no
+             nomination", not an error. A transport failure on the owner read
+             above still throws. */
+          const pending = await c
+            .readContract({ address: t.address, abi: OWNABLE_2STEP, functionName: 'pendingOwner' })
+            .catch((e: unknown) => {
+              if (classifyReadFailure(e) === 'transport') throw e
+              return null
+            })
+          const pendingOwner = pending === null || pending === '0x0000000000000000000000000000000000000000' ? null : pending
+          return {
+            name: t.name,
+            address: t.address,
+            owner,
+            ownerKind: holderKind(d, owner),
+            pendingOwner,
+            pendingKind: pendingOwner === null ? null : holderKind(d, pendingOwner),
+          }
+        }),
+    ),
+  ])
+  return { chainId, custodyDelaySec, policyDelaySec, contracts }
+}
+
+/* ---------------------------------------------------------------------------
+   The protocol fee each pool ACTUALLY charges — `slot0.protocolFee`.
+
+   The dashboard gauge used to show `feeForLpFee(3000)` from the controller as
+   "Protocol fee actually charged". That is what the controller would stamp a
+   NEW 0.30% pool with; an existing pool's fee is fixed in its own slot0 until
+   somebody sets it, and the only live pool's reads 0. The per-direction values
+   are packed as in core's ProtocolFeeLibrary: low 12 bits zeroForOne, high 12
+   bits oneForZero.
+   --------------------------------------------------------------------------- */
+
+const CL_SLOT0 = parseAbi([
+  'function getSlot0(bytes32 id) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)',
+])
+
+export interface PoolProtocolFee {
+  pool: PoolRecord
+  zeroForOnePips: number
+  oneForZeroPips: number
+  lpFeePips: number
+}
+
+export async function readPoolProtocolFees(
+  chainId: DeployedChainId = ACTIVE_CHAIN_ID,
+): Promise<{ pools: PoolProtocolFee[] }> {
+  const d = DEPLOYMENTS[chainId]
+  const c = client(chainId)
+  const pools = await readPools(chainId)
+  const fees = await Promise.all(
+    pools.map(async (pool): Promise<PoolProtocolFee> => {
+      const [, , protocolFee, lpFee] = await c.readContract({
+        address: d.clPoolManager,
+        abi: CL_SLOT0,
+        functionName: 'getSlot0',
+        args: [pool.id],
+      })
+      return {
+        pool,
+        zeroForOnePips: protocolFee & 0xfff,
+        oneForZeroPips: protocolFee >> 12,
+        lpFeePips: lpFee,
+      }
+    }),
+  )
+  return { pools: fees }
+}
+
+/* ---------------------------------------------------------------------------
    Aggregations for the dapp screens.
 
    These replace the mock `data/*.ts` modules. Every figure is derived from chain.
@@ -1060,7 +1339,8 @@ export async function readProtocolMetrics(
     ;[pools, swaps] = await withDeadline(
       Promise.all([readPools(chainId), readRecentSwaps(chainId, 1000)]),
       LOG_SCAN_DEADLINE_MS,
-      `no answer within ${LOG_SCAN_DEADLINE_MS / 1000}s`,
+      () =>
+        new LogScanTimeoutError(`pool list and swaps: no answer within ${LOG_SCAN_DEADLINE_MS / 1000}s`, 0, 2),
     )
   } catch (e) {
     logScanError = e instanceof Error ? e.message : 'the endpoint refused the log scan'

@@ -3463,3 +3463,11 @@ img.dapp-netchip__mark { object-fit: contain; }
     stroke-dashoffset: 0 !important;
   }
 }
+
+/* Wallet-on-another-chain prompt (components/WrongChainPrompt.tsx). Sits between
+   the header and the screen, reusing the content gutter but not its bottom
+   padding, so it reads as part of the page rather than a floating toast. */
+.dapp-content--prompt {
+  padding-bottom: 0;
+  animation: none;
+}

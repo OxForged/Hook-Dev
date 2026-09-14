@@ -38,7 +38,8 @@
    ============================================================================ */
 
 import { LatchConnectButton } from '@latchprotocol/connect'
-import { formatClockSpan } from '../../../lib/pendingConfig'
+import { formatClockSpan, proposalStatus } from '../../../lib/pendingConfig'
+import { freezeGuard } from '../lib/freezeGuard'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Abi, Address } from 'viem'
 import { isAddress } from 'viem'
@@ -428,11 +429,14 @@ function RosterEditor({
       </div>
 
       {rows.length === 0 && (
-        <p className="live-note dapp-mt-2">
-          An empty roster is a valid call: it clears the roster entirely. Anything the pool accrues
-          for beneficiaries afterwards waits in <code>pendingBeneficiary</code> —{' '}
-          <code>settleBeneficiaries</code> returns quietly while total weight is zero — rather than
-          being lost.
+        <p className="live-note live-note--err dapp-mt-2">
+          An empty roster clears the roster entirely (the current hook refuses it while the
+          beneficiary share is live; the retired one accepts it). Anything the pool accrues for
+          beneficiaries afterwards waits in <code>pendingBeneficiary</code> —{' '}
+          <code>settleBeneficiaries</code> returns quietly while total weight is zero — and it
+          waits <strong>only until the pool is frozen</strong>. A freeze removes{' '}
+          <code>setBeneficiaries</code>, so from then on that pot can never be paid to anyone. The
+          freeze below refuses this state for that reason.
         </p>
       )}
 
@@ -736,6 +740,30 @@ function FreezeDoor({
   const [typed, setTyped] = useState('')
   const armed = typed.trim().toUpperCase() === 'FREEZE'
 
+  /* CLAUDE.md §3, from the reads this screen already made. The pots are only
+     trusted when the currencies came from the resolved pool key — a list
+     assembled from RevShareTaken logs may be missing a currency that never
+     accrued, and "both currencies" cannot be judged from one. */
+  const verdict = useMemo(
+    () =>
+      freezeGuard({
+        beneficiaryBps: o.config.beneficiaryBps,
+        frozen: o.config.frozen,
+        weights: o.beneficiaries.map((b) => b.weight),
+        totalWeight: o.totalWeight,
+        pots:
+          o.currenciesFrom === 'poolKey'
+            ? o.unsettled.map((u) => ({ symbol: u.token.symbol, amount: u.beneficiary }))
+            : [],
+        proposal: proposalStatus(o.pending, {
+          timestamp: o.timestamp,
+          contractBlockNumber: o.contractBlockNumber,
+        }),
+      }),
+    [o],
+  )
+  const firstFailure = verdict.checks.find((c) => !c.ok)
+
   return (
     <div className="po-block po-block--danger">
       <h4 className="po-block__title">Freeze this pool's configuration — permanent</h4>
@@ -746,16 +774,42 @@ function FreezeDoor({
         promise a pool owner can make to traders, and there is no undo.
       </p>
 
-      <label className="po-field">
-        <span className="dapp-microlabel">TYPE “FREEZE” TO ARM THE BUTTON</span>
-        <input
-          className="po-input"
-          value={typed}
-          spellCheck={false}
-          autoComplete="off"
-          onChange={(e) => setTyped(e.target.value)}
-        />
-      </label>
+      <p className="dapp-microlabel dapp-mt-3">
+        PRECONDITIONS · {verdict.allowed ? 'ALL HOLD' : 'NOT MET — FREEZE REFUSED'}
+      </p>
+      <ul className="gov-facts">
+        {verdict.checks.map((c) => (
+          <li key={c.id}>
+            <span
+              className={`dapp-dot dapp-dot--sm ${c.ok ? 'dapp-dot--success' : 'dapp-dot--error'}`}
+              aria-hidden="true"
+            />
+            <span>
+              <strong>{c.ok ? 'Holds' : 'Fails'}:</strong> {c.label}. {c.detail}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="live-note dapp-mt-2">
+        Read from <code>getConfig</code>, <code>getBeneficiaries</code>, <code>totalWeight</code>,{' '}
+        <code>pendingBeneficiary</code> on both currencies and <code>getPendingConfig</code>. The
+        rule comes from a hazard on the retired hook: with a live beneficiary share and no roster,{' '}
+        <code>settleBeneficiaries</code> returns early and the pot waits — and a freeze removes{' '}
+        <code>setBeneficiaries</code>, the only way to ever pay it out.
+      </p>
+
+      {verdict.allowed && (
+        <label className="po-field">
+          <span className="dapp-microlabel">TYPE “FREEZE” TO ARM THE BUTTON</span>
+          <input
+            className="po-input"
+            value={typed}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => setTyped(e.target.value)}
+          />
+        </label>
+      )}
 
       <OwnerAction
         label="freezeConfig"
@@ -763,7 +817,13 @@ function FreezeDoor({
         hook={o.hook}
         functionName="freezeConfig"
         args={[keyTuple(poolKey)]}
-        invalid={armed ? null : 'Type FREEZE above to arm this. It cannot be undone.'}
+        invalid={
+          !verdict.allowed
+            ? `Refused until every precondition above holds. First failure: ${firstFailure?.label ?? 'unknown'} — ${firstFailure?.detail ?? ''}`
+            : armed
+              ? null
+              : 'Type FREEZE above to arm this. It cannot be undone.'
+        }
         tone="danger"
         onConfirmed={onConfirmed}
       />

@@ -11,7 +11,7 @@
      /app/swap                   Swap — quote and trade through a live pool
      /app/marketplace            Latch Marketplace
      /app/marketplace/:address   Latch Detail — one Latch, in full
-     /app/deploy                 Deploy a Latch
+     /app/deploy                 List a Latch (registry listing; path kept)
      /app/pool                   Pool Detail
      /app/portfolio              Portfolio
      /app/protocol               Revenue Share — pools the connected address owns
@@ -34,16 +34,19 @@
    Analytics and Settings are deleted, not disabled. If a screen cannot reach the
    chain it says so; it does not fall back to an example.
 
-   Latch Protocol's only deployment is on Ethereum Sepolia (chain 11155111); the
-   other target chains are endpoint-verified but carry no contracts. The header
-   chip says LIVE · TESTNET for exactly that pair of reasons.
+   One build reads ONE chain, `ACTIVE_CHAIN_ID` in lib/chain.ts: Robinhood Chain
+   (4663) for the mainnet build, Ethereum Sepolia (11155111) for
+   `VITE_NETWORK=testnet`. The header chips name that chain and read LIVE ·
+   MAINNET or LIVE · TESTNET accordingly. A wallet on another chain changes
+   nothing about what is read; the shell shows a switch prompt instead.
    ============================================================================ */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { chainByKey } from '../../data/chains.ts'
+import { ACTIVE_CHAIN_ROW } from '../../data/chains.ts'
 import { Sidebar } from './components/Sidebar.tsx'
 import { TopBar } from './components/TopBar.tsx'
+import { WrongChainPrompt } from './components/WrongChainPrompt.tsx'
 import { loadShell } from './data/shell.ts'
 import type { Screen } from './data/types.ts'
 import { useMediaQuery, useScrollLock, useTableLabels } from './lib/dom.ts'
@@ -113,7 +116,7 @@ export default function DappShell() {
 
 function Shell() {
   const shell = useMemo(loadShell, [])
-  const { screen, block, net, resetDeployment } = useDapp()
+  const { screen, block, resetDeployment } = useDapp()
   const location = useLocation()
   const isDrawer = useMediaQuery(DRAWER_QUERY)
   const isCompact = useMediaQuery(COMPACT_QUERY)
@@ -162,13 +165,17 @@ function Shell() {
         <TopBar
           meta={meta}
           block={block}
-          net={chainByKey(net)}
+          /* The BUILD's chain, never the Settings pick: every read goes to
+             ACTIVE_CHAIN_ID, and the header chips claim to describe the reads. */
+          net={ACTIVE_CHAIN_ROW}
           deployHref={dappPath('deploy')}
           isDrawer={isDrawer}
           isCompact={isCompact}
           navOpen={navOpen}
           onToggleNav={toggleNav}
         />
+
+        <WrongChainPrompt />
 
         <main id="dapp-content" className="dapp-content" key={location.pathname} ref={contentRef}>
           <Routes>

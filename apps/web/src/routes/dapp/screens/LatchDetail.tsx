@@ -239,7 +239,7 @@ export default function LatchDetail() {
         </p>
         <p className="dapp-note">
           Anyone can list a Latch — registration is permissionless and free.{' '}
-          <Link to={dappPath('deploy')}>Deploy a Latch</Link>.
+          <Link to={dappPath('deploy')}>List a Latch</Link>.
         </p>
         <BackLink />
       </section>

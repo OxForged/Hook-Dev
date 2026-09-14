@@ -102,7 +102,7 @@ export default function Swap() {
   }
 
   if (state.k === 'error') {
-    return <Unreachable message={state.message} onRetry={reload} />
+    return <Unreachable message={state.message} kind={state.kind} onRetry={reload} />
   }
 
   if (!data) return <Reading what="pools, fees and router state" />

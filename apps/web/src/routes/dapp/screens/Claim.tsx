@@ -22,6 +22,13 @@
    `claim` needs `(index, account, amount0, amount1, proof)` and nothing on
    chain publishes the tree. That is stated, not worked around.
 
+   EVERY HOOK, NOT THE CURRENT ONE (2026-09-14). `claimable` lives on a hook, and
+   a retired hook keeps its own mapping forever. This screen read only the
+   address book's current hook — which has never paid anyone — so an address
+   holding a real LTT1/LTT2 balance on the retired 0x23CE… was told there was no
+   currency to check. Path 1 now reads every RevShareHook in the address book
+   (or exactly the one `?hook=` pins) and shows each hook's balances under it.
+
    THE SOLVENCY BARS. `backing(currency)` must always be at least
    `totalOwed(currency)`; a hook where it is not cannot pay everyone it owes,
    and that is the single most important thing this screen can report. It was
@@ -41,7 +48,7 @@ import { LatchConnectButton } from '@latchprotocol/connect'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getAddress, isAddress, type Address } from 'viem'
-import { useAccount, useSwitchChain } from 'wagmi'
+import { useAccount } from 'wagmi'
 
 import { DEPLOYMENTS } from '../../../lib/chain'
 import { BarList } from '../components/charts.tsx'
@@ -51,15 +58,13 @@ import {
   REVSHARE_CHAIN_ID,
   amountWithUnit,
   fmtTimestamp,
-  readCurrenciesSeen,
+  readClaimableAcross,
   readDistributor,
-  readGlobalClaimable,
   readSnapshotStandings,
-  readToken,
   type ClaimableRow,
+  type HookClaimable,
   type DistributorState,
   type EpochStanding,
-  type TokenMeta,
 } from '../lib/revshare'
 import {
   Addr,
@@ -78,10 +83,9 @@ import { useHookRef } from '../lib/useHookRef'
 const CHAIN = DEPLOYMENTS[REVSHARE_CHAIN_ID]
 
 interface GlobalLoad {
-  rows: ClaimableRow[]
+  perHook: HookClaimable[]
   fromBlock: bigint
-  /** Currencies the log scan found, before the extra one was added. */
-  discovered: number
+  toBlock: bigint
 }
 
 /* -------------------------------------------------------------- solvency ---- */
@@ -116,7 +120,7 @@ function Solvency({ row }: { row: ClaimableRow }) {
         items={[
           bar('Hook can pay out', row.backing, solvent ? 'success' : 'amber'),
           bar('Hook owes everyone', row.totalOwed, 'violet'),
-          bar('Yours', row.amount, 'primary'),
+          bar('This address can claim', row.amount, 'primary'),
         ]}
         valueLabel="Amount"
         shareLabel="of the largest figure here"
@@ -126,30 +130,34 @@ function Solvency({ row }: { row: ClaimableRow }) {
 }
 
 export default function Claim() {
-  const { ref: hook, malformed } = useHookRef()
-  const { address, isConnected, chainId } = useAccount()
-  const { switchChain, isPending: switching } = useSwitchChain()
+  const { refs, malformed } = useHookRef()
+  const hook = refs[0] ?? null
+  const { address, isConnected } = useAccount()
   const [params] = useSearchParams()
 
   const [extraToken, setExtraToken] = useState('')
+  /* Whose balance to READ. `claimable` is a public mapping, so any address can
+     be checked; `?account=` pre-fills it for a shared link. Blank means the
+     connected wallet. A claim button still appears only for the connected
+     address's own balance, because `claim` pays `msg.sender`'s balance. */
+  const [holderInput, setHolderInput] = useState(params.get('account') ?? '')
   const [distributorInput, setDistributorInput] = useState(params.get('distributor') ?? '')
   const [accountInput, setAccountInput] = useState('')
 
-  const onChain = chainId === REVSHARE_CHAIN_ID
   const extra = isAddress(extraToken.trim(), { strict: false }) ? getAddress(extraToken.trim()) : null
 
   /* ---- path 1: the hook's global claimable balance ---------------------- */
 
-  const globalKey = hook && address ? `claimable:${hook.address}:${address}:${extra ?? ''}` : null
+  const holder: Address | null = isAddress(holderInput.trim(), { strict: false })
+    ? getAddress(holderInput.trim())
+    : (address ?? null)
+  const holderIsWallet = Boolean(holder && address && holder.toLowerCase() === address.toLowerCase())
+
+  const globalKey =
+    refs.length > 0 && holder ? `claimable:${refs.map((r) => r.address).join(',')}:${holder}:${extra ?? ''}` : null
   const global = useChainRead<GlobalLoad>(globalKey, async () => {
-    if (!hook || !address) throw new Error('unreachable')
-    const seen = await readCurrenciesSeen(hook.address)
-    const tokens: TokenMeta[] = [...seen.tokens]
-    if (extra && !tokens.some((t) => t.address.toLowerCase() === extra.toLowerCase())) {
-      tokens.push(await readToken(extra))
-    }
-    const rows = await readGlobalClaimable(hook.address, address, tokens)
-    return { rows, fromBlock: seen.fromBlock, discovered: seen.tokens.length }
+    if (!holder) throw new Error('unreachable')
+    return readClaimableAcross(refs, holder, extra)
   })
 
   /* ---- path 2: an epoch distributor ------------------------------------- */
@@ -187,7 +195,7 @@ export default function Claim() {
 
   return (
     <>
-      <ScreenIntro title="Claim what is owed to you" hook={hook ?? undefined}>
+      <ScreenIntro title="Claim what is owed to you" hooks={refs} live={global.state.k === 'ready'}>
         <p>
           Two different balances reach a person from a revenue-share pool. They are not
           interchangeable, so they are shown separately, read live from {CHAIN.name}.
@@ -201,7 +209,7 @@ export default function Claim() {
           {/* ============================================ PATH 1 ========= */}
           <section className="dapp-card">
             <div className="dapp-card__head">
-              <h3 className="dapp-card__title">1 · Your balance on the hook</h3>
+              <h3 className="dapp-card__title">1 · Your balance on each hook</h3>
               <span className="dapp-badge dapp-badge--warn">global, not per pool</span>
             </div>
             <p className="live-note">
@@ -219,31 +227,40 @@ export default function Claim() {
               </div>
             </details>
 
-            {!isConnected && (
+            {!isConnected && !holder && (
               <div className="dp-gate dapp-mt-3">
                 <p className="dp-gate__title">Connect a wallet to see your balance</p>
-                <p className="dp-gate__body">The balance is keyed by address. Connecting reads only.</p>
+                <p className="dp-gate__body">
+                  The balance is keyed by address. Connecting reads only — or type any address below to
+                  read its balance without a wallet.
+                </p>
                 <LatchConnectButton variant="inline" label="Connect wallet" />
               </div>
             )}
 
-            {isConnected && !onChain && (
-              <div className="dp-gate dp-gate--warn dapp-mt-3">
-                <p className="dp-gate__title">Not deployed on this chain</p>
-                <p className="dp-gate__body">
-                  This RevShareHook is on {CHAIN.name}. The chain your wallet is on has no such
-                  contract, so there is nothing there to read.
-                </p>
-                <button
-                  type="button"
-                  className="dapp-btn dapp-btn--sm"
-                  onClick={() => switchChain({ chainId: REVSHARE_CHAIN_ID })}
-                  disabled={switching}
-                >
-                  {switching ? 'Switching…' : `Switch to ${CHAIN.name}`}
-                </button>
-              </div>
-            )}
+            <div className="dp-field dapp-mt-3">
+              <label className="dapp-microlabel" htmlFor="rs-holder">
+                ADDRESS TO CHECK
+              </label>
+              <input
+                id="rs-holder"
+                className="dp-input dp-input--mono"
+                placeholder={address ?? '0x… any address'}
+                value={holderInput}
+                onChange={(e) => setHolderInput(e.target.value)}
+                spellCheck={false}
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
+              {holderInput.trim() !== '' && !isAddress(holderInput.trim(), { strict: false }) && (
+                <p className="dp-hint dp-hint--err">Not a 20-byte hex address.</p>
+              )}
+              <p className="dp-hint">
+                Blank uses the connected wallet{address ? ` (${address})` : ''}. Reading a balance needs no
+                wallet; claiming it does, from that same address.
+              </p>
+            </div>
 
             <div className="dp-field dapp-mt-3">
               <label className="dapp-microlabel" htmlFor="rs-extra-token">
@@ -269,98 +286,19 @@ export default function Claim() {
 
           {global.state.k === 'loading' && <Reading what="your claimable balances" />}
           {global.state.k === 'error' && (
-            <Unreachable message={global.state.message} onRetry={global.reload} />
+            <Unreachable message={global.state.message} kind={global.state.kind} onRetry={global.reload} />
           )}
 
-          {global.state.k === 'ready' && global.state.data.rows.length === 0 && (
-            <Empty title="No currency to check">
-              <p>
-                No <code>RevShareTaken</code> log on this hook since block{' '}
-                {global.state.data.fromBlock.toString()} — an empty log stream, not a failed read.
-                Paste a token address above to check one directly.
-              </p>
-            </Empty>
-          )}
-
-          {global.state.k === 'ready' && global.state.data.rows.length > 0 && (
-            <section className="dapp-card">
-              <div className="dapp-table-wrap">
-                <table className="dapp-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Token</th>
-                      <th scope="col">Your claimable</th>
-                      <th scope="col">Hook can pay out</th>
-                      <th scope="col">Hook owes everyone</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {global.state.data.rows.map((r) => (
-                      <tr key={r.token.address}>
-                        <th scope="row">
-                          {r.token.symbol} <Addr value={r.token.address} label="↗" />
-                        </th>
-                        <td>
-                          <Money v={r.amount} token={r.token} />
-                        </td>
-                        <td>
-                          <Money v={r.backing} token={r.token} />
-                        </td>
-                        <td>
-                          <Money v={r.totalOwed} token={r.token} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {/* The invariant, drawn from the same three reads as the table.
-                  A shortfall between two 18-decimal integers is not something a
-                  reader spots in a table; it is something they spot in a bar. */}
-              {global.state.data.rows.map((r) => (
-                <Solvency key={`solv-${r.token.address}`} row={r} />
-              ))}
-
-              <details className="dapp-method">
-                <summary>What these three figures are</summary>
-                <div className="dapp-method__body">
-                  <p>
-                    <code>backing(currency)</code> is what the hook holds plus the vault claims it
-                    can redeem. <code>totalOwed(currency)</code> is every recipient&rsquo;s balance
-                    combined. The first must always be at least the second; if it is not, that is a
-                    solvency problem worth reporting, not a display glitch.
-                  </p>
-                </div>
-              </details>
-
-              {/* Offered only where there is a balance. `claim` reverts
-                  NothingToClaim on zero, so an always-rendered button would be
-                  a row of red pre-flight failures saying what the table above
-                  already says. */}
-              {address &&
-                global.state.data.rows
-                  .filter((r) => r.amount > 0n)
-                  .map((r) => (
-                    <PermissionlessAction
-                      key={`claim-${r.token.address}`}
-                      label={`claim · ${r.token.symbol}`}
-                      describes={`Withdraws your ENTIRE ${r.token.symbol} balance on this hook — every pool you are a beneficiary of, combined — to ${address}. There is no way to claim only one pool's share.`}
-                      address={hook.address}
-                      abi={REV_SHARE_HOOK_ABI}
-                      functionName="claim"
-                      args={[r.token.address, address]}
-                    />
-                  ))}
-
-              {global.state.data.rows.every((r) => r.amount === 0n) && (
-                <p className="live-note dapp-mt-3">
-                  Nothing claimable, so no claim button — <code>claim</code> reverts{' '}
-                  <code>NothingToClaim</code> on zero. A balance appears once{' '}
-                  <code>settleBeneficiaries</code> has run for a pool you are on the roster of.
-                </p>
-              )}
-            </section>
-          )}
+          {global.state.k === 'ready' &&
+            global.state.data.perHook.map((h) => (
+              <HookBalances
+                key={h.hook.address}
+                h={h}
+                holder={holder}
+                canClaim={holderIsWallet}
+                fromBlock={global.state.k === 'ready' ? global.state.data.fromBlock : 0n}
+              />
+            ))}
 
           {/* ============================================ PATH 2 ========= */}
           <section className="dapp-card">
@@ -419,7 +357,7 @@ export default function Claim() {
           </section>
 
           {dist.state.k === 'loading' && <Reading what="the distributor" />}
-          {dist.state.k === 'error' && <Unreachable message={dist.state.message} onRetry={dist.reload} />}
+          {dist.state.k === 'error' && <Unreachable message={dist.state.message} kind={dist.state.kind} onRetry={dist.reload} />}
 
           {dist.state.k === 'ready' && dist.state.data.kind === 'unknown' && (
             <Unconfigured title="That address is not a distributor this app recognises">
@@ -505,6 +443,128 @@ export default function Claim() {
 
 /* -------------------------------------------------------------------------- */
 
+/** One hook's balances for the connected address — its own `claimable` mapping. */
+function HookBalances({
+  h,
+  holder,
+  canClaim,
+  fromBlock,
+}: {
+  h: HookClaimable
+  holder: Address | null
+  /** True only when `holder` is the connected wallet — `claim` pays msg.sender. */
+  canClaim: boolean
+  fromBlock: bigint
+}) {
+  const address = canClaim ? holder : null
+  const rows: ClaimableRow[] = h.rows
+  const label = h.hook.status ? `${h.hook.status} hook` : 'hook'
+  if (rows.length === 0) {
+    return (
+      <Empty title={`No currency to check on the ${label}`}>
+        <p>
+          No <code>RevShareTaken</code> log on <Addr value={h.hook.address} /> since block{' '}
+          {fromBlock.toString()} — an empty log stream, not a failed read. Paste a token address above
+          to check one directly.
+        </p>
+      </Empty>
+    )
+  }
+  return (
+    <section className="dapp-card">
+      <div className="dapp-card__head">
+        <h3 className="dapp-card__title">
+          On <Addr value={h.hook.address} />
+        </h3>
+        <span className={h.hook.status === 'retired' ? 'dapp-badge dapp-badge--warn' : 'dapp-badge dapp-badge--mute'}>
+          {h.hook.status ?? 'not in the address book'}
+        </span>
+      </div>
+      {h.hook.status === 'retired' && (
+        <p className="live-note">
+          Retired in the address book, still a live contract: balances credited here stay here and are
+          claimed from this hook.
+        </p>
+      )}
+      <div className="dapp-table-wrap">
+        <table className="dapp-table">
+          <thead>
+            <tr>
+              <th scope="col">Token</th>
+              <th scope="col">{canClaim ? 'Your claimable' : `Claimable by ${holder ? `${holder.slice(0, 6)}…${holder.slice(-4)}` : '—'}`}</th>
+              <th scope="col">Hook can pay out</th>
+              <th scope="col">Hook owes everyone</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.token.address}>
+                <th scope="row">
+                  {r.token.symbol} <Addr value={r.token.address} label="↗" />
+                </th>
+                <td>
+                  <Money v={r.amount} token={r.token} />
+                </td>
+                <td>
+                  <Money v={r.backing} token={r.token} />
+                </td>
+                <td>
+                  <Money v={r.totalOwed} token={r.token} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.map((r) => (
+        <Solvency key={`solv-${r.token.address}`} row={r} />
+      ))}
+
+      <details className="dapp-method">
+        <summary>What these three figures are</summary>
+        <div className="dapp-method__body">
+          <p>
+            <code>backing(currency)</code> is what the hook holds plus the vault claims it can redeem.{' '}
+            <code>totalOwed(currency)</code> is every recipient&rsquo;s balance combined. The first must
+            always be at least the second; if it is not, that is a solvency problem worth reporting, not
+            a display glitch.
+          </p>
+        </div>
+      </details>
+
+      {address &&
+        rows
+          .filter((r) => r.amount > 0n)
+          .map((r) => (
+            <PermissionlessAction
+              key={`claim-${r.token.address}`}
+              label={`claim · ${r.token.symbol}`}
+              describes={`Withdraws your ENTIRE ${r.token.symbol} balance on this hook — every pool on it you are a beneficiary of, combined — to ${address}. There is no way to claim only one pool's share.`}
+              address={h.hook.address}
+              abi={REV_SHARE_HOOK_ABI}
+              functionName="claim"
+              args={[r.token.address, address]}
+            />
+          ))}
+
+      {!canClaim && rows.some((r) => r.amount > 0n) && (
+        <p className="live-note dapp-mt-3">
+          No claim button: <code>claim(currency, to)</code> withdraws the SENDER&rsquo;s balance, so only{' '}
+          {holder ?? 'that address'} can claim it, from its own wallet.
+        </p>
+      )}
+
+      {rows.every((r) => r.amount === 0n) && (
+        <p className="live-note dapp-mt-3">
+          Nothing claimable on this hook, so no claim button — <code>claim</code> reverts{' '}
+          <code>NothingToClaim</code> on zero. A balance appears once <code>settleBeneficiaries</code> has
+          run for a pool you are on the roster of.
+        </p>
+      )}
+    </section>
+  )
+}
+
 function SnapshotClaims({
   d,
   account,
@@ -562,7 +622,7 @@ function SnapshotClaims({
         </p>
       )}
       {account !== null && standings.k === 'error' && (
-        <Unreachable message={standings.message} onRetry={onRetry} />
+        <Unreachable message={standings.message} kind={standings.kind} onRetry={onRetry} />
       )}
 
       {account !== null && standings.k === 'ready' && (

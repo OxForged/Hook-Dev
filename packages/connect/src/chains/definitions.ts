@@ -73,7 +73,8 @@ import {
 /**
  * Verified public RPCs per chain id, fastest-first.
  *
- * Copied verbatim from `CHAIN_RPCS` in `packages/sdk/src/chains/endpoints.ts`,
+ * Copied from `CHAIN_RPCS` in `packages/sdk/src/chains/endpoints.ts` (same URLs;
+ * Robinhood's ORDER differs on purpose — see its entry),
  * which is the repo's single source of truth and carries the probe methodology,
  * the per-endpoint EIP-1153 result and the record of what was tried and failed.
  * This package cannot import it — connect is published standalone and must not
@@ -88,12 +89,25 @@ export const LATCH_PUBLIC_RPCS: Readonly<Record<number, readonly string[]>> = {
   // Robinhood Chain — 5, five separate operators, all TSTORE-verified.
   // Excluded: `robinhood.drpc.org` (answers eth_chainId from a config table, rejects
   // eth_blockNumber and eth_call) and `lb.routeme.sh` (no usable response).
+  //
+  // DELIBERATELY NOT THE SDK'S ORDER. The first URL here is not just the first
+  // fallback: wagmi's injected connector passes ONLY `rpcUrls.default.http[0]` to
+  // `wallet_addEthereumChain`, so it becomes the RPC the user's WALLET uses for this
+  // network, for every balance, estimate and broadcast, long after they leave this
+  // site. It must be the most reliable keyless endpoint, not the lowest-latency one.
+  // Re-probed 2026-09-14: `rpc.nodeflare.app/robinhood/public` (the SDK's fastest)
+  // answers HTTP 429 "Too many requests from this IP (1 per 10s)" on the second
+  // request, which a wallet would hit constantly; Robinhood's own canonical
+  // `rpc.mainnet.chain.robinhood.com` served six sequential requests — including a
+  // 2.5M-block eth_getLogs — in 0.15-0.21 s each, with open CORS. Its eth_blockNumber
+  // latency is the slowest of the five (825 ms at the 2026-09-10 probe), which costs a
+  // fraction of a second and buys a wallet that works. The rest keep the SDK's order.
   4663: [
+    'https://rpc.mainnet.chain.robinhood.com',
     'https://rpc.nodeflare.app/robinhood/public',
     'https://robinhood.rpc.blxrbdn.com',
     'https://rpc-robinhood.blockmachine.io',
     'https://rpc.ordofi.network',
-    'https://rpc.mainnet.chain.robinhood.com',
   ],
   // Ethereum — 5
   1: [

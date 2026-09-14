@@ -17,10 +17,9 @@
    Now each reading is a `dapp-card`, the same primitive the marketplace and
    the pool-owner panel use, so the dapp has one card language instead of two.
 
-   ONE FETCH, NOT FOUR. The cards are separate components but share a single
-   `useLiveChain()` call made once by the parent and passed down. Four cards
-   each running their own `useEffect` would be four parallel RPC storms on
-   mount and four independent failure states for one underlying question.
+   READS ARE MADE ONCE BY THE PARENT and passed down, but they are no longer
+   one fetch: see "INDEPENDENT READS" below for why a single Promise.all was
+   the wrong shape.
 
    On failure it says so and shows nothing. A dashboard that silently falls
    back to placeholders when the chain is unreachable is worse than one that
@@ -43,7 +42,26 @@
        short or renormalised.
    ============================================================================ */
 
-import { useEffect, useState } from 'react'
+
+/* INDEPENDENT READS, NOT ONE Promise.all (2026-09-14). The four cards used to
+   share a single `Promise.all` over status, holdings, swaps and governance, so
+   one slow log scan (recent swaps) failed or stalled ALL FOUR cards — including
+   three that need nothing but a handful of `eth_call`s. Each reading now
+   settles on its own, and each card shows its own loading, error and ready
+   states. The shared `useChainRead` hook gives each one the failure KIND too,
+   so a scan timeout is not reported as an unreachable chain.
+
+   WHAT THE GOVERNANCE AND FEE CARDS CLAIM IS NOW READ, NOT ASSUMED:
+     · "CUSTODY DELAY 48h · Vault + managers" was false while the Safe owned
+       the Vault and both wrappers directly. The card reads `owner()` and
+       `pendingOwner()` on each and names the actual holder.
+     · "POLICY DELAY · fee policy" was false: the policy timelock holds only the
+       position descriptor. The card lists what it actually owns.
+     · "Protocol fee actually charged 0.10%" was the controller's quote for a NEW
+       0.30% pool. Existing pools charge what their own `slot0.protocolFee`
+       says, which is what the gauge now draws. */
+
+import type { ReactNode } from 'react'
 
 import { Gauge, StackedBar } from './series-charts.tsx'
 import { Methodology } from './ProtocolCharts.tsx'
@@ -53,65 +71,45 @@ import {
   explorerAddress,
   explorerTx,
   formatUnits,
+  readCustodyStatus,
   readGovernanceStatus,
+  readPoolProtocolFees,
   readProtocolStatus,
   readRecentSwaps,
   readVaultHoldings,
   splitFee,
+  type CustodyStatus,
   type GovernanceStatus,
+  type HeldContract,
+  type HolderKind,
+  type PoolProtocolFee,
   type ProtocolStatus,
+  type ReadFailureKind,
   type SwapRecord,
   type VaultHolding,
 } from '../../../lib/chain'
-
-interface LiveData {
-  status: ProtocolStatus
-  holdings: VaultHolding[]
-  swaps: SwapRecord[]
-  gov: GovernanceStatus
-}
-
-type State = { k: 'loading' } | { k: 'error'; message: string } | { k: 'ready'; d: LiveData }
+import { useChainRead, type ReadState } from '../lib/useChainRead'
 
 const D = DEPLOYMENTS[ACTIVE_CHAIN_ID]
-
-function useLiveChain(): State {
-  const [state, setState] = useState<State>({ k: 'loading' })
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const [status, holdings, swaps, gov] = await Promise.all([
-          readProtocolStatus(),
-          readVaultHoldings(),
-          readRecentSwaps(ACTIVE_CHAIN_ID, 5),
-          readGovernanceStatus(),
-        ])
-        if (!cancelled) setState({ k: 'ready', d: { status, holdings, swaps, gov } })
-      } catch (e) {
-        if (!cancelled) {
-          setState({
-            k: 'error',
-            message: e instanceof Error ? e.message : 'Could not reach the chain.',
-          })
-        }
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return state
-}
 
 /* --------------------------------------------------------------------------
    Shared pieces
    -------------------------------------------------------------------------- */
 
-/** A card that owns its loading and error states so no caller repeats them. */
-function LiveCard({
+function failureLine(kind: ReadFailureKind, message: string): string {
+  if (kind === 'scan-timeout') {
+    return `The log scan did not finish in time (the chain answered; the scan ran out of budget): ${message}. No figures shown rather than partial ones.`
+  }
+  if (kind === 'transport') {
+    return `${D.name} did not answer: ${message}. No figures shown rather than stale ones.`
+  }
+  return `Could not read this: ${message}. No figures shown rather than stale ones.`
+}
+
+/** A card that owns its loading and error states so no caller repeats them.
+    The badge renders ONLY once the card's own reading is ready — a "LIVE" chip
+    over an error message is a claim the card cannot back. */
+function LiveCard<T>({
   title,
   state,
   badge,
@@ -119,36 +117,37 @@ function LiveCard({
   children,
 }: {
   title: string
-  state: State
+  state: ReadState<T>
   badge?: string
-  note?: React.ReactNode
-  children: (d: LiveData) => React.ReactNode
+  note?: ReactNode
+  children: (d: T) => ReactNode
 }) {
   return (
     <section className="dapp-card lc-card">
       <div className="dapp-card__head">
         <h2 className="dapp-card__title">{title}</h2>
-        {badge !== undefined && (
+        {badge !== undefined && state.k === 'ready' && (
           <span className="lc-live">
             <span className="dapp-dot dapp-dot--success" aria-hidden="true" />
             {badge}
           </span>
         )}
+        {state.k === 'error' && <span className="dapp-badge dapp-badge--warn">NOT READ</span>}
       </div>
 
-      {state.k === 'loading' && (
+      {(state.k === 'loading' || state.k === 'idle') && (
         <p className="live-note dapp-state--loading" role="status">
           Reading contracts&hellip;
         </p>
       )}
       {state.k === 'error' && (
         <p className="live-note live-note--err" role="status">
-          Could not read the chain: {state.message}. No figures shown rather than stale ones.
+          {failureLine(state.kind, state.message)}
         </p>
       )}
       {state.k === 'ready' && (
         <>
-          {children(state.d)}
+          {children(state.data)}
           {note}
         </>
       )}
@@ -163,7 +162,7 @@ function LiveCard({
  * inside a narrow card keeps the pair within a few characters of each other,
  * which is the only reason a scan works.
  */
-function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return (
     <div className="lc-stat">
       <dt className="dapp-microlabel">{label}</dt>
@@ -201,63 +200,100 @@ function Row({
    The four cards
    -------------------------------------------------------------------------- */
 
-/** pips of PIPS_DENOMINATOR (1e6) as a percentage. 4000 pips → "0.4%". */
-const pipsPct = (pips: number, places = 2) => `${(pips / 10_000).toFixed(places)}%`
+/** pips of PIPS_DENOMINATOR (1e6) as a percentage, without rounding a 999-pip
+    fee up to "0.10%": up to four decimals, trailing zeros trimmed. */
+const pipsPct = (pips: number) => `${Number((pips / 10_000).toFixed(4))}%`
 
-export function ChainStatusCard({ state }: { state: State }) {
+const shortId = (id: string) => `${id.slice(0, 8)}…${id.slice(-4)}`
+
+function PoolFees({ fees, status }: { fees: ReadState<{ pools: PoolProtocolFee[] }>; status: ProtocolStatus }) {
+  if (fees.k === 'loading' || fees.k === 'idle') {
+    return (
+      <p className="live-note dapp-state--loading" role="status">
+        Reading each pool&rsquo;s <code>slot0.protocolFee</code>&hellip;
+      </p>
+    )
+  }
+  if (fees.k === 'error') {
+    return (
+      <p className="live-note live-note--err" role="status">
+        Per-pool protocol fees not read. {failureLine(fees.kind, fees.message)}
+      </p>
+    )
+  }
+  const pools = fees.data.pools
+  const highest = pools.reduce((m, p) => Math.max(m, p.zeroForOnePips, p.oneForZeroPips), 0)
   return (
-    <LiveCard title={`Live on ${D.name}`} state={state} badge="ON CHAIN">
-      {(d) => (
+    <>
+      {pools.length === 0 ? (
+        <p className="live-note">No CL pool has been initialized, so no pool charges a protocol fee.</p>
+      ) : (
         <>
-          {/* WHAT THIS GAUGE MUST NOT DO IS READ `DEFAULT_FEE_PIPS`.
-
-              It used to, and the result was two true statements contradicting
-              each other on one screen: this card said the protocol fee was
-              0.10%, while the activity feed a few hundred pixels away read
-              "3000 pips total · 0 to protocol" on every swap. The feed was
-              right. `DEFAULT_FEE_PIPS` is a constant compiled into the
-              controller, and the controller is only in force if a pool manager
-              points at it — `CLPoolManager.protocolFeeController()` reads
-              address(0) on Robinhood today, so nothing charges anything.
-
-              `effectiveFeePips` is what a pool initialized right now would
-              actually pay: zero unless the controller is BOTH wired and not
-              disabled. The unwired case is called out rather than shown as a
-              tidy zero, because "no fee" and "no fee YET" are different
-              readings and only one of them is a decision. */}
           <Gauge
-            value={d.status.effectiveFeePips}
-            max={d.status.maxFeePips}
-            label="Protocol fee actually charged, against the protocol fee cap"
-            valueText={pipsPct(d.status.effectiveFeePips)}
-            maxText={pipsPct(d.status.maxFeePips, 1)}
-            color={d.status.effectiveFeePips === 0 ? 'success' : 'primary'}
+            value={highest}
+            max={status.maxFeePips}
+            label="Highest protocol fee any live CL pool charges, against the protocol fee cap"
+            valueText={pipsPct(highest)}
+            maxText={pipsPct(status.maxFeePips)}
+            color={highest === 0 ? 'success' : 'primary'}
             caption={
-              !d.status.controllerWired ? (
-                <>
-                  Nothing is taken: no pool manager points at the fee
-                  controller, so its {pipsPct(d.status.configuredFeePips)} default is not in
-                  force.
-                </>
-              ) : d.status.feesDisabled ? (
-                <>
-                  Nothing is taken: the guardian has fees <strong>disabled</strong>. The
-                  configured default is {pipsPct(d.status.configuredFeePips)}.
-                </>
-              ) : (
-                <>
-                  of <code>MAX_PROTOCOL_FEE</code>, the cap compiled into core.
-                </>
-              )
+              <>
+                Highest <code>slot0.protocolFee</code> across {pools.length} CL pool
+                {pools.length === 1 ? '' : 's'}, of <code>MAX_PROTOCOL_FEE</code>.
+              </>
             }
           />
+          <ul className="lc-rows dapp-mt-2">
+            {pools.map((p) => (
+              <li key={p.pool.id} className="lc-row">
+                <span className="lc-row__name">Pool {shortId(p.pool.id)}</span>
+                <span className="lc-row__v tabular">
+                  {p.zeroForOnePips} / {p.oneForZeroPips} pips · LP {p.lpFeePips}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="live-note dapp-mt-2">
+            Protocol fee per direction (0→1 / 1→0), read from each pool&rsquo;s own slot0.
+          </p>
+        </>
+      )}
+      <p className="live-note dapp-mt-2">
+        {!status.controllerWired ? (
+          <>No pool manager points at the fee controller, so it stamps nothing on new pools.</>
+        ) : status.feesDisabled ? (
+          <>The guardian has the controller&rsquo;s fees <strong>disabled</strong>; new pools are stamped with 0.</>
+        ) : (
+          <>
+            For pools initialized <em>from now on</em>, the controller quotes {status.configuredFeePips} pips (
+            {pipsPct(status.configuredFeePips)}) at the 0.30% tier (<code>feeForLpFee(3000)</code>). That is
+            not what existing pools charge.
+          </>
+        )}
+      </p>
+    </>
+  )
+}
+
+export function ChainStatusCard({
+  status,
+  fees,
+}: {
+  status: ReadState<ProtocolStatus>
+  fees: ReadState<{ pools: PoolProtocolFee[] }>
+}) {
+  return (
+    <LiveCard title={`Live on ${D.name}`} state={status} badge="ON CHAIN">
+      {(s) => (
+        <>
+          <PoolFees fees={fees} status={s} />
           <dl className="lc-stats dapp-mt-3">
-            <Stat label="BLOCK" value={<span className="tabular">{d.status.blockNumber.toString()}</span>} />
+            <Stat label="BLOCK" value={<span className="tabular">{s.blockNumber.toString()}</span>} />
             <Stat
               label="POOL MANAGERS"
-              value={d.status.clRegistered && d.status.binRegistered ? 'CL + Bin' : 'not registered'}
+              value={s.clRegistered && s.binRegistered ? 'CL + Bin' : 'not registered'}
             />
-            <Stat label="FEES" value={d.status.feesDisabled ? 'DISABLED' : 'Active'} />
+            <Stat label="CONTROLLER FEES" value={s.feesDisabled ? 'DISABLED' : 'Enabled'} />
           </dl>
         </>
       )}
@@ -265,40 +301,96 @@ export function ChainStatusCard({ state }: { state: State }) {
   )
 }
 
-export function GovernanceCard({ state }: { state: State }) {
+const HOLDER_LABEL: Record<HolderKind, string> = {
+  'custody-timelock': 'Custody timelock',
+  'policy-timelock': 'Policy timelock',
+  safe: 'Safe (no delay)',
+  other: 'another address',
+}
+
+function holderSummary(rows: readonly HeldContract[]): string {
+  const kinds = [...new Set(rows.map((r) => r.ownerKind))]
+  if (kinds.length === 1 && kinds[0]) return HOLDER_LABEL[kinds[0]]
+  return rows.map((r) => `${r.name}: ${HOLDER_LABEL[r.ownerKind]}`).join(' · ')
+}
+
+function CustodyStats({ custody }: { custody: ReadState<CustodyStatus> }) {
+  if (custody.k === 'loading' || custody.k === 'idle') {
+    return (
+      <p className="live-note dapp-state--loading" role="status">
+        Reading <code>owner()</code> on the Vault and both wrappers&hellip;
+      </p>
+    )
+  }
+  if (custody.k === 'error') {
+    return <p className="live-note live-note--err">Ownership not read. {failureLine(custody.kind, custody.message)}</p>
+  }
+  const c = custody.data
+  const core = c.contracts.filter((r) => ['Vault', 'CLPoolManagerOwner', 'BinPoolManagerOwner'].includes(r.name))
+  const custodyHolds = c.contracts.filter((r) => r.ownerKind === 'custody-timelock').map((r) => r.name)
+  const policyHolds = c.contracts.filter((r) => r.ownerKind === 'policy-timelock').map((r) => r.name)
+  const nominated = core.filter((r) => r.pendingKind === 'custody-timelock').map((r) => r.name)
+  const coreDelayed = core.length > 0 && core.every((r) => r.ownerKind === 'custody-timelock')
+
+  return (
+    <>
+      <Stat
+        label="VAULT + MANAGER WRAPPERS"
+        value={holderSummary(core)}
+        sub={
+          coreDelayed
+            ? `behind the ${Number(c.custodyDelaySec) / 3600}h delay`
+            : nominated.length > 0
+              ? `custody timelock nominated on ${nominated.length} of ${core.length}, not accepted — no delay in force`
+              : 'the custody delay does not apply to these'
+        }
+      />
+      <Stat
+        label="CUSTODY TIMELOCK"
+        value={<span className="tabular">{Number(c.custodyDelaySec) / 3600}h</span>}
+        sub={custodyHolds.length > 0 ? `owns ${custodyHolds.join(', ')}` : 'owns none of the tracked contracts'}
+      />
+      <Stat
+        label="POLICY TIMELOCK"
+        value={<span className="tabular">{Number(c.policyDelaySec) / 3600}h</span>}
+        sub={policyHolds.length > 0 ? `owns ${policyHolds.join(', ')}` : 'owns none of the tracked contracts'}
+      />
+    </>
+  )
+}
+
+export function GovernanceCard({
+  gov,
+  custody,
+}: {
+  gov: ReadState<GovernanceStatus>
+  custody: ReadState<CustodyStatus>
+}) {
   return (
     <LiveCard
       title="Registry &amp; governance"
-      state={state}
+      state={gov}
+      badge="ON CHAIN"
       note={
         <p className="live-note lc-note">
-          Delays are read from the timelocks. Owning something is a separate question — the
-          Governance screen reads every <code>owner()</code> live.
+          A delay governs a contract only if the timelock is its <code>owner()</code>, so the holder
+          is read, not assumed. The Governance screen shows every owner and queued operation.
         </p>
       }
     >
-      {(d) => (
+      {(g) => (
         <dl className="lc-stats">
           <Stat
             label="LATCHES LISTED"
-            value={<span className="tabular">{d.gov.hookCount.toString()}</span>}
-            sub={d.gov.hookCount === 0n ? 'none listed yet' : 'read from the registry'}
+            value={<span className="tabular">{g.hookCount.toString()}</span>}
+            sub={g.hookCount === 0n ? 'none listed yet' : 'read from the registry'}
           />
-          <Stat
-            label="CUSTODY DELAY"
-            value={<span className="tabular">{Number(d.gov.custodyDelaySec) / 3600}h</span>}
-            sub="Vault + managers"
-          />
-          <Stat
-            label="POLICY DELAY"
-            value={<span className="tabular">{Number(d.gov.policyDelaySec) / 3600}h</span>}
-            sub="fee policy"
-          />
+          <CustodyStats custody={custody} />
           <Stat
             label="REGISTRY"
             value={
               <a
-                href={explorerAddress(ACTIVE_CHAIN_ID, d.gov.registry)}
+                href={explorerAddress(ACTIVE_CHAIN_ID, g.registry)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="lc-link"
@@ -377,11 +469,12 @@ function HoldingSplit({ h }: { h: VaultHolding }) {
   )
 }
 
-export function VaultHoldingsCard({ state }: { state: State }) {
+export function VaultHoldingsCard({ holdings }: { holdings: ReadState<VaultHolding[]> }) {
   return (
     <LiveCard
       title="Vault holdings"
-      state={state}
+      state={holdings}
+      badge="ON CHAIN"
       note={
         <Methodology label="Why token units and why this split">
           <p className="live-note">
@@ -394,13 +487,13 @@ export function VaultHoldingsCard({ state }: { state: State }) {
         </Methodology>
       }
     >
-      {(d) =>
-        d.holdings.length === 0 ? (
+      {(list) =>
+        list.length === 0 ? (
           <p className="live-note">The Vault holds no tracked tokens on this deployment.</p>
         ) : (
           <>
             <ul className="lc-rows">
-              {d.holdings.map((h) => (
+              {list.map((h) => (
                 <Row
                   key={h.token}
                   href={explorerAddress(ACTIVE_CHAIN_ID, h.token)}
@@ -409,7 +502,7 @@ export function VaultHoldingsCard({ state }: { state: State }) {
                 />
               ))}
             </ul>
-            {d.holdings.map((h) => (
+            {list.map((h) => (
               <HoldingSplit key={`split-${h.token}`} h={h} />
             ))}
           </>
@@ -473,16 +566,17 @@ function SwapFeeSplit({ s }: { s: SwapRecord }) {
   )
 }
 
-export function RecentSwapsCard({ state }: { state: State }) {
+
+export function RecentSwapsCard({ swaps }: { swaps: ReadState<SwapRecord[]> }) {
   return (
-    <LiveCard title="Recent swaps" state={state}>
-      {(d) =>
-        d.swaps.length === 0 || !d.swaps[0] ? (
+    <LiveCard title="Recent swaps" state={swaps} badge="ON CHAIN">
+      {(list) =>
+        list.length === 0 || !list[0] ? (
           <p className="live-note">No swaps recorded on this deployment yet.</p>
         ) : (
           <>
             <ul className="lc-rows">
-              {d.swaps.map((s) => {
+              {list.map((s) => {
                 const { lpPips } = splitFee(s.feePips, s.protocolFeePips)
                 return (
                   <Row
@@ -494,7 +588,7 @@ export function RecentSwapsCard({ state }: { state: State }) {
                 )
               })}
             </ul>
-            <SwapFeeSplit s={d.swaps[0]} />
+            <SwapFeeSplit s={list[0]} />
           </>
         )
       }
@@ -503,21 +597,23 @@ export function RecentSwapsCard({ state }: { state: State }) {
 }
 
 /**
- * The four cards in a grid, sharing one read.
- *
- * Kept as a single export so the dashboard mounts one thing and the fetch
- * stays singular. The cards are exported individually as well, for any screen
- * that wants one without the rest.
+ * The four cards in a grid. Each reading is its own `useChainRead`, so a slow
+ * log scan delays only the card that needs it.
  */
 export function LiveChainPanel() {
-  const state = useLiveChain()
+  const status = useChainRead(`lc:status:${ACTIVE_CHAIN_ID}`, () => readProtocolStatus())
+  const fees = useChainRead(`lc:fees:${ACTIVE_CHAIN_ID}`, () => readPoolProtocolFees())
+  const gov = useChainRead(`lc:gov:${ACTIVE_CHAIN_ID}`, () => readGovernanceStatus())
+  const custody = useChainRead(`lc:custody:${ACTIVE_CHAIN_ID}`, () => readCustodyStatus())
+  const holdings = useChainRead(`lc:holdings:${ACTIVE_CHAIN_ID}`, () => readVaultHoldings())
+  const swaps = useChainRead(`lc:swaps:${ACTIVE_CHAIN_ID}`, () => readRecentSwaps(ACTIVE_CHAIN_ID, 5))
 
   return (
     <div className="lc-grid">
-      <ChainStatusCard state={state} />
-      <GovernanceCard state={state} />
-      <VaultHoldingsCard state={state} />
-      <RecentSwapsCard state={state} />
+      <ChainStatusCard status={status.state} fees={fees.state} />
+      <GovernanceCard gov={gov.state} custody={custody.state} />
+      <VaultHoldingsCard holdings={holdings.state} />
+      <RecentSwapsCard swaps={swaps.state} />
     </div>
   )
 }

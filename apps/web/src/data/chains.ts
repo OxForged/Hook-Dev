@@ -288,4 +288,13 @@ export function chainByKey(key: ChainKey): ChainRow {
   return ROW_BY_KEY[key]
 }
 
+/** The row for the one chain this build reads (`ACTIVE_CHAIN_ID`). Throws at
+    module load if the generated list lacks it, rather than labelling reads
+    with some other chain's name. */
+export const ACTIVE_CHAIN_ROW: ChainRow = (() => {
+  const row = CHAIN_ROWS.find((r) => r.chainId === ACTIVE_CHAIN_ID)
+  if (!row) throw new Error(`chains.generated.ts has no row for the build's chain ${ACTIVE_CHAIN_ID}`)
+  return row
+})()
+
 export type { ChainKey, ChainNetwork, SdkChain }

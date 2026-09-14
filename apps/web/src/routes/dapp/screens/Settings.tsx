@@ -28,9 +28,9 @@ import { useMemo } from 'react'
 import { ChainMark } from '../../../components/ChainMark.tsx'
 import { ThemeToggle } from '../../../components/ThemeToggle.tsx'
 import type { ChainRow } from '../../../data/chains.ts'
-import { explorerAddressUrl } from '../../../data/chains.ts'
+import { ACTIVE_CHAIN_ROW, explorerAddressUrl } from '../../../data/chains.ts'
 import { ChainTag } from '../../../components/ChainTag.tsx'
-import { rpcsFor } from '../../../lib/chain'
+import { logRpcsFor, rpcsFor } from '../../../lib/chain'
 import { walletConnectEnabled } from '../../../lib/wallet.ts'
 import { stocksConfigured } from '../../../lib/prices.ts'
 import { BarList } from '../components/charts.tsx'
@@ -98,6 +98,7 @@ export default function Settings() {
   const data = useMemo(loadSettings, [])
   const { net, setNet, browsingChain } = useDapp()
   const endpoints = useMemo(() => rpcsFor(browsingChain), [browsingChain])
+  const logEndpoints = useMemo(() => logRpcsFor(browsingChain), [browsingChain])
   const selected = useMemo(
     () => data.networks.find((c) => c.key === net) ?? data.networks[0],
     [data.networks, net],
@@ -146,12 +147,17 @@ export default function Settings() {
       <div className="dapp-stack">
         <section className="dapp-card dapp-card--config">
           <h2 className="dapp-microlabel" id="dapp-net-label">
-            DEFAULT NETWORK
+            INSPECT A NETWORK
           </h2>
           <p className="dapp-note">
+            <strong>
+              This build reads {ACTIVE_CHAIN_ROW.name} ({ACTIVE_CHAIN_ROW.chainId}) and nothing else.
+            </strong>{' '}
+            Picking a chain below shows its verified endpoint count and contracts; it does not change what any
+            screen reads, and the header keeps naming {ACTIVE_CHAIN_ROW.name}.{' '}
             {data.networks.length} target chains, each confirmed to support EIP-1153 by a live
             TSTORE probe. {deployedNames.length} of them carry Latch contracts (
-            {deployedNames.join(', ')}); selecting any other gives you an RPC, not a deployment.
+            {deployedNames.join(', ')}); any other gives you an RPC, not a deployment.
           </p>
 
           <NetworkGroup
@@ -272,9 +278,24 @@ export default function Settings() {
             ))}
           </ol>
           <p className="dapp-note">
-            Tried in this order. None carries an API key. A rate-limited endpoint falls straight
-            through to the next rather than being retried, so one pass asks all of them before any
-            is asked twice.
+            Reads (<code>eth_call</code>, <code>eth_blockNumber</code>) try them in this order. A
+            rate-limited endpoint falls straight through to the next rather than being retried, so one
+            pass asks all of them before any is asked twice. A keyed endpoint set at build time as{' '}
+            <code>VITE_LATCH_RPC_{browsingChain}</code> comes first.
+          </p>
+          <p className="dapp-microlabel dapp-microlabel--tight dapp-mt-3">LOG QUERIES (eth_getLogs) TRY</p>
+          <ol className="live-list live-list--ordered">
+            {logEndpoints.map((url, i) => (
+              <li key={url}>
+                <span className="tabular">{i + 1}.</span>{' '}
+                <span className="dapp-apikey__value">{url}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="dapp-note">
+            The same endpoints, with the ones the SDK verified to serve a whole-history log range in
+            one request moved first. A log scan asks for the whole range once and falls back to
+            9,000-block windows only if every endpoint refuses.
           </p>
         </section>
 
@@ -288,7 +309,7 @@ export default function Settings() {
               </span>
             </li>
             <li>
-              <span>US equity quotes</span>
+              <span>US equity quotes (Finnhub){stocksConfigured() ? '' : ' — the equity price rail is hidden on every screen'}</span>
               <span className={stocksConfigured() ? 'dapp-badge dapp-badge--ok' : 'dapp-badge dapp-badge--mute'}>
                 {stocksConfigured() ? 'CONFIGURED' : 'NOT SET'}
               </span>

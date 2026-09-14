@@ -54,6 +54,7 @@ import {
   isPoolId,
   readDistributor,
   readDistributorFor,
+  resolvePoolHook,
   shortHex,
   type DistributorCommon,
   type DistributorState,
@@ -87,14 +88,22 @@ type Load =
 
 export default function ProtocolEpochs() {
   const { poolId: raw } = useParams<{ poolId: string }>()
-  const { ref: hook, malformed, withHook } = useHookRef()
+  const { ref: pinned, refs, malformed, withHook } = useHookRef()
 
   const poolId = raw && isPoolId(raw) ? (raw.trim() as `0x${string}`) : null
-  const key = hook && poolId ? `epochs:${hook.address}:${poolId}` : null
+  const key = refs.length > 0 && poolId ? `epochs:${pinned?.address ?? 'by-key'}:${poolId}` : null
+  const hook = pinned
 
   const { state, reload } = useChainRead<Load>(key, async () => {
-    if (!hook || !poolId) throw new Error('unreachable')
-    const found = await readDistributorFor(hook.address, poolId)
+    if (!poolId) throw new Error('unreachable')
+    /* The pool's own key names its hook, unless ?hook= pinned one. */
+    let hookAddress = pinned?.address ?? null
+    if (!hookAddress) {
+      const r = await resolvePoolHook(poolId)
+      if (r.k !== 'found') return { k: 'not-configured' }
+      hookAddress = r.hook.address
+    }
+    const found = await readDistributorFor(hookAddress, poolId)
     if (!found.hasCode) return { k: 'no-code' }
     if (!found.answersAsHook) return { k: 'not-a-hook' }
     if (!found.configured) return { k: 'not-configured' }
@@ -104,7 +113,7 @@ export default function ProtocolEpochs() {
 
   return (
     <>
-      <ScreenIntro title="Epoch timeline" hook={hook ?? undefined}>
+      <ScreenIntro title="Epoch timeline" hook={hook ?? undefined} live={state.k === 'ready'}>
         <p>
           The distributor named by <code>distributorOf(poolId)</code>, its epoch history and the two
           permissionless calls that keep it moving. Without something calling{' '}
@@ -119,16 +128,16 @@ export default function ProtocolEpochs() {
         )}
       </ScreenIntro>
 
-      {!hook && <NotDeployed malformed={malformed} />}
+      {refs.length === 0 && <NotDeployed malformed={malformed} />}
 
-      {hook && !poolId && (
+      {refs.length > 0 && !poolId && (
         <Empty title="That is not a pool id">
           <p>A pool id is 32 bytes — 0x followed by 64 hex characters.</p>
         </Empty>
       )}
 
       {state.k === 'loading' && <Reading what="the distributor and its epochs" />}
-      {state.k === 'error' && <Unreachable message={state.message} onRetry={reload} />}
+      {state.k === 'error' && <Unreachable message={state.message} kind={state.kind} onRetry={reload} />}
 
       {state.k === 'ready' && state.data.k === 'no-code' && (
         <Empty title="There is no contract at that hook address">

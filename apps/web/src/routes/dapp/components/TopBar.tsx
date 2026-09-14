@@ -2,26 +2,30 @@
    Header — README § Dapp shell.
 
    Screen title + subtitle, a mono block chip carrying the real chain head
-   behind a pulsing green dot, and the primary "Deploy Latch" button — flat
+   behind a pulsing green dot, and the primary "List a Latch" button — flat
    Option B blue, no sheen: B draws no decorative motion on a control.
 
    TYPE IS SET IN dapp.css, NOT HERE. The title is Option B's serif heading
    voice at 500, sized to the bar it shares with chips and a button;
    `.dapp-header__title` is the single place that decides it.
 
-   Plus two pieces of truth-telling. The sample-data chip: every figure in this
-   dapp is a placeholder, so the shell says so where a visitor reading the block
-   height and the KPIs will see it. And the network chip: the selected chain
-   with, next to it, whether Latch is actually deployed there. Ten of the eleven
-   target chains carry no contracts, and the shell must not imply otherwise.
+   Plus two pieces of truth-telling. The live chip: every figure in this dapp is
+   read from the deployed contracts of the build's chain, and the chip says which
+   network that is (MAINNET / TESTNET). And the network chip: that chain, with
+   whether Latch is actually deployed there.
 
    Below the bar, two reference-price rails — crypto and US equities — sit side
    by side in `.dapp-tickers` above ~720px, and stack to full width below it.
-   BOTH render here unconditionally, including the equity rail's "not
-   configured" line when VITE_FINNHUB_API_KEY is unset. That is the difference
-   from the landing header, which hides the equity rail in that case: the dapp's
-   reader is an operator, for whom a missing build variable is an actionable
-   fact rather than a broken promise on a marketing page.
+   The equity rail renders only when VITE_FINNHUB_API_KEY is set. Its "not
+   configured" line used to repeat on every screen; a missing build variable is
+   a fact about the build, and it is stated ONCE, in Settings → Build
+   configuration.
+
+   THE NETWORK CHIPS NAME THE BUILD'S CHAIN, NOT THE SETTINGS PICK. They used to
+   render whatever chain was picked on the Settings screen while every read
+   still went to ACTIVE_CHAIN_ID, so picking Base produced "every figure is read
+   from the deployed Base contracts" above Robinhood data. One build reads one
+   chain, and the chips say which.
 
    The rails are external reference quotes, NOT Latch pool prices, and they say
    so — the pool price is read from `sqrtPriceX96` and lives in PoolPriceCard.
@@ -49,7 +53,7 @@
    TESTNET chip is first and is on screen without scrolling at every width.
    Nothing is dropped, only moved: the chain switcher goes to the drawer foot
    (its absolutely positioned menu would be clipped by a scrolling row), and
-   "Deploy Latch" is the drawer's "Deploy a Latch" row.
+   "List a Latch" is the drawer's "List a Latch" row.
    ============================================================================ */
 
 import { Link } from 'react-router-dom'
@@ -146,13 +150,17 @@ export function TopBar({
   const rails = (
     <>
       <TickerStrip provider={coinGeckoCrypto} state={crypto} className="ltk--dapp dapp-tickers__rail" />
-      <span className="dapp-tickers__divider" aria-hidden="true" />
-      <TickerStrip
-        provider={finnhubStocks}
-        state={stocks}
-        configured={stocksConfigured()}
-        className="ltk--dapp dapp-tickers__rail"
-      />
+      {stocksConfigured() && (
+        <>
+          <span className="dapp-tickers__divider" aria-hidden="true" />
+          <TickerStrip
+            provider={finnhubStocks}
+            state={stocks}
+            configured
+            className="ltk--dapp dapp-tickers__rail"
+          />
+        </>
+      )}
     </>
   )
 
@@ -223,7 +231,7 @@ export function TopBar({
             {blockChip}
 
             <Link to={deployHref} className="dapp-btn dapp-btn--primary dapp-btn--sm">
-              Deploy Latch
+              List a Latch
             </Link>
           </div>
         </div>

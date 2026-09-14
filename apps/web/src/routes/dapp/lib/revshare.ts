@@ -16,18 +16,23 @@
    1. A PoolKey CANNOT BE DERIVED FROM A PoolId. The id is `keccak(abi.encode(
       key))`; there is no inverse. Every owner and maintenance call takes a
       `PoolKey calldata`, so a screen holding only an id cannot build the
-      calldata. `resolvePoolKey` below finds the key in one of the two places
-      it is actually recorded — a distributor's `poolKey()`, or the CL pool
-      manager's `Initialize` log — and returns null when neither answers. A
-      null there disables the write buttons and says why; it never produces a
-      guessed key.
+      calldata. `resolvePoolKey` below finds the key where it is actually
+      recorded — a distributor's `poolKey()`, the CL pool manager's
+      `poolIdToPoolKey(id)`, or its `Initialize` log — and returns null when
+      none answers. A null there disables the write buttons and says why; it
+      never produces a guessed key.
 
-   2. THERE ARE NO CUMULATIVE COUNTERS. `RevShareHook` has no
-      `totalTaken(poolId, currency)`. The only record of what a pool has ever
-      taken is the `RevShareTaken` log stream, so `readLifetime` sums logs and
-      returns the block range it summed — which the UI must print. It is a
-      total over a scanned window, and the window is bounded by what the RPC
-      will serve.
+      THE KEY ALSO NAMES THE HOOK. `poolKey.hooks` is part of the pool id, so a
+      pool lives on exactly one hook forever. These screens used to read every
+      pool id against the address book's CURRENT hook — which hosts no pools —
+      while LTT1/LTT2 lives on the retired 0x23CE…. `resolvePoolHook` reads the
+      hook out of the pool's own key instead.
+
+   2. LIFETIME TOTALS ARE SUMMED FROM LOGS. `readLifetime` sums
+      `RevShareTaken` and returns the block range it summed, which the UI
+      prints. Both Robinhood hooks also keep a `totalTaken(poolId, currency)`
+      counter, which the UI shows beside the sum where the hook answers; the
+      Sepolia hook predates the counter and reverts.
 
    3. `claimable` IS KEYED (recipient, currency) GLOBALLY. Not per pool. A
       beneficiary of two pools has ONE balance, and `claim(currency, to)` pays
@@ -67,6 +72,7 @@ import {
   client,
   formatUnits,
   readContractClockReading,
+  classifyReadFailure,
   scanWindows,
   scanWindowsBackward,
   scanWindowsMulti,
@@ -117,7 +123,20 @@ export const SPLIT_DENOMINATOR = 10_000
 
 export interface HookRef {
   address: Address
-  source: 'url' | 'build' | 'deployment'
+  source: 'url' | 'build' | 'deployment' | 'pool-key'
+  /** The address book's verdict, when it knows the hook. */
+  status?: 'current' | 'retired'
+}
+
+/** Every RevShareHook the address book lists for this build's chain — current
+    first, then each retired one that still hosts pools. */
+export const KNOWN_HOOKS: readonly HookRef[] = [...DEPLOYMENTS[ACTIVE_CHAIN_ID].revShareHooks]
+  .sort((a, b) => (a.status === b.status ? 0 : a.status === 'current' ? -1 : 1))
+  .map((h) => ({ address: getAddress(h.address), source: 'deployment' as const, status: h.status }))
+
+/** The address book's status for a hook address, if it lists it. */
+export function knownHookStatus(address: string): 'current' | 'retired' | undefined {
+  return KNOWN_HOOKS.find((h) => h.address.toLowerCase() === address.toLowerCase())?.status
 }
 
 const ENV_HOOK = ((): Address | null => {
@@ -149,13 +168,31 @@ const DEPLOYED_HOOK = ((): Address | null => {
  * renders "not deployed on this chain" rather than reading zeros off nothing.
  */
 export function resolveHook(urlParam: string | null | undefined): HookRef | null {
+  return resolveHooks(urlParam)[0] ?? null
+}
+
+/**
+ * Every hook a screen that is not about one pool should read.
+ *
+ *   ?hook= or VITE_REVSHARE_HOOK   exactly that hook (an explicit choice)
+ *   otherwise                      every RevShareHook in the address book,
+ *                                  current AND retired — a retired hook's pools,
+ *                                  claimable balances and proposals are still live
+ */
+export function resolveHooks(urlParam: string | null | undefined): HookRef[] {
   const trimmed = urlParam?.trim() ?? ''
   if (trimmed !== '' && isAddress(trimmed, { strict: false })) {
-    return { address: getAddress(trimmed), source: 'url' }
+    const address = getAddress(trimmed)
+    const status = knownHookStatus(address)
+    return [{ address, source: 'url', ...(status ? { status } : {}) }]
   }
-  if (ENV_HOOK) return { address: ENV_HOOK, source: 'build' }
-  if (DEPLOYED_HOOK) return { address: DEPLOYED_HOOK, source: 'deployment' }
-  return null
+  if (ENV_HOOK) {
+    const status = knownHookStatus(ENV_HOOK)
+    return [{ address: ENV_HOOK, source: 'build', ...(status ? { status } : {}) }]
+  }
+  if (KNOWN_HOOKS.length > 0) return [...KNOWN_HOOKS]
+  if (DEPLOYED_HOOK) return [{ address: DEPLOYED_HOOK, source: 'deployment' }]
+  return []
 }
 
 /** True when a `?hook=` was supplied but is not an address — worth saying so. */
@@ -249,7 +286,7 @@ export function keyTuple(k: PoolKeyStruct): PoolKeyTuple {
 export interface KeyResolution {
   key: PoolKeyStruct
   /** Where the key came from. Shown in the UI — provenance is the point. */
-  via: 'distributor.poolKey()' | 'CLPoolManager.Initialize log'
+  via: 'distributor.poolKey()' | 'CLPoolManager.poolIdToPoolKey()' | 'CLPoolManager.Initialize log'
   /** Only set for the log path: the first block scanned. */
   scannedFrom?: bigint
 }
@@ -291,6 +328,10 @@ export async function resolvePoolKey(
       }
     }
   }
+
+  /* ONE eth_call: the pool manager stores every initialized pool's key. */
+  const recorded = await readRecordedPoolKey(poolId, poolManager)
+  if (recorded) return { key: recorded, via: 'CLPoolManager.poolIdToPoolKey()' }
 
   const fromBlock = DEPLOYMENTS[REVSHARE_CHAIN_ID].deployedAtBlock
 
@@ -336,6 +377,60 @@ export async function resolvePoolKey(
     via: 'CLPoolManager.Initialize log',
     scannedFrom: fromBlock,
   }
+}
+
+const POOL_ID_TO_KEY_ABI = [
+  {
+    type: 'function',
+    name: 'poolIdToPoolKey',
+    stateMutability: 'view',
+    inputs: [{ name: 'id', type: 'bytes32' }],
+    outputs: [
+      { name: 'currency0', type: 'address' },
+      { name: 'currency1', type: 'address' },
+      { name: 'hooks', type: 'address' },
+      { name: 'poolManager', type: 'address' },
+      { name: 'fee', type: 'uint24' },
+      { name: 'parameters', type: 'bytes32' },
+    ],
+  },
+] as const
+
+/**
+ * `poolIdToPoolKey(id)` on a CL pool manager — the key the manager recorded at
+ * `initialize`. A pool the manager never initialized reads back a zero struct,
+ * so a key is accepted only when its `poolManager` is the manager asked.
+ * A transport failure throws; only "not recorded" is null.
+ */
+export async function readRecordedPoolKey(poolId: Hex, poolManager: Address): Promise<PoolKeyStruct | null> {
+  const c = client(REVSHARE_CHAIN_ID)
+  const [currency0, currency1, hooks, manager, fee, parameters] = await c.readContract({
+    address: poolManager,
+    abi: POOL_ID_TO_KEY_ABI,
+    functionName: 'poolIdToPoolKey',
+    args: [poolId],
+  })
+  if (manager.toLowerCase() !== poolManager.toLowerCase()) return null
+  return { currency0, currency1, hooks, poolManager: manager, fee: Number(fee), parameters }
+}
+
+export type PoolHookResolution =
+  | { k: 'found'; hook: HookRef; key: PoolKeyStruct }
+  | { k: 'no-hook'; key: PoolKeyStruct }
+  | { k: 'not-initialized' }
+
+/**
+ * Which hook a pool lives on, read from the pool's own key on the build's CL
+ * pool manager. The hook is part of the pool id, so this is the only answer —
+ * no address-book guess can be more right than it.
+ */
+export async function resolvePoolHook(poolId: Hex): Promise<PoolHookResolution> {
+  const key = await readRecordedPoolKey(poolId, DEPLOYMENTS[REVSHARE_CHAIN_ID].clPoolManager)
+  if (!key) return { k: 'not-initialized' }
+  if (key.hooks.toLowerCase() === ZERO_ADDRESS) return { k: 'no-hook', key }
+  const address = getAddress(key.hooks)
+  const status = knownHookStatus(address)
+  return { k: 'found', key, hook: { address, source: 'pool-key', ...(status ? { status } : {}) } }
 }
 
 /* ---------------------------------------------------------------------------
@@ -395,6 +490,11 @@ export interface LifetimeRow {
   lpDonated: bigint
   toBeneficiaries: bigint
   toDistributor: bigint
+  /**
+   * `totalTaken(poolId, currency)` — the hook's own lifetime counter, read at the
+   * scan's `toBlock`. `null` when the hook predates the counter and reverts.
+   */
+  counter: bigint | null
 }
 
 export interface Lifetime {
@@ -410,12 +510,15 @@ export interface Lifetime {
 /**
  * Sum `RevShareTaken` for one pool.
  *
- * This is an approximation over a scanned window, and every caller must label
- * it as one. There is no `totalTaken` on the hook; if the RPC's log retention
- * does not reach `deployedAtBlock`, earlier swaps are simply not counted and
- * nothing on chain can tell us how much was missed.
+ * A sum over a scanned window, and every caller must label it as one. Each row
+ * also carries the hook's own `totalTaken(poolId, currency)` counter where the
+ * hook has one (both Robinhood hooks do; Sepolia's reverts), so a scan that came
+ * back short is visible as a mismatch rather than silently low.
  */
 export async function readLifetime(hook: Address, poolId: Hex): Promise<Lifetime> {
+  /* `totalTaken` exists on both Robinhood hooks and is shown beside this sum;
+     the log stream stays the source because it carries the three-way split
+     the counter does not. */
   const c = client(REVSHARE_CHAIN_ID)
   const fromBlock = DEPLOYMENTS[REVSHARE_CHAIN_ID].deployedAtBlock
 
@@ -461,6 +564,20 @@ export async function readLifetime(hook: Address, poolId: Hex): Promise<Lifetime
       lpDonated: r.lp,
       toBeneficiaries: r.ben,
       toDistributor: r.dist,
+      counter: await c
+        .readContract({
+          address: hook,
+          abi: REV_SHARE_HOOK_ABI,
+          functionName: 'totalTaken',
+          args: [poolId, r.address],
+          blockNumber: toBlock,
+        })
+        .catch((e: unknown) => {
+          /* A revert is "this hook has no counter". Anything else is the chain
+             failing to answer, and must not read as that. */
+          if (classifyReadFailure(e) === 'transport') throw e
+          return null
+        }),
     })),
   )
 
@@ -652,6 +769,8 @@ export async function readPoolOverview(hook: Address, poolId: Hex): Promise<Pool
    --------------------------------------------------------------------------- */
 
 export interface OwnedPool {
+  /** The hook this pool's configuration lives on. */
+  hook: HookRef
   poolId: Hex
   config: PoolConfig
   distributor: Address | null
@@ -691,9 +810,27 @@ export interface OwnedPools {
  * pool claimed by this address and later handed to somebody else, and it makes
  * the result correct even if the log scan missed a transfer.
  */
-export async function readOwnedPools(hook: Address, owner: Address): Promise<OwnedPools> {
+export async function readOwnedPools(hooks: readonly HookRef[], owner: Address): Promise<OwnedPools> {
   const c = client(REVSHARE_CHAIN_ID)
   const fromBlock = DEPLOYMENTS[REVSHARE_CHAIN_ID].deployedAtBlock
+  /* EVERY known hook in ONE query each: `getLogs` takes an address list, and
+     `l.address` says which hook emitted. A pool claimed on the retired hook is
+     still a pool this address owns. */
+  const addresses = hooks.map((h) => h.address)
+  const hookOf = (a: string): HookRef =>
+    hooks.find((h) => h.address.toLowerCase() === a.toLowerCase()) ?? { address: getAddress(a), source: 'deployment' }
+  if (addresses.length === 0) {
+    const clock = await readContractClockReading(REVSHARE_CHAIN_ID)
+    return {
+      pools: [],
+      transferredAway: 0,
+      fromBlock,
+      toBlock: clock.rpcBlockNumber,
+      blockNumber: clock.rpcBlockNumber,
+      contractBlockNumber: clock.contractBlockNumber,
+      timestamp: clock.timestamp,
+    }
+  }
 
   /* WINDOWED, AND ALL THREE QUERIES SHARE ONE WALK. These were three
      `deployedAtBlock -> 'latest'` calls the endpoint refuses, which is why this
@@ -705,40 +842,40 @@ export async function readOwnedPools(hook: Address, owner: Address): Promise<Own
      any of the three contributes — so viem's per-event inference survives and
      the three differently-shaped logs come back as one list of ids. */
   const toBlock = await c.getBlockNumber()
-  const candidateIds = await scanWindowsMulti<Hex>(
+  const candidateIds = await scanWindowsMulti<string>(
     fromBlock,
     toBlock,
     [
       async (f, t) =>
-        (await c.getLogs({ address: hook, event: POOL_CLAIMED_EVENT, args: { owner }, fromBlock: f, toBlock: t }))
-          .map((l) => l.args.poolId)
-          .filter((id): id is Hex => id !== undefined),
+        (await c.getLogs({ address: addresses, event: POOL_CLAIMED_EVENT, args: { owner }, fromBlock: f, toBlock: t }))
+          .flatMap((l) => (l.args.poolId === undefined ? [] : [`${l.address.toLowerCase()}|${l.args.poolId}`])),
       async (f, t) =>
-        (await c.getLogs({ address: hook, event: POOL_OWNER_CHANGED_EVENT, args: { to: owner }, fromBlock: f, toBlock: t }))
-          .map((l) => l.args.poolId)
-          .filter((id): id is Hex => id !== undefined),
+        (await c.getLogs({ address: addresses, event: POOL_OWNER_CHANGED_EVENT, args: { to: owner }, fromBlock: f, toBlock: t }))
+          .flatMap((l) => (l.args.poolId === undefined ? [] : [`${l.address.toLowerCase()}|${l.args.poolId}`])),
       async (f, t) =>
-        (await c.getLogs({ address: hook, event: POOL_OWNER_CHANGED_EVENT, args: { from: owner }, fromBlock: f, toBlock: t }))
-          .map((l) => l.args.poolId)
-          .filter((id): id is Hex => id !== undefined),
+        (await c.getLogs({ address: addresses, event: POOL_OWNER_CHANGED_EVENT, args: { from: owner }, fromBlock: f, toBlock: t }))
+          .flatMap((l) => (l.args.poolId === undefined ? [] : [`${l.address.toLowerCase()}|${l.args.poolId}`])),
     ],
     'pools you own (PoolClaimed + PoolOwnerChanged)',
   )
 
-  const candidates = new Set<Hex>(candidateIds)
-
-  const read = <T,>(functionName: string, args: readonly unknown[]) =>
-    c.readContract({
-      address: hook,
-      abi: REV_SHARE_HOOK_ABI,
-      functionName: functionName as 'getConfig',
-      args: args as never,
-    }) as Promise<T>
+  const candidates = new Set<string>(candidateIds)
 
   const pools: OwnedPool[] = []
   let transferredAway = 0
 
-  for (const poolId of candidates) {
+  for (const candidate of candidates) {
+    const [hookAddress = '', rawId = ''] = candidate.split('|')
+    const poolId = rawId as Hex
+    const hookRef = hookOf(hookAddress)
+    const hook = hookRef.address
+    const read = <T,>(functionName: string, args: readonly unknown[]) =>
+      c.readContract({
+        address: hook,
+        abi: REV_SHARE_HOOK_ABI,
+        functionName: functionName as 'getConfig',
+        args: args as never,
+      }) as Promise<T>
     const current = await read<Address>('poolOwner', [poolId])
     if (current.toLowerCase() !== owner.toLowerCase()) {
       transferredAway += 1
@@ -752,6 +889,7 @@ export async function readOwnedPools(hook: Address, owner: Address): Promise<Own
       readPendingConfig(c, REVSHARE_CHAIN_ID, hook, poolId),
     ])
     pools.push({
+      hook: hookRef,
       poolId,
       config: {
         owner: config.owner,
@@ -1138,6 +1276,62 @@ export async function readCurrenciesSeen(
   }
   const tokens = await Promise.all([...seen.values()].map(readToken))
   return { tokens, fromBlock, toBlock }
+}
+
+export interface HookClaimable {
+  hook: HookRef
+  rows: ClaimableRow[]
+  /** Currencies this hook's RevShareTaken logs named (before any pasted token). */
+  discovered: number
+}
+
+/**
+ * `claimable` for `recipient` on EVERY hook, current and retired.
+ *
+ * A balance is keyed by hook as well as by currency: the retired 0x23CE… holds
+ * its own `claimable` mapping, and a beneficiary paid there is paid there
+ * forever. Reading only the current hook showed "no currency to check" to an
+ * address holding a real balance on the retired one. One `getLogs` per scan
+ * covers every hook (address list), and `l.address` attributes each currency.
+ */
+export async function readClaimableAcross(
+  hooks: readonly HookRef[],
+  recipient: Address,
+  extra: Address | null,
+): Promise<{ perHook: HookClaimable[]; fromBlock: bigint; toBlock: bigint }> {
+  const c = client(REVSHARE_CHAIN_ID)
+  const fromBlock = DEPLOYMENTS[REVSHARE_CHAIN_ID].deployedAtBlock
+  const toBlock = await c.getBlockNumber()
+  if (hooks.length === 0) return { perHook: [], fromBlock, toBlock }
+
+  const seen = await scanWindows(
+    fromBlock,
+    toBlock,
+    async (from, to) =>
+      (
+        await c.getLogs({
+          address: hooks.map((h) => h.address),
+          event: REV_SHARE_TAKEN_EVENT,
+          fromBlock: from,
+          toBlock: to,
+        })
+      ).flatMap((l) => (l.args.currency ? [{ hook: l.address.toLowerCase(), currency: l.args.currency }] : [])),
+    'currencies each hook has paid in (RevShareTaken)',
+  )
+
+  const perHook = await Promise.all(
+    hooks.map(async (hook): Promise<HookClaimable> => {
+      const currencies = new Map<string, Address>()
+      for (const x of seen) {
+        if (x.hook === hook.address.toLowerCase()) currencies.set(x.currency.toLowerCase(), x.currency)
+      }
+      const discovered = currencies.size
+      if (extra) currencies.set(extra.toLowerCase(), extra)
+      const tokens = await Promise.all([...currencies.values()].map(readToken))
+      return { hook, rows: await readGlobalClaimable(hook.address, recipient, tokens), discovered }
+    }),
+  )
+  return { perHook, fromBlock, toBlock }
 }
 
 /**

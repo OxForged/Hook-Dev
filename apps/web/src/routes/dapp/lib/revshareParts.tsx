@@ -7,7 +7,8 @@
    another and different from data, and none of them may show a figure.
 
      <Reading>       a read is in flight. Names what is being read.
-     <Unreachable>   the RPC did not answer. Says so, offers a retry, and
+     <Unreachable>   a read failed. Says HOW (scan timeout, unreachable,
+                     revert), offers a retry, and
                      shows NO numbers at all.
      <NotDeployed>   NOT CONFIGURED: there is no RevShareHook address to read
                      from. `dapp-state--unconfigured`, never the empty box.
@@ -31,7 +32,7 @@
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
 
-import { DEPLOYMENTS } from '../../../lib/chain'
+import { DEPLOYMENTS, type ReadFailureKind } from '../../../lib/chain'
 import {
   REVSHARE_CHAIN_ID,
   amountWithUnit,
@@ -92,14 +93,44 @@ export function Reading({ what }: { what: string }) {
   )
 }
 
-export function Unreachable({ message, onRetry }: { message: string; onRetry: () => void }) {
+/**
+ * A read that failed, in the words that match HOW it failed.
+ *
+ * This card used to say "{chain} is unreachable — the RPC did not answer" for
+ * every failure, including a log scan that simply ran out of its time budget
+ * while the chain answered every request it was sent. Those are different
+ * statements and a reader acts on them differently (retry later vs. the chain
+ * is down), so `kind` — from `classifyReadFailure` — picks the heading.
+ */
+export function Unreachable({
+  message,
+  onRetry,
+  kind = 'other',
+}: {
+  message: string
+  onRetry: () => void
+  kind?: ReadFailureKind
+}) {
+  const title =
+    kind === 'scan-timeout'
+      ? `A log scan on ${CHAIN.name} did not finish in time`
+      : kind === 'transport'
+        ? `${CHAIN.name} is unreachable`
+        : kind === 'contract'
+          ? `A contract on ${CHAIN.name} reverted the read`
+          : `Could not read from ${CHAIN.name}`
+  const body =
+    kind === 'scan-timeout'
+      ? 'This is a time budget running out, not an outage: the log history this screen needs did not come back before the deadline. No figures are shown — a partial scan would read as a complete one.'
+      : kind === 'transport'
+        ? 'The RPC did not answer. No figures are shown — an unreachable chain and an empty result are different answers, and only one of them is about your pools.'
+        : kind === 'contract'
+          ? 'The endpoint answered, and the contract refused the call. No figures are shown.'
+          : 'The read failed for the reason below. No figures are shown rather than placeholder ones.'
   return (
     <section className="dapp-card hx-state hx-state--err">
-      <h2 className="dapp-card__title">{CHAIN.name} is unreachable</h2>
-      <p className="live-note">
-        The RPC did not answer. No figures are shown — an unreachable chain and an empty result are
-        different answers, and only one of them is about your pools.
-      </p>
+      <h2 className="dapp-card__title">{title}</h2>
+      <p className="live-note">{body}</p>
       <p className="dp-failure__raw" style={{ marginTop: 8 }}>
         {message}
       </p>
@@ -181,6 +212,12 @@ export function NotDeployed({ malformed }: { malformed: boolean }) {
 
 /** Where the hook address came from. Provenance, on every screen that reads one. */
 export function HookProvenance({ hook }: { hook: HookRef }) {
+  const book =
+    hook.status === 'current'
+      ? ' It is the current RevShareHook in the address book.'
+      : hook.status === 'retired'
+        ? ' The address book marks it retired, but retiring a hook does not retire its pools.'
+        : ''
   return (
     <p className="live-note">
       Reading <Addr value={hook.address} /> on {CHAIN.name}
@@ -188,7 +225,27 @@ export function HookProvenance({ hook }: { hook: HookRef }) {
         ? ' — address taken from the ?hook= parameter in this URL, not from a protocol deployment record.'
         : hook.source === 'build'
           ? ' — the build-time default from VITE_REVSHARE_HOOK, not the deployment record.'
-          : ' — the canonical deployment for this chain.'}
+          : hook.source === 'pool-key'
+            ? " — the hook recorded in this pool's own key (CLPoolManager.poolIdToPoolKey), which is part of the pool id."
+            : ' — from the SDK address book for this chain.'}
+      {book}
+    </p>
+  )
+}
+
+/** Several hooks read at once — every RevShareHook the address book lists. */
+export function HooksProvenance({ hooks }: { hooks: readonly HookRef[] }) {
+  if (hooks.length === 1 && hooks[0]) return <HookProvenance hook={hooks[0]} />
+  return (
+    <p className="live-note">
+      Reading {hooks.length} RevShareHooks on {CHAIN.name} from the SDK address book:{' '}
+      {hooks.map((h, i) => (
+        <span key={h.address}>
+          {i > 0 ? ', ' : ''}
+          <Addr value={h.address} /> ({h.status ?? 'unlisted'})
+        </span>
+      ))}
+      . A retired hook still hosts its pools, balances and proposals.
     </p>
   )
 }
@@ -253,26 +310,38 @@ export function ScreenIntro({
   title,
   children,
   hook,
+  hooks,
+  live = false,
 }: {
   title: string
   children: React.ReactNode
   hook?: HookRef | undefined
+  hooks?: readonly HookRef[] | undefined
+  /** Whether the screen's own read has settled successfully. The LIVE badge
+      renders only then — an intro card must not say LIVE above an error. */
+  live?: boolean
 }) {
   return (
     <section className="dapp-card">
       <div className="dapp-card__head">
         <h2 className="dapp-card__title">{title}</h2>
-        <span className="live-badge">
-          <span className="live-dot" aria-hidden="true" />
-          LIVE
-        </span>
+        {live ? (
+          <span className="live-badge">
+            <span className="live-dot" aria-hidden="true" />
+            LIVE
+          </span>
+        ) : null}
       </div>
       <div className="live-note">{children}</div>
-      {hook && (
+      {hook ? (
         <div style={{ marginTop: 8 }}>
           <HookProvenance hook={hook} />
         </div>
-      )}
+      ) : hooks && hooks.length > 0 ? (
+        <div style={{ marginTop: 8 }}>
+          <HooksProvenance hooks={hooks} />
+        </div>
+      ) : null}
     </section>
   )
 }

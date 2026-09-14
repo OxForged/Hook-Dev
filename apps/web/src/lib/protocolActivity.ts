@@ -72,7 +72,7 @@ import {
   ACTIVE_CHAIN_ID,
   DEPLOYMENTS,
   client,
-  rpcsFor,
+  logRpcsFor,
   scanWindowsMulti,
   type DeployedChainId,
 } from './chain'
@@ -282,7 +282,7 @@ const preferredUrl = new Map<number, string>()
  */
 async function readUncached(chainId: DeployedChainId): Promise<ProtocolActivity> {
   const d = DEPLOYMENTS[chainId]
-  const listed = rpcsFor(chainId)
+  const listed = logRpcsFor(chainId)
   const first = preferredUrl.get(chainId)
   const urls =
     first !== undefined && listed.includes(first) ? [first, ...listed.filter((u) => u !== first)] : [...listed]

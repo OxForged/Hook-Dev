@@ -55,10 +55,14 @@ export function LiveActivityFeed() {
     <section className="dapp-card" style={{ animationDelay: '0.16s' }}>
       <div className="dapp-card__bar">
         <h2 className="dapp-microlabel">PROTOCOL ACTIVITY</h2>
-        <span className="live-badge">
+        {state.k === 'ready' ? (
+          <span className="live-badge">
           <span className="live-dot" aria-hidden="true" />
           LIVE
         </span>
+        ) : state.k === 'error' ? (
+          <span className="dapp-badge dapp-badge--warn">NOT READ</span>
+        ) : null}
       </div>
 
       {state.k === 'loading' && (
