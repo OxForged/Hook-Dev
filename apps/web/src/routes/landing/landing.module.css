@@ -360,6 +360,10 @@
   backdrop-filter: blur(var(--header-blur));
   -webkit-backdrop-filter: blur(var(--header-blur));
   border-bottom: 1px solid var(--header-border);
+  /* A notched phone in a standalone or viewport-fit=cover context puts the
+     status bar over the page; the translucent ground extends under it and the
+     bar starts below it. Zero everywhere else. */
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 /* The bar. Separate from .header so the disclosure panel can hang off the
@@ -376,7 +380,9 @@
   max-width: var(--b-wrap);
   height: var(--s8);
   margin-inline: auto;
-  padding-inline: var(--b-gutter);
+  /* In landscape on a notched phone the notch sits at a side edge. */
+  padding-left: max(var(--b-gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--b-gutter), env(safe-area-inset-right, 0px));
 }
 
 .headerLeft {
@@ -436,13 +442,14 @@
   align-items: center;
 }
 
-/* Disclosure trigger — hidden until the links collapse (see the 860px block). */
+/* Disclosure trigger — hidden until the links collapse (see the 860px block).
+   44px: it is a touch target first, and on a phone the only way into the map. */
 .menuBtn {
   display: none;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border: 1px solid var(--cta-border);
   border-radius: var(--r-btn);
@@ -457,34 +464,166 @@
   border-color: var(--border-hover);
 }
 
-/* Covers the page, never the bar: the bar is z-index 3 in this same context. */
-.menuScrim {
+/* The label inside a nav link, and the arrow an external one carries. */
+.navLinkText {
+  min-width: 0;
+}
+
+.navLinkExternal {
+  margin-left: auto;
+  padding-left: var(--s2);
+  font-size: var(--b-caption);
+  color: var(--label-ink);
+}
+
+/* ---- the menu drawer -------------------------------------------------------
+   PORTALLED to <body> (see SiteHeader.tsx): outside `.page`, so it states its
+   own type size and gutter rather than inheriting the page's, and outside the
+   header's `backdrop-filter`, so `position: fixed` means the viewport.
+
+   Closed is `visibility: hidden` + off-canvas, never `display: none`, so the
+   slide can run. The visibility flip is delayed by the slide's duration on the
+   way out and immediate on the way in. Under reduced motion tokens.css
+   collapses both durations and the block at the end of this file pins them. */
+
+.drawerScrim {
   position: fixed;
   inset: 0;
-  z-index: 1;
+  z-index: var(--z-drawer-scrim);
   background: var(--docs-scrim);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--dur) var(--ease),
+    visibility 0s linear var(--dur);
 }
 
-.menuPanel {
-  position: absolute;
-  top: 100%;
-  left: 0;
+.drawerScrimOpen {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--dur) var(--ease),
+    visibility 0s;
+}
+
+/* Closed, the sheet is WIPED rather than translated off-canvas: a box parked
+   at translateX(100%) still reports a rect past the viewport's right edge,
+   which is exactly the overflow the phone QA hunts for. The clip reveals it
+   from the right edge, and the slight offset gives the movement. */
+.drawer {
+  position: fixed;
+  inset-block: 0;
   right: 0;
-  z-index: 2;
+  z-index: var(--z-drawer);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: var(--s4);
-  max-height: min(72vh, 560px);
-  overflow-y: auto;
-  padding: var(--s4) var(--b-gutter) var(--s5);
+  width: min(400px, 100%);
+  max-width: 100%;
+  font-family: var(--font-body);
+  font-size: var(--b-body);
+  line-height: normal;
+  color: var(--ink);
   background: var(--panel);
-  border-bottom: 1px solid var(--header-border);
+  border-left: 1px solid var(--header-border);
   box-shadow: var(--shadow-2);
+  /* Notches and home indicators: every edge the sheet touches. */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  clip-path: inset(0 0 0 100%);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    clip-path var(--dur) var(--ease),
+    opacity var(--dur) var(--ease),
+    visibility 0s linear var(--dur);
 }
 
-/* .menuPanel sets display:flex, which would beat the UA's [hidden] rule. */
-.menuPanel[hidden] {
-  display: none;
+.drawerOpen {
+  clip-path: inset(0 0 0 0);
+  opacity: 1;
+  visibility: visible;
+  transition:
+    clip-path var(--dur) var(--ease),
+    opacity var(--dur) var(--ease),
+    visibility 0s;
+}
+
+/* Matches the 56px phone bar, so the close button lands where the menu
+   button was. */
+.drawerHead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  height: 56px;
+  padding-inline: 20px var(--s3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.drawerTitle {
+  margin: 0;
+  font-size: var(--b-card-h);
+  font-weight: 640;
+  letter-spacing: -0.012em;
+  color: var(--ink-bright);
+}
+
+.drawerClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-btn);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background-color var(--b-dur),
+    border-color var(--b-dur);
+}
+
+.drawerClose:hover {
+  background: var(--panel-alt);
+  border-color: var(--hairline);
+}
+
+/* Everything under the head scrolls, the foot included: on a 640px-tall
+   phone a pinned foot would leave the links a letterbox. `contain` stops a
+   fling at the end of the list from scrolling the locked page behind it. */
+.drawerBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  padding: var(--s4) var(--s3) var(--s5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.drawerGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+/* Uppercase and tracked, which is what licenses `--label-ink` (tokens.css). */
+.drawerGroupLabel {
+  margin: 0;
+  padding-inline: var(--s2);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--label-ink);
 }
 
 .menuList {
@@ -496,44 +635,119 @@
   list-style: none;
 }
 
-.menuLink {
+/* Primary rows: 48px, icon + label. */
+.menuLink,
+.menuSubLink {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--s3);
-  padding: var(--s3);
+  min-height: 48px;
+  padding: 0 var(--s3);
   border-radius: var(--r-btn);
   color: var(--ink);
   font-size: var(--b-body);
   font-weight: 500;
   text-decoration: none;
-  transition: background var(--b-dur);
+  transition:
+    background-color var(--b-dur),
+    color var(--b-dur);
+}
+
+/* Secondary rows: 44px, words only, one step quieter. */
+.menuSubLink {
+  min-height: 44px;
+  font-size: var(--b-card-p);
+  color: var(--muted-ink);
 }
 
 .menuLink svg {
+  flex: none;
   color: var(--muted-ink);
 }
 
 .menuLink:hover,
-.menuLink:focus-visible {
+.menuSubLink:hover {
   background: var(--panel-alt);
   color: var(--ink-bright);
 }
 
-.menuFoot {
+.menuLink:focus-visible,
+.menuSubLink:focus-visible,
+.drawerClose:focus-visible,
+.drawerLaunch:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: -2px;
+}
+
+/* The page being viewed: B's sidebar `a.on` — accent-soft ground, blue ink,
+   and a rule on the leading edge, so it does not rest on colour alone. */
+.menuLink[aria-current='page'],
+.menuSubLink[aria-current='page'] {
+  background: var(--active-nav);
+  color: var(--sky-ink);
+  font-weight: 600;
+}
+
+.menuLink[aria-current='page']::before,
+.menuSubLink[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  inset-block: 10px;
+  left: 0;
+  width: 3px;
+  border-radius: var(--r-pill);
+  background: var(--latch-blue);
+}
+
+.menuLink[aria-current='page'] svg {
+  color: var(--latch-blue);
+}
+
+/* The primary action, full width and 48px, between the two groups. */
+.drawerLaunch {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  font-size: var(--b-body);
+}
+
+/* Pushed to the bottom of a tall sheet; simply last on a short one. */
+.drawerFoot {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--s3);
-  padding-top: var(--s3);
+  margin-top: auto;
+  padding: var(--s4) var(--s2) 0;
   border-top: 1px solid var(--hairline);
 }
 
-.menuLabel {
-  margin: 0;
-  font-size: var(--b-micro);
-  font-weight: 640;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--label-ink);
+.drawerFootRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2) var(--s3);
+  min-width: 0;
+}
+
+.drawerFootRow .drawerGroupLabel {
+  padding-inline: 0;
+}
+
+/* ThemeToggle with its labels, each segment a 44px target on a 3px track. */
+.drawerTheme > button {
+  min-height: 44px;
+  padding-inline: 10px;
+}
+
+.drawerSocials {
+  gap: var(--s1);
+}
+
+.drawerSocials .socialLink {
+  width: 44px;
+  height: 44px;
 }
 
 /* ---- lockup ---------------------------------------------------------------
@@ -601,6 +815,16 @@
   font-size: var(--b-label);
   font-weight: 600;
   line-height: 1.4;
+}
+
+.heroPillPart {
+  white-space: nowrap;
+}
+
+/* The separator keeps its surrounding spaces as real text, so the halves read
+   as one sentence to a screen reader in both layouts. */
+.heroPillSep {
+  white-space: pre;
 }
 
 .heroPillDot {
@@ -2240,18 +2464,65 @@ span.chainMark {
   .page {
     --b-gutter: 20px;
     --b-section-pad: var(--s7);
+    /* Phone type floor. Axis ticks, token amounts in legends and inline code
+       all read --b-axis (10.5px), which is below the 12px a phone needs for
+       anything that is not an uppercase micro-label. Every chart on the page
+       is drawn at its measured width in real pixels, so raising the token
+       raises the drawn ticks with it rather than scaling them. */
+    --b-axis: 12px;
+    /* The hero's two clauses stay two lines down to 360px: at the 38px floor
+       "Launch infrastructure," is ~358px against a 320px column and broke
+       into three. 9vw is ~32px at 360, ~35px at 390, the full 38px by 430. */
+    --b-h1: clamp(30px, 9vw, 38px);
   }
 
+  /* The slim phone bar: 56px, and Launch App one step smaller. */
   .headerBar {
     gap: var(--s2);
+    height: 56px;
   }
 
   .launchPill {
-    padding-inline: var(--s3);
+    min-height: 40px;
+    padding: 0 var(--s3);
+  }
+
+  /* The drawer's own Launch App keeps its full size. */
+  .drawerLaunch {
+    min-height: 48px;
   }
 
   .hero {
     padding-bottom: var(--s6);
+  }
+
+  /* The pill on a phone: two centred lines broken at the separator, the dot
+     leading the first. A two-line capsule reads as a mistake, so the radius
+     steps down to a card's. The "·" is clipped from view, not removed, so the
+     sentence is still read as one. */
+  .heroPill {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: center;
+    align-items: center;
+    column-gap: 7px;
+    padding: 6px 14px;
+    border-radius: var(--r-sm);
+    line-height: 1.45;
+  }
+
+  .heroPillSep {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .heroPill .heroPillPart:last-child {
+    grid-column: 1 / -1;
+    justify-self: center;
   }
 
   .heroLede {
@@ -2260,6 +2531,33 @@ span.chainMark {
 
   .cardGrid4 {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Touch floor: every button-shaped action on the page, and the footer's
+     links, which sat 27px apart. */
+  .btnPrimary,
+  .btnSecondary {
+    min-height: 44px;
+  }
+
+  .footerList {
+    gap: 0;
+  }
+
+  .footerLink {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .footerGroupTitle {
+    margin-bottom: var(--s1);
+  }
+
+  .socialLink,
+  .socialLinkSm {
+    width: 44px;
+    height: 44px;
   }
 
   .footerGroups {
@@ -2345,6 +2643,10 @@ span.chainMark {
   .navLink,
   .menuBtn,
   .menuLink,
+  .menuSubLink,
+  .drawerClose,
+  .drawer,
+  .drawerScrim,
   .footerLink,
   .socialLink,
   .audCard,

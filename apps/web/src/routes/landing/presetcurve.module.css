@@ -404,8 +404,11 @@
     gap: var(--s4);
   }
 
-  .head {
+  /* `nowrap`: in a wrapping column the line is only as wide as its widest
+     item, so the selector below shrank to its content instead of the panel. */
+  .card > .head {
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
   }
 
@@ -419,5 +422,79 @@
 
   .fact dd {
     font-size: var(--b-panel-h);
+  }
+
+  /* Four presets as a 2 x 2 grid of 44px targets, never three and a straggler.
+     Two classes: the composed toggle primitive sets `display: flex` at equal
+     specificity and may load after this module. */
+  .head .selector {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tab {
+    min-height: 44px;
+    white-space: normal;
+  }
+
+  .readout {
+    padding: var(--s2) var(--s3);
+  }
+
+  .limit,
+  .requireOn {
+    padding: var(--s3);
+  }
+}
+
+/* ---- phone-width plot ----------------------------------------------------------
+   The plot is drawn at the panel's own width down to 280px (PresetCurve.tsx
+   MIN_W), so these answer to the panel, not the viewport.
+
+   · The window label is anchored at its END, left of the dashed line: the
+     window ends ~85% of the way across, and a start-anchored label ran off the
+     plot's right edge.
+   · The long axis sentence is clipped from view below 480px. It cannot wrap
+     inside SVG and would be cut at both ends; what it says — real time on the
+     live chain, one hook block every ~12s — is stated in full by the readout
+     row and the facts grid directly beneath the chart. */
+
+@container (max-width: 480px) {
+  /* The plot is drawn at exactly this box's width here, so there is nothing
+     to scroll, and a visible overflow lets the last time tick's centred label
+     use the panel padding instead of being cut at the SVG edge. */
+  .scroller,
+  .svg {
+    overflow: visible;
+  }
+
+  /* Five time ticks at 12px need ~50px each and a 286px plot gives them 51:
+     "8h 51m" ran into "11h 48m". The 25% and 75% labels are hidden; the
+     0 / 50% / 100% labels stay, and the cursor readout gives any point.
+     The x ticks are the only run of consecutive `.axis` <text> siblings
+     directly under the SVG (the y ticks each sit in their own <g>), so the
+     second and fourth of that run are selected structurally. */
+  .svg > .axis:not(.axis + .axis) + .axis,
+  .svg > .axis:not(.axis + .axis) + .axis + .axis + .axis {
+    display: none;
+  }
+
+  /* Lifted 6px into the top padding so it clears "opens at", which now
+     shares its side of the plot. */
+  .windowLabel {
+    text-anchor: end;
+    transform: translate(-16px, -6px);
+  }
+
+  .axisNote {
+    display: none;
+  }
+
+  .fact {
+    padding: var(--s3);
+  }
+
+  .factSub {
+    overflow-wrap: anywhere;
   }
 }

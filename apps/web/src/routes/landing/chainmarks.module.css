@@ -156,7 +156,8 @@ span.mark {
 }
 
 .tile:hover .name,
-.tile:focus-visible .name {
+.tile:focus-visible .name,
+.tile[data-shown] .name {
   opacity: 1;
   transform: translate(-50%, 0);
 }
@@ -183,4 +184,61 @@ span.mark {
 /* The live tile already has its name beside it; a hover chip would repeat it. */
 .tileLive .name {
   display: none;
+}
+
+.tile {
+  cursor: pointer;
+}
+
+.tileLive {
+  cursor: default;
+}
+
+/* ---- phone ------------------------------------------------------------------
+   The marks sit in a tidy grid of 44px tiles, and the name chip leaves the
+   tile: centred over a tile at the edge of a 360px screen it hung off the
+   viewport. It anchors instead to the group, on one line directly under the
+   grid, left-aligned, where the section's own bottom padding has room for it.
+   No lift on focus either: a transform on the tile would make it the chip's
+   containing block again. */
+
+@media (max-width: 560px) {
+  .rows {
+    flex-direction: column;
+    gap: var(--s5);
+  }
+
+  .group {
+    position: relative;
+    width: 100%;
+  }
+
+  .listTargets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 44px);
+    justify-content: space-between;
+    gap: var(--s3) var(--s2);
+  }
+
+  .tile {
+    position: static;
+  }
+
+  .tile:hover,
+  .tile:focus-visible {
+    transform: none;
+  }
+
+  .name {
+    top: calc(100% + var(--s2));
+    bottom: auto;
+    left: 0;
+    transform: translateY(-4px);
+  }
+
+  .tile:hover .name,
+  .tile:focus-visible .name,
+  .tile[data-shown] .name {
+    transform: none;
+  }
 }

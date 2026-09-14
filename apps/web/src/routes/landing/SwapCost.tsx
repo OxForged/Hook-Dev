@@ -342,6 +342,9 @@ function Calculator({
         </p>
       ) : null}
 
+      {/* Below 720px the table reflows into one card per tier (swapcost.module.css):
+          the same cells, the same numbers and the same column precision, each
+          value carrying its column's name from `data-label`. */}
       <div className={styles['scroller']}>
         <table className={styles['table']} ref={tableRef}>
           <caption className={styles['sr']}>
@@ -374,7 +377,7 @@ function Calculator({
                     {pct(r.lpFee, 2)}
                     <span className={styles['tierSub']}>{pct(r.allIn)} all-in</span>
                   </th>
-                  <td className={styles['colBar']}>
+                  <td className={styles['colBar']} data-label={`All-in fee · ${UNIT_LABEL}`}>
                     <span className={styles['barCell']}>
                       {/* Length is this row's all-in amount against the largest
                           row's, split LP | protocol inside. Same two colours as
@@ -396,12 +399,17 @@ function Calculator({
                       <span className={styles['total']}>{tokensFixed(r.total, dp.total)}</span>
                     </span>
                   </td>
-                  <td className={styles['num']}>{tokensFixed(r.lpAmount, dp.lp)}</td>
-                  <td className={styles['num']}>
+                  <td className={styles['num']} data-label="To LPs">
+                    {tokensFixed(r.lpAmount, dp.lp)}
+                  </td>
+                  <td className={styles['num']} data-label="To protocol">
                     {tokensFixed(r.protocolAmount, dp.protocol)}
                     <span className={styles['numSub']}>{pct(r.protocolPips)}</span>
                   </td>
-                  <td className={cx(styles['num'], r.saving > 0 && styles['better'])}>
+                  <td
+                    className={cx(styles['num'], r.saving > 0 && styles['better'])}
+                    data-label="vs PancakeSwap 33%"
+                  >
                     {/* Direction is computed, not assumed. */}
                     {r.saving > 0
                       ? `${tokensFixed(r.saving, dp.saving)} less`

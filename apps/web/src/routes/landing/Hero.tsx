@@ -39,7 +39,12 @@ export function Hero() {
             be typed, not derived. */}
         <p className={cx(styles['heroPill'], styles['reveal'])}>
           <span className={styles['heroPillDot']} aria-hidden="true" />
-          Live on {CHAIN.name} · every Latch contract verified
+          {/* Two halves so a phone can break the pill at the separator rather
+              than mid-phrase: at 12.5px the sentence is ~334px against a 320px
+              column at 360. The separator stays in the text either way. */}
+          <span className={styles['heroPillPart']}>Live on {CHAIN.name}</span>
+          <span className={styles['heroPillSep']}> · </span>
+          <span className={styles['heroPillPart']}>every Latch contract verified</span>
         </p>
 
         {/* One clause per line, the way b.html sets it. The break is structural

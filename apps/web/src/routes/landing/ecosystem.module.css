@@ -124,4 +124,10 @@ ul.grid {
     align-items: flex-start;
     flex-direction: column;
   }
+
+  /* Touch floor for the section's two actions. */
+  .viewAll,
+  .foot :global(.eco2-btn) {
+    min-height: 44px;
+  }
 }

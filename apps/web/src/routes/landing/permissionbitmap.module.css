@@ -358,6 +358,58 @@
   .values {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  /* Each operation is a small stacked card: the operation name, then every
+     flag it owns as a full-width 44px row — name left, bit right — with a
+     returns-delta flag indented under the callback it modifies. */
+  .stage {
+    gap: var(--s2);
+    padding: var(--s3);
+  }
+
+  .op {
+    justify-content: flex-start;
+  }
+
+  .opName {
+    flex-wrap: wrap;
+    align-items: baseline;
+    padding: 0;
+    background: transparent;
+    white-space: normal;
+  }
+
+  .side {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .call,
+  .delta {
+    align-items: center;
+    min-height: 44px;
+    padding-block: var(--s2);
+    text-align: left;
+  }
+
+  .bit {
+    margin-left: auto;
+  }
+
+  .delta {
+    margin-left: var(--s4);
+    font-size: var(--b-label);
+  }
+
+  .cell {
+    padding: var(--s2) 0 6px;
+  }
+
+  .reset {
+    min-height: 44px;
+    padding-inline: var(--s4);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

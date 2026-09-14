@@ -276,6 +276,16 @@
   .kpiCell {
     padding: 14px;
   }
+
+  /* Touch floor for every segmented toggle and small button on the page. */
+  .toggleSeg,
+  .btnSm {
+    min-height: 44px;
+  }
+
+  .toggleSeg {
+    padding-inline: var(--s4);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

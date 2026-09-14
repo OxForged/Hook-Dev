@@ -219,7 +219,9 @@ export function FeeSplit({
                   key={s.key}
                   type="button"
                   className={styles['hit']}
-                  style={{ left, width: w, top: PT, height: BH } as CSSProperties}
+                  /* The bar and its tick row: 52px tall, so a thumb clears the
+                     44px floor although the painted bar is 34px. */
+                  style={{ left, width: w, top: PT, height: BH + AXIS_GAP } as CSSProperties}
                   aria-label={`${s.label}: ${fmt(s.value)} ${symbol}, ${pctText(s.pct)} of the fees charged in ${symbol}. ${s.detail}.`}
                   onMouseEnter={() => setHover(s.i)}
                   onFocus={() => setFocus(s.i)}

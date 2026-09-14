@@ -343,6 +343,115 @@
   }
 }
 
+/* ---- stacked: one card per tier ---------------------------------------------
+   The house "tables stack" breakpoint (tokens.css, 720). Five columns need
+   560px, and scrolling them inside the panel cut the 1.00% tier's last figures
+   off every phone. Each row becomes a card holding the SAME cells: tier and
+   its all-in rate, the bar with the all-in amount, then the three split
+   figures as label / value lines. Labels come from each cell's `data-label`,
+   which states the column header's own words; the header row stays in the DOM
+   for assistive tech and is clipped from view. */
+
+@media (max-width: 720px) {
+  .scroller {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .table,
+  .table tbody {
+    display: block;
+    min-width: 0;
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table tbody {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
+    gap: var(--s2);
+  }
+
+  .table tbody tr,
+  .table tbody tr + tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s2);
+    min-width: 0;
+    padding: var(--s3) var(--s4);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-sm);
+    background: var(--panel);
+  }
+
+  .table tbody th,
+  .table tbody td {
+    display: block;
+    width: auto;
+    padding: 0;
+  }
+
+  /* Tier left, its all-in rate right. */
+  .table tbody .tier {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s1) var(--s3);
+    font-size: var(--b-card-p);
+  }
+
+  .table tbody .tierSub {
+    display: inline;
+  }
+
+  .table tbody td::before {
+    content: attr(data-label);
+    color: var(--muted-ink);
+    font-family: var(--font-body);
+    font-size: var(--b-label);
+    font-weight: 500;
+    text-align: left;
+  }
+
+  /* The bar row: its label above, bar and amount on one line. */
+  .table tbody td.colBar::before {
+    display: block;
+    margin-bottom: var(--s1);
+  }
+
+  .table tbody td.num {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 0 var(--s2);
+    padding-top: var(--s2);
+    border-top: 1px solid var(--hairline);
+    white-space: normal;
+  }
+
+  .table tbody td.num::before {
+    margin-right: auto;
+  }
+
+  .table tbody .numSub {
+    display: inline;
+  }
+
+  .total {
+    min-width: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bar,
   .field {

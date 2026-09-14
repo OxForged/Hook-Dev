@@ -235,6 +235,237 @@
   }
 }
 
+/* ---- compact: horizontal bars below MIN_W (480px of panel) ----------------
+   Same two series, same axis domain, same figures. Four columns shared by the
+   axis row and every tier row, so a tick and a bar end line up exactly:
+   tier label · bar track · all-in value · disclosure chevron. */
+
+/* Columns in `ch` of the mono face the figures are set in, so the tier and
+   value columns are exactly as wide as "0.00%" and "0.0000%" and every pixel
+   left over goes to the bar. */
+.hChart {
+  --h-cols: 5.5ch minmax(0, 1fr) 7.5ch 8px;
+  display: grid;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--b-caption);
+}
+
+.hAxisTitle {
+  margin: 0 0 var(--s2);
+  font-family: var(--font-body);
+  font-size: var(--b-micro);
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint-ink);
+}
+
+.hAxis,
+.hBtn {
+  display: grid;
+  grid-template-columns: var(--h-cols);
+  align-items: center;
+  column-gap: var(--s2);
+  padding-inline: var(--s2);
+}
+
+.hAxis {
+  padding-bottom: var(--s2);
+}
+
+.hAxisTrack {
+  position: relative;
+  height: 16px;
+}
+
+/* Ticks are centred on their value; the two ends are pinned inside the track
+   so "0.00%" and the top tick never hang past it. */
+.hTick {
+  position: absolute;
+  top: 0;
+  font-family: var(--font-mono);
+  font-size: var(--b-axis);
+  line-height: 16px;
+  color: var(--faint-ink);
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.hTickFirst {
+  transform: none;
+}
+
+.hTickLast {
+  transform: translateX(-100%);
+}
+
+.hList {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hItem {
+  min-width: 0;
+}
+
+.hBtn {
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--b-caption);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--b-dur);
+}
+
+.hBtn:hover,
+.hBtn[aria-expanded='true'] {
+  background: var(--panel-alt);
+}
+
+.hBtn:focus-visible {
+  outline: 2px solid var(--latch-blue);
+  outline-offset: -2px;
+}
+
+.hTier,
+.hValue {
+  font-family: var(--font-mono);
+  font-size: var(--b-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hTier {
+  font-weight: 600;
+}
+
+.hValue {
+  text-align: right;
+  color: var(--ink);
+}
+
+.hTrack {
+  position: relative;
+  height: 14px;
+}
+
+/* The column chart's gridlines, stood on end. */
+.hGrid {
+  position: absolute;
+  top: -10px;
+  bottom: -10px;
+  width: 1px;
+  background: var(--hairline);
+}
+
+.hGrid:first-child {
+  background: var(--cta-border);
+}
+
+.hBar {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 50%;
+  transform: scaleX(1);
+  transition: transform var(--b-reveal) var(--ease) var(--stagger, 0ms);
+}
+
+.hBarHidden {
+  transform: scaleX(0);
+  transition: none;
+}
+
+.hSegLp,
+.hSegProtocol {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.hSegLp {
+  left: 0;
+  background: var(--chart-lp);
+  border-radius: var(--r-micro) 0 0 var(--r-micro);
+}
+
+/* The toggle moves only this segment, as it moves only the column's top. */
+.hSegProtocol {
+  background: var(--latch-blue);
+  border-radius: 0 var(--r-micro) var(--r-micro) 0;
+  transition: width var(--dur) var(--ease);
+}
+
+.hChevron {
+  justify-self: end;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--muted-ink);
+  border-bottom: 1.5px solid var(--muted-ink);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--b-dur) var(--ease);
+}
+
+.hBtn[aria-expanded='true'] .hChevron {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+/* The tooltip's contents, inline under the row it describes. */
+.hDetail {
+  margin: 2px 0 var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-btn);
+  background: var(--panel);
+}
+
+.hDetail[hidden] {
+  display: none;
+}
+
+.hFigures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s2);
+  margin: 0;
+}
+
+.hFigures dt {
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+}
+
+.hFigures dd {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--b-caption);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.hDetailFoot {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-body);
+  font-size: var(--b-label);
+  color: var(--muted-ink);
+}
+
+.sr {
+  composes: sr from './primitives.module.css';
+}
+
 /* ---- foot ---------------------------------------------------------------- */
 
 .foot {
@@ -250,6 +481,7 @@
 
 .legend {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 7px;
   font-size: var(--b-label);
@@ -281,7 +513,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .bars,
-  .protocol {
+  .protocol,
+  .hBtn,
+  .hBar,
+  .hSegProtocol,
+  .hChevron {
     transition: none;
   }
   .tip {

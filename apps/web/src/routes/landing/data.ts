@@ -82,7 +82,7 @@ export interface NavItem {
  *   Revenue    a subsection of the pitch, not a destination. It sits in the
  *              footer's Protocol column with the rest of the story.
  *   Brand Kit  a resource for people who already know what Latch is. Footer,
- *              plus the mobile menu (see MENU_NAV) where space is cheap.
+ *              plus the mobile menu (see MENU_RESOURCES) where space is cheap.
  *
  * The order is the order a stranger needs them: what you can build with it,
  * how it works, the reference, who is building it.
@@ -124,15 +124,6 @@ export const NAV: readonly NavItem[] = [
   { label: 'Docs', href: '/docs', icon: 'docs' },
 ]
 
-/**
- * The mobile disclosure menu carries one more row than the desktop bar: a
- * vertical list has room for Brand Kit, and small-screen visitors are the ones
- * least able to go hunting in the footer for it.
- */
-export const MENU_NAV: readonly NavItem[] = [
-  ...NAV,
-  { label: 'Brand Kit', href: '/brand', icon: 'brand' },
-]
 
 /**
  * Route targets. `github` is the real org, imported from ./socials.ts so
@@ -164,6 +155,26 @@ export const LINKS = {
   privacy: '/privacy',
   terms: '/terms',
 } as const
+
+/**
+ * THE MOBILE MENU'S SECOND GROUP, 2026-09-13 (owner: "put more in the mobile
+ * menu"). Below 860px the bar has room for the lockup, Launch App and the menu
+ * button and nothing else, so the drawer is the small-screen visitor's whole
+ * map: `NAV` above as the primary group, then these.
+ *
+ * Every entry is a destination that already exists in the footer, pointed at
+ * the same `LINKS` value, so the two can never disagree about a URL. Order is
+ * the owner's: brand kit, the two integration prompts, analytics, GitHub.
+ * External entries (the prompts, GitHub) open in a new tab and say so — that
+ * is `linkKind`, not a flag here.
+ */
+export const MENU_RESOURCES: readonly NavItem[] = [
+  { label: 'Brand Kit', href: LINKS.brand },
+  { label: 'DEX integration prompt', href: LINKS.promptDex },
+  { label: 'Launchpad integration prompt', href: LINKS.promptLaunchpad },
+  { label: 'Analytics', href: LINKS.analytics },
+  { label: 'GitHub', href: LINKS.github },
+]
 
 /* -------------------------------------------------------------------- hero */
 

@@ -190,6 +190,12 @@ function feeAtBlock(p: PresetParams, elapsedBlocks: number, decayBlocks: number)
    The card used to scale a fixed 760-wide viewBox, which put every axis tick
    at ~5px on a phone. Drawing at the container's width keeps ticks at
    `--b-axis`; below MIN_W the chart scrolls inside its own box.
+
+   MIN_W is 280, not 520 (2026-09-13, mobile pass): a 360px phone gives the
+   plot ~286px, and at 520 the right third of the curve — the window end and
+   the floor plateau — sat off-screen behind a sideways scroll. At phone width
+   presetcurve.module.css re-anchors the window label and clips the long
+   axis sentence, whose facts the readout and the facts grid already state.
    ---------------------------------------------------------------------------- */
 
 const H = 300
@@ -198,7 +204,7 @@ const PR = 20
 const PT = 24
 const PB = 46
 const IH = H - PT - PB
-const MIN_W = 520
+const MIN_W = 280
 
 /**
  * Ceiling on plotted points. Above this the window has more blocks than the

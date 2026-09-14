@@ -522,12 +522,60 @@
   }
 }
 
-@container (max-width: 400px) {
+@container (max-width: 640px) {
+  /* The bar, then the legend as a list: one segment per line, its amount
+     right-aligned against its name, so four figures never wrap into two
+     ragged rows. Every segment is still listed, zeros included. */
+  .legend {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    margin-top: var(--s2);
+  }
+
+  .legendItem {
+    display: grid;
+    grid-template-columns: 10px minmax(0, auto) minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--s2);
+    padding: var(--s2) 0;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .legendItem:first-child {
+    border-top: 0;
+  }
+
+  .legendItem .swatch {
+    align-self: center;
+  }
+
+  .legendValue {
+    text-align: right;
+  }
+
+  .splitHead {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .tab {
+    min-height: 44px;
+    padding-inline: var(--s4);
+  }
+}
+
+/* Phone: one figure per row. Two-up at this width put "0.005993 LTT1" and
+   its note into a 135px cell, three lines deep. */
+@container (max-width: 440px) {
   .strip {
     grid-template-columns: minmax(0, 1fr);
   }
   .cell {
-    padding: var(--s4);
+    padding: var(--s4) var(--s4) 14px;
+  }
+  .valueRow {
+    margin-top: 6px;
   }
 }
 

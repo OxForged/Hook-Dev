@@ -27,6 +27,8 @@
    Robinhood today — keeps ChainMark's typographic monogram.
    ========================================================================== */
 
+import { useState } from 'react'
+
 import { ChainMark } from '../../components/ChainMark.tsx'
 import { CHAIN_ROWS, DEPLOYED_CHAINS, type ChainRow } from '../../data/chains.ts'
 import { ACTIVE_CHAIN_ID, IS_TESTNET_BUILD } from '../../lib/chain'
@@ -46,18 +48,35 @@ const TARGETS: readonly ChainRow[] = CHAIN_ROWS.filter(
 const names = (rows: readonly ChainRow[]): string =>
   rows.length === 1 ? (rows[0]?.name ?? '') : `${rows.length} networks`
 
-function Mark({ chain, live }: { chain: ChainRow; live: boolean }) {
+function Mark({
+  chain,
+  live,
+  shown,
+  onTap,
+}: {
+  chain: ChainRow
+  live: boolean
+  /** True while this tile's name chip is pinned open by a tap. */
+  shown: boolean
+  onTap: () => void
+}) {
   const status = live ? 'contracts live' : 'target, no contracts deployed'
   return (
     <li className={styles['item']}>
       {/* Focusable so the name shown on hover is reachable by keyboard too.
           The accessible name carries the status, so the mark alone is never
-          the whole label. The inner mark is decorative to assistive tech. */}
+          the whole label. The inner mark is decorative to assistive tech.
+
+          A TAP PINS THE NAME. A phone has no hover, and whether a tap focuses
+          a tabindex span differs by browser, so the chip is also driven by
+          `data-shown`. It changes what is visible, never what is announced. */}
       <span
         className={cx(styles['tile'], live && styles['tileLive'])}
         role="img"
         tabIndex={0}
         aria-label={`${chain.name}: ${status}`}
+        data-shown={shown ? '' : undefined}
+        onClick={onTap}
       >
         <span className={styles['markBox']} aria-hidden="true">
           <ChainMark brand={chain.brand} size={24} className={styles['mark']} />
@@ -76,6 +95,10 @@ function Mark({ chain, live }: { chain: ChainRow; live: boolean }) {
 }
 
 export function ChainMarks() {
+  /** The tile whose name a tap has pinned open; one at a time. */
+  const [tapped, setTapped] = useState<string | null>(null)
+  const tap = (key: string) => () => setTapped((k) => (k === key ? null : key))
+
   if (LIVE.length === 0 && TARGETS.length === 0) return null
 
   return (
@@ -100,7 +123,7 @@ export function ChainMarks() {
             </span>
             <ul className={styles['list']} aria-labelledby="chains-live">
               {LIVE.map((c) => (
-                <Mark key={c.key} chain={c} live />
+                <Mark key={c.key} chain={c} live shown={false} onTap={tap(c.key)} />
               ))}
             </ul>
           </div>
@@ -111,9 +134,18 @@ export function ChainMarks() {
             <span className={styles['badge']} id="chains-targets">
               BUILT FOR
             </span>
-            <ul className={styles['list']} aria-labelledby="chains-targets">
+            <ul
+              className={cx(styles['list'], styles['listTargets'])}
+              aria-labelledby="chains-targets"
+            >
               {TARGETS.map((c) => (
-                <Mark key={c.key} chain={c} live={false} />
+                <Mark
+                  key={c.key}
+                  chain={c}
+                  live={false}
+                  shown={tapped === c.key}
+                  onTap={tap(c.key)}
+                />
               ))}
             </ul>
           </div>

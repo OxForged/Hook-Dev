@@ -31,7 +31,7 @@
    first view, and that is decoration over a complete reading.
    ========================================================================== */
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useId, useState, type CSSProperties } from 'react'
 
 import { ACTIVE_CHAIN_ID, DEPLOYMENTS, readFeeTiers, type FeeTier } from '../../lib/chain'
 import { useFirstView, useMeasuredWidth } from './chartMotion'
@@ -56,7 +56,14 @@ const PL = 58
 const PR = 12
 const PT = 26
 const PB = 34
-/** Below this the chart scrolls inside its own container, never the page. */
+/**
+ * Below this panel width the columns give way to horizontal bars (see
+ * `CompactBars`). Five columns and a 58px axis in less than 480px put the
+ * tier labels on top of each other, and the old answer — scroll the chart
+ * sideways inside its box — hid the 1.00% tier off the right edge of every
+ * phone. Measured on the container, not the viewport, so the switch follows
+ * the panel wherever it is placed.
+ */
 const MIN_W = 480
 const TIP_W = 176
 
@@ -148,6 +155,8 @@ function Chart({ tiers, splitRatio }: { tiers: FeeTier[]; splitRatio: number }) 
 
   const { ref: plotRef, hidden: growHidden } = useFirstView<HTMLDivElement>()
   const { ref: scrollerRef, width: measuredWidth } = useMeasuredWidth<HTMLDivElement>(720)
+  const compact = measuredWidth < MIN_W
+  const detailBase = useId()
 
   const splitPct = (splitRatio / 10_000).toFixed(0)
   const modeName = mode === 'latch' ? `Latch ${splitPct}%` : 'PancakeSwap Infinity 33%'
@@ -207,8 +216,10 @@ function Chart({ tiers, splitRatio }: { tiers: FeeTier[]; splitRatio: number }) 
           {/* h2: a top-level section, first heading after the page's h1. */}
           <h2 className={styles['title']}>What a swap costs, by pool tier</h2>
           <p className={styles['caption']}>
-            The protocol takes {splitPct}% of the total swap fee. Hover, tap or tab to a column for
-            the split.
+            The protocol takes {splitPct}% of the total swap fee.{' '}
+            {compact
+              ? 'Tap or tab to a tier for the split.'
+              : 'Hover, tap or tab to a column for the split.'}
           </p>
         </div>
         <div className={styles['toggle']} role="group" aria-label="Protocol fee split to draw">
@@ -231,137 +242,152 @@ function Chart({ tiers, splitRatio }: { tiers: FeeTier[]; splitRatio: number }) 
         </div>
       </div>
 
-      {/* The scroller exists for 400px: below MIN_W the chart scrolls inside
-          this box and the page never does. */}
+      {/* The measured box. At or above MIN_W it holds the column chart; below
+          it, the same rows as horizontal bars. Neither scrolls sideways. */}
       <div className={styles['scroller']} ref={scrollerRef}>
-        <div
-          className={styles['plot']}
-          style={{ width: W, height: H }}
-          ref={plotRef}
-          data-active={active === null ? undefined : ''}
-          onMouseLeave={() => setHover(null)}
-        >
-          <svg
-            className={styles['svg']}
-            width={W}
-            height={H}
-            viewBox={`0 0 ${W} ${H}`}
-            aria-hidden="true"
+        {compact ? (
+          <CompactBars
+            rows={rows}
+            ticks={ticks}
+            yMax={yMax}
+            modeName={modeName}
+            expanded={pinned}
+            onToggle={(i) => setPinned((p) => (p === i ? null : i))}
+            onEscape={clear}
+            growHidden={growHidden}
+            plotRef={plotRef}
+            idBase={detailBase}
+          />
+        ) : (
+          <div
+            className={styles['plot']}
+            style={{ width: W, height: H }}
+            ref={plotRef}
+            data-active={active === null ? undefined : ''}
+            onMouseLeave={() => setHover(null)}
           >
-            {/* Anchored at the SVG's left edge, reading rightwards over the
-                empty band above the top gridline. Right-anchored at the tick
-                column it ran past x = 0 and the scroller clipped it to
-                "F TRADE". */}
-            <text className={styles['axisTitle']} x={0} y={12} textAnchor="start">
-              % of trade
-            </text>
+            <svg
+              className={styles['svg']}
+              width={W}
+              height={H}
+              viewBox={`0 0 ${W} ${H}`}
+              aria-hidden="true"
+            >
+              {/* Anchored at the SVG's left edge, reading rightwards over the
+                  empty band above the top gridline. Right-anchored at the tick
+                  column it ran past x = 0 and the scroller clipped it to
+                  "F TRADE". */}
+              <text className={styles['axisTitle']} x={0} y={12} textAnchor="start">
+                % of trade
+              </text>
 
-            {ticks.map((v) => (
-              <g key={v}>
-                <line
-                  className={v === 0 ? styles['baseline'] : styles['grid']}
-                  x1={PL}
-                  x2={W - PR}
-                  y1={base - hOf(v)}
-                  y2={base - hOf(v)}
-                />
-                <text className={styles['axis']} x={PL - 10} y={base - hOf(v) + 3.5} textAnchor="end">
-                  {pct(v, 2)}
-                </text>
-              </g>
-            ))}
-
-            {rows.map((r, i) => {
-              const cxi = PL + bw * i + bw / 2
-              const x = cxi - cw / 2
-              const hLP = hOf(r.lpFee)
-              const yLP = base - hLP
-              /* The protocol rect is laid out at the taller of the two modes
-                 and SCALED to the current one, so flipping the toggle is a
-                 transform transition — never a redraw. */
-              const hLatch = hOf(r.latch)
-              const hPancake = hOf(r.pancake)
-              const hTall = Math.max(hLatch, hPancake)
-              const hNow = mode === 'latch' ? hLatch : hPancake
-              return (
-                <g key={r.lpFee}>
-                  <g
-                    className={cx(
-                      styles['bars'],
-                      growHidden && styles['barsHidden'],
-                      active === i && styles['barsOn'],
-                    )}
-                    /* The stagger is a custom property so it delays ONLY the
-                       grow-in transform, never the hover dim. */
-                    style={{ '--stagger': `${i * 60}ms` } as CSSProperties}
-                  >
-                    <rect className={styles['lp']} x={x} y={yLP} width={cw} height={hLP} />
-                    {hTall > 0 ? (
-                      <rect
-                        className={styles['protocol']}
-                        x={x}
-                        y={yLP - hTall}
-                        width={cw}
-                        height={hTall}
-                        style={{ transform: `scaleY(${hNow / hTall})` }}
-                      />
-                    ) : null}
-                  </g>
-                  <text className={styles['axis']} x={cxi} y={base + 20} textAnchor="middle">
-                    {pct(r.lpFee, 2)}
+              {ticks.map((v) => (
+                <g key={v}>
+                  <line
+                    className={v === 0 ? styles['baseline'] : styles['grid']}
+                    x1={PL}
+                    x2={W - PR}
+                    y1={base - hOf(v)}
+                    y2={base - hOf(v)}
+                  />
+                  <text className={styles['axis']} x={PL - 10} y={base - hOf(v) + 3.5} textAnchor="end">
+                    {pct(v, 2)}
                   </text>
                 </g>
-              )
-            })}
-          </svg>
+              ))}
 
-          {/* Real buttons over each column, so the chart is reachable by Tab,
-              announces its figures, and gets the native focus ring. Tap pins
-              a tooltip on touch, where there is no hover. Escape dismisses. */}
-          <div className={styles['hits']} role="group" aria-label={`Pool tiers, ${modeName} split`}>
-            {rows.map((r, i) => (
-              <button
-                key={r.lpFee}
-                type="button"
-                className={styles['hit']}
-                style={{ left: PL + bw * i, width: bw, top: PT, height: ih + PB }}
-                aria-label={
-                  `${pct(r.lpFee, 2)} pool, ${modeName} split: LP fee ${pct(r.lpFee, 2)}, ` +
-                  `protocol fee ${pct(r.protocol)}, all-in ${pct(r.allIn)}`
-                }
-                onMouseEnter={() => setHover(i)}
-                onFocus={() => setFocus(i)}
-                onBlur={() => setFocus(null)}
-                onClick={() => setPinned((p) => (p === i ? null : i))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') clear()
-                }}
-              />
-            ))}
-          </div>
+              {rows.map((r, i) => {
+                const cxi = PL + bw * i + bw / 2
+                const x = cxi - cw / 2
+                const hLP = hOf(r.lpFee)
+                const yLP = base - hLP
+                /* The protocol rect is laid out at the taller of the two modes
+                   and SCALED to the current one, so flipping the toggle is a
+                   transform transition — never a redraw. */
+                const hLatch = hOf(r.latch)
+                const hPancake = hOf(r.pancake)
+                const hTall = Math.max(hLatch, hPancake)
+                const hNow = mode === 'latch' ? hLatch : hPancake
+                return (
+                  <g key={r.lpFee}>
+                    <g
+                      className={cx(
+                        styles['bars'],
+                        growHidden && styles['barsHidden'],
+                        active === i && styles['barsOn'],
+                      )}
+                      /* The stagger is a custom property so it delays ONLY the
+                         grow-in transform, never the hover dim. */
+                      style={{ '--stagger': `${i * 60}ms` } as CSSProperties}
+                    >
+                      <rect className={styles['lp']} x={x} y={yLP} width={cw} height={hLP} />
+                      {hTall > 0 ? (
+                        <rect
+                          className={styles['protocol']}
+                          x={x}
+                          y={yLP - hTall}
+                          width={cw}
+                          height={hTall}
+                          style={{ transform: `scaleY(${hNow / hTall})` }}
+                        />
+                      ) : null}
+                    </g>
+                    <text className={styles['axis']} x={cxi} y={base + 20} textAnchor="middle">
+                      {pct(r.lpFee, 2)}
+                    </text>
+                  </g>
+                )
+              })}
+            </svg>
 
-          {activeRow ? (
-            /* aria-hidden: the focused button's own label already carries
-               every figure here, so exposing both reads them twice. */
-            <div
-              aria-hidden="true"
-              className={styles['tip']}
-              style={{ left: tipLeft, top: PT, width: TIP_W }}
-            >
-              <b className={styles['tipHead']}>{pct(activeRow.lpFee, 2)} pool</b>
-              <span className={styles['tipRow']}>
-                <span className={styles['tipMut']}>LP</span> {pct(activeRow.lpFee, 2)}
-              </span>
-              <span className={styles['tipRow']}>
-                <span className={styles['tipMut']}>Protocol</span> {pct(activeRow.protocol)}
-              </span>
-              <span className={styles['tipRow']}>
-                <span className={styles['tipMut']}>All-in</span> {pct(activeRow.allIn)}
-              </span>
-              <span className={styles['tipFoot']}>{modeName} split</span>
+            {/* Real buttons over each column, so the chart is reachable by Tab,
+                announces its figures, and gets the native focus ring. Tap pins
+                a tooltip on touch, where there is no hover. Escape dismisses. */}
+            <div className={styles['hits']} role="group" aria-label={`Pool tiers, ${modeName} split`}>
+              {rows.map((r, i) => (
+                <button
+                  key={r.lpFee}
+                  type="button"
+                  className={styles['hit']}
+                  style={{ left: PL + bw * i, width: bw, top: PT, height: ih + PB }}
+                  aria-label={
+                    `${pct(r.lpFee, 2)} pool, ${modeName} split: LP fee ${pct(r.lpFee, 2)}, ` +
+                    `protocol fee ${pct(r.protocol)}, all-in ${pct(r.allIn)}`
+                  }
+                  onMouseEnter={() => setHover(i)}
+                  onFocus={() => setFocus(i)}
+                  onBlur={() => setFocus(null)}
+                  onClick={() => setPinned((p) => (p === i ? null : i))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') clear()
+                  }}
+                />
+              ))}
             </div>
-          ) : null}
-        </div>
+
+            {activeRow ? (
+              /* aria-hidden: the focused button's own label already carries
+                 every figure here, so exposing both reads them twice. */
+              <div
+                aria-hidden="true"
+                className={styles['tip']}
+                style={{ left: tipLeft, top: PT, width: TIP_W }}
+              >
+                <b className={styles['tipHead']}>{pct(activeRow.lpFee, 2)} pool</b>
+                <span className={styles['tipRow']}>
+                  <span className={styles['tipMut']}>LP</span> {pct(activeRow.lpFee, 2)}
+                </span>
+                <span className={styles['tipRow']}>
+                  <span className={styles['tipMut']}>Protocol</span> {pct(activeRow.protocol)}
+                </span>
+                <span className={styles['tipRow']}>
+                  <span className={styles['tipMut']}>All-in</span> {pct(activeRow.allIn)}
+                </span>
+                <span className={styles['tipFoot']}>{modeName} split</span>
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <div className={styles['foot']}>
@@ -376,6 +402,146 @@ function Chart({ tiers, splitRatio }: { tiers: FeeTier[]; splitRatio: number }) 
           citation, not a measurement.
         </p>
       </div>
+    </div>
+  )
+}
+
+interface BarRow {
+  lpFee: number
+  protocol: number
+  allIn: number
+}
+
+/**
+ * The phone layout of the same chart: one row per tier, LP and protocol as a
+ * stacked horizontal bar on the SAME axis the columns use (`ticks`, `yMax`),
+ * so the toggle still moves only the protocol segment.
+ *
+ * The floating tooltip becomes inline detail. A tooltip needs a hover to open
+ * and room beside the mark to sit in; a phone has neither. Each row is a real
+ * button with `aria-expanded`, and its figures open directly beneath it,
+ * pushing the next row down rather than covering it. One row open at a time.
+ */
+function CompactBars({
+  rows,
+  ticks,
+  yMax,
+  modeName,
+  expanded,
+  onToggle,
+  onEscape,
+  growHidden,
+  plotRef,
+  idBase,
+}: {
+  rows: readonly BarRow[]
+  ticks: readonly number[]
+  yMax: number
+  modeName: string
+  expanded: number | null
+  onToggle: (i: number) => void
+  onEscape: () => void
+  growHidden: boolean
+  plotRef: (node: HTMLDivElement | null) => void
+  idBase: string
+}) {
+  const at = (pips: number): string => `${(pips / yMax) * 100}%`
+  const last = ticks.length - 1
+  /* The two ends only: a phone's bar track is ~130px, and even three mono
+     percentages at the 12px floor run into each other. Every tick keeps its
+     gridline in the rows, so the steps between are still drawn. */
+  const labelEvery = Math.max(1, last)
+
+  return (
+    <div className={styles['hChart']} ref={plotRef}>
+      {/* The value axis, aligned to the bar track below it. Decorative: every
+          figure it marks is spoken by the row buttons. */}
+      <p className={styles['hAxisTitle']} aria-hidden="true">
+        % of trade
+      </p>
+      <div className={styles['hAxis']} aria-hidden="true">
+        <span />
+        <span className={styles['hAxisTrack']}>
+          {ticks.map((v, i) =>
+            i % labelEvery !== 0 && i !== last ? null : (
+            <span
+              key={v}
+              className={cx(
+                styles['hTick'],
+                i === 0 && styles['hTickFirst'],
+                i === last && styles['hTickLast'],
+              )}
+              style={{ left: at(v) }}
+            >
+              {pct(v, 2)}
+            </span>
+            ),
+          )}
+        </span>
+        <span />
+        <span />
+      </div>
+
+      <ul className={styles['hList']} aria-label={`Pool tiers, ${modeName} split`}>
+        {rows.map((r, i) => {
+          const open = expanded === i
+          const detailId = `${idBase}-tier-${i}`
+          return (
+            <li key={r.lpFee} className={styles['hItem']}>
+              <button
+                type="button"
+                className={styles['hBtn']}
+                aria-expanded={open}
+                aria-controls={detailId}
+                onClick={() => onToggle(i)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') onEscape()
+                }}
+              >
+                <span className={styles['hTier']}>
+                  {pct(r.lpFee, 2)}
+                  <span className={styles['sr']}> pool, all-in </span>
+                </span>
+                <span className={styles['hTrack']} aria-hidden="true">
+                  {ticks.map((v) => (
+                    <i key={v} className={styles['hGrid']} style={{ left: at(v) }} />
+                  ))}
+                  <span
+                    className={cx(styles['hBar'], growHidden && styles['hBarHidden'])}
+                    style={{ '--stagger': `${i * 60}ms` } as CSSProperties}
+                  >
+                    <span className={styles['hSegLp']} style={{ width: at(r.lpFee) }} />
+                    <span
+                      className={styles['hSegProtocol']}
+                      style={{ left: at(r.lpFee), width: at(r.protocol) }}
+                    />
+                  </span>
+                </span>
+                <span className={styles['hValue']}>{pct(r.allIn)}</span>
+                <span className={styles['hChevron']} aria-hidden="true" />
+              </button>
+
+              <div id={detailId} className={styles['hDetail']} hidden={!open}>
+                <dl className={styles['hFigures']}>
+                  <div>
+                    <dt>LP</dt>
+                    <dd>{pct(r.lpFee, 2)}</dd>
+                  </div>
+                  <div>
+                    <dt>Protocol</dt>
+                    <dd>{pct(r.protocol)}</dd>
+                  </div>
+                  <div>
+                    <dt>All-in</dt>
+                    <dd>{pct(r.allIn)}</dd>
+                  </div>
+                </dl>
+                <p className={styles['hDetailFoot']}>{modeName} split</p>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }
