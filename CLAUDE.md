@@ -716,6 +716,18 @@ something to hand an autonomous process.
   is currency1: `currentTick <= tickLower` treats the in-range boundary as cleared (`CLPool.sol:117`),
   and `withdraw` pays only quote, so the unsold dust strands. Mirror off-by-one in the constructor
   check. Fix: strict comparisons. Not deployed.
+- **Open, LOW — `LatchLaunchRegistry.clearLaunchAttribution` leaves the pool in the launchpad's
+  index** (fork campaign 2026-09-14). `launchpadLaunchCount` and `launchesOfLaunchpad` keep
+  reporting the cleared launch. On the fork, `setLaunchpadVerification` then verified a launchpad
+  whose only attribution a curator had cleared. Fix: remove the pool from the index in the clear
+  (swap-and-pop with a position map). Until then, curators must not verify a launchpad on its
+  launch count alone.
+- **Informational — LTT1/LTT2 is one narrow range.** An exact-in router swap of 100 LTT1 filled
+  30.5 without reverting. Once the range is exhausted, the `0x23CE` hook skips its LP-donation leg
+  (`LpDonationSkipped`). Any UI must set `amountOutMinimum` from a quote.
+- **Environment — all ten anvil dev accounts carry EIP-7702 delegation code on 4663 mainnet**
+  (likely a sweeper). Never fund them on a real chain. On a fork, clear their code, or signature
+  and ERC-721 receiver tests silently test a smart account.
 - **Informational, triaged by design 2026-09-13 — a holiday does not close the previous
   day's overnight tail.** An override on day D governs the session that OPENS on D (the
   module's stated attribution), so on a wrapping schedule D-1's tail still trades into D.
@@ -788,6 +800,16 @@ inverted on all four.
 | `CLPoolManagerOwner` / `BinPoolManagerOwner` | Custody 48h | `unpausePoolManager`, `setProtocolFeeController`, `transferPoolManagerOwnership` and the pausable-role grants are all `onlyOwner`. The worst is `transferPoolManagerOwnership`: the manager can never be moved to a replacement wrapper. |
 | `RevShareHook` `0x23CE…E446` (retired, hosts LTT1/LTT2) | Safe | Renounce still live there (eth_call from the Safe succeeds); `0xfC00…` reverts `RenounceDisabled`. `setPaused(false)` and `setGuardian` are gone. Pool owners, `claim`, `redeem` and `settleBeneficiaries` are unaffected — no user funds strand — but the global switch is lost in whatever position it was left. |
 
+**Also live, confirmed by the 2026-09-14 fork campaign (`ops/fork-campaign`):**
+- `UniversalRouter`, owned by the Safe. Renouncing it while it is paused leaves the router
+  unusable forever. This was reproduced on the fork.
+- Both upstream `ProtocolFeeController`s.
+- `CLPositionDescriptorOffChain`. It uses single-step `Ownable`, so `transferOwnership`
+  takes effect immediately with no accept step.
+- `Create3Factory`, owned by `0x304b`.
+
+All four are on the same do-not-queue list.
+
 **`pausePoolManager` is `onlyPausableRoleOrOwner`, not `onlyOwner`.** So a renounce does not
 brick pausing — it leaves the managers pausable by an Ops key and **unpausable by anyone**.
 That is worse than losing both, and a review that assumed `onlyOwner` got it backwards.
@@ -803,6 +825,13 @@ so it cannot land somewhere unreachable. **Every contract deployed from here on 
 `renounceOwnership` to revert;** `MerkleEpochDistributor` is the reference.
 
 ### 2. `LatchTimelock.updateDelay(0)` — with nobody left to cancel it
+
+**Corrected 2026-09-14 by the fork campaign: this hazard is live on the POLICY timelock
+`0x1Da3…0C3A` only.** On the deployed custody timelock `0x3aE3…e119`, `updateDelay(0)` reverts
+`DelayBelowTierFloor(0, 0, 172800)` and the delay stays at 48 h. That build overrides it. On
+policy, the fork reproduced the whole chain: `updateDelay(0)` executes, a delay-0 operation then
+executes in the same block, and only the Safe can cancel it. The paragraphs below describe the
+older build that policy still runs.
 
 The tier floor is checked once, in the constructor (`LatchTimelock.sol:92`). OZ's
 `updateDelay` is `external virtual`, gated only on `sender == address(this)`, and
@@ -1048,6 +1077,16 @@ that read, not the queued operation, is the proof.** (A batch proposed earlier i
 The policy timelock holds only the descriptor and has **no CANCELLER_ROLE** for the canceller
 (the custody timelock does). Low impact — the descriptor is cosmetic — but either move the
 descriptor to the Safe per the table or grant the role.
+
+**⚠ Grant the Ops pausable role in the same session as executing these.** The fork campaign
+executed all three on an anvil fork. They work: `owner()` becomes the custody timelock, and
+`registerApp` then needs a full 172,800 s queue. But no `PausableRole` is granted on either
+wrapper, so after execution the Safe's direct pause path is gone, `0x304b`'s
+`pausePoolManager` reverts `NoPausableRole`, and **pausing either pool manager needs a 48 h
+queued operation**. That is a pause that arrives after the incident. The grant is a custody
+`onlyOwner` call, so it has to be queued on the timelock. The alternative is for the Safe to
+grant it BEFORE anyone executes the three accepts, while the Safe is still the owner. That is
+the better order.
 
 **Also found 2026-09-13 (dapp governance audit, confirmed with `cast`):**
 
