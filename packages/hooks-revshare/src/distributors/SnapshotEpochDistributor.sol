@@ -98,6 +98,11 @@ contract SnapshotEpochDistributor is IEpochDistributor, ReentrancyGuard {
     error AlreadyRolledOver(uint256 epochId);
     error NativeNotAccepted();
 
+    /// @notice A claim for an account with code was submitted by someone other than that account.
+    /// @dev See `claim`: a contract holder must claim for itself, so a holder that cannot is never
+    /// paid into a dead end and its share rolls over instead.
+    error ContractAccountMustClaimItself(address account, address caller);
+
     /// @notice `minEpochDuration` is below `MIN_EPOCH_DURATION_FLOOR`.
     error MinEpochDurationTooShort(uint64 provided, uint64 required);
 
@@ -381,11 +386,36 @@ contract SnapshotEpochDistributor is IEpochDistributor, ReentrancyGuard {
                                  CLAIMS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Claim `account`'s pro-rata share of `epochId`. Anyone may submit; `account` is paid.
-    /// @dev Rounding floors both amounts, so the sum of all claims is never more than the pot and
+    /// @notice Claim `account`'s pro-rata share of `epochId`. `account` is always the one paid.
+    ///
+    /// @dev ############ WHO MAY SUBMIT, AND WHY IT IS NOT "ANYONE" ############
+    ///
+    /// This used to be callable by anyone for any `account`. Paired with `LatchVotes`, which
+    /// auto-delegates to EVERY first receiver including contracts, that let a stranger claim the
+    /// share of an address that can never spend it - the Vault (which holds every pool's
+    /// liquidity, often the largest holder), `RevShareHook` after `redeem`, this distributor itself,
+    /// a router - and so move real holder money into a permanent dead end, every epoch, for gas.
+    /// Left unclaimed, that same share would have reached real holders through `rollover`.
+    ///
+    /// The rule is deliberately about CODE rather than a list of known sinks, because the set of
+    /// contracts that ever received the token is open-ended:
+    ///   * an account WITH code must submit its own claim (`msg.sender == account`). A contract
+    ///     that can claim can also use the payout; one that cannot claim is never paid and its
+    ///     share rolls over. Smart-contract wallets (Safes, EIP-7702 delegated EOAs) call it
+    ///     themselves.
+    ///   * an account WITHOUT code may still be claimed for by anyone - a claim bot or a gas
+    ///     sponsor - because a key holder can always move what it receives. Payout stays
+    ///     hard-wired to `account`, so a sponsor can never redirect it.
+    /// Residual: a counterfactual address (code deployed later) can be claimed for while empty.
+    /// Whoever controls that address chose to hold votes there.
+    ///
+    /// Rounding floors both amounts, so the sum of all claims is never more than the pot and
     /// the epoch cannot be over-drawn even before the escrow ceiling below. The floor remainder is
     /// picked up by `rollover`.
     function claim(uint256 epochId, address account) external nonReentrant returns (uint256 amount0, uint256 amount1) {
+        if (msg.sender != account && account.code.length != 0) {
+            revert ContractAccountMustClaimItself(account, msg.sender);
+        }
         if (epochId >= epochCount) revert UnknownEpoch(epochId);
         Epoch storage epoch = _epochs[epochId];
 

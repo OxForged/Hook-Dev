@@ -121,8 +121,12 @@ struct LaunchRecord {
     bool tokenIsCurrency0;
     /// @dev The pool's hook. `address(0)` for a plain pool; a launch does not have to use a Latch.
     address hooks;
-    /// @dev Block height of registration, so an indexer can bound its own log scan without a
-    /// binary search over timestamps.
+    /// @dev `block.number` AS THE EVM SAW IT at registration. INFORMATIONAL, and NOT a log-scan
+    /// bound on every chain: on Arbitrum Nitro (Robinhood Chain, 4663) the EVM's `block.number` is
+    /// the PARENT chain's block, while `eth_getLogs` ranges use the L2 block the RPC reports - so
+    /// using this as `fromBlock` there scans from the wrong clock. Use `registeredAt` (a timestamp)
+    /// for anything time-shaped. Kept for storage and ABI compatibility with the deployed registry;
+    /// no duration anywhere in Latch is derived from it.
     uint64 registeredAtBlock;
     /*------------------------------- provenance --------------------------------*/
     /// @dev Non-zero IF AND ONLY IF `origin == LaunchpadAttested`.

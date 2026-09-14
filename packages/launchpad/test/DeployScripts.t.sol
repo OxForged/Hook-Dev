@@ -8,6 +8,7 @@ import {WETH} from "solmate/src/tokens/WETH.sol";
 
 import {Vault} from "infinity-core/src/Vault.sol";
 import {CLPoolManager} from "infinity-core/src/pool-cl/CLPoolManager.sol";
+import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";
 import {Deployers} from "infinity-core/test/pool-cl/helpers/Deployers.sol";
 
 import {CLPositionManager} from "infinity-periphery/src/pool-cl/CLPositionManager.sol";
@@ -17,14 +18,27 @@ import {IWETH9} from "infinity-periphery/src/interfaces/external/IWETH9.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 import {DeployPermit2} from "permit2/test/utils/DeployPermit2.sol";
 
-import {LaunchGuardHook} from "latch-hooks/src/launch/LaunchGuardHook.sol";
+import {BaseCLHook} from "latch-hooks/src/base/BaseCLHook.sol";
+import {LaunchGuardHook, ILaunchTokenOrigin} from "latch-hooks/src/launch/LaunchGuardHook.sol";
 import {LatchRegistry} from "latch-registry/src/LatchRegistry.sol";
 
 import {LaunchpadKit} from "../src/LaunchpadKit.sol";
+import {LaunchTokenFactory} from "../src/LaunchTokenFactory.sol";
 import {IHookRegistryListing} from "../src/interfaces/IHookRegistryListing.sol";
+import {Preset} from "../src/libraries/LaunchPresets.sol";
+import {LaunchParams} from "../src/interfaces/ILaunchpadKit.sol";
 import {DeployLaunchGuardHookMainnetScript} from "../script/DeployLaunchGuardHookMainnet.s.sol";
 import {DeployLaunchpadKitMainnetScript} from "../script/DeployLaunchpadKitMainnet.s.sol";
-import {ContractClockMath} from "latch-hooks/script/ContractClock.sol";
+
+/// @dev What the retired block-numbered `LaunchGuardHook` (0x8b4F…575c) looks like to the kit script:
+/// right pool manager, right bitmap, no `CLOCK_MODE()`.
+contract RetiredBlockNumberedHook is BaseCLHook {
+    constructor(ICLPoolManager _pm) BaseCLHook(_pm) {}
+
+    function getHooksRegistrationBitmap() public pure override returns (uint16) {
+        return BEFORE_INITIALIZE | BEFORE_SWAP;
+    }
+}
 
 /// @title DeployScriptsTest
 /// @notice Runs both mainnet deploy scripts end to end against a locally built stack.
@@ -36,22 +50,17 @@ import {ContractClockMath} from "latch-hooks/script/ContractClock.sol";
 /// argument is permanent: a script that wires it wrong produces a contract to abandon, not a
 /// contract to fix. So the scripts are run here as CONTRACTS rather than read as documents.
 ///
-/// Each pre-flight guard is additionally MUTATED, following CLAUDE.md's rule about the
-/// transient-backend guards: a green run of a script whose `require`s can never trip proves
-/// nothing. Delete a guard and its case here stops reverting.
+/// Each pre-flight guard is additionally MUTATED: a green run of a script whose `require`s can
+/// never trip proves nothing. Delete a guard and its case here stops reverting.
 ///
 /// THE HARNESS TALKS TO `runWith`, NEVER TO THE ENVIRONMENT. `vm.setEnv` writes PROCESS
-/// environment, which is not EVM state and is therefore not rolled back between test cases -
-/// and forge 1.x runs test cases concurrently against one shared process. An earlier version of
-/// this file configured the scripts through `vm.setEnv` and failed with each test reporting the
-/// PREVIOUS test's error message. That is the shape of that bug; it is why the scripts read env
-/// in exactly one function and take their inputs as arguments everywhere else.
+/// environment, which is not rolled back between test cases, and forge 1.x runs test cases
+/// concurrently against one shared process.
 ///
-/// The block time used throughout is Robinhood Chain's real CONTRACT block time - 1200 centis.
-/// Robinhood is Arbitrum Nitro: inside the EVM `block.number` is Ethereum's block number (~12 s),
-/// not the ~0.1 s L2 block its RPC reports. This file previously used 10, the RPC's figure, which
-/// is how the live kit and hook came to run every window ~120x long. The scripts now take the
-/// cadence `run()` measured on chain and refuse a declaration that disagrees with it.
+/// TIMESTAMPS, NOT BLOCKS (Option B, 2026-09-13). This file used to test a `blockTimeCentis`
+/// declaration against a measured contract clock. No contract takes a block time any more; the
+/// clock guards that remain are "the hook is timestamp-clocked" and, in `run()` only, the live
+/// `block.timestamp` sanity probe (`latch-hooks/script/ContractClock.sol`, unit-tested in hooks).
 /// ###################################################################
 contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     Vault vault;
@@ -60,6 +69,7 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     IAllowanceTransfer permit2;
     LatchRegistry registry;
     WETH weth;
+    LaunchTokenFactory factory;
 
     DeployLaunchGuardHookMainnetScript hookScript;
     DeployLaunchpadKitMainnetScript kitScript;
@@ -68,20 +78,8 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
     /// need a key they can derive an address from.
     uint256 constant TEST_PK = 1;
 
-    /// @dev Robinhood Chain (4663) contract block time, declared. Ethereum's 12 s slot.
-    uint256 constant ROBINHOOD_CENTIS = 1200;
-
-    /// @dev What `ContractClockProbe.measure` returns on Robinhood: 3,428 s over 283 contract
-    /// blocks between two real headers read on 2026-09-13 (missed Ethereum slots push it past 1200).
-    uint256 constant ROBINHOOD_MEASURED = 1211;
-
-    /// @dev What the live Robinhood kit and hook declared: the RPC's L2 block time.
-    uint256 constant LIVE_WRONG_CENTIS = 10;
-
-    /// @dev The hook's two block caps at 1200 centis: 216 000 x 12 s = 30 days each. The live hook
-    /// set 26 000 000 at 10 centis, which on the real clock is ~9.9 years.
-    uint256 constant MAX_DECAY = 216_000;
-    uint256 constant MAX_START = 216_000;
+    /// @dev The Ops key that the Ownership table assigns the LaunchGuardHook listing steward to.
+    address constant OPS_STEWARD = address(0x0B5);
 
     address constant REGISTRY_ADMIN = address(0xAD3111);
 
@@ -94,11 +92,16 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
 
         address[] memory none = new address[](0);
         registry = new LatchRegistry(REGISTRY_ADMIN, address(vault), none, none);
+        factory = new LaunchTokenFactory();
 
         // Constructed in setUp so `vm.expectRevert` lands on `runWith` and not on the script's
         // own creation - a mistake that makes every mutation below pass for the wrong reason.
         hookScript = new DeployLaunchGuardHookMainnetScript();
         kitScript = new DeployLaunchpadKitMainnetScript();
+    }
+
+    function _hook() internal returns (LaunchGuardHook) {
+        return hookScript.runWith(TEST_PK, address(poolManager), address(factory), address(registry), OPS_STEWARD);
     }
 
     /// @dev The wiring a correct Robinhood deployment uses, with the hook filled in by step 1.
@@ -109,9 +112,7 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
             hook: hook,
             positionManager: address(posm),
             permit2: address(permit2),
-            registry: address(registry),
-            blockTimeCentis: ROBINHOOD_CENTIS,
-            measuredBlockTimeCentis: ROBINHOOD_MEASURED
+            registry: address(registry)
         });
     }
 
@@ -119,13 +120,13 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
                             THE HAPPY PATH
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Both scripts, in the documented order, at Robinhood's block time. Every `require`
-    /// inside them is live; this passing means none of them tripped, and the post-flight
-    /// assertions inside the scripts have already read every immutable back off chain.
+    /// @dev Both scripts, in the documented order. Every `require` inside them is live; this
+    /// passing means none tripped, and the post-flight assertions have read every immutable back.
     function test_bothScriptsRunInOrder() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
+        LaunchGuardHook hook = _hook();
         assertGt(address(hook).code.length, 0, "hook has no code");
         assertEq(address(hook.poolManager()), address(poolManager));
+        assertEq(hook.CLOCK_MODE(), "mode=timestamp");
 
         LaunchpadKit kit = kitScript.runWith(_wiring(address(hook)));
 
@@ -136,41 +137,45 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
         assertEq(address(kit.positionManager()), address(posm));
         assertEq(address(kit.permit2()), address(permit2));
         assertEq(address(kit.registry()), address(registry));
-        assertEq(kit.blockTimeCentis(), uint32(ROBINHOOD_CENTIS));
+        assertEq(kit.CLOCK_MODE(), "mode=timestamp");
         assertEq(kit.hookBitmap(), 0x0041);
         assertEq(address(kit).balance, 0, "kit was born holding native value");
     }
 
-    /// @dev `address(0)` disables listing for the life of the kit and must stay reachable. The
-    /// script requires it to be passed explicitly, so "forgot to set it" cannot look like
-    /// "meant no registry" - the absence of a default is the safety property.
-    function test_kitScriptAcceptsNoRegistry() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
+    /// @dev The Ownership-table runbook item: the hook is listed in the same session it is
+    /// deployed, and the steward ends with Ops, not the deployer.
+    function test_hookScript_listsTheHookWithTheOpsSteward() public {
+        LaunchGuardHook hook = _hook();
+        assertTrue(registry.isRegistered(address(hook)), "listed in the same session");
+        assertEq(registry.getLatch(address(hook)).steward, OPS_STEWARD, "steward is Ops");
+        assertEq(registry.getLatch(address(hook)).submitter, vm.addr(TEST_PK), "listed by the deployer");
+        assertEq(registry.getLatch(address(hook)).permissions, uint16(0x0041));
+    }
 
+    function test_kitScriptAcceptsNoRegistry() public {
+        LaunchGuardHook hook = _hook();
         DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
         w.registry = address(0);
-
         LaunchpadKit kit = kitScript.runWith(w);
         assertEq(address(kit.registry()), address(0));
     }
 
-    /// @dev The whole point of the block-time fix, stated as an outcome rather than a bound: at
-    /// Robinhood's real contract cadence a "five minute" FairLaunch spans five real minutes - not
-    /// less, and not the ten hours the live kit gives it.
-    function test_robinhoodBlockTimeProducesWindowsThatMatchTheirLabel() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
-        LaunchpadKit kit = kitScript.runWith(_wiring(address(hook)));
-
-        // FairLaunch documents 300s. 25 blocks at the measured 12.11 s is 302 real seconds.
-        uint256 blocks = (300 * 100 + kit.blockTimeCentis() - 1) / kit.blockTimeCentis();
-        assertEq(blocks, 25);
-        uint256 realSeconds = (blocks * ROBINHOOD_MEASURED) / 100;
-        assertGe(realSeconds, 300, "the tax would lift before the documented window ends");
-        assertLe(realSeconds, 330, "the window runs far past its label");
-
-        // The live kit's declaration, for contrast: 3 000 blocks, ~10 real hours.
-        uint256 liveBlocks = 300 * 100 / LIVE_WRONG_CENTIS;
-        assertEq((liveBlocks * ROBINHOOD_MEASURED) / 100, 36_330);
+    /// @dev The whole point of the migration, stated as an outcome: the "five minute" FairLaunch
+    /// the kit writes is 300 seconds of `block.timestamp`. The live block-numbered kit wrote 3 000
+    /// blocks, which on Robinhood's ~12.1 s contract clock is ~10 hours.
+    function test_presetWindowsAreTheSecondsOnTheirLabel() public {
+        LaunchpadKit kit = kitScript.runWith(_wiring(address(_hook())));
+        LaunchParams memory p;
+        p.launchToken = address(new MockERC20("L", "L", 18));
+        p.quoteToken = address(0);
+        p.tickSpacing = 60;
+        p.preset = Preset.FairLaunch;
+        assertEq(kit.previewSchedule(p).decaySeconds, 300);
+        p.preset = Preset.AntiSniperAggressive;
+        p.maxBuyPerTx = 1 ether; // the preset refuses to run without a per-transaction cap
+        assertEq(kit.previewSchedule(p).decaySeconds, 1800);
+        p.preset = Preset.Stealth;
+        assertEq(kit.previewSchedule(p).decaySeconds, 120);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -179,7 +184,17 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
 
     function test_hookScript_rejectsAPoolManagerWithNoCode() public {
         vm.expectRevert(bytes("CL_POOL_MANAGER has no code - not a contract"));
-        hookScript.runWith(TEST_PK, address(0xDEAD), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
+        hookScript.runWith(TEST_PK, address(0xDEAD), address(factory), address(registry), OPS_STEWARD);
+    }
+
+    function test_hookScript_refusesToDeployWithoutARegistry() public {
+        vm.expectRevert(bytes("LAUNCH_GUARD_REGISTRY has no code - list in the same session"));
+        hookScript.runWith(TEST_PK, address(poolManager), address(factory), address(0), OPS_STEWARD);
+    }
+
+    function test_hookScript_refusesToDeployWithoutAnOpsSteward() public {
+        vm.expectRevert(bytes("LAUNCH_GUARD_STEWARD unset - the Ownership table assigns it to Ops"));
+        hookScript.runWith(TEST_PK, address(poolManager), address(factory), address(registry), address(0));
     }
 
     function test_kitScript_rejectsAHookThatWasNeverDeployed() public {
@@ -187,20 +202,24 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
         kitScript.runWith(_wiring(address(0xBEEF)));
     }
 
-    /// @dev A hook bound to another singleton makes every `configureLaunch` revert with
-    /// `PoolManagerMismatch`, which reads as a caller error rather than a deployment error.
     function test_kitScript_rejectsAHookServingADifferentPoolManager() public {
         (, CLPoolManager other) = createFreshManager();
-        LaunchGuardHook strayHook = new LaunchGuardHook(other, uint32(ROBINHOOD_CENTIS), uint32(MAX_DECAY), uint48(MAX_START));
-
+        LaunchGuardHook strayHook = new LaunchGuardHook(other, ILaunchTokenOrigin(address(0)));
         vm.expectRevert(bytes("LAUNCH_GUARD_HOOK serves a different pool manager than CL_POOL_MANAGER"));
         kitScript.runWith(_wiring(address(strayHook)));
     }
 
-    /// @dev A position manager on another singleton passes every `code.length` check and fails
-    /// only inside a settle, later, with a message about currencies.
+    /// @dev THE REDEPLOY FOOTGUN: a new kit pointed at the retired block-numbered hook.
+    /// MUTATION-CHECKED: delete the script's clock guard and the kit's constructor still refuses,
+    /// but with `HookClockMismatch("")` instead of this sentence.
+    function test_kitScript_rejectsTheRetiredBlockNumberedHook() public {
+        RetiredBlockNumberedHook old = new RetiredBlockNumberedHook(poolManager);
+        vm.expectRevert(bytes("LAUNCH_GUARD_HOOK is not timestamp-clocked - is it the retired block-numbered hook?"));
+        kitScript.runWith(_wiring(address(old)));
+    }
+
     function test_kitScript_rejectsAPositionManagerOnAnotherSingleton() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
+        LaunchGuardHook hook = _hook();
 
         (Vault otherVault, CLPoolManager other) = createFreshManager();
         ICLPositionDescriptor descriptor = new CLPositionDescriptorOffChain("https://latch.example/other/");
@@ -214,103 +233,21 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
         kitScript.runWith(w);
     }
 
-    /// @dev The kit grants an UNBOUNDED Permit2 allowance to whatever address it is handed. Given
-    /// a Permit2 the position manager does not pull through, that allowance has no legitimate
-    /// caller and every seed reverts - so the check is identity against the position manager's
-    /// own immutable, and a plausible impostor with code must still be rejected.
     function test_kitScript_rejectsAPermit2ThePositionManagerDoesNotUse() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
-
+        LaunchGuardHook hook = _hook();
         DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
         w.permit2 = address(registry); // has code, is not the position manager's Permit2
-
         vm.expectRevert(
             bytes("PERMIT2 is not the Permit2 the position manager pulls through - use the one it names")
         );
         kitScript.runWith(w);
     }
 
-    /// @dev A retired registry still has code and still answers its old selectors - this project
-    /// has one live on Sepolia that does exactly that. An address with code but the wrong ABI has
-    /// to stop the deploy, because the kit's registry can never be re-pointed.
     function test_kitScript_rejectsARegistryWithTheWrongAbi() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
-
+        LaunchGuardHook hook = _hook();
         DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
         w.registry = address(new MockERC20("Not", "NOT", 18));
-
         vm.expectRevert();
-        kitScript.runWith(w);
-    }
-
-    function test_kitScript_rejectsAZeroBlockTime() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
-
-        DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
-        w.blockTimeCentis = 0;
-
-        vm.expectRevert(bytes("LAUNCHPAD_BLOCK_TIME_CENTIS not set - it has no safe default"));
-        kitScript.runWith(w);
-    }
-
-    function test_kitScript_rejectsABlockTimeAboveTenMinutes() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
-
-        DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
-        w.blockTimeCentis = 60_001;
-
-        vm.expectRevert(bytes("LAUNCHPAD_BLOCK_TIME_CENTIS above 600s per block"));
-        kitScript.runWith(w);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-        CLOCK MUTATIONS - the guards that would have refused the live
-        Robinhood deployment. Delete a guard and its case stops reverting.
-    //////////////////////////////////////////////////////////////*/
-
-    /// @dev THE BUG, replayed: the RPC's 0.1 s declared against a measured ~12 s contract clock.
-    function test_hookScript_rejectsTheRpcBlockTimeOnANitroChain() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ContractClockMath.DeclaredBlockTimeTooShort.selector, LIVE_WRONG_CENTIS, ROBINHOOD_MEASURED
-            )
-        );
-        hookScript.runWith(TEST_PK, address(poolManager), LIVE_WRONG_CENTIS, 26_000_000, 26_000_000, ROBINHOOD_MEASURED);
-    }
-
-    /// @dev Declaring the chain SLOWER than it is shortens every window - the sniper's direction.
-    function test_hookScript_rejectsADeclarationThatShortensWindows() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(ContractClockMath.DeclaredBlockTimeTooLong.selector, 1300, ROBINHOOD_MEASURED)
-        );
-        hookScript.runWith(TEST_PK, address(poolManager), 1300, 200_000, 200_000, ROBINHOOD_MEASURED);
-    }
-
-    function test_kitScript_rejectsTheRpcBlockTimeOnANitroChain() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
-
-        DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
-        w.blockTimeCentis = LIVE_WRONG_CENTIS;
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ContractClockMath.DeclaredBlockTimeTooShort.selector, LIVE_WRONG_CENTIS, ROBINHOOD_MEASURED
-            )
-        );
-        kitScript.runWith(w);
-    }
-
-    /// @dev Both inside the measured band, but not equal to each other: the kit would convert
-    /// seconds at one cadence and the hook validate its caps at another.
-    function test_kitScript_rejectsAKitThatDisagreesWithItsHook() public {
-        LaunchGuardHook hook = hookScript.runWith(TEST_PK, address(poolManager), ROBINHOOD_CENTIS, MAX_DECAY, MAX_START, ROBINHOOD_MEASURED);
-
-        DeployLaunchpadKitMainnetScript.Wiring memory w = _wiring(address(hook));
-        w.blockTimeCentis = 1150;
-
-        vm.expectRevert(
-            bytes("LAUNCHPAD_BLOCK_TIME_CENTIS differs from the hook's blockTimeCentis - one of them is wrong")
-        );
         kitScript.runWith(w);
     }
 
@@ -318,23 +255,15 @@ contract DeployScriptsTest is Test, Deployers, DeployPermit2 {
                                  GAS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Measured, so the runbook's funding figure is not a guess. Not asserted to an exact
-    /// number - that breaks on every compiler bump - but bounded loosely enough to be stable and
-    /// tightly enough to catch a contract that doubled in size.
+    /// @dev Measured, so the runbook's funding figure is not a guess. Bounded loosely enough to be
+    /// stable across compiler bumps and tightly enough to catch a contract that doubled in size.
     function test_deploymentGasIsWithinTheFundingEstimate() public {
         uint256 before = gasleft();
-        LaunchGuardHook hook = new LaunchGuardHook(poolManager, uint32(ROBINHOOD_CENTIS), uint32(MAX_DECAY), uint48(MAX_START));
+        LaunchGuardHook hook = new LaunchGuardHook(poolManager, ILaunchTokenOrigin(address(0)));
         uint256 hookGas = before - gasleft();
 
         before = gasleft();
-        LaunchpadKit kit = new LaunchpadKit(
-            poolManager,
-            hook,
-            posm,
-            permit2,
-            IHookRegistryListing(address(registry)),
-            uint32(ROBINHOOD_CENTIS)
-        );
+        LaunchpadKit kit = new LaunchpadKit(poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)));
         uint256 kitGas = before - gasleft();
 
         emit log_named_uint("LaunchGuardHook deploy gas", hookGas);

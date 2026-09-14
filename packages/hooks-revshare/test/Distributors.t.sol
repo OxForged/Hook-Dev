@@ -52,17 +52,8 @@ abstract contract DistributorFixture is Test, Deployers {
     int256 constant SWAP_AMOUNT = -10 ether;
 
 
-    /* ------------------------------------------------------------------
-       ROBINHOOD-LIKE PARAMETERS, on purpose.
-
-       The suite used to run against `CONFIG_DELAY_BLOCKS = 3600`, which is 12
-       hours on a 12s chain and SIX MINUTES on the chain this hook is actually
-       deployed to. Testing against 12s numbers is what let that ship. 10 centis
-       is Robinhood's real block time rounded down, and 432 000 blocks is the
-       smallest count that clears the hook's 12h wall-clock floor there.
-       ------------------------------------------------------------------ */
-    uint32 constant BLOCK_TIME_CENTIS = 10; // 0.1s blocks
-    uint48 constant CONFIG_DELAY = 432_000; // x 10 centis = 43 200s = 12h
+    /// @dev The hook's floor, in seconds of `block.timestamp`.
+    uint40 constant CONFIG_DELAY = 12 hours;
 
     /// @dev `rootGracePeriod` for every distributor built here. Equal to
     /// `ROOT_GRACE_PERIOD_FLOOR`, which is also what the old `constant` was.
@@ -70,7 +61,7 @@ abstract contract DistributorFixture is Test, Deployers {
 
     function _deployPool(address tokenA, address tokenB) internal {
         (vault, poolManager) = createFreshManager();
-        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 8);
+        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, 8);
         router = new CLPoolManagerRouter(vault, poolManager);
 
         (currency0, currency1) =
@@ -290,6 +281,33 @@ contract MerkleEpochDistributorTest is DistributorFixture {
         distributor.claim(0, 1, HOLDER_B, 0, shareB, _proof(leafA));
         assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(HOLDER_B), shareB);
         assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(address(distributor)), 0, "epoch fully drained");
+    }
+
+    /// @dev MEDIUM, fixed (same pattern as the snapshot distributor): a root that allots a leaf to a
+    /// contract cannot be claimed into that contract by a stranger. The contract may claim itself.
+    function test_FIX_strangerCannotClaimAContractLeaf_contractMayClaimItself() public {
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        uint256 pot = distributor.getEpoch(0).amount1;
+
+        DelegatingSink sink = new DelegatingSink();
+        SelfClaimingHolder holder = new SelfClaimingHolder();
+        uint256 share = pot / 2;
+        bytes32 leafSink = _leaf(0, address(sink), 0, share);
+        bytes32 leafHolder = _leaf(1, address(holder), 0, share);
+        vm.prank(GOVERNANCE);
+        distributor.postRoot(0, _hashPair(leafSink, leafHolder), TREE_URI);
+        vm.warp(block.timestamp + CHALLENGE);
+
+        vm.prank(HOLDER_C);
+        vm.expectRevert(
+            abi.encodeWithSelector(MerkleEpochDistributor.ContractAccountMustClaimItself.selector, address(sink), HOLDER_C)
+        );
+        distributor.claim(0, 0, address(sink), 0, share, _proof(leafHolder));
+        assertFalse(distributor.isClaimed(0, 0));
+
+        holder.claimMerkle(distributor, 0, 1, 0, share, _proof(leafSink));
+        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(address(holder)), share);
     }
 
     function test_claim_rejectsForgedProofsAndAmounts() public {
@@ -1006,6 +1024,31 @@ contract MerkleEpochDistributorTest is DistributorFixture {
                     SNAPSHOT EPOCH DISTRIBUTOR
 //////////////////////////////////////////////////////////////*/
 
+/// @dev A contract holder that can accept a delegation and nothing else: no function moves a token.
+/// Stands in for the Vault, the hook after `redeem`, a router - anything `LatchVotes` auto-delegates.
+contract DelegatingSink {
+    function delegateSelf(VotesToken votes) external {
+        votes.delegate(address(this));
+    }
+}
+
+/// @dev A contract holder that CAN claim for itself (a Safe, a treasury contract).
+contract SelfClaimingHolder {
+    function delegateSelf(VotesToken votes) external {
+        votes.delegate(address(this));
+    }
+
+    function claimSnapshot(SnapshotEpochDistributor d, uint256 epochId) external returns (uint256, uint256) {
+        return d.claim(epochId, address(this));
+    }
+
+    function claimMerkle(MerkleEpochDistributor d, uint256 epochId, uint256 index, uint256 a0, uint256 a1, bytes32[] calldata proof)
+        external
+    {
+        d.claim(epochId, index, address(this), a0, a1, proof);
+    }
+}
+
 contract SnapshotEpochDistributorTest is DistributorFixture {
     SnapshotEpochDistributor distributor;
     VotesToken votes;
@@ -1144,6 +1187,62 @@ contract SnapshotEpochDistributorTest is DistributorFixture {
         // Both claims together can never exceed the escrow.
         assertLe(distributor.getEpoch(0).claimed0, pot0);
         assertLe(distributor.getEpoch(0).claimed1, pot1);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+       MEDIUM, fixed: A STRANGER CANNOT CLAIM A CONTRACT HOLDER'S SHARE INTO A DEAD END
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev FAILS AGAINST THE PRE-FIX DISTRIBUTOR: there, HOLDER_C's call succeeded and paid the
+    /// sink, which can never move a token - that share was gone for good instead of rolling over.
+    function test_FIX_strangerCannotClaimForAContractHolder() public {
+        DelegatingSink sink = new DelegatingSink();
+        votes.transfer(address(sink), 300 ether);
+        sink.delegateSelf(votes);
+        vm.roll(block.number + 1);
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        (uint256 c0, uint256 c1) = distributor.claimableAmounts(0, address(sink));
+        assertGt(c0 + c1, 0, "the sink does have a share");
+
+        vm.prank(HOLDER_C);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SnapshotEpochDistributor.ContractAccountMustClaimItself.selector, address(sink), HOLDER_C
+            )
+        );
+        distributor.claim(0, address(sink));
+        assertFalse(distributor.claimed(0, address(sink)));
+    }
+
+    /// @dev The sink's unclaimed share returns to real holders through `rollover`.
+    function test_FIX_aContractHoldersUnclaimedShareRollsOver() public {
+        DelegatingSink sink = new DelegatingSink();
+        votes.transfer(address(sink), 300 ether);
+        sink.delegateSelf(votes);
+        vm.roll(block.number + 1);
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        (uint256 c0,) = distributor.claimableAmounts(0, address(sink));
+
+        vm.warp(distributor.getEpoch(0).expiresAt);
+        distributor.rollover(0);
+        assertGe(distributor.carryOver0(), c0, "the sink's share is carried to the next epoch");
+    }
+
+    /// @dev A contract that can claim for itself still can: the rule is "claim your own", not "no contracts".
+    function test_FIX_aContractHolderMayClaimForItself() public {
+        SelfClaimingHolder holder = new SelfClaimingHolder();
+        votes.transfer(address(holder), 300 ether);
+        holder.delegateSelf(votes);
+        vm.roll(block.number + 1);
+        _swap(SWAP_AMOUNT, true);
+        distributor.closeEpoch();
+        (uint256 e0, uint256 e1) = distributor.claimableAmounts(0, address(holder));
+        (uint256 g0, uint256 g1) = holder.claimSnapshot(distributor, 0);
+        assertEq(g0, e0);
+        assertEq(g1, e1);
+        assertTrue(distributor.claimed(0, address(holder)));
     }
 
     /// @dev The documented catch, asserted rather than hand-waved: an undelegated holder gets

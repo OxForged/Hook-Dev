@@ -125,12 +125,6 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
     /// @notice Optional hook registry. `address(0)` disables listing.
     IHookRegistryListing public immutable registry;
 
-    /// @notice Chain block time in hundredths of a second (1200 == 12s). Used only to turn the
-    /// presets' second-denominated windows into the hook's block-denominated ones.
-    /// @dev An approximation by construction: block times vary and some chains have no fixed one.
-    /// A launch that needs an exact window should use `Preset.Custom` and state `decayBlocks`.
-    uint32 public immutable blockTimeCentis;
-
     /// @notice The bitmap this kit builds into every pool key.
     /// @dev Read from the hook at construction, not hard-coded, so a hook whose permissions differ
     /// from `beforeInitialize | beforeSwap` cannot be driven by this kit at all.
@@ -138,6 +132,10 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
 
     /// @notice `beforeInitialize` (bit 0) | `beforeSwap` (bit 6). What `LaunchGuardHook` reports.
     uint16 public constant EXPECTED_HOOK_BITMAP = 0x0041;
+
+    /// @notice ERC-6372 clock mode of every time this kit writes: `block.timestamp` seconds. The
+    /// hook it drives must report the same, checked at construction.
+    string public constant CLOCK_MODE = "mode=timestamp";
 
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -152,14 +150,14 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
     /// @param _hook A deployed `LaunchGuardHook`. Its pool manager and bitmap are verified here so
     /// a mismatch is a deployment failure rather than a failed launch six months later.
     /// @param _registry May be `address(0)`, which disables the listing feature.
-    /// @param _blockTimeCentis Chain block time in hundredths of a second.
+    /// @dev No block-time argument. Presets are seconds, the hook measures seconds, and there is
+    /// nothing left for a deployer to declare about the chain's clock.
     constructor(
         ICLPoolManager _clPoolManager,
         LaunchGuardHook _hook,
         ICLPositionManager _positionManager,
         IAllowanceTransfer _permit2,
-        IHookRegistryListing _registry,
-        uint32 _blockTimeCentis
+        IHookRegistryListing _registry
     ) {
         if (
             address(_clPoolManager) == address(0) || address(_hook) == address(0)
@@ -167,28 +165,6 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
         ) {
             revert ZeroAddress();
         }
-        // Any non-zero block time up to 600s.
-        //
-        // The floor used to be 50 (0.5s) on the assumption that nothing ships faster.
-        //
-        // CORRECTION, 2026-09-13: this comment used to say Robinhood Chain (4663) needs 10 centis
-        // because its RPC shows a block every 0.102s. Wrong clock. Robinhood is Arbitrum Nitro and
-        // `block.number` inside the EVM is Ethereum's, ~12 s: the right value there is 1200, and the
-        // live kit built at 10 runs every preset 120x long. Genuinely sub-second contract clocks do
-        // exist elsewhere, so the floor stays removed, and the tempting workaround
-        // (pass the floor value, 50) is worse than the revert: `secondsToBlocks` divides by this
-        // number, so a block time declared 5x too slow makes every preset window 5x too SHORT.
-        // A "five minute fair launch" would have lifted its tax after sixty seconds, silently, in
-        // the direction that favours the sniper.
-        //
-        // Zero is the only value that is actually unusable (it divides by zero in
-        // `LaunchPresets.secondsToBlocks`). The upper bound stays: past 600s per block the
-        // presets' second-denominated windows round to a handful of blocks and stop meaning
-        // anything. The lower end needs no separate guard - the longest preset window is 1800s,
-        // which at 1 centis is 180 000 blocks, still well inside `MAX_DECAY_BLOCKS` (1e6), and
-        // `DecayWindowTooLong` catches the case anyway.
-        if (_blockTimeCentis == 0 || _blockTimeCentis > 60_000) revert InvalidBlockTime(_blockTimeCentis);
-
         address hookManager = address(_hook.poolManager());
         if (hookManager != address(_clPoolManager)) {
             revert HookPoolManagerMismatch(address(_clPoolManager), hookManager);
@@ -197,12 +173,23 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
         uint16 bitmap = _hook.getHooksRegistrationBitmap();
         if (bitmap != EXPECTED_HOOK_BITMAP) revert UnexpectedHookBitmap(EXPECTED_HOOK_BITMAP, bitmap);
 
+        // THE CLOCK GUARD. Every window this kit resolves is in seconds, and the hook must measure
+        // them in seconds. The retired block-numbered `LaunchGuardHook` (0x8b4F…575c on Robinhood)
+        // has no `CLOCK_MODE()`, and a kit wired to it would write "five minutes" as a block count
+        // the hook reads as a timestamp - a start time in 1970, rejected, or worse, a window that
+        // means something else entirely. Checked by CALL, with a named revert either way: verify,
+        // never assume, same as the bitmap above.
+        try _hook.CLOCK_MODE() returns (string memory mode) {
+            if (keccak256(bytes(mode)) != keccak256(bytes(CLOCK_MODE))) revert HookClockMismatch(mode);
+        } catch {
+            revert HookClockMismatch("");
+        }
+
         clPoolManager = _clPoolManager;
         hook = _hook;
         positionManager = _positionManager;
         permit2 = _permit2;
         registry = _registry;
-        blockTimeCentis = _blockTimeCentis;
         hookBitmap = bitmap;
     }
 
@@ -253,8 +240,8 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
             p.launchToken,
             operator,
             p.quoteToken,
-            cfg.startBlock,
-            cfg.decayBlocks,
+            cfg.startTime,
+            cfg.decaySeconds,
             cfg.initialFeeBips,
             cfg.finalFeeBips,
             cfg.maxBuyPerTx,
@@ -264,8 +251,8 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
 
         result.key = key;
         result.poolId = poolId;
-        result.startBlock = cfg.startBlock;
-        result.decayBlocks = cfg.decayBlocks;
+        result.startTime = cfg.startTime;
+        result.decaySeconds = cfg.decaySeconds;
         result.launchTokenIsCurrency0 = launchTokenIsCurrency0;
 
         (result.positionTokenId, result.liquiditySeeded) = _seed(key, p.seed, launchTokenIsCurrency0);
@@ -280,7 +267,7 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
     /// @notice Update a launch that has not opened yet.
     /// @dev The kit is the hook's registered launch owner, so this is the only route to
     /// `configureLaunch` for a pool the kit created. Every substantive restriction still lives in
-    /// the hook: bounds on the fee schedule, and the hard freeze from `startBlock` onwards. The
+    /// the hook: bounds on the fee schedule, and the hard freeze from `startTime` onwards. The
     /// kit adds exactly one rule of its own - `launchTokenIsCurrency0` is pinned to the value
     /// derived at creation, so an operator cannot flip `maxBuyPerTx` onto sells by accident.
     /// @param key The pool key returned by `createLaunch`. Self-authenticating: its hash is the id.
@@ -291,8 +278,8 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
         if (msg.sender != record.operator) revert NotLaunchOperator(poolId, msg.sender);
 
         LaunchGuardHook.LaunchConfig memory pinned = LaunchGuardHook.LaunchConfig({
-            startBlock: cfg.startBlock,
-            decayBlocks: cfg.decayBlocks,
+            startTime: cfg.startTime,
+            decaySeconds: cfg.decaySeconds,
             initialFeeBips: cfg.initialFeeBips,
             finalFeeBips: cfg.finalFeeBips,
             maxBuyPerTx: cfg.maxBuyPerTx,
@@ -305,8 +292,8 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
         emit LaunchReconfigured(
             poolId,
             msg.sender,
-            pinned.startBlock,
-            pinned.decayBlocks,
+            pinned.startTime,
+            pinned.decaySeconds,
             pinned.initialFeeBips,
             pinned.finalFeeBips,
             pinned.maxBuyPerTx,
@@ -336,8 +323,8 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
     }
 
     /// @notice Preview the schedule a set of parameters resolves to, without sending anything.
-    /// @dev Uses the CURRENT block, so `startBlock` shifts by however long the real transaction
-    /// takes to land. That is deliberate; see `LaunchParams.startDelaySeconds`.
+    /// @dev Uses the CURRENT `block.timestamp`, so `startTime` shifts by however long the real
+    /// transaction takes to land. That is deliberate; see `LaunchParams.startDelaySeconds`.
     function previewSchedule(LaunchParams calldata p)
         external
         view
@@ -391,13 +378,14 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
     {
         uint24 initialFeeBips;
         uint24 finalFeeBips;
-        uint32 decayBlocks;
+        uint32 decaySeconds;
         bool enabled;
 
         if (p.preset == Preset.Custom) {
             initialFeeBips = p.initialFeeBips;
             finalFeeBips = p.finalFeeBips;
-            decayBlocks = p.decayBlocks;
+            // Bounds (`MIN_DECAY_SECONDS`..`MAX_DECAY_SECONDS`) are the hook's, and it enforces them.
+            decaySeconds = p.decaySeconds;
             enabled = p.enabled;
         } else {
             PresetParams memory pp = LaunchPresets.params(p.preset);
@@ -405,26 +393,20 @@ contract LaunchpadKit is ILaunchpadKit, ReentrancyGuard {
             initialFeeBips = pp.initialFeeBips;
             finalFeeBips = pp.finalFeeBips;
             enabled = pp.enabled;
-
-            uint256 blocks = LaunchPresets.secondsToBlocks(pp.windowSeconds, blockTimeCentis);
-            if (blocks > hook.MAX_DECAY_BLOCKS()) revert DecayWindowTooLong(blocks);
-            // Bounded above by MAX_DECAY_BLOCKS (1e6), which fits a uint32 with room to spare.
-            // forge-lint: disable-next-line(unsafe-typecast)
-            decayBlocks = uint32(blocks);
+            // Seconds in, seconds out. No conversion, so no rounding and no chain-clock assumption.
+            decaySeconds = pp.windowSeconds;
         }
 
-        uint256 delayBlocks =
-            p.startDelaySeconds == 0 ? 0 : LaunchPresets.secondsToBlocks(p.startDelaySeconds, blockTimeCentis);
-        // `LaunchGuardHook` rejects a start more than MAX_START_DELAY ahead; fail here with a
-        // parameter-shaped error instead of the hook's block-number-shaped one.
-        if (delayBlocks > hook.MAX_START_DELAY()) revert StartDelayTooLong(delayBlocks);
-        uint256 startBlock = block.number + delayBlocks;
+        // `LaunchGuardHook` rejects a start more than MAX_START_DELAY_SECONDS ahead; fail here with
+        // a parameter-shaped error instead of the hook's absolute-time-shaped one.
+        if (p.startDelaySeconds > hook.MAX_START_DELAY_SECONDS()) revert StartDelayTooLong(p.startDelaySeconds);
+        uint256 startTime = block.timestamp + p.startDelaySeconds;
 
         cfg = LaunchGuardHook.LaunchConfig({
-            // block.number + at most 1e6 is nowhere near uint48 (2.8e14 blocks).
+            // block.timestamp + at most 30 days is nowhere near uint40 (year 36812).
             // forge-lint: disable-next-line(unsafe-typecast)
-            startBlock: uint48(startBlock),
-            decayBlocks: decayBlocks,
+            startTime: uint40(startTime),
+            decaySeconds: decaySeconds,
             initialFeeBips: initialFeeBips,
             finalFeeBips: finalFeeBips,
             maxBuyPerTx: p.maxBuyPerTx,

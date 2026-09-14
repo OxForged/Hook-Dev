@@ -5,7 +5,7 @@ pragma solidity 0.8.26;
 import "forge-std/Script.sol";
 import {LatchRegistry} from "../src/LatchRegistry.sol";
 import {LatchMetadata, Verification, RiskClass, PermissionSource} from "../src/ILatchRegistry.sol";
-import {LaunchGuardHook} from "latch-hooks/src/launch/LaunchGuardHook.sol";
+import {LaunchGuardHook, ILaunchTokenOrigin} from "latch-hooks/src/launch/LaunchGuardHook.sol";
 import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";
 
 /**
@@ -44,11 +44,9 @@ contract RegisterLaunchGuardScript is Script {
 
         LaunchGuardHook hook =
             redeploy
-            /* The launch window bounds are constructor arguments now, not
-               constants. They were 1,000,000 blocks — ~139 days at 12s and
-               28 HOURS on Robinhood, so a three-day fair launch reverted.
-               26,000,000 blocks at 10 centis is ~30 days of real time. */
-            ? new LaunchGuardHook(ICLPoolManager(CL_POOL_MANAGER), 10, 26_000_000, 26_000_000)
+            /* Every launch bound is a constant in seconds of block.timestamp now
+               (Option B, 2026-09-13); the pool manager is the only argument. */
+            ? new LaunchGuardHook(ICLPoolManager(CL_POOL_MANAGER), ILaunchTokenOrigin(vm.envOr("LAUNCH_TOKEN_FACTORY", address(0))))
             : LaunchGuardHook(EXISTING_HOOK);
 
         uint256[] memory chains = new uint256[](1);

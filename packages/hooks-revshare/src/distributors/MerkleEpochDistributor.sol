@@ -93,6 +93,10 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
     error NotGuardianOrOwner();
     error NativeNotAccepted();
 
+    /// @notice A leaf paying an account with code was submitted by someone other than that account.
+    /// @dev Same rule and reason as `SnapshotEpochDistributor.claim`.
+    error ContractAccountMustClaimItself(address account, address caller);
+
     /// @notice `minEpochDuration` is below `MIN_EPOCH_DURATION_FLOOR`.
     error MinEpochDurationTooShort(uint64 provided, uint64 required);
 
@@ -634,10 +638,17 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
                                  CLAIMS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Claim one leaf of an epoch's tree. Pays `account`, whoever submits it.
+    /// @notice Claim one leaf of an epoch's tree. Pays `account`.
     /// @dev Payout is hard-wired to `account` (the address inside the proven leaf), so a third
     /// party may submit a claim on a holder's behalf - useful for a claim-bot or a gas sponsor -
     /// without being able to redirect it.
+    ///
+    /// EXCEPT for an account with code, which must submit its own claim. The root is off-chain
+    /// work, and a generator that attributes balances naively will include contracts that hold the
+    /// token but can never move a payout: the Vault, `RevShareHook`, this distributor, a router. A
+    /// stranger claiming such a leaf would move holder money into a permanent dead end; left
+    /// unclaimed it returns to real holders through `rollover`. See the longer note on
+    /// `SnapshotEpochDistributor.claim`, where the same hole was found first.
     function claim(
         uint256 epochId,
         uint256 index,
@@ -646,6 +657,9 @@ contract MerkleEpochDistributor is IEpochDistributor, Ownable2Step, ReentrancyGu
         uint256 amount1,
         bytes32[] calldata proof
     ) external nonReentrant {
+        if (msg.sender != account && account.code.length != 0) {
+            revert ContractAccountMustClaimItself(account, msg.sender);
+        }
         if (epochId >= epochCount) revert UnknownEpoch(epochId);
         Epoch storage epoch = _epochs[epochId];
 

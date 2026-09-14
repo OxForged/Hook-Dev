@@ -63,13 +63,14 @@ struct LaunchParams {
     uint24 initialFeeBips;
     /// @dev Ignored unless `preset == Preset.Custom`.
     uint24 finalFeeBips;
-    /// @dev Ignored unless `preset == Preset.Custom`. In BLOCKS, not seconds.
-    uint32 decayBlocks;
+    /// @dev Ignored unless `preset == Preset.Custom`. In SECONDS of `block.timestamp`, inside the
+    /// hook's [`MIN_DECAY_SECONDS`, `MAX_DECAY_SECONDS`] = [60 s, 30 days].
+    uint32 decaySeconds;
     /// @dev Ignored unless `preset == Preset.Custom`.
     bool enabled;
-    /// @dev How long after THIS TRANSACTION LANDS trading opens, in seconds, converted to blocks
-    /// at the kit's configured block time. Relative rather than absolute so a transaction that
-    /// sits in the mempool cannot land with a `startBlock` already in the past.
+    /// @dev How long after THIS TRANSACTION LANDS trading opens, in seconds of `block.timestamp`.
+    /// Relative rather than absolute so a transaction that sits in the mempool cannot land with a
+    /// `startTime` already in the past. At most the hook's `MAX_START_DELAY_SECONDS` (30 days).
     uint32 startDelaySeconds;
     /// @dev Per-TRANSACTION cap on a buy's input amount, in quote-currency units. `0` disables it.
     /// This is not, and cannot be, a per-wallet cap - see `LaunchPresets`.
@@ -87,10 +88,10 @@ struct LaunchParams {
 struct LaunchResult {
     PoolKey key;
     PoolId poolId;
-    /// @dev First block at which swaps are permitted.
-    uint48 startBlock;
-    /// @dev Decay window actually written to the hook, in blocks.
-    uint32 decayBlocks;
+    /// @dev First `block.timestamp` at which swaps are permitted.
+    uint40 startTime;
+    /// @dev Decay window actually written to the hook, in seconds.
+    uint32 decaySeconds;
     /// @dev `0` when nothing was seeded.
     uint256 positionTokenId;
     /// @dev Liquidity minted into `positionTokenId`.
@@ -124,8 +125,8 @@ interface ILaunchpadKit {
         address indexed launchToken,
         address indexed operator,
         address quoteToken,
-        uint48 startBlock,
-        uint32 decayBlocks,
+        uint40 startTime,
+        uint32 decaySeconds,
         uint24 initialFeeBips,
         uint24 finalFeeBips,
         uint128 maxBuyPerTx,
@@ -145,8 +146,8 @@ interface ILaunchpadKit {
     event LaunchReconfigured(
         PoolId indexed poolId,
         address indexed operator,
-        uint48 startBlock,
-        uint32 decayBlocks,
+        uint40 startTime,
+        uint32 decaySeconds,
         uint24 initialFeeBips,
         uint24 finalFeeBips,
         uint128 maxBuyPerTx,
@@ -174,11 +175,8 @@ interface ILaunchpadKit {
     error NotLaunchOperator(PoolId poolId, address caller);
     /// @notice The chosen preset is incoherent without a per-transaction cap.
     error MaxBuyRequiredByPreset(Preset preset);
-    /// @notice `startDelaySeconds` converts to more blocks than the hook accepts.
-    error StartDelayTooLong(uint256 blocks);
-    /// @notice The preset's window converts to more blocks than the hook accepts at this chain's
-    /// block time. Only reachable on a chain with sub-second blocks and a very long preset window.
-    error DecayWindowTooLong(uint256 blocks);
+    /// @notice `startDelaySeconds` is above the hook's `MAX_START_DELAY_SECONDS`.
+    error StartDelayTooLong(uint256 delaySeconds);
     /// @notice `msg.value` does not match the native amount the seed declares.
     error NativeValueMismatch(uint256 expected, uint256 actual);
     /// @notice Native value was sent for a launch that involves no native currency.
@@ -193,10 +191,9 @@ interface ILaunchpadKit {
     error UnexpectedHookBitmap(uint16 expected, uint16 actual);
     /// @notice The hook serves a different pool manager than the one this kit was given.
     error HookPoolManagerMismatch(address expected, address actual);
-    /// @notice Block time must be non-zero and at most 600s, expressed in hundredths of a second.
-    /// @dev Sub-second chains are in scope: Robinhood Chain (4663) is 10 centis. Only zero is
-    /// rejected at the bottom, because it divides by zero in `LaunchPresets.secondsToBlocks`.
-    error InvalidBlockTime(uint32 blockTimeCentis);
+    /// @notice The hook does not report `CLOCK_MODE() == "mode=timestamp"`. A block-numbered hook
+    /// has no `CLOCK_MODE()` at all; that case reverts with an empty `hookClockMode`.
+    error HookClockMismatch(string hookClockMode);
 
     /*//////////////////////////////////////////////////////////////
                                 METHODS

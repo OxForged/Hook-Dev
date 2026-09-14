@@ -8,117 +8,75 @@ import {ContractClockMath} from "../../script/ContractClock.sol";
 
 /// @dev External wrapper, so `vm.expectRevert` sees a call boundary.
 contract ContractClockMathHarness {
-    function centisPerBlock(uint256 n0, uint256 t0, uint256 n1, uint256 t1) external pure returns (uint256) {
-        return ContractClockMath.centisPerBlock(n0, t0, n1, t1);
-    }
-
-    function requireDeclaredMatches(uint256 declared, uint256 measured) external pure {
-        ContractClockMath.requireDeclaredMatches(declared, measured);
-    }
-
-    function quantity(bytes memory raw) external pure returns (uint256) {
-        return ContractClockMath.quantity(raw);
+    function requireSaneTimestamp(uint256 evm, uint256 header, uint256 wall) external pure {
+        ContractClockMath.requireSaneTimestamp(evm, header, wall);
     }
 }
 
 /// @title ContractClockMathTest
-/// @notice The deploy-time guard that would have refused `blockTimeCentis = 10` on Robinhood.
-/// @dev Fixtures are real 4663 headers read on 2026-09-13: L2 62,356,430 (l1BlockNumber 25,971,883,
-/// timestamp 1,789,343,079) and L2 62,390,206 (l1BlockNumber 25,972,166, timestamp 1,789,346,507).
-/// 3,428 s over 283 contract blocks is 12.11 s per block.
+/// @notice The deploy-time guard for timestamp-based contracts: the chain's `block.timestamp` must
+/// agree with the forked header and with the operator's wall clock before anything is broadcast.
+/// @dev Fixture time is a real Robinhood (4663) header timestamp, 1,789,346,507 (2026-09-13).
 contract ContractClockMathTest is Test {
     ContractClockMathHarness h;
 
-    uint256 constant RH_N0 = 25_971_883;
-    uint256 constant RH_T0 = 1_789_343_079;
-    uint256 constant RH_N1 = 25_972_166;
-    uint256 constant RH_T1 = 1_789_346_507;
+    uint256 constant T = 1_789_346_507;
 
     function setUp() public {
         h = new ContractClockMathHarness();
     }
 
-    /* ------------------------------------------------------------ measurement */
-
-    function test_robinhoodMeasuresTwelveSeconds() public view {
-        assertEq(h.centisPerBlock(RH_N0, RH_T0, RH_N1, RH_T1), 1211);
+    function test_acceptsAHealthyChain() public view {
+        // Probe answered a couple of blocks after the fork point, operator clock 3 s behind.
+        h.requireSaneTimestamp(T + 2, T, T - 1);
     }
 
-    function test_nativeTwelveSecondChain() public view {
-        // Ten Ethereum slots, no missed ones.
-        assertEq(h.centisPerBlock(100, 1_000, 110, 1_120), 1200);
+    /// @dev MUTATION-CHECKED: dropping the header comparison makes this pass silently.
+    function test_refusesAProbeFromDifferentState() public {
+        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.EvmTimestampDisagreesWithHeader.selector, T + 61, T));
+        h.requireSaneTimestamp(T + 61, T, T + 61);
     }
 
-    function test_refusesAClockThatDidNotAdvance() public {
-        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.ClockDidNotAdvance.selector, 100, 100));
-        h.centisPerBlock(100, 1_000, 100, 2_000);
+    function test_headerBoundaryIsInclusive() public {
+        h.requireSaneTimestamp(T + 60, T, T + 60);
+        h.requireSaneTimestamp(T, T + 60, T);
+        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.EvmTimestampDisagreesWithHeader.selector, T, T + 61));
+        h.requireSaneTimestamp(T, T + 61, T);
     }
 
-    function test_refusesAWindowTooShortInTime() public {
-        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.ClockWindowTooShort.selector, 119, 120));
-        h.centisPerBlock(100, 1_000, 200, 1_119);
+    /// @dev The Nitro forward bound. A sequencer stamping an hour ahead is legal on chain and is
+    /// exactly when a deployment of time-bounded contracts should wait.
+    function test_refusesASequencerAnHourAhead() public {
+        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.ChainClockOffWallClock.selector, T + 3600, T));
+        h.requireSaneTimestamp(T + 3600, T + 3600, T);
     }
 
-    function test_refusesATimestampThatWentBackwards() public {
-        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.ClockWindowTooShort.selector, 0, 120));
-        h.centisPerBlock(100, 2_000, 200, 1_000);
+    /// @dev The Nitro backward bound. A sequencer catching up after an outage can be hours behind.
+    function test_refusesAChainCatchingUpFromAnOutage() public {
+        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.ChainClockOffWallClock.selector, T - 7200, T));
+        h.requireSaneTimestamp(T - 7200, T - 7200, T);
     }
 
-    function test_refusesTooFewBlocks() public {
-        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.ClockWindowTooFewBlocks.selector, 7, 8));
-        h.centisPerBlock(100, 1_000, 107, 2_000);
+    function test_wallClockBoundaryIsInclusive() public {
+        h.requireSaneTimestamp(T + 300, T + 300, T);
+        h.requireSaneTimestamp(T - 300, T - 300, T);
+        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.ChainClockOffWallClock.selector, T + 301, T));
+        h.requireSaneTimestamp(T + 301, T + 301, T);
     }
 
-    /* ------------------------------------------------------------- the check */
-
-    /// @dev THE BUG. The live kit, launch hook and revenue-share hook declared 10.
-    function test_refusesTheLiveRobinhoodDeclaration() public {
-        uint256 measured = h.centisPerBlock(RH_N0, RH_T0, RH_N1, RH_T1);
-        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.DeclaredBlockTimeTooShort.selector, 10, measured));
-        h.requireDeclaredMatches(10, measured);
-    }
-
-    function test_acceptsTwelveSecondsOnRobinhood() public view {
-        h.requireDeclaredMatches(1200, h.centisPerBlock(RH_N0, RH_T0, RH_N1, RH_T1));
-    }
-
-    /// @dev Too long is the dangerous direction: every window comes out short.
-    function test_refusesADeclarationThatWouldShortenWindows() public {
-        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.DeclaredBlockTimeTooLong.selector, 1300, 1200));
-        h.requireDeclaredMatches(1300, 1200);
-    }
-
-    function test_boundaries() public {
-        // 105% of 1200 is 1260: allowed; 1261 is not.
-        h.requireDeclaredMatches(1260, 1200);
-        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.DeclaredBlockTimeTooLong.selector, 1261, 1200));
-        h.requireDeclaredMatches(1261, 1200);
-
-        // 75% of 1200 is 900: allowed; 899 is not.
-        h.requireDeclaredMatches(900, 1200);
-        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.DeclaredBlockTimeTooShort.selector, 899, 1200));
-        h.requireDeclaredMatches(899, 1200);
-    }
-
-    function test_refusesZeroDeclared() public {
-        vm.expectRevert(abi.encodeWithSelector(ContractClockMath.DeclaredBlockTimeTooShort.selector, 0, 1200));
-        h.requireDeclaredMatches(0, 1200);
-    }
-
-    /// @dev Any declaration inside the band passes; anything more than 5% over always fails.
-    function testFuzz_bandIsExactlyWhatItSays(uint256 declared, uint256 measured) public {
-        measured = bound(measured, 1, 60_000);
-        declared = bound(declared, 0, 120_000);
-        bool ok = declared * 100 <= measured * 105 && declared * 100 >= measured * 75;
-        if (!ok) vm.expectRevert();
-        h.requireDeclaredMatches(declared, measured);
-    }
-
-    /* ------------------------------------------------------------ decoding */
-
-    function test_quantityDecodesVariableWidthBigEndian() public view {
-        assertEq(h.quantity(hex"03b94195"), 62_472_597);
-        assertEq(h.quantity(hex""), 0);
-        assertEq(h.quantity(hex"01"), 1);
+    function testFuzz_acceptedIffBothWithinTolerance(uint256 evm, uint256 header, uint256 wall) public {
+        evm = bound(evm, T - 10 days, T + 10 days);
+        header = bound(header, T - 10 days, T + 10 days);
+        wall = bound(wall, T - 10 days, T + 10 days);
+        uint256 dh = evm > header ? evm - header : header - evm;
+        uint256 dw = evm > wall ? evm - wall : wall - evm;
+        // A specific selector, not a bare expectRevert: with `allow_internal_expect_revert` a bare
+        // one can be satisfied by the wrong failure. The header check runs first.
+        if (dh > 60) {
+            vm.expectRevert(abi.encodeWithSelector(ContractClockMath.EvmTimestampDisagreesWithHeader.selector, evm, header));
+        } else if (dw > 300) {
+            vm.expectRevert(abi.encodeWithSelector(ContractClockMath.ChainClockOffWallClock.selector, evm, wall));
+        }
+        h.requireSaneTimestamp(evm, header, wall);
     }
 }

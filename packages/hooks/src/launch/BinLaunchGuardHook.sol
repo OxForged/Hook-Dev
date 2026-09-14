@@ -18,11 +18,16 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "infinity-core/src/types/B
 ///
 /// @dev ############################ WHAT THIS HOOK ACTUALLY DOES ############################
 ///
-/// It prices early buying instead of trying to identify early buyers. For `decayBlocks` blocks
-/// after `startBlock` the LP fee is overridden with a value that decays linearly from
-/// `initialFeeBips` down to `finalFeeBips`. A sniper who buys in the first block pays the full
+/// It prices early buying instead of trying to identify early buyers. For `decaySeconds` seconds
+/// after `startTime` the LP fee is overridden with a value that decays linearly from
+/// `initialFeeBips` down to `finalFeeBips`. A sniper who buys in the first second pays the full
 /// launch tax; a normal buyer who arrives after the window pays the normal fee. The proceeds are
 /// ordinary LP fees, so they accrue to the pool's liquidity providers, not to this contract.
+///
+/// EVERY DURATION HERE IS `block.timestamp` SECONDS, exactly as in `LaunchGuardHook`, whose
+/// contract-level "CLOCK" note applies here word for word: honest sequencer skew is bounded by
+/// `MIN_DECAY_SECONDS`; a malicious Nitro sequencer can move the clock up to one hour forward and
+/// is a trust assumption, not something a floor can defend.
 ///
 /// This design is deliberate, and it follows from a hard constraint of the singleton architecture:
 ///
@@ -52,7 +57,7 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "infinity-core/src/types/B
 /// override — and a dynamic-fee pool's stored LP fee is 0 until somebody calls
 /// `updateDynamicLPFee`. So a bin launch hook that only registered `beforeSwap` (the exact shape of
 /// the CL hook) would leave a FEE-FREE swap route straight through the launch tax, usable even
-/// before `startBlock`, when ordinary swaps revert.
+/// before `startTime`, when ordinary swaps revert.
 ///
 /// This hook therefore registers `beforeMint` as well and returns the SAME decayed fee there. That
 /// closes the free route. What it cannot do is close the route entirely: see "WHAT IT DOES NOT
@@ -67,14 +72,14 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "infinity-core/src/types/B
 /// hook (or any bin hook) can tune around.
 ///
 /// ------------------------------- WHAT IT PREVENTS -------------------------------
-///  * Free front-running of a launch. Buying in block 0 of the window costs `initialFeeBips` (up to
-///    10%). A sniper cannot escape this with fresh wallets, contracts, or private orderflow,
-///    because the tax is a function of the block number and the pool, not of the buyer.
-///  * Trading before the launch opens. `beforeSwap` reverts for every swap before `startBlock`.
+///  * Free front-running of a launch. Buying in the first second of the window costs
+///    `initialFeeBips` (up to 10%). A sniper cannot escape this with fresh wallets, contracts, or
+///    private orderflow, because the tax is a function of time and the pool, not of the buyer.
+///  * Trading before the launch opens. `beforeSwap` reverts for every swap before `startTime`.
 ///  * Escaping the tax through the mint/burn composition-swap route: it is charged the same
-///    decayed fee, at every block, including before `startBlock`.
+///    decayed fee, at every moment, including before `startTime`.
 ///  * A single oversized market buy during the window, if `maxBuyPerTx` is configured.
-///  * A launch owner spiking the fee mid-launch. Configuration is frozen from `startBlock` on.
+///  * A launch owner spiking the fee mid-launch. Configuration is frozen from `startTime` on.
 ///  * Silent misconfiguration: a non-dynamic-fee pool is rejected at `beforeInitialize`, because
 ///    core discards a `beforeSwap`/`beforeMint` fee on a static-fee pool without reverting.
 ///
@@ -83,7 +88,7 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "infinity-core/src/types/B
 ///    NOT prevented and cannot be. `maxBuyPerTx` bounds one swap transaction, nothing more.
 ///  * A sniper who is simply willing to pay the tax — and on bin that tax is capped at 10%, so the
 ///    price of sniping is materially lower than on a CL launch.
-///  * ACQUISITION BEFORE `startBlock` VIA MINT+BURN. Swaps revert before the launch opens, but
+///  * ACQUISITION BEFORE `startTime` VIA MINT+BURN. Swaps revert before the launch opens, but
 ///    mints must not (nobody could seed the pool otherwise, because `sender` is the router and the
 ///    launcher cannot be recognised). A sniper can therefore mint lopsided into the active bin and
 ///    burn, acquiring the launch token before trading opens, at the cost of `initialFeeBips`
@@ -97,8 +102,9 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "infinity-core/src/types/B
 ///    or a rug pull by the token deployer. This hook only governs ONE pool.
 ///  * Sells. `maxBuyPerTx` is one-directional by design; the decaying fee applies to both
 ///    directions, so early sells are taxed too, but there is no separate sell limit.
-///  * A launch owner who never opens trading. `startBlock` may be pushed back repeatedly while it
+///  * A launch owner who never opens trading. `startTime` may be pushed back repeatedly while it
 ///    is still in the future. Burns are NOT hooked, so LPs can always withdraw.
+///  * A MALICIOUS SEQUENCER. See `LaunchGuardHook`'s "CLOCK" note.
 /// #####################################################################################
 contract BinLaunchGuardHook is BaseBinHook {
     using LPFeeLibrary for uint24;
@@ -124,23 +130,17 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// @notice Caller is not the registered launch owner of this pool
     error NotLaunchOwner(PoolId poolId, address caller);
 
-    /// @notice Configuration is frozen from `startBlock` onwards
-    error LaunchAlreadyStarted(PoolId poolId, uint256 startBlock);
+    /// @notice Configuration is frozen from `startTime` onwards
+    error LaunchAlreadyStarted(PoolId poolId, uint256 startTime);
 
     /// @notice A swap was attempted before the launch opened
-    error TradingNotOpen(PoolId poolId, uint256 startBlock, uint256 currentBlock);
+    error TradingNotOpen(PoolId poolId, uint256 startTime, uint256 currentTime);
 
-    /// @notice `startBlock` is in the past or unreasonably far in the future
-    error InvalidStartBlock(uint256 startBlock, uint256 currentBlock);
+    /// @notice `startTime` is in the past or more than `MAX_START_DELAY_SECONDS` ahead
+    error InvalidStartTime(uint256 startTime, uint256 currentTime);
 
-    /// @notice `decayBlocks` is zero or above `MAX_DECAY_BLOCKS`
-    error InvalidDecayBlocks(uint32 decayBlocks);
-
-    /// @notice `blockTimeCentis` is zero or above `MAX_BLOCK_TIME_CENTIS`
-    error InvalidBlockTime(uint32 blockTimeCentis);
-
-    /// @notice A block cap's real-world duration is outside the wall-clock bounds
-    error LaunchWindowOutOfRange(uint256 realSeconds, uint256 minSeconds, uint256 maxSeconds);
+    /// @notice `decaySeconds` is outside [`MIN_DECAY_SECONDS`, `MAX_DECAY_SECONDS`]
+    error InvalidDecaySeconds(uint32 decaySeconds);
 
     /// @notice The fee schedule is not a decay, or exceeds the caps this hook enforces
     error InvalidFeeSchedule(uint24 initialFeeBips, uint24 finalFeeBips);
@@ -165,8 +165,8 @@ contract BinLaunchGuardHook is BaseBinHook {
     event LaunchConfigured(
         PoolId indexed poolId,
         address indexed owner,
-        uint48 startBlock,
-        uint32 decayBlocks,
+        uint40 startTime,
+        uint32 decaySeconds,
         uint24 initialFeeBips,
         uint24 finalFeeBips,
         uint128 maxBuyPerTx,
@@ -174,8 +174,9 @@ contract BinLaunchGuardHook is BaseBinHook {
         bool enabled
     );
 
-    /// @notice Emitted once, on the first swap at or after `startBlock`
-    event LaunchStarted(PoolId indexed poolId, uint256 blockNumber);
+    /// @notice Emitted once, on the first swap at or after `startTime`
+    /// @param timestamp `block.timestamp` of that swap.
+    event LaunchStarted(PoolId indexed poolId, uint256 timestamp);
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
@@ -191,71 +192,57 @@ contract BinLaunchGuardHook is BaseBinHook {
     uint24 public constant MAX_INITIAL_FEE = LPFeeLibrary.TEN_PERCENT_FEE; // 10%, core's bin max
 
     /// @notice Hard cap on the fee that remains once the window has elapsed. Bounds how bad a
-    /// permanently hostile configuration can be, since config is immutable after `startBlock`.
+    /// permanently hostile configuration can be, since config is immutable after `startTime`.
     uint24 public constant MAX_FINAL_FEE = 20_000; // 2%
 
-    /**
-     * ############ WHY THE TWO BLOCK CAPS BELOW ARE ARGUMENTS, NOT CONSTANTS ############
-     *
-     * Identical reasoning to `LaunchGuardHook`, and kept in full here because the two hooks are
-     * deployed independently and a reader of one may never open the other.
-     *
-     * They were `1_000_000` blocks each, sized as "about 139 days at 12s blocks". Robinhood Chain
-     * (4663) produces a block every 0.102s, so on the chain this was actually built for the same
-     * number is 102 000 seconds - 28 HOURS - and an ordinary three-day fair launch reverts with
-     * `InvalidDecayBlocks`. A DURATION IN BLOCKS IS NOT A DURATION; it is a duration times an
-     * unknown the deployer picks later. Both caps are chosen per chain and validated against
-     * wall-clock bounds.
-     */
+    /// @notice ERC-6372 clock mode. Every duration and stored time here is `block.timestamp`.
+    string public constant CLOCK_MODE = "mode=timestamp";
 
-    /// @notice Shortest real-world window the two caps may permit.
-    uint256 public constant MIN_LAUNCH_WINDOW_SECONDS = 3 days;
-
-    /// @notice Longest real-world window the two caps may permit.
-    uint256 public constant MAX_LAUNCH_WINDOW_SECONDS = 180 days;
-
-    /// @notice Largest block time accepted, in centiseconds: 600s per block.
-    uint32 public constant MAX_BLOCK_TIME_CENTIS = 60_000;
-
-    /*//////////////////////////////////////////////////////////////
-                               IMMUTABLES
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice This chain's block time in hundredths of a second. 1200 == 12s, 10 == 0.1s.
-    uint32 public immutable blockTimeCentis;
+    /// @notice Shortest decay window a launch may configure. Same value and same justification as
+    /// `LaunchGuardHook.MIN_DECAY_SECONDS`: whole-second resolution under 1.7%, honest sequencer
+    /// skew absorbed, at least 4x finer than Nitro's ~15 s `block.number` resync. NOT a defence
+    /// against a malicious sequencer's one-hour forward bound.
+    uint32 public constant MIN_DECAY_SECONDS = 60;
 
     /// @notice Hard cap on the decay window, so a "launch tax" cannot be a permanent tax.
-    /// @dev Immutable rather than constant; SCREAMING_CASE retained as an existing ABI name.
-    uint32 public immutable MAX_DECAY_BLOCKS;
+    uint32 public constant MAX_DECAY_SECONDS = 30 days;
 
-    /// @notice Hard cap on how far ahead `startBlock` may be set in any single write.
-    uint48 public immutable MAX_START_DELAY;
+    /// @notice Hard cap on how far ahead `startTime` may be set in any single write. No floor, for
+    /// the reason given on `LaunchGuardHook.MAX_START_DELAY_SECONDS`.
+    uint40 public constant MAX_START_DELAY_SECONDS = 30 days;
+
+    /// @notice Design envelope: `MAX_DECAY_SECONDS >= MIN_LAUNCH_WINDOW_SECONDS` and
+    /// `MAX_START_DELAY_SECONDS + MAX_DECAY_SECONDS <= MAX_LAUNCH_WINDOW_SECONDS`. Asserted in tests.
+    uint256 public constant MIN_LAUNCH_WINDOW_SECONDS = 3 days;
+
+    /// @notice See `MIN_LAUNCH_WINDOW_SECONDS`.
+    uint256 public constant MAX_LAUNCH_WINDOW_SECONDS = 180 days;
 
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
     //////////////////////////////////////////////////////////////*/
 
     /// @param owner The launch owner. `address(0)` means the pool id has never been claimed.
-    /// @param startBlock First block at which swaps are permitted.
-    /// @param decayBlocks Length of the decay window, in blocks, starting at `startBlock`.
+    /// @param startTime First `block.timestamp` at which swaps are permitted.
+    /// @param decaySeconds Length of the decay window, in seconds, starting at `startTime`.
     /// @param enabled When false the hook applies no gate and no tax; it simply overrides the fee
     ///        with `finalFeeBips`. The override is still required: a dynamic-fee pool's stored LP
     ///        fee is 0 at initialization, so a hook that returns no override makes the pool free -
     ///        free to swap through AND free to composition-swap through via mint.
-    /// @param initialFeeBips Fee at `startBlock`.
-    /// @param finalFeeBips Fee at and after `startBlock + decayBlocks`.
+    /// @param initialFeeBips Fee at `startTime`.
+    /// @param finalFeeBips Fee at and after `startTime + decaySeconds`.
     /// @param maxBuyPerTx Per-transaction cap on the INPUT amount of a buy SWAP, denominated in the
     ///        quote currency (the currency that is not the launch token). 0 disables the cap. It
     ///        does not apply to the mint route.
     /// @param launchTokenIsCurrency0 Which side of the pool is the token being launched. Only used
     ///        to decide which swap direction is a "buy" for `maxBuyPerTx`. On bin, currency0 is X
     ///        and currency1 is Y, so `swapForY == true` is the analogue of CL's `zeroForOne`.
-    /// @param launched Set on the first swap at or after `startBlock`, so `LaunchStarted` fires once.
+    /// @param launched Set on the first swap at or after `startTime`, so `LaunchStarted` fires once.
     struct Launch {
-        // ---- slot 0: 160 + 48 + 32 + 8 = 248 bits ----
+        // ---- slot 0: 160 + 40 + 32 + 8 = 240 bits ----
         address owner;
-        uint48 startBlock;
-        uint32 decayBlocks;
+        uint40 startTime;
+        uint32 decaySeconds;
         bool enabled;
         // ---- slot 1: 24 + 24 + 128 + 8 + 8 = 192 bits ----
         uint24 initialFeeBips;
@@ -267,8 +254,8 @@ contract BinLaunchGuardHook is BaseBinHook {
 
     /// @notice Caller-supplied configuration. Mirrors `Launch` minus the fields the hook owns.
     struct LaunchConfig {
-        uint48 startBlock;
-        uint32 decayBlocks;
+        uint40 startTime;
+        uint32 decaySeconds;
         uint24 initialFeeBips;
         uint24 finalFeeBips;
         uint128 maxBuyPerTx;
@@ -279,34 +266,9 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// @notice Launch state per pool id
     mapping(PoolId poolId => Launch) internal _launches;
 
-    /// @param _poolManager The Bin singleton this hook serves, forever.
-    /// @param blockTimeCentis_ This chain's block time in hundredths of a second. Round DOWN.
-    /// @param maxDecayBlocks_ Ceiling on `decayBlocks`, bounded in wall-clock terms.
-    /// @param maxStartDelayBlocks_ Ceiling on how far ahead `startBlock` may be set.
-    constructor(
-        IBinPoolManager _poolManager,
-        uint32 blockTimeCentis_,
-        uint32 maxDecayBlocks_,
-        uint48 maxStartDelayBlocks_
-    ) BaseBinHook(_poolManager) {
-        if (blockTimeCentis_ == 0 || blockTimeCentis_ > MAX_BLOCK_TIME_CENTIS) {
-            revert InvalidBlockTime(blockTimeCentis_);
-        }
-
-        uint256 decaySeconds = (uint256(maxDecayBlocks_) * blockTimeCentis_) / 100;
-        if (decaySeconds < MIN_LAUNCH_WINDOW_SECONDS || decaySeconds > MAX_LAUNCH_WINDOW_SECONDS) {
-            revert LaunchWindowOutOfRange(decaySeconds, MIN_LAUNCH_WINDOW_SECONDS, MAX_LAUNCH_WINDOW_SECONDS);
-        }
-
-        uint256 startSeconds = (uint256(maxStartDelayBlocks_) * blockTimeCentis_) / 100;
-        if (startSeconds < MIN_LAUNCH_WINDOW_SECONDS || startSeconds > MAX_LAUNCH_WINDOW_SECONDS) {
-            revert LaunchWindowOutOfRange(startSeconds, MIN_LAUNCH_WINDOW_SECONDS, MAX_LAUNCH_WINDOW_SECONDS);
-        }
-
-        blockTimeCentis = blockTimeCentis_;
-        MAX_DECAY_BLOCKS = maxDecayBlocks_;
-        MAX_START_DELAY = maxStartDelayBlocks_;
-    }
+    /// @param _poolManager The Bin singleton this hook serves, forever. The only argument: every
+    /// bound is a constant in seconds, so no chain can be configured with the wrong clock.
+    constructor(IBinPoolManager _poolManager) BaseBinHook(_poolManager) {}
 
     /// @inheritdoc IHooks
     /// @dev `beforeInitialize` rejects static-fee pools; `beforeSwap` gates trading and returns the
@@ -317,6 +279,12 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// bit 0 (beforeInitialize) | bit 2 (beforeMint) | bit 6 (beforeSwap) == 69.
     function getHooksRegistrationBitmap() public pure virtual override returns (uint16) {
         return BEFORE_INITIALIZE | BEFORE_MINT | BEFORE_SWAP;
+    }
+
+    /// @notice ERC-6372 clock: the current `block.timestamp`, the unit every time here is in.
+    function clock() external view returns (uint48) {
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint48(block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -332,11 +300,11 @@ contract BinLaunchGuardHook is BaseBinHook {
              caller becomes its permanent launch owner.
           2. `beforeInitialize` REFUSES to let the pool be created unless a claim already exists.
              There is consequently no such thing as an initialized-but-unclaimed pool on this hook.
-          3. Further writes require `msg.sender == owner` AND `block.number < startBlock`. Once the
-             launch opens, the configuration is immutable forever - a launch owner cannot raise the
-             fee on buyers who have already committed.
+          3. Further writes require `msg.sender == owner` AND `block.timestamp < startTime`. Once
+             the launch opens, the configuration is immutable forever - a launch owner cannot raise
+             the fee on buyers who have already committed.
 
-        Ownership is deliberately non-transferable and non-renounceable: after `startBlock` the
+        Ownership is deliberately non-transferable and non-renounceable: after `startTime` the
         owner has no powers at all, so there is nothing to transfer and nothing to renounce.
     //////////////////////////////////////////////////////////////*/
 
@@ -362,14 +330,14 @@ contract BinLaunchGuardHook is BaseBinHook {
         } else {
             if (msg.sender != owner) revert NotLaunchOwner(poolId, msg.sender);
             // Config is frozen from the moment the CURRENT schedule opens trading.
-            uint256 currentStart = l.startBlock;
-            if (block.number >= currentStart) revert LaunchAlreadyStarted(poolId, currentStart);
+            uint256 currentStart = l.startTime;
+            if (block.timestamp >= currentStart) revert LaunchAlreadyStarted(poolId, currentStart);
         }
 
         _validateConfig(cfg);
 
-        l.startBlock = cfg.startBlock;
-        l.decayBlocks = cfg.decayBlocks;
+        l.startTime = cfg.startTime;
+        l.decaySeconds = cfg.decaySeconds;
         l.enabled = cfg.enabled;
         l.initialFeeBips = cfg.initialFeeBips;
         l.finalFeeBips = cfg.finalFeeBips;
@@ -379,8 +347,8 @@ contract BinLaunchGuardHook is BaseBinHook {
         emit LaunchConfigured(
             poolId,
             owner,
-            cfg.startBlock,
-            cfg.decayBlocks,
+            cfg.startTime,
+            cfg.decaySeconds,
             cfg.initialFeeBips,
             cfg.finalFeeBips,
             cfg.maxBuyPerTx,
@@ -391,13 +359,14 @@ contract BinLaunchGuardHook is BaseBinHook {
 
     /// @dev All bounds that keep a hostile launch owner inside a survivable envelope.
     function _validateConfig(LaunchConfig calldata cfg) internal view {
-        // `startBlock` in the past would mean the config is born frozen, and (worse) would let an
+        // `startTime` in the past would mean the config is born frozen, and (worse) would let an
         // owner open trading retroactively at whatever fee suits them. Require it to be now-or-later.
-        if (cfg.startBlock < block.number || uint256(cfg.startBlock) > block.number + MAX_START_DELAY) {
-            revert InvalidStartBlock(cfg.startBlock, block.number);
+        if (cfg.startTime < block.timestamp || uint256(cfg.startTime) > block.timestamp + MAX_START_DELAY_SECONDS) {
+            revert InvalidStartTime(cfg.startTime, block.timestamp);
         }
-        if (cfg.decayBlocks == 0 || cfg.decayBlocks > MAX_DECAY_BLOCKS) {
-            revert InvalidDecayBlocks(cfg.decayBlocks);
+        // Applied whether or not the launch is `enabled`, as in `LaunchGuardHook`.
+        if (cfg.decaySeconds < MIN_DECAY_SECONDS || cfg.decaySeconds > MAX_DECAY_SECONDS) {
+            revert InvalidDecaySeconds(cfg.decaySeconds);
         }
         // Must be a decay, and must stay inside this hook's caps. `MAX_INITIAL_FEE` IS core's bin
         // ceiling, so a schedule that passes here can never make core revert with `LPFeeTooLarge`.
@@ -423,21 +392,21 @@ contract BinLaunchGuardHook is BaseBinHook {
         return _launches[poolId].owner;
     }
 
-    /// @notice The LP fee (without the override flag) that a swap in `blockNumber` would pay.
+    /// @notice The LP fee (without the override flag) that a swap at `timestamp` would pay.
     /// @dev Reverts for an unconfigured pool. Returns `finalFeeBips` when the launch is disabled,
-    /// and for blocks before `startBlock` returns `initialFeeBips` - a SWAP in such a block would
+    /// and for times before `startTime` returns `initialFeeBips` - a SWAP at such a time would
     /// revert, but a MINT would not, and it is charged exactly this value as its composition fee.
-    function feeAt(PoolId poolId, uint256 blockNumber) public view returns (uint24) {
+    function feeAt(PoolId poolId, uint256 timestamp) public view returns (uint24) {
         Launch storage l = _launches[poolId];
         if (l.owner == address(0)) revert LaunchNotConfigured(poolId);
         if (!l.enabled) return l.finalFeeBips;
-        if (blockNumber < l.startBlock) return l.initialFeeBips;
-        return _decayedFee(l.initialFeeBips, l.finalFeeBips, blockNumber - l.startBlock, l.decayBlocks);
+        if (timestamp < l.startTime) return l.initialFeeBips;
+        return _decayedFee(l.initialFeeBips, l.finalFeeBips, timestamp - l.startTime, l.decaySeconds);
     }
 
-    /// @notice The LP fee (without the override flag) a swap would pay in the current block
+    /// @notice The LP fee (without the override flag) a swap would pay now
     function currentFee(PoolId poolId) external view returns (uint24) {
-        return feeAt(poolId, block.number);
+        return feeAt(poolId, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -445,37 +414,37 @@ contract BinLaunchGuardHook is BaseBinHook {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Linear decay from `initialFee` at `elapsed == 0` to `finalFee` at
-    /// `elapsed >= decayBlocks`.
+    /// `elapsed >= decaySeconds`.
     ///
     /// @dev Rounding: the SUBTRACTED discount is floored, so the fee rounds UP - toward the LPs
     /// and away from the sniper. That is the safe direction for a protection mechanism.
     ///
     /// Boundaries:
-    ///   elapsed == 0              -> exactly `initialFee`
-    ///   elapsed == decayBlocks-1  -> the last taxed block, strictly above `finalFee` whenever the
-    ///                                spread is at least `decayBlocks` (otherwise flooring may
-    ///                                have already reached `finalFee`, which is fine)
-    ///   elapsed == decayBlocks    -> exactly `finalFee`; the window is half-open [start, start+n)
-    ///   elapsed >  decayBlocks    -> `finalFee`
+    ///   elapsed == 0                -> exactly `initialFee`
+    ///   elapsed == decaySeconds-1   -> the last taxed second, strictly above `finalFee` whenever
+    ///                                  the spread is at least `decaySeconds` (otherwise flooring
+    ///                                  may have already reached `finalFee`, which is fine)
+    ///   elapsed == decaySeconds     -> exactly `finalFee`; the window is half-open [start, start+n)
+    ///   elapsed >  decaySeconds     -> `finalFee`
     ///
     /// Range: `finalFee <= result <= initialFee` for every input, so the value can never exceed
     /// `MAX_INITIAL_FEE` and therefore never exceeds what core accepts for a bin pool (100_000).
     ///
-    /// Monotonicity: `spread * elapsed / decayBlocks` is non-decreasing in `elapsed` (integer
+    /// Monotonicity: `spread * elapsed / decaySeconds` is non-decreasing in `elapsed` (integer
     /// division by a fixed positive denominator preserves order), so the result is non-increasing.
     ///
-    /// Overflow: `spread <= 100_000` and `elapsed < decayBlocks <= 1_000_000` in the multiplying
-    /// branch, so the product is at most 1e11 - nowhere near uint256.
-    function _decayedFee(uint24 initialFee, uint24 finalFee, uint256 elapsed, uint256 decayBlocks)
+    /// Overflow: `spread <= 100_000` and `elapsed < decaySeconds <= 2_592_000` in the multiplying
+    /// branch, so the product is below 2.6e11 - nowhere near uint256.
+    function _decayedFee(uint24 initialFee, uint24 finalFee, uint256 elapsed, uint256 decaySeconds)
         internal
         pure
         returns (uint24)
     {
-        if (elapsed >= decayBlocks) return finalFee;
+        if (elapsed >= decaySeconds) return finalFee;
         unchecked {
             // `initialFee >= finalFee` is enforced at configuration time.
             uint256 spread = uint256(initialFee) - uint256(finalFee);
-            uint256 discount = (spread * elapsed) / decayBlocks;
+            uint256 discount = (spread * elapsed) / decaySeconds;
             // discount <= spread, so this cannot underflow and the result stays in [finalFee, initialFee],
             // both of which are uint24 - the cast cannot truncate.
             // forge-lint: disable-next-line(unsafe-typecast)
@@ -487,9 +456,9 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// `beforeMint` so the explicit-swap and composition-swap routes can never diverge.
     function _feeFor(Launch storage l) internal view returns (uint24) {
         if (!l.enabled) return l.finalFeeBips | LPFeeLibrary.OVERRIDE_FEE_FLAG;
-        uint256 startBlock = l.startBlock;
-        uint256 elapsed = block.number < startBlock ? 0 : block.number - startBlock;
-        return _decayedFee(l.initialFeeBips, l.finalFeeBips, elapsed, l.decayBlocks) | LPFeeLibrary.OVERRIDE_FEE_FLAG;
+        uint256 startTime = l.startTime;
+        uint256 elapsed = block.timestamp < startTime ? 0 : block.timestamp - startTime;
+        return _decayedFee(l.initialFeeBips, l.finalFeeBips, elapsed, l.decaySeconds) | LPFeeLibrary.OVERRIDE_FEE_FLAG;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -553,21 +522,21 @@ contract BinLaunchGuardHook is BaseBinHook {
             return (IBinHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, _feeFor(l));
         }
 
-        uint256 startBlock = l.startBlock;
-        if (block.number < startBlock) revert TradingNotOpen(poolId, startBlock, block.number);
+        uint256 startTime = l.startTime;
+        if (block.timestamp < startTime) revert TradingNotOpen(poolId, startTime, block.timestamp);
 
         if (!l.launched) {
             l.launched = true;
-            emit LaunchStarted(poolId, block.number);
+            emit LaunchStarted(poolId, block.timestamp);
         }
 
         uint256 elapsed;
         unchecked {
-            elapsed = block.number - startBlock;
+            elapsed = block.timestamp - startTime;
         }
 
         uint128 maxBuyPerTx = l.maxBuyPerTx;
-        if (maxBuyPerTx != 0 && elapsed < l.decayBlocks) {
+        if (maxBuyPerTx != 0 && elapsed < l.decaySeconds) {
             _enforceMaxBuy(swapForY, amountSpecified, l.launchTokenIsCurrency0, maxBuyPerTx);
         }
 
@@ -580,7 +549,7 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// at the composition fee. Without this override that fee would be the pool's stored LP fee,
     /// which is 0 on a dynamic-fee pool - a free swap around the launch tax.
     ///
-    /// It deliberately does NOT gate on `startBlock`. Reverting here before the launch opens would
+    /// It deliberately does NOT gate on `startTime`. Reverting here before the launch opens would
     /// make the pool unseedable, because `sender` is the router and the launcher cannot be
     /// distinguished from a sniper. Pre-launch mints are therefore charged `initialFeeBips`, the
     /// maximum rate on the schedule, rather than blocked. See "WHAT IT DOES NOT PREVENT".

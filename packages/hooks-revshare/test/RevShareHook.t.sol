@@ -34,8 +34,8 @@ import {BlacklistERC20} from "./mocks/Mocks.sol";
 contract SenderRecordingHook is RevShareHook {
     address public lastAfterSwapSender;
 
-    constructor(ICLPoolManager pm, address owner_, address guardian_, uint48 delayBlocks, uint32 centis)
-        RevShareHook(pm, owner_, guardian_, delayBlocks, centis, 8)
+    constructor(ICLPoolManager pm, address owner_, address guardian_, uint40 delaySeconds)
+        RevShareHook(pm, owner_, guardian_, delaySeconds, 8)
     {}
 
     function _afterSwap(
@@ -79,21 +79,12 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
     int256 constant SWAP_AMOUNT = -1 ether;
 
 
-    /* ------------------------------------------------------------------
-       ROBINHOOD-LIKE PARAMETERS, on purpose.
-
-       The suite used to run against `CONFIG_DELAY_BLOCKS = 3600`, which is 12
-       hours on a 12s chain and SIX MINUTES on the chain this hook is actually
-       deployed to. Testing against 12s numbers is what let that ship. 10 centis
-       is Robinhood's real block time rounded down, and 432 000 blocks is the
-       smallest count that clears the hook's 12h wall-clock floor there.
-       ------------------------------------------------------------------ */
-    uint32 constant BLOCK_TIME_CENTIS = 10; // 0.1s blocks
-    uint48 constant CONFIG_DELAY = 432_000; // x 10 centis = 43 200s = 12h
+    /// @dev The floor, in seconds of `block.timestamp`. No block time is declared anywhere.
+    uint40 constant CONFIG_DELAY = 12 hours;
 
     function setUp() public {
         (vault, poolManager) = createFreshManager();
-        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 8);
+        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, 8);
         router = new CLPoolManagerRouter(vault, poolManager);
 
         initializeTokens();
@@ -330,7 +321,7 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
     /// that was rejected on its account becomes worth revisiting - and every one that was shipped
     /// on the assumption becomes suspect.
     function test_sender_isTheLockerNotTheTrader() public {
-        SenderRecordingHook recorder = new SenderRecordingHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS);
+        SenderRecordingHook recorder = new SenderRecordingHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY);
         PoolKey memory k = _key(recorder);
         k.fee = 500;
         k.parameters =
@@ -403,11 +394,11 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
         hook.proposeConfig(key, _params(50_000, 0, 10_000, 0, address(0)));
         assertEq(hook.getConfig(poolId).feePips, FEE_PIPS, "live config must not move on propose");
 
-        uint48 due = hook.getPendingConfig(poolId).effectiveBlock;
+        uint40 due = hook.getPendingConfig(poolId).effectiveAt;
         vm.expectRevert(abi.encodeWithSelector(RevShareHook.PendingConfigNotDue.selector, poolId, due));
         hook.applyPendingConfig(key);
 
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
         // Permissionless: the delay is the protection, not the caller.
         vm.prank(ALICE);
         hook.applyPendingConfig(key);
@@ -441,9 +432,9 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
         hook.proposeConfig(key, _params(50_000, 0, 10_000, 0, address(0)));
         hook.freezeConfig(key);
 
-        assertEq(hook.getPendingConfig(poolId).effectiveBlock, 0, "freeze must discard the proposal");
+        assertEq(hook.getPendingConfig(poolId).effectiveAt, 0, "freeze must discard the proposal");
 
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
         vm.expectRevert(abi.encodeWithSelector(RevShareHook.NoPendingConfig.selector, poolId));
         hook.applyPendingConfig(key);
 
@@ -571,7 +562,7 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
 
     function test_route1_donationReachesLiquidityProviders() public {
         hook.proposeConfig(key, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
         hook.applyPendingConfig(key);
 
         BalanceDelta control = _swap(controlKey, SWAP_AMOUNT, true);
@@ -747,7 +738,7 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
 
         // Take the share to zero first and the roster may go.
         hook.proposeConfig(key, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
         hook.applyPendingConfig(key);
         hook.setBeneficiaries(key, new RevShareHook.Beneficiary[](0));
         assertEq(hook.totalWeight(poolId), 0);
@@ -810,7 +801,7 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
 
         // Zero the share so the roster is allowed to go, then empty it.
         hook.proposeConfig(key, _params(FEE_PIPS, 10_000, 0, 0, address(0)));
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
         hook.applyPendingConfig(key);
         hook.setBeneficiaries(key, new RevShareHook.Beneficiary[](0));
 
@@ -866,7 +857,7 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
 
     function test_route3_onlyTheDistributorCanPull() public {
         hook.proposeConfig(key, _params(FEE_PIPS, 0, 0, 10_000, DISTRIBUTOR));
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
         hook.applyPendingConfig(key);
 
         _swap(key, SWAP_AMOUNT, true);
@@ -890,12 +881,90 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
+       LOW, fixed: A DISTRIBUTOR REPOINT NO LONGER HANDS OVER THE OLD POT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Route 3 to `DISTRIBUTOR`, swap so a pot accrues, then repoint to `ALICE` through the
+    /// ordinary propose -> wait -> apply path. Returns the pot that accrued under `DISTRIBUTOR`.
+    function _accrueThenRepointTo(address next) internal returns (uint256 pot) {
+        hook.proposeConfig(key, _params(FEE_PIPS, 0, 0, 10_000, DISTRIBUTOR));
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
+        hook.applyPendingConfig(key);
+        _swap(key, SWAP_AMOUNT, true);
+        pot = hook.pendingDistributorShare(poolId, currency1);
+        assertGt(pot, 0);
+
+        hook.proposeConfig(key, _params(FEE_PIPS, 0, 0, 10_000, next));
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
+        hook.applyPendingConfig(key);
+    }
+
+    /// @dev FAILS AGAINST THE PRE-FIX HOOK: there, `ALICE` pulled `pot` - value that accrued for
+    /// the old distributor's holders - because `pullDistributorShare` paid whoever was current.
+    function test_FIX_repointDoesNotHandTheOldPotToTheNewDistributor() public {
+        uint256 pot = _accrueThenRepointTo(ALICE);
+
+        assertEq(hook.pendingDistributorShare(poolId, currency1), 0, "the live pot starts empty for the new distributor");
+        assertEq(hook.retiredDistributorPot(poolId, DISTRIBUTOR, currency1), pot, "escrowed for the old one");
+
+        vm.prank(ALICE);
+        assertEq(hook.pullDistributorShare(key, currency1), 0, "the new distributor gets none of it");
+
+        vm.prank(DISTRIBUTOR);
+        assertEq(hook.pullDistributorShare(key, currency1), pot, "the old distributor still collects its own");
+        assertEq(IERC20(Currency.unwrap(currency1)).balanceOf(DISTRIBUTOR), pot);
+        assertEq(hook.retiredDistributorPot(poolId, DISTRIBUTOR, currency1), 0);
+        _assertSolvent();
+    }
+
+    /// @dev A two-currency `closeEpoch` pulls both currencies; the retired distributor must get 0,
+    /// not a revert, for a currency with no escrow. A stranger still reverts.
+    function test_FIX_retiredDistributorPullsZeroNotRevert_strangerStillReverts() public {
+        _accrueThenRepointTo(ALICE);
+        vm.prank(DISTRIBUTOR);
+        assertEq(hook.pullDistributorShare(key, currency0), 0);
+
+        vm.prank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.NotDistributor.selector, poolId, address(0xBAD)));
+        hook.pullDistributorShare(key, currency1);
+    }
+
+    /// @dev Fees after the repoint belong to the new distributor, and a later swap cannot grief the
+    /// repoint (the escrow design is why a swap between close and apply blocks nothing).
+    function test_FIX_postRepointFeesGoToTheNewDistributor() public {
+        uint256 oldPot = _accrueThenRepointTo(ALICE);
+        _swap(key, SWAP_AMOUNT, true);
+        uint256 newPot = hook.pendingDistributorShare(poolId, currency1);
+        assertGt(newPot, 0);
+
+        vm.prank(ALICE);
+        assertEq(hook.pullDistributorShare(key, currency1), newPot);
+        vm.prank(DISTRIBUTOR);
+        assertEq(hook.pullDistributorShare(key, currency1), oldPot);
+        _assertSolvent();
+    }
+
+    /// @dev A -> B -> A: the returning distributor collects its escrow and the live pot together.
+    function test_FIX_repointBackCollectsEscrowAndLivePot() public {
+        uint256 first = _accrueThenRepointTo(ALICE);
+        hook.proposeConfig(key, _params(FEE_PIPS, 0, 0, 10_000, DISTRIBUTOR));
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
+        hook.applyPendingConfig(key);
+        _swap(key, SWAP_AMOUNT, true);
+        uint256 live = hook.pendingDistributorShare(poolId, currency1);
+
+        vm.prank(DISTRIBUTOR);
+        assertEq(hook.pullDistributorShare(key, currency1), first + live);
+        _assertSolvent();
+    }
+
+    /*//////////////////////////////////////////////////////////////
                             THREE-WAY SPLIT
     //////////////////////////////////////////////////////////////*/
 
     function test_threeWaySplit_conservesTheCut() public {
         hook.proposeConfig(key, _params(FEE_PIPS, 5_000, 3_000, 2_000, DISTRIBUTOR));
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
         hook.applyPendingConfig(key);
         hook.setBeneficiaries(key, _roster(TREASURY, 1));
 
@@ -992,7 +1061,7 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
 
     function test_drain_hookNeverCreditsMoreThanItTook() public {
         hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 3_400, 3_300, 3_300, DISTRIBUTOR));
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
         hook.applyPendingConfig(key);
         hook.setBeneficiaries(key, _roster(TREASURY, 2, CHARITY, 1));
 
@@ -1069,7 +1138,7 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
     /// after every step. This is the property that a settlement bug would break.
     function testFuzz_drain_solventUnderArbitrarySwapSequences(uint96[8] calldata amounts, uint8 directions) public {
         hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 3_400, 3_300, 3_300, DISTRIBUTOR));
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
         hook.applyPendingConfig(key);
         hook.setBeneficiaries(key, _roster(TREASURY, 7, CHARITY, 3));
 
@@ -1190,39 +1259,31 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
        to let the pick be meaningless.
     //////////////////////////////////////////////////////////////*/
 
-    function test_ctor_rejectsAZeroOrAbsurdBlockTime() public {
-        vm.expectRevert(abi.encodeWithSelector(RevShareHook.InvalidBlockTime.selector, uint32(0)));
-        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, 0, 8);
+    /// @dev The retired hooks took a block count (and, on `0xfC00`, a block time). This one takes
+    /// seconds and has no block-time argument to reject, so the bound is the whole test.
+    function test_ctor_delayIsSecondsInsideTheBounds() public {
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooShort.selector, 0, 12 hours));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, 0, 8);
 
-        vm.expectRevert(abi.encodeWithSelector(RevShareHook.InvalidBlockTime.selector, uint32(60_001)));
-        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, 60_001, 8);
-
-        // 600s per block is the edge, and it is accepted. Nothing about a slow chain is unsafe.
-        RevShareHook slow = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, 72, 60_000, 8);
-        assertEq((uint256(slow.CONFIG_DELAY_BLOCKS()) * slow.blockTimeCentis()) / 100, 12 hours);
+        RevShareHook atFloor = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, uint40(12 hours), 8);
+        assertEq(uint256(atFloor.CONFIG_DELAY_SECONDS()), 12 hours);
     }
 
     /// @dev A delay so long that the pool owner can never answer market conditions is its own
     /// failure, and there is no admin anywhere that can shorten it after the fact.
     function test_ctor_rejectsADelayBeyondTheCeiling() public {
-        // 14 days + 1 second's worth of blocks at 0.1s.
-        uint48 tooLong = 14 * 24 * 3600 * 10 + 10;
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                RevShareHook.ConfigDelayTooLong.selector, (uint256(tooLong) * BLOCK_TIME_CENTIS) / 100, 14 days
-            )
-        );
-        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, tooLong, BLOCK_TIME_CENTIS, 8);
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooLong.selector, 14 days + 1, 14 days));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, uint40(14 days + 1), 8);
     }
 
     function test_ctor_boundsMaxBeneficiaries() public {
         vm.expectRevert(abi.encodeWithSelector(RevShareHook.InvalidMaxBeneficiaries.selector, 0, 32));
-        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 0);
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, 0);
 
         vm.expectRevert(abi.encodeWithSelector(RevShareHook.InvalidMaxBeneficiaries.selector, 33, 32));
-        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 33);
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, 33);
 
-        RevShareHook wide = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 32);
+        RevShareHook wide = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, 32);
         assertEq(wide.MAX_BENEFICIARIES(), 32);
         assertEq(wide.MAX_BENEFICIARIES_CEILING(), 32);
     }
@@ -1259,16 +1320,16 @@ contract RevShareHookTest is Test, Deployers, TokenFixture {
         hook.proposeConfig(key, _params(50_000, 0, 10_000, 0, address(0)));
         RevShareHook.PendingConfig memory first = hook.getPendingConfig(poolId);
 
-        vm.roll(block.number + 10);
+        vm.warp(block.timestamp + 10);
         hook.proposeConfig(key, _params(60_000, 0, 10_000, 0, address(0)));
         RevShareHook.PendingConfig memory second = hook.getPendingConfig(poolId);
 
-        assertEq(second.effectiveBlock, first.effectiveBlock + 10, "the clock restarted");
+        assertEq(second.effectiveAt, first.effectiveAt + 10, "the clock restarted");
         assertEq(second.params.feePips, 60_000, "and only the newer one survives");
 
-        vm.roll(second.effectiveBlock);
+        vm.warp(second.effectiveAt);
         hook.applyPendingConfig(key);
         assertEq(hook.getConfig(poolId).feePips, 60_000);
-        assertEq(hook.getPendingConfig(poolId).effectiveBlock, 0, "consumed");
+        assertEq(hook.getPendingConfig(poolId).effectiveAt, 0, "consumed");
     }
 }

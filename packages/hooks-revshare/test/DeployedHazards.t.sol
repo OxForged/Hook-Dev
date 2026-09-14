@@ -41,7 +41,7 @@ import {RevShareHook} from "../src/RevShareHook.sol";
  *   B3  empty roster + freezeConfig  -> FIXED. Three guards, none reachable around.
  *   B4  freezeConfig is irreversible -> STILL TRUE, and correct. Unchanged below.
  *   B5  a matured proposal is eternal-> FIXED. Expiry, plus clearing on reduce/disable.
- *   3b  CONFIG_DELAY_BLOCKS = 6 min  -> FIXED. See `test_FIXED_B3b_*`.
+ *   3b  delay sized for the wrong clock -> FIXED. Seconds of block.timestamp. `test_FIXED_B3b_*`.
  *
  * NONE OF THIS REACHES THE LIVE INSTANCE. The deployed hook keeps every one of these
  * hazards until the pool at `poolKey.hooks == 0x23CE...` is replaced, which cannot
@@ -69,21 +69,12 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
     int256 constant SWAP_AMOUNT = -1 ether;
 
 
-    /* ------------------------------------------------------------------
-       ROBINHOOD-LIKE PARAMETERS, on purpose.
-
-       The suite used to run against `CONFIG_DELAY_BLOCKS = 3600`, which is 12
-       hours on a 12s chain and SIX MINUTES on the chain this hook is actually
-       deployed to. Testing against 12s numbers is what let that ship. 10 centis
-       is Robinhood's real block time rounded down, and 432 000 blocks is the
-       smallest count that clears the hook's 12h wall-clock floor there.
-       ------------------------------------------------------------------ */
-    uint32 constant BLOCK_TIME_CENTIS = 10; // 0.1s blocks
-    uint48 constant CONFIG_DELAY = 432_000; // x 10 centis = 43 200s = 12h
+    /// @dev The floor, in seconds of `block.timestamp`. No block time is declared anywhere.
+    uint40 constant CONFIG_DELAY = 12 hours;
 
     function setUp() public {
         (vault, poolManager) = createFreshManager();
-        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, BLOCK_TIME_CENTIS, 8);
+        hook = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, CONFIG_DELAY, 8);
         router = new CLPoolManagerRouter(vault, poolManager);
 
         initializeTokens();
@@ -278,69 +269,99 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
-       3b - CONFIG_DELAY_BLOCKS WAS SIX MINUTES ON THIS CHAIN - FIXED
+       3b - THE DELAY WAS SIZED FOR THE WRONG CLOCK - FIXED BY LEAVING BLOCKS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev THE DEPLOYED HOOK: `uint48 public constant CONFIG_DELAY_BLOCKS = 3600`, whose own
-    /// docstring read "roughly 12 hours at 12s blocks, or proportionally less on a faster chain -
-    /// documented rather than configurable so it cannot be shortened". Robinhood produces a block
-    /// every 0.102s, so 3600 blocks is 367 seconds. Six minutes. 118x shorter than the number in
-    /// the comment, on a chain where nobody watches a mempool for `proposeConfig`.
+    /// @dev THE DEPLOYED HOOKS. `0x23CE…E446` has `CONFIG_DELAY_BLOCKS = 3600` (a constant), which
+    /// on Robinhood's real contract clock - Arbitrum Nitro, where `block.number` is Ethereum's ~12 s
+    /// block - is ~12 hours. `0xfC00…2aD2` took `432 000` blocks with `blockTimeCentis = 10`, the RPC's
+    /// 0.1 s L2 block time, and so has a ~60-DAY delay and a ~360-day proposal TTL. Both are
+    /// block-denominated, and both depend on somebody declaring the right clock.
     ///
-    /// THIS HOOK: the delay is a constructor argument in blocks PAIRED WITH THE BLOCK TIME, and
-    /// the product is checked against a wall-clock floor. There is no value of `blockTimeCentis`
-    /// that buys a shorter real window - a faster chain must pass a bigger block count.
-    function test_FIXED_B3b_theDelayIsTwelveRealHoursOnARobinhoodLikeChain() public view {
-        uint256 realSeconds = (uint256(hook.CONFIG_DELAY_BLOCKS()) * hook.blockTimeCentis()) / 100;
-        assertEq(hook.blockTimeCentis(), BLOCK_TIME_CENTIS, "fixture runs at Robinhood's block time");
-        assertGe(realSeconds, hook.MIN_CONFIG_DELAY_SECONDS(), "the delay clears its wall-clock floor");
-        assertEq(realSeconds, 12 hours, "and lands exactly on 12h at 432 000 blocks x 0.1s");
+    /// THIS HOOK: seconds of `block.timestamp`, and no block-time argument exists to get wrong.
+    function test_FIXED_B3b_theDelayIsTwelveHoursOfTimestamp() public view {
+        assertEq(hook.CLOCK_MODE(), "mode=timestamp");
+        assertEq(uint256(hook.CONFIG_DELAY_SECONDS()), 12 hours);
+        assertEq(hook.MIN_CONFIG_DELAY_SECONDS(), 12 hours);
+        assertEq(hook.MAX_CONFIG_DELAY_SECONDS(), 14 days);
     }
 
-    /// @dev THE REGRESSION GUARD THAT MATTERS. The deployed hook's exact parameters - 3600 blocks
-    /// on a 0.1s chain - must be rejected outright. This is the test that fails against the old
-    /// contract, because the old contract had no way to express the question.
-    function test_FIXED_B3b_aRobinhoodBlockTimeCannotProduceASubFloorDelay() public {
-        // 3600 x 10 centis = 360s. The deployed value, on the deployed chain.
-        vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooShort.selector, 360, 12 hours));
-        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, 3600, BLOCK_TIME_CENTIS, 8);
+    /// @dev THE REGRESSION GUARD THAT FAILS AGAINST EVERY BLOCK-NUMBERED HOOK: a hundred million
+    /// blocks with no time passing must not mature a fee raise, and twelve hours with no block
+    /// rolled must.
+    function test_FIXED_B3b_onlyTimeMaturesAProposal() public {
+        hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
+        uint40 due = hook.getPendingConfig(poolId).effectiveAt;
+        assertEq(uint256(due), block.timestamp + 12 hours);
 
-        // One block short of the floor is still short. There is no rounding slack to exploit:
-        // 431 999 x 10 / 100 = 43 199s, and the floor is 43 200.
-        vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooShort.selector, 43_199, 12 hours));
-        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, 431_999, BLOCK_TIME_CENTIS, 8);
+        vm.roll(block.number + 100_000_000);
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.PendingConfigNotDue.selector, poolId, due));
+        hook.applyPendingConfig(key);
 
-        // And the same block count IS accepted on a 12s chain, where it always meant 12 hours.
-        RevShareHook slow = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, 3600, 1200, 8);
-        assertEq((uint256(slow.CONFIG_DELAY_BLOCKS()) * slow.blockTimeCentis()) / 100, 12 hours);
+        uint256 blockBefore = block.number;
+        vm.warp(due);
+        assertEq(block.number, blockBefore);
+        vm.prank(ALICE);
+        hook.applyPendingConfig(key);
+        assertEq(hook.getConfig(poolId).feePips, hook.MAX_FEE_PIPS());
     }
 
-    /// @dev A deployment cannot buy a shorter window by lying about the block time in either
-    /// direction: understating it makes the constructor demand MORE blocks, and overstating it is
-    /// rejected once the claimed product leaves the accepted range.
-    function testFuzz_FIXED_B3b_noBlockTimeBuysASubFloorDelay(uint48 delayBlocks, uint32 centis) public {
-        centis = uint32(bound(centis, 1, 60_000));
-        delayBlocks = uint48(bound(delayBlocks, 1, type(uint40).max));
+    /// @dev The floor is not negotiable by a deployment, and neither is the ceiling. MUTATION-CHECKED:
+    /// deleting the `< MIN_CONFIG_DELAY_SECONDS` branch makes the first expectation fail.
+    function test_FIXED_B3b_aSubFloorOrAbsurdDelayCannotBeDeployed() public {
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooShort.selector, 12 hours - 1, 12 hours));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, uint40(12 hours - 1), 8);
 
-        uint256 realSeconds = (uint256(delayBlocks) * centis) / 100;
-        if (realSeconds < 12 hours || realSeconds > 14 days) {
-            vm.expectRevert();
-            new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, delayBlocks, centis, 8);
+        // 3 600 - the retired hook's number - read as seconds would be one hour. Refused.
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooShort.selector, 3600, 12 hours));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, 3600, 8);
+
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooLong.selector, 14 days + 1, 14 days));
+        new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, uint40(14 days + 1), 8);
+
+        RevShareHook longer = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, uint40(14 days), 8);
+        assertEq(uint256(longer.CONFIG_DELAY_SECONDS()), 14 days, "a tenant may choose a longer notice");
+    }
+
+    function testFuzz_FIXED_B3b_acceptedIffInsideTheBounds(uint40 delaySeconds) public {
+        if (delaySeconds < 12 hours) {
+            vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooShort.selector, delaySeconds, 12 hours));
+            new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, delaySeconds, 8);
+        } else if (delaySeconds > 14 days) {
+            vm.expectRevert(abi.encodeWithSelector(RevShareHook.ConfigDelayTooLong.selector, delaySeconds, 14 days));
+            new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, delaySeconds, 8);
         } else {
-            RevShareHook h = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, delayBlocks, centis, 8);
-            assertGe(
-                (uint256(h.CONFIG_DELAY_BLOCKS()) * h.blockTimeCentis()) / 100,
-                h.MIN_CONFIG_DELAY_SECONDS(),
-                "every accepted delay is at least 12 real hours"
-            );
+            RevShareHook h = new RevShareHook(poolManager, GOVERNANCE, GUARDIAN, delaySeconds, 8);
+            assertEq(h.CONFIG_DELAY_SECONDS(), delaySeconds);
         }
+    }
+
+    /// @dev The Nitro clock bound, with numbers: the sequencer may run at most one hour ahead, so
+    /// the worst forward skew removes 1/12 of a 12 h notice. A proposal made at t cannot be applied
+    /// before t + 11 h of REAL time even if the sequencer jumps the clock an hour in one block.
+    function test_FIXED_B3b_aOneHourForwardSkewLeavesElevenHoursOfNotice() public {
+        hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
+        // Read back rather than cached in a local: under via-IR a local copy of
+        // `block.timestamp` can be re-evaluated after `vm.warp`.
+        uint40 due = hook.getPendingConfig(poolId).effectiveAt;
+        uint256 proposedAt = uint256(due) - 12 hours;
+        // Real time proposedAt + 11h - 1s, sequencer clock one hour ahead of it.
+        vm.warp(proposedAt + 11 hours - 1 + 1 hours);
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.PendingConfigNotDue.selector, poolId, due));
+        hook.applyPendingConfig(key);
+        // And one more second of the skewed clock is exactly twelve hours: due.
+        vm.warp(uint256(due));
+        vm.prank(ALICE);
+        hook.applyPendingConfig(key);
     }
 
     /*//////////////////////////////////////////////////////////////
        B4 - freezeConfig IS IRREVERSIBLE AND CHEAPER THAN RAISING A FEE
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Immediate and one-way, while a fee RAISE costs `CONFIG_DELAY_BLOCKS`. That asymmetry
+    /// @dev Immediate and one-way, while a fee RAISE costs `CONFIG_DELAY_SECONDS`. That asymmetry
     /// is deliberate under this contract's own rule - delay belongs on escalation, never on
     /// reduction, and a freeze only ever reduces the owner's power. It is recorded here because
     /// the CONSEQUENCE is irreversible while the friction is a single click, and because it is the
@@ -349,7 +370,7 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
         hook.proposeConfig(key, _params(50_000, 0, 10_000, 0, address(0)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                RevShareHook.PendingConfigNotDue.selector, poolId, uint48(block.number) + hook.CONFIG_DELAY_BLOCKS()
+                RevShareHook.PendingConfigNotDue.selector, poolId, uint40(block.timestamp) + hook.CONFIG_DELAY_SECONDS()
             )
         );
         hook.applyPendingConfig(key);
@@ -382,14 +403,14 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
     /// `ConfigProposalCancelled`, so there is no armed state hiding behind an "off" pool.
     function test_FIXED_B5_disableClearsAMaturedProposal() public {
         hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
-        assertGt(hook.getPendingConfig(poolId).effectiveBlock, 0, "armed and due");
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
+        assertGt(hook.getPendingConfig(poolId).effectiveAt, 0, "armed and due");
 
         vm.expectEmit(true, false, false, false, address(hook));
         emit RevShareHook.ConfigProposalCancelled(poolId);
         hook.disable(key);
 
-        assertEq(hook.getPendingConfig(poolId).effectiveBlock, 0, "disable retracted it");
+        assertEq(hook.getPendingConfig(poolId).effectiveAt, 0, "disable retracted it");
 
         vm.prank(ALICE);
         vm.expectRevert(abi.encodeWithSelector(RevShareHook.NoPendingConfig.selector, poolId));
@@ -400,10 +421,10 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
     /// went down" and therefore the one more likely to mislead.
     function test_FIXED_B5_reduceFeeClearsAMaturedProposal() public {
         hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
 
         hook.reduceFee(key, 0);
-        assertEq(hook.getPendingConfig(poolId).effectiveBlock, 0);
+        assertEq(hook.getPendingConfig(poolId).effectiveAt, 0);
 
         vm.prank(ALICE);
         vm.expectRevert(abi.encodeWithSelector(RevShareHook.NoPendingConfig.selector, poolId));
@@ -419,10 +440,10 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
     function test_FIXED_B5_aMaturedProposalExpires() public {
         hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
         RevShareHook.PendingConfig memory pending = hook.getPendingConfig(poolId);
-        assertGt(pending.expiryBlock, pending.effectiveBlock, "a window, not a deadline");
+        assertGt(pending.expiresAt, pending.effectiveAt, "a window, not a deadline");
 
         // Inside the window it applies.
-        vm.roll(pending.effectiveBlock);
+        vm.warp(pending.effectiveAt);
         vm.prank(ALICE);
         hook.applyPendingConfig(key);
         assertEq(hook.getConfig(poolId).feePips, hook.MAX_FEE_PIPS());
@@ -431,22 +452,52 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
         hook.reduceFee(key, 1);
         hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
         RevShareHook.PendingConfig memory second = hook.getPendingConfig(poolId);
-        vm.roll(uint256(second.expiryBlock) + 1);
+        vm.warp(uint256(second.expiresAt) + 1);
 
         vm.prank(ALICE);
         vm.expectRevert(
-            abi.encodeWithSelector(RevShareHook.PendingConfigExpired.selector, poolId, second.expiryBlock)
+            abi.encodeWithSelector(RevShareHook.PendingConfigExpired.selector, poolId, second.expiresAt)
         );
         hook.applyPendingConfig(key);
         assertEq(hook.getConfig(poolId).feePips, 1, "the ambush never fired");
     }
 
-    /// @dev The TTL is wall-clock too, for the same reason the delay is. Three days on a 0.1s
-    /// chain is 2 592 000 blocks, not three days' worth of somebody else's blocks.
-    function test_FIXED_B5_theProposalWindowIsThreeRealDays() public view {
-        uint256 ttlSeconds = (uint256(hook.CONFIG_PROPOSAL_TTL_BLOCKS()) * hook.blockTimeCentis()) / 100;
-        assertGe(ttlSeconds, hook.CONFIG_PROPOSAL_TTL_SECONDS(), "rounded up, never short");
-        assertEq(ttlSeconds, 3 days);
+    /// @dev The window is three days of `block.timestamp`, on every chain, with nothing declared.
+    function test_FIXED_B5_theProposalWindowIsThreeDays() public {
+        assertEq(uint256(hook.CONFIG_PROPOSAL_TTL_SECONDS()), 3 days);
+        hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
+        RevShareHook.PendingConfig memory p = hook.getPendingConfig(poolId);
+        assertEq(uint256(p.expiresAt) - p.effectiveAt, 3 days);
+    }
+
+    /// @dev TTL BOUNDARY, both sides, MUTATION-CHECKED: turning `>` into `>=` fails the first
+    /// apply; deleting the expiry check fails the second.
+    function test_FIXED_B5_expiresAtIsTheLastApplicableSecond() public {
+        hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
+        RevShareHook.PendingConfig memory p = hook.getPendingConfig(poolId);
+
+        uint256 snap = vm.snapshotState();
+        vm.warp(p.expiresAt);
+        vm.prank(ALICE);
+        hook.applyPendingConfig(key);
+        assertEq(hook.getConfig(poolId).feePips, hook.MAX_FEE_PIPS(), "applies at expiresAt");
+        vm.revertToState(snap);
+
+        vm.warp(uint256(p.expiresAt) + 1);
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(RevShareHook.PendingConfigExpired.selector, poolId, p.expiresAt));
+        hook.applyPendingConfig(key);
+    }
+
+    /// @dev Rolling blocks cannot expire a proposal either - the TTL is time, not blocks.
+    function test_FIXED_B5_blocksAloneNeverExpireAProposal() public {
+        hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
+        RevShareHook.PendingConfig memory p = hook.getPendingConfig(poolId);
+        vm.warp(p.effectiveAt);
+        vm.roll(block.number + 1_000_000_000);
+        vm.prank(ALICE);
+        hook.applyPendingConfig(key);
+        assertEq(hook.getConfig(poolId).feePips, hook.MAX_FEE_PIPS());
     }
 
     /// @dev THE HONEST MITIGATION on the deployed hook, kept because it is what bounds the finding
@@ -465,7 +516,7 @@ contract DeployedHazardsTest is Test, Deployers, TokenFixture {
         uint256 gross = uint256(int256(control.amount1()));
 
         hook.proposeConfig(key, _params(hook.MAX_FEE_PIPS(), 0, 10_000, 0, address(0)));
-        vm.roll(block.number + hook.CONFIG_DELAY_BLOCKS());
+        vm.warp(block.timestamp + hook.CONFIG_DELAY_SECONDS());
         vm.prank(ALICE);
         hook.applyPendingConfig(key);
 

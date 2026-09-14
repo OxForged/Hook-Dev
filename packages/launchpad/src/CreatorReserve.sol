@@ -50,7 +50,9 @@ import {Plan, Planner} from "infinity-periphery/src/libraries/Planner.sol";
  * `currency1`. Price is currency1 per currency0. So the ladder is above spot ONLY when the
  * launch token is currency0. When the launch token sorts as currency1 the ladder must sit
  * BELOW spot, and "the price has cleared this rung" flips from `tick >= tickUpper` to
- * `tick <= tickLower`. Building it on the wrong side does not revert — it produces a
+ * `tick < tickLower`. Both are STRICT against the range core keeps: a position is in range
+ * for `tickLower <= tick < tickUpper` (`CLPool`), so `tick == tickLower` still holds unsold
+ * launch token and `tick == tickUpper` does not. Building it on the wrong side does not revert — it produces a
  * ladder made of the QUOTE currency that fills as the token falls, which is the opposite
  * of the product. `launchIsCurrency0` is therefore read from the key at construction and
  * every comparison branches on it.
@@ -287,7 +289,10 @@ contract CreatorReserve is IERC721Receiver, ReentrancyGuard {
         (, int24 currentTick,,) = poolManager.getSlot0(id);
         for (uint256 i; i < _rungs.length; ++i) {
             Rung memory r = _rungs[i];
-            bool onSellSide = isC0 ? (r.tickLower >= currentTick) : (r.tickUpper <= currentTick);
+            // Out of range on the selling side, by core's half-open range [tickLower, tickUpper):
+            // above spot needs `tickLower > tick` (a rung at `tick == tickLower` is IN range and
+            // already holds quote currency); below spot needs `tickUpper <= tick`.
+            bool onSellSide = isC0 ? (r.tickLower > currentTick) : (r.tickUpper <= currentTick);
             if (!onSellSide) revert RungOnTheWrongSide(i);
         }
     }
@@ -316,9 +321,9 @@ contract CreatorReserve is IERC721Receiver, ReentrancyGuard {
         if (rung.harvested) revert RungAlreadyHarvested(index);
 
         (, int24 currentTick,,) = poolManager.getSlot0(_key.toId());
-        int24 required = launchIsCurrency0 ? rung.tickUpper : rung.tickLower;
-        bool cleared = launchIsCurrency0 ? currentTick >= required : currentTick <= required;
-        if (!cleared) revert RungNotCleared(index, currentTick, required);
+        if (!_cleared(rung.tickLower, rung.tickUpper, currentTick)) {
+            revert RungNotCleared(index, currentTick, launchIsCurrency0 ? rung.tickUpper : rung.tickLower);
+        }
 
         rung.harvested = true; // effects before the external call
 
@@ -352,10 +357,22 @@ contract CreatorReserve is IERC721Receiver, ReentrancyGuard {
         for (uint256 i; i < n; ++i) {
             Rung memory r = _rungs[i];
             if (r.harvested) continue;
-            int24 required = launchIsCurrency0 ? r.tickUpper : r.tickLower;
-            bool cleared = launchIsCurrency0 ? currentTick >= required : currentTick <= required;
-            if (cleared) total += harvest(i);
+            if (_cleared(r.tickLower, r.tickUpper, currentTick)) total += harvest(i);
         }
+    }
+
+    /**
+     * Whether the price has FULLY converted a rung into quote currency.
+     *
+     * Core keeps a position in range for `tickLower <= tick < tickUpper`. Launch token as
+     * currency0: the rung sells upward and is all currency1 once `tick >= tickUpper`. Launch
+     * token as currency1: it sells downward and is all currency0 only once `tick < tickLower`.
+     * `tick == tickLower` is still IN range and still holds unsold token; treating it as cleared
+     * harvested a partly filled rung and stranded the unsold remainder, because `withdraw` pays
+     * quote only. One function, so the four call sites cannot disagree again.
+     */
+    function _cleared(int24 tickLower, int24 tickUpper, int24 currentTick) internal view returns (bool) {
+        return launchIsCurrency0 ? currentTick >= tickUpper : currentTick < tickLower;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -455,13 +472,12 @@ contract CreatorReserve is IERC721Receiver, ReentrancyGuard {
     {
         Rung memory r = _rungs[index];
         (, int24 currentTick,,) = poolManager.getSlot0(_key.toId());
-        int24 required = launchIsCurrency0 ? r.tickUpper : r.tickLower;
         return (
             r.tickLower,
             r.tickUpper,
             positionManager.getPositionLiquidity(r.tokenId),
             r.harvested,
-            launchIsCurrency0 ? currentTick >= required : currentTick <= required
+            _cleared(r.tickLower, r.tickUpper, currentTick)
         );
     }
 
@@ -472,8 +488,7 @@ contract CreatorReserve is IERC721Receiver, ReentrancyGuard {
         for (uint256 i; i < n; ++i) {
             Rung memory r = _rungs[i];
             if (r.harvested) continue;
-            int24 required = launchIsCurrency0 ? r.tickUpper : r.tickLower;
-            if (launchIsCurrency0 ? currentTick >= required : currentTick <= required) ++count;
+            if (_cleared(r.tickLower, r.tickUpper, currentTick)) ++count;
         }
     }
 

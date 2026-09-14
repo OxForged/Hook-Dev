@@ -30,7 +30,7 @@ import {Deployers} from "infinity-core/test/pool-cl/helpers/Deployers.sol";
 import {CLPoolManagerRouter} from "infinity-core/test/pool-cl/helpers/CLPoolManagerRouter.sol";
 
 import {BaseCLHook} from "../../src/base/BaseCLHook.sol";
-import {LaunchGuardHook} from "../../src/launch/LaunchGuardHook.sol";
+import {LaunchGuardHook, ILaunchTokenOrigin} from "../../src/launch/LaunchGuardHook.sol";
 
 /// @dev A `LaunchGuardHook` that records the `sender` argument core hands to `beforeSwap`.
 /// Used only by `test_sender_isTheLockerNotTheBuyer` to pin the constraint the whole design rests
@@ -39,9 +39,7 @@ contract SenderRecordingLaunchGuardHook is LaunchGuardHook {
     address public lastSwapSender;
     uint256 public swapCount;
 
-    constructor(ICLPoolManager _pm, uint32 centis, uint32 maxDecay, uint48 maxStart)
-        LaunchGuardHook(_pm, centis, maxDecay, maxStart)
-    {}
+    constructor(ICLPoolManager _pm) LaunchGuardHook(_pm, ILaunchTokenOrigin(address(0))) {}
 
     function _beforeSwap(
         address sender,
@@ -52,6 +50,15 @@ contract SenderRecordingLaunchGuardHook is LaunchGuardHook {
         lastSwapSender = sender;
         swapCount++;
         return super._beforeSwap(sender, key, params, hookData);
+    }
+}
+
+/// @dev Stands in for `LaunchTokenFactory.deployerOf`.
+contract MockLaunchTokenOrigin {
+    mapping(address token => address deployer) public deployerOf;
+
+    function set(address token, address deployer) external {
+        deployerOf[token] = deployer;
     }
 }
 
@@ -66,9 +73,9 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     PoolKey key;
     PoolId poolId;
 
-    /// @dev Foundry starts tests at block 1; the default launch opens 100 blocks later.
-    uint48 constant START_BLOCK = 101;
-    uint32 constant DECAY_BLOCKS = 100;
+    /// @dev Foundry starts tests at timestamp 1; the default launch opens 100 seconds later.
+    uint40 constant START_TIME = 101;
+    uint32 constant DECAY_SECONDS = 100;
     uint24 constant INITIAL_FEE = 300_000; // 30%
     uint24 constant FINAL_FEE = 3_000; // 0.30%
 
@@ -79,33 +86,20 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     event LaunchConfigured(
         PoolId indexed poolId,
         address indexed owner,
-        uint48 startBlock,
-        uint32 decayBlocks,
+        uint40 startTime,
+        uint32 decaySeconds,
         uint24 initialFeeBips,
         uint24 finalFeeBips,
         uint128 maxBuyPerTx,
         bool launchTokenIsCurrency0,
         bool enabled
     );
-    event LaunchStarted(PoolId indexed poolId, uint256 blockNumber);
+    event LaunchStarted(PoolId indexed poolId, uint256 timestamp);
 
-
-    /* ------------------------------------------------------------------
-       ROBINHOOD-LIKE PARAMETERS, on purpose.
-
-       `MAX_DECAY_BLOCKS` and `MAX_START_DELAY` used to be `constant 1_000_000`,
-       sized as "~139 days at 12s blocks". On Robinhood Chain (0.102s blocks)
-       that is 28 HOURS, so a three-day fair launch reverted. Testing against 12s
-       numbers is exactly what let that ship. 10 centis is Robinhood's block time
-       rounded down; 26 000 000 blocks is ~30 days there.
-       ------------------------------------------------------------------ */
-    uint32 constant BLOCK_TIME_CENTIS = 10;
-    uint32 constant MAX_DECAY = 26_000_000;
-    uint48 constant MAX_START = 26_000_000;
 
     function setUp() public {
         (vault, poolManager) = createFreshManager();
-        hook = new LaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
+        hook = new LaunchGuardHook(poolManager, ILaunchTokenOrigin(address(0)));
         router = new CLPoolManagerRouter(vault, poolManager);
 
         initializeTokens();
@@ -143,8 +137,8 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
 
     function _defaultConfig() internal pure returns (LaunchGuardHook.LaunchConfig memory) {
         return LaunchGuardHook.LaunchConfig({
-            startBlock: START_BLOCK,
-            decayBlocks: DECAY_BLOCKS,
+            startTime: START_TIME,
+            decaySeconds: DECAY_SECONDS,
             initialFeeBips: INITIAL_FEE,
             finalFeeBips: FINAL_FEE,
             maxBuyPerTx: 0,
@@ -208,9 +202,9 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     }
 
     function _expectedFee(uint256 elapsed) internal pure returns (uint24) {
-        if (elapsed >= DECAY_BLOCKS) return FINAL_FEE;
+        if (elapsed >= DECAY_SECONDS) return FINAL_FEE;
         uint256 spread = INITIAL_FEE - FINAL_FEE;
-        return uint24(INITIAL_FEE - (spread * elapsed) / DECAY_BLOCKS);
+        return uint24(INITIAL_FEE - (spread * elapsed) / DECAY_SECONDS);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -244,15 +238,15 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
         vm.expectEmit(true, true, false, true, address(hook));
         emit LaunchClaimed(id, launcher);
         vm.expectEmit(true, true, false, true, address(hook));
-        emit LaunchConfigured(id, launcher, START_BLOCK, DECAY_BLOCKS, INITIAL_FEE, FINAL_FEE, 0, false, true);
+        emit LaunchConfigured(id, launcher, START_TIME, DECAY_SECONDS, INITIAL_FEE, FINAL_FEE, 0, false, true);
 
         vm.prank(launcher);
         hook.configureLaunch(k, _defaultConfig());
 
         LaunchGuardHook.Launch memory l = hook.getLaunch(id);
         assertEq(l.owner, launcher);
-        assertEq(l.startBlock, START_BLOCK);
-        assertEq(l.decayBlocks, DECAY_BLOCKS);
+        assertEq(l.startTime, START_TIME);
+        assertEq(l.decaySeconds, DECAY_SECONDS);
         assertEq(l.initialFeeBips, INITIAL_FEE);
         assertEq(l.finalFeeBips, FINAL_FEE);
         assertEq(l.maxBuyPerTx, 0);
@@ -293,8 +287,8 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
         assertEq(hook.getLaunch(poolId).initialFeeBips, INITIAL_FEE);
     }
 
-    function test_configure_ownerMayUpdateBeforeStartBlock() public {
-        vm.roll(START_BLOCK - 1);
+    function test_configure_ownerMayUpdateBeforeStartTime() public {
+        vm.warp(START_TIME - 1);
 
         LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
         cfg.initialFeeBips = 200_000;
@@ -309,50 +303,50 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
         assertEq(l.owner, address(this)); // ownership unchanged by an update
     }
 
-    function test_configure_frozenAtExactStartBlock() public {
-        vm.roll(START_BLOCK);
+    function test_configure_frozenAtExactStartTime() public {
+        vm.warp(START_TIME);
         vm.expectRevert(
-            abi.encodeWithSelector(LaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_BLOCK))
+            abi.encodeWithSelector(LaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_TIME))
         );
         hook.configureLaunch(key, _defaultConfig());
     }
 
-    function test_configure_frozenAfterStartBlock() public {
-        vm.roll(START_BLOCK + 1);
+    function test_configure_frozenAfterStartTime() public {
+        vm.warp(START_TIME + 1);
         LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.startBlock = uint48(START_BLOCK + 500);
+        cfg.startTime = uint40(START_TIME + 500);
         cfg.initialFeeBips = 500_000; // the rug attempt: spike the fee mid-launch
 
         vm.expectRevert(
-            abi.encodeWithSelector(LaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_BLOCK))
+            abi.encodeWithSelector(LaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_TIME))
         );
         hook.configureLaunch(key, cfg);
     }
 
     function test_configure_frozenEvenLongAfterTheDecayWindow() public {
-        vm.roll(START_BLOCK + DECAY_BLOCKS + 1_000_000);
+        vm.warp(START_TIME + DECAY_SECONDS + 1_000_000);
         vm.expectRevert(
-            abi.encodeWithSelector(LaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_BLOCK))
+            abi.encodeWithSelector(LaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_TIME))
         );
         hook.configureLaunch(key, _defaultConfig());
     }
 
-    function test_configure_rejectsStartBlockInThePast() public {
-        vm.roll(1000);
+    function test_configure_rejectsStartTimeInThePast() public {
+        vm.warp(1000);
         LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.startBlock = 999;
+        cfg.startTime = 999;
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
-        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidStartBlock.selector, uint256(999), uint256(1000)));
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidStartTime.selector, uint256(999), uint256(1000)));
         hook.configureLaunch(k, cfg);
     }
 
-    function test_configure_acceptsStartBlockEqualToNow() public {
-        vm.roll(1000);
+    function test_configure_acceptsStartTimeEqualToNow() public {
+        vm.warp(1000);
         LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.startBlock = 1000;
+        cfg.startTime = 1000;
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
         hook.configureLaunch(k, cfg);
-        assertEq(hook.getLaunch(k.toId()).startBlock, 1000);
+        assertEq(hook.getLaunch(k.toId()).startTime, 1000);
 
         // ...and it is immediately frozen, because the launch is already open.
         vm.expectRevert(
@@ -361,29 +355,29 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
         hook.configureLaunch(k, cfg);
     }
 
-    function test_configure_rejectsStartBlockTooFarAhead() public {
+    function test_configure_rejectsStartTimeTooFarAhead() public {
         LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.startBlock = uint48(block.number + hook.MAX_START_DELAY() + 1);
+        cfg.startTime = uint40(block.timestamp + hook.MAX_START_DELAY_SECONDS() + 1);
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
         vm.expectRevert(
-            abi.encodeWithSelector(LaunchGuardHook.InvalidStartBlock.selector, uint256(cfg.startBlock), block.number)
+            abi.encodeWithSelector(LaunchGuardHook.InvalidStartTime.selector, uint256(cfg.startTime), block.timestamp)
         );
         hook.configureLaunch(k, cfg);
     }
 
-    function test_configure_rejectsZeroDecayBlocks() public {
+    function test_configure_rejectsZeroDecaySeconds() public {
         LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.decayBlocks = 0;
+        cfg.decaySeconds = 0;
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
-        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidDecayBlocks.selector, uint32(0)));
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidDecaySeconds.selector, uint32(0)));
         hook.configureLaunch(k, cfg);
     }
 
     function test_configure_rejectsOversizedDecayWindow() public {
         LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.decayBlocks = hook.MAX_DECAY_BLOCKS() + 1;
+        cfg.decaySeconds = hook.MAX_DECAY_SECONDS() + 1;
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
-        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidDecayBlocks.selector, cfg.decayBlocks));
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidDecaySeconds.selector, cfg.decaySeconds));
         hook.configureLaunch(k, cfg);
     }
 
@@ -432,7 +426,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
 
         address squatter = makeAddr("squatter");
         LaunchGuardHook.LaunchConfig memory hostile = _defaultConfig();
-        hostile.startBlock = uint48(block.number + hook.MAX_START_DELAY()); // never opens in practice
+        hostile.startTime = uint40(block.timestamp + hook.MAX_START_DELAY_SECONDS()); // never opens in practice
         vm.prank(squatter);
         hook.configureLaunch(victimKey, hostile);
 
@@ -472,7 +466,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     /// silently DISCARDS the fee the hook returns, so the launch tax would be a no-op that nobody
     /// notices until after the snipe. The hook refuses to let such a pool exist.
     function test_initialize_revertsOnStaticFeePool() public {
-        LaunchGuardHook openHook = new LaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
+        LaunchGuardHook openHook = new LaunchGuardHook(poolManager, ILaunchTokenOrigin(address(0)));
         PoolKey memory k = _key(openHook, 3000, 60);
 
         // Prove the static-fee pool is otherwise perfectly valid to core: same bitmap, same shape.
@@ -490,46 +484,46 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
                             THE LAUNCH GATE
     //////////////////////////////////////////////////////////////*/
 
-    function test_swap_revertsBeforeStartBlock() public {
-        vm.roll(START_BLOCK - 1);
+    function test_swap_revertsBeforeStartTime() public {
+        vm.warp(START_TIME - 1);
         _expectHookRevert(
             address(hook),
             ICLHooks.beforeSwap.selector,
             abi.encodeWithSelector(
-                LaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_BLOCK), uint256(START_BLOCK - 1)
+                LaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_TIME), uint256(START_TIME - 1)
             )
         );
         _swap(key, true, SWAP_AMOUNT);
     }
 
-    function test_swap_revertsBeforeStartBlock_inBothDirections() public {
-        vm.roll(START_BLOCK - 1);
+    function test_swap_revertsBeforeStartTime_inBothDirections() public {
+        vm.warp(START_TIME - 1);
         _expectHookRevert(
             address(hook),
             ICLHooks.beforeSwap.selector,
             abi.encodeWithSelector(
-                LaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_BLOCK), uint256(START_BLOCK - 1)
+                LaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_TIME), uint256(START_TIME - 1)
             )
         );
         _swap(key, false, SWAP_AMOUNT);
     }
 
-    function test_swap_succeedsAtExactStartBlock() public {
-        vm.roll(START_BLOCK);
+    function test_swap_succeedsAtExactStartTime() public {
+        vm.warp(START_TIME);
         uint24 applied = _swapAndReadAppliedFee(true, SWAP_AMOUNT);
         assertEq(applied, INITIAL_FEE);
     }
 
     function test_launchStarted_emittedOnceOnFirstSwap() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         vm.expectEmit(true, false, false, true, address(hook));
-        emit LaunchStarted(poolId, START_BLOCK);
+        emit LaunchStarted(poolId, START_TIME);
         _swap(key, true, SWAP_AMOUNT);
         assertTrue(hook.getLaunch(poolId).launched);
 
         // A second swap must NOT re-emit.
-        vm.roll(START_BLOCK + 5);
+        vm.warp(START_TIME + 5);
         vm.recordLogs();
         _swap(key, true, SWAP_AMOUNT);
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -544,25 +538,25 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
                           FEE DECAY BOUNDARIES
     //////////////////////////////////////////////////////////////*/
 
-    function test_decay_block0IsExactlyInitialFee() public {
-        vm.roll(START_BLOCK);
+    function test_decay_second0IsExactlyInitialFee() public {
+        vm.warp(START_TIME);
         assertEq(hook.currentFee(poolId), INITIAL_FEE);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), INITIAL_FEE);
     }
 
     function test_decay_midWindow() public {
-        vm.roll(START_BLOCK + 50);
+        vm.warp(START_TIME + 50);
         uint24 expected = _expectedFee(50);
         assertEq(expected, 151_500);
         assertEq(hook.currentFee(poolId), expected);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), expected);
     }
 
-    function test_decay_lastBlockOfWindowIsStillTaxed() public {
-        // The window is half-open: [startBlock, startBlock + decayBlocks). The final block inside
+    function test_decay_lastSecondOfWindowIsStillTaxed() public {
+        // The window is half-open: [startTime, startTime + decaySeconds). The final block inside
         // it must still charge strictly more than the post-launch fee.
-        vm.roll(START_BLOCK + DECAY_BLOCKS - 1);
-        uint24 expected = _expectedFee(DECAY_BLOCKS - 1);
+        vm.warp(START_TIME + DECAY_SECONDS - 1);
+        uint24 expected = _expectedFee(DECAY_SECONDS - 1);
         assertEq(expected, 5_970);
         assertGt(expected, FINAL_FEE);
         assertEq(hook.currentFee(poolId), expected);
@@ -570,26 +564,26 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     }
 
     function test_decay_exactEndOfWindowIsFinalFee() public {
-        vm.roll(START_BLOCK + DECAY_BLOCKS);
+        vm.warp(START_TIME + DECAY_SECONDS);
         assertEq(hook.currentFee(poolId), FINAL_FEE);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), FINAL_FEE);
     }
 
     function test_decay_longAfterWindowIsFinalFee() public {
-        vm.roll(START_BLOCK + DECAY_BLOCKS + 5_000_000);
+        vm.warp(START_TIME + DECAY_SECONDS + 5_000_000);
         assertEq(hook.currentFee(poolId), FINAL_FEE);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), FINAL_FEE);
     }
 
     function test_decay_appliesToSellsToo() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         assertEq(_swapAndReadAppliedFee(false, SWAP_AMOUNT), INITIAL_FEE);
     }
 
     /// @dev Ties the returned fee to real economics, not just to the emitted number: a ~1:1 pool
     /// must return output reduced by exactly the decayed fee.
     function test_decay_isEconomicallyRealNotJustReported() public {
-        vm.roll(START_BLOCK + 50);
+        vm.warp(START_TIME + 50);
         uint256 expectedFee = _expectedFee(50);
         BalanceDelta delta = _swap(key, true, SWAP_AMOUNT);
 
@@ -599,7 +593,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     }
 
     function test_decay_feeIsNeverWrittenToPoolStorage() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _swap(key, true, SWAP_AMOUNT);
         (,,, uint24 storedLpFee) = poolManager.getSlot0(poolId);
         // Dynamic-fee pools store 0 and the hook never calls updateDynamicLPFee: the override is
@@ -610,7 +604,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     function test_feeAt_revertsForUnconfiguredPool() public {
         PoolId unknown = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60).toId();
         vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.LaunchNotConfigured.selector, unknown));
-        hook.feeAt(unknown, block.number);
+        hook.feeAt(unknown, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -622,8 +616,8 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
         cfg.enabled = false;
         hook.configureLaunch(key, cfg);
 
-        // Before startBlock, and yet tradeable: the gate is part of the protection, not the pool.
-        vm.roll(START_BLOCK - 1);
+        // Before startTime, and yet tradeable: the gate is part of the protection, not the pool.
+        vm.warp(START_TIME - 1);
         assertEq(hook.currentFee(poolId), FINAL_FEE);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), FINAL_FEE);
     }
@@ -634,7 +628,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
         cfg.finalFeeBips = 500;
         hook.configureLaunch(key, cfg);
 
-        vm.roll(START_BLOCK - 1);
+        vm.warp(START_TIME - 1);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), 500);
     }
 
@@ -653,13 +647,13 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
 
     function test_maxBuy_allowsBuyAtExactlyTheCap() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _swap(key, true, -5_000); // exactly at the cap
     }
 
     function test_maxBuy_rejectsBuyOneWeiOverTheCap() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _expectHookRevert(
             address(hook),
             ICLHooks.beforeSwap.selector,
@@ -670,7 +664,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
 
     function test_maxBuy_doesNotConstrainSells() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         // currency1 is the launch token, so oneForZero is a SELL and is uncapped by design.
         _swap(key, false, -50_000);
     }
@@ -680,7 +674,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
         cfg.maxBuyPerTx = 5_000;
         cfg.launchTokenIsCurrency0 = true; // now oneForZero is the buy
         hook.configureLaunch(key, cfg);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         _swap(key, true, -50_000); // zeroForOne is now a sell: uncapped
 
@@ -694,7 +688,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
 
     function test_maxBuy_blocksExactOutputBuysWhileCapIsLive() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _expectHookRevert(
             address(hook),
             ICLHooks.beforeSwap.selector,
@@ -705,20 +699,20 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
 
     function test_maxBuy_exactOutputSellsAreUnaffected() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _swap(key, false, 1_000);
     }
 
     function test_maxBuy_liftsAfterTheDecayWindow() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK + DECAY_BLOCKS);
+        vm.warp(START_TIME + DECAY_SECONDS);
         _swap(key, true, -500_000); // far above the cap, but the window has closed
         _swap(key, true, 1_000); // exact-output buys are permitted again too
     }
 
     function test_maxBuy_zeroMeansDisabled() public {
         _configureWithCap(0);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _swap(key, true, -500_000);
         _swap(key, true, 1_000);
     }
@@ -727,7 +721,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     /// than the cap simply sends more transactions. This is not a bug to be fixed at this layer.
     function test_maxBuy_doesNotStopSplittingAcrossTransactions() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         // Ten separate buys in the SAME block, each at the cap, from ten different addresses.
         // Total acquired is 10x the "max buy". The hook cannot tell them apart and does not try.
@@ -739,7 +733,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
             _swap(key, true, -5_000);
             vm.stopPrank();
         }
-        assertEq(block.number, START_BLOCK); // all in one block
+        assertEq(block.timestamp, START_TIME); // all in one block
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -747,7 +741,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     //////////////////////////////////////////////////////////////*/
 
     function test_onlyPoolManager_beforeSwapIsUnreachableDirectly() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         vm.expectRevert(BaseCLHook.NotPoolManager.selector);
         hook.beforeSwap(address(this), key, _swapParams(true, SWAP_AMOUNT), ZERO_BYTES);
     }
@@ -760,7 +754,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     function test_onlyPoolManager_alsoBlocksTheLaunchOwner() public {
         // The gate is on the caller, not on privilege: even the launch owner cannot fake a swap
         // and flip the `launched` flag or drive the hook's accounting.
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         assertEq(hook.launchOwner(poolId), address(this));
         vm.expectRevert(BaseCLHook.NotPoolManager.selector);
         hook.beforeSwap(address(this), key, _swapParams(true, SWAP_AMOUNT), ZERO_BYTES);
@@ -782,7 +776,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     //////////////////////////////////////////////////////////////*/
 
     function test_sender_isTheLockerNotTheBuyer() public {
-        SenderRecordingLaunchGuardHook spy = new SenderRecordingLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
+        SenderRecordingLaunchGuardHook spy = new SenderRecordingLaunchGuardHook(poolManager);
         PoolKey memory k = _key(spy, LPFeeLibrary.DYNAMIC_FEE_FLAG, 1);
         spy.configureLaunch(k, _defaultConfig());
         poolManager.initialize(k, SQRT_RATIO_1_1);
@@ -795,7 +789,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
             ZERO_BYTES
         );
 
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         address alice = makeAddr("alice");
         address bob = makeAddr("bob");
@@ -828,7 +822,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     /// Vault himself presents whatever `sender` he likes (his own contract) and whatever
     /// `hookData` he likes. Neither can be used as an identity.
     function test_sender_aSecondRouterPresentsADifferentSenderEntirely() public {
-        SenderRecordingLaunchGuardHook spy = new SenderRecordingLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
+        SenderRecordingLaunchGuardHook spy = new SenderRecordingLaunchGuardHook(poolManager);
         PoolKey memory k = _key(spy, LPFeeLibrary.DYNAMIC_FEE_FLAG, 1);
         spy.configureLaunch(k, _defaultConfig());
         poolManager.initialize(k, SQRT_RATIO_1_1);
@@ -845,7 +839,7 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
         IERC20(Currency.unwrap(currency0)).approve(address(rogue), type(uint256).max);
         IERC20(Currency.unwrap(currency1)).approve(address(rogue), type(uint256).max);
 
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         _swap(k, true, SWAP_AMOUNT);
         assertEq(spy.lastSwapSender(), address(router));
@@ -864,45 +858,45 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
                                  FUZZ
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Reconfigures the pool's schedule and returns the (frozen) start block. Safe to call
-    /// repeatedly because the fuzz tests never roll past `START_BLOCK`.
-    function _fuzzConfigure(uint24 initialFee, uint24 finalFee, uint32 decayBlocks)
+    /// @dev Reconfigures the pool's schedule and returns the (frozen) start time. Safe to call
+    /// repeatedly because the fuzz tests never roll past `START_TIME`.
+    function _fuzzConfigure(uint24 initialFee, uint24 finalFee, uint32 decaySeconds)
         internal
         returns (uint24, uint24, uint32)
     {
         finalFee = uint24(bound(finalFee, 0, hook.MAX_FINAL_FEE()));
         initialFee = uint24(bound(initialFee, finalFee, hook.MAX_INITIAL_FEE()));
-        decayBlocks = uint32(bound(decayBlocks, 1, hook.MAX_DECAY_BLOCKS()));
+        decaySeconds = uint32(bound(decaySeconds, hook.MIN_DECAY_SECONDS(), hook.MAX_DECAY_SECONDS()));
 
         LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
         cfg.initialFeeBips = initialFee;
         cfg.finalFeeBips = finalFee;
-        cfg.decayBlocks = decayBlocks;
+        cfg.decaySeconds = decaySeconds;
         hook.configureLaunch(key, cfg);
 
-        return (initialFee, finalFee, decayBlocks);
+        return (initialFee, finalFee, decaySeconds);
     }
 
     function testFuzz_decay_alwaysInRangeAndMonotonicNonIncreasing(
         uint24 initialFee,
         uint24 finalFee,
-        uint32 decayBlocks
+        uint32 decaySeconds
     ) public {
-        (initialFee, finalFee, decayBlocks) = _fuzzConfigure(initialFee, finalFee, decayBlocks);
+        (initialFee, finalFee, decaySeconds) = _fuzzConfigure(initialFee, finalFee, decaySeconds);
 
         // Boundary anchors.
-        assertEq(hook.feeAt(poolId, START_BLOCK), initialFee, "block 0 != initialFee");
-        assertEq(hook.feeAt(poolId, uint256(START_BLOCK) + decayBlocks), finalFee, "end of window != finalFee");
-        assertEq(hook.feeAt(poolId, uint256(START_BLOCK) + decayBlocks + 1), finalFee, "after window != finalFee");
+        assertEq(hook.feeAt(poolId, START_TIME), initialFee, "block 0 != initialFee");
+        assertEq(hook.feeAt(poolId, uint256(START_TIME) + decaySeconds), finalFee, "end of window != finalFee");
+        assertEq(hook.feeAt(poolId, uint256(START_TIME) + decaySeconds + 1), finalFee, "after window != finalFee");
         assertEq(
-            hook.feeAt(poolId, uint256(START_BLOCK) + uint256(decayBlocks) * 1000), finalFee, "far future != finalFee"
+            hook.feeAt(poolId, uint256(START_TIME) + uint256(decaySeconds) * 1000), finalFee, "far future != finalFee"
         );
 
         // Sweep the window on an ascending ladder of offsets and check range + monotonicity.
         uint24 previous = type(uint24).max;
         for (uint256 i = 0; i <= 34; i++) {
-            uint256 offset = i <= 32 ? (uint256(decayBlocks) * i) / 32 : (i == 33 ? decayBlocks : decayBlocks + 1);
-            uint24 fee = hook.feeAt(poolId, uint256(START_BLOCK) + offset);
+            uint256 offset = i <= 32 ? (uint256(decaySeconds) * i) / 32 : (i == 33 ? decaySeconds : decaySeconds + 1);
+            uint24 fee = hook.feeAt(poolId, uint256(START_TIME) + offset);
 
             assertLe(fee, initialFee, "fee above initialFee");
             assertGe(fee, finalFee, "fee below finalFee");
@@ -916,17 +910,17 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     function testFuzz_decay_pairwiseMonotonic(
         uint24 initialFee,
         uint24 finalFee,
-        uint32 decayBlocks,
+        uint32 decaySeconds,
         uint32 offsetA,
         uint32 offsetB
     ) public {
-        (initialFee, finalFee, decayBlocks) = _fuzzConfigure(initialFee, finalFee, decayBlocks);
+        (initialFee, finalFee, decaySeconds) = _fuzzConfigure(initialFee, finalFee, decaySeconds);
 
-        uint256 lo = bound(offsetA, 0, uint256(decayBlocks) * 2);
-        uint256 hi = bound(offsetB, lo, uint256(decayBlocks) * 2 + 1);
+        uint256 lo = bound(offsetA, 0, uint256(decaySeconds) * 2);
+        uint256 hi = bound(offsetB, lo, uint256(decaySeconds) * 2 + 1);
 
-        uint24 feeLo = hook.feeAt(poolId, uint256(START_BLOCK) + lo);
-        uint24 feeHi = hook.feeAt(poolId, uint256(START_BLOCK) + hi);
+        uint24 feeLo = hook.feeAt(poolId, uint256(START_TIME) + lo);
+        uint24 feeHi = hook.feeAt(poolId, uint256(START_TIME) + hi);
 
         assertGe(feeLo, feeHi, "later block charged more");
         assertLe(feeLo, initialFee);
@@ -935,14 +929,14 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
 
     /// @dev The fee the hook hands to core must always carry the override flag and must always
     /// survive core's own `removeOverrideAndValidate`.
-    function testFuzz_decay_appliedFeeMatchesSchedule(uint24 initialFee, uint24 finalFee, uint32 decayBlocks, uint16 elapsed)
+    function testFuzz_decay_appliedFeeMatchesSchedule(uint24 initialFee, uint24 finalFee, uint32 decaySeconds, uint16 elapsed)
         public
     {
-        decayBlocks = uint32(bound(decayBlocks, 1, 5_000));
-        (initialFee, finalFee, decayBlocks) = _fuzzConfigure(initialFee, finalFee, decayBlocks);
+        decaySeconds = uint32(bound(decaySeconds, hook.MIN_DECAY_SECONDS(), 5_000));
+        (initialFee, finalFee, decaySeconds) = _fuzzConfigure(initialFee, finalFee, decaySeconds);
 
-        uint256 offset = bound(elapsed, 0, uint256(decayBlocks) + 10);
-        vm.roll(uint256(START_BLOCK) + offset);
+        uint256 offset = bound(elapsed, 0, uint256(decaySeconds) + 10);
+        vm.warp(uint256(START_TIME) + offset);
 
         uint24 expected = hook.currentFee(poolId);
         uint24 applied = _swapAndReadAppliedFee(true, SWAP_AMOUNT);
@@ -951,103 +945,284 @@ contract LaunchGuardHookTest is Test, Deployers, TokenFixture {
     }
 
     /*//////////////////////////////////////////////////////////////
-       THE TWO BLOCK CAPS ARE WALL-CLOCK BOUNDED NOW
+       THE CLOCK IS block.timestamp NOW, AND ONLY block.timestamp
 
-       `MAX_DECAY_BLOCKS` and `MAX_START_DELAY` were `constant 1_000_000`, sized
-       as "~139 days at 12s blocks". Robinhood Chain produces a block every
-       0.102s, so on the chain this hook was built for the same number is 28
-       HOURS - and a three-day fair launch, the single most common shape a
-       launchpad sells, reverts with `InvalidDecayBlocks` and blames the caller.
+       The retired hook measured everything in `block.timestamp`, sized through a
+       `blockTimeCentis` argument. On Robinhood (Arbitrum Nitro) the EVM's
+       `block.timestamp` is Ethereum's ~12 s block while the RPC shows ~0.1 s L2
+       blocks, the deployment was built for the wrong one, and every window ran
+       ~120x long - a 30-day cap became ~9.9 years. These tests pin the new clock:
+       rolling blocks without moving time must change nothing, and moving time
+       without rolling blocks must change everything.
+
+       FAILING-FIRST: every `test_CLOCK_*` below fails against the block-numbered
+       source, where `vm.roll` opened trading and `vm.warp` did nothing.
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev THE REGRESSION GUARD. The old constant, on the real chain. It has to be refused,
-    /// because 28 hours is not a cap on a launch tax - it is a cap on launches.
-    ///
-    /// FAILS AGAINST THE PRE-FIX CODE: there was no argument to reject.
-    function test_FIX_theOldConstantIsRejectedAtRobinhoodBlockTime() public {
-        // 1 000 000 blocks x 10 centis = 100 000 s = 27.8 hours.
-        vm.expectRevert(
-            abi.encodeWithSelector(LaunchGuardHook.LaunchWindowOutOfRange.selector, 100_000, 3 days, 180 days)
+    function test_CLOCK_modeIsTimestamp() public {
+        assertEq(hook.CLOCK_MODE(), "mode=timestamp");
+        vm.warp(1_790_000_000);
+        assertEq(hook.clock(), 1_790_000_000);
+    }
+
+    function test_CLOCK_blocksAloneNeverOpenTrading() public {
+        // A hundred million blocks later, but not one second: the gate must still hold.
+        vm.roll(block.number + 100_000_000);
+        assertLt(block.timestamp, START_TIME);
+        _expectHookRevert(
+            address(hook),
+            ICLHooks.beforeSwap.selector,
+            abi.encodeWithSelector(LaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_TIME), block.timestamp)
         );
-        new LaunchGuardHook(poolManager, 10, 1_000_000, 1_000_000);
-
-        // The same literal is fine on a 12s chain, where it always meant 139 days.
-        LaunchGuardHook slow = new LaunchGuardHook(poolManager, 1200, 1_000_000, 1_000_000);
-        assertEq((uint256(slow.MAX_DECAY_BLOCKS()) * slow.blockTimeCentis()) / 100, 12_000_000);
+        _swap(key, true, SWAP_AMOUNT);
     }
 
-    /// @dev The product this was blocking. A three-day launch has to actually configure at
-    /// Robinhood's block time.
-    function test_FIX_aThreeDayFairLaunchConfiguresAtRobinhoodBlockTime() public {
-        LaunchGuardHook fast = new LaunchGuardHook(poolManager, 10, MAX_DECAY, MAX_START);
-
-        // Three days at 0.1s blocks.
-        uint32 threeDays = 3 * 24 * 3600 * 10;
-        assertLe(threeDays, fast.MAX_DECAY_BLOCKS(), "the cap must admit a three-day launch");
-
-        PoolKey memory k = _key(fast, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60);
-        LaunchGuardHook.LaunchConfig memory cfg = LaunchGuardHook.LaunchConfig({
-            startBlock: uint48(block.number + 1),
-            decayBlocks: threeDays,
-            initialFeeBips: 300_000,
-            finalFeeBips: 10_000,
-            maxBuyPerTx: 0,
-            launchTokenIsCurrency0: true,
-            enabled: true
-        });
-        fast.configureLaunch(k, cfg);
-        assertEq(fast.getLaunch(k.toId()).decayBlocks, threeDays);
+    function test_CLOCK_timeAloneOpensTradingAndDrivesTheDecay() public {
+        uint256 blockBefore = block.number;
+        vm.warp(START_TIME + DECAY_SECONDS / 2);
+        assertEq(block.number, blockBefore, "no block was rolled");
+        uint24 expected = INITIAL_FEE - uint24((uint256(INITIAL_FEE - FINAL_FEE) * (DECAY_SECONDS / 2)) / DECAY_SECONDS);
+        assertEq(hook.currentFee(poolId), expected);
+        assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), expected);
     }
 
-    function test_FIX_rejectsAZeroOrAbsurdBlockTime() public {
-        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidBlockTime.selector, uint32(0)));
-        new LaunchGuardHook(poolManager, 0, MAX_DECAY, MAX_START);
-
-        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidBlockTime.selector, uint32(60_001)));
-        new LaunchGuardHook(poolManager, 60_001, MAX_DECAY, MAX_START);
+    function test_CLOCK_blocksDoNotAdvanceTheDecay() public {
+        vm.warp(START_TIME);
+        uint24 atOpen = hook.currentFee(poolId);
+        vm.roll(block.number + 50_000_000);
+        assertEq(hook.currentFee(poolId), atOpen, "rolling blocks moved the fee");
+        assertEq(atOpen, INITIAL_FEE);
     }
 
-    /// @dev The ceiling matters as much as the floor: past 180 days a "launch tax" is a tax, and
-    /// the configuration is immutable from `startBlock` onwards.
-    function test_FIX_rejectsACapThatWouldMakeTheTaxPermanent() public {
-        uint32 tooLong = 181 * 24 * 3600 * 10; // 181 days at 0.1s blocks
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LaunchGuardHook.LaunchWindowOutOfRange.selector,
-                (uint256(tooLong) * 10) / 100,
-                3 days,
-                180 days
-            )
-        );
-        new LaunchGuardHook(poolManager, 10, tooLong, MAX_START);
+    /*//////////////////////////////////////////////////////////////
+       MINIMUM WINDOW - a sequencer skew must not erase the tax for free
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev The numbers the floor is justified by, pinned so a later edit has to argue with them.
+    function test_MINWINDOW_floorIsSixtySecondsAndBelowEveryPreset() public view {
+        assertEq(hook.MIN_DECAY_SECONDS(), 60);
+        // At least 4x the ~15 s resync granularity of the block-number clock it replaces.
+        assertGe(uint256(hook.MIN_DECAY_SECONDS()), 4 * 15);
+        // Never above the shortest owner-decided preset (Stealth, 120 s).
+        assertLe(uint256(hook.MIN_DECAY_SECONDS()), 120);
     }
 
-    /// @dev Both caps are checked, not just the first. An early draft validated `maxDecayBlocks`
-    /// and passed `maxStartDelayBlocks` straight through.
-    function test_FIX_theStartDelayCapIsBoundedToo() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(LaunchGuardHook.LaunchWindowOutOfRange.selector, 100_000, 3 days, 180 days)
-        );
-        new LaunchGuardHook(poolManager, 10, MAX_DECAY, 1_000_000);
+    /// @dev MUTATION-CHECKED: replacing `cfg.decaySeconds < MIN_DECAY_SECONDS` with `== 0` makes
+    /// this fail at 59 s.
+    function test_MINWINDOW_rejectsOneSecondBelowTheFloor() public {
+        vm.warp(START_TIME - 10);
+        LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.decaySeconds = hook.MIN_DECAY_SECONDS() - 1;
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidDecaySeconds.selector, uint32(59)));
+        hook.configureLaunch(key, cfg);
     }
 
-    /// @dev No block time buys a window outside the bounds, in either direction. Understating the
-    /// block time forces MORE blocks for the same window; overstating it is caught by the ceiling.
-    function testFuzz_FIX_everyAcceptedCapIsAtLeastThreeRealDays(uint32 centis, uint32 decayBlocks) public {
-        centis = uint32(bound(centis, 1, 60_000));
-        decayBlocks = uint32(bound(decayBlocks, 1, type(uint32).max));
+    function test_MINWINDOW_acceptsExactlyTheFloor() public {
+        LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.decaySeconds = hook.MIN_DECAY_SECONDS();
+        hook.configureLaunch(key, cfg);
+        assertEq(hook.getLaunch(poolId).decaySeconds, 60);
+    }
 
-        uint256 realSeconds = (uint256(decayBlocks) * centis) / 100;
-        if (realSeconds < 3 days || realSeconds > 180 days) {
-            vm.expectRevert();
-            new LaunchGuardHook(poolManager, centis, decayBlocks, decayBlocks);
+    /// @dev The floor is not waived for a disabled launch: a later write could re-enable it.
+    function test_MINWINDOW_appliesToDisabledLaunchesToo() public {
+        LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.enabled = false;
+        cfg.decaySeconds = 1;
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidDecaySeconds.selector, uint32(1)));
+        hook.configureLaunch(key, cfg);
+    }
+
+    function testFuzz_MINWINDOW_acceptedIffInsideBounds(uint32 decaySeconds) public {
+        LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.decaySeconds = decaySeconds;
+        if (decaySeconds < hook.MIN_DECAY_SECONDS() || decaySeconds > hook.MAX_DECAY_SECONDS()) {
+            vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidDecaySeconds.selector, decaySeconds));
+            hook.configureLaunch(key, cfg);
         } else {
-            LaunchGuardHook h = new LaunchGuardHook(poolManager, centis, decayBlocks, decayBlocks);
-            assertGe(
-                (uint256(h.MAX_DECAY_BLOCKS()) * h.blockTimeCentis()) / 100,
-                h.MIN_LAUNCH_WINDOW_SECONDS(),
-                "every accepted cap admits a three-day launch"
-            );
+            hook.configureLaunch(key, cfg);
+            assertEq(hook.getLaunch(poolId).decaySeconds, decaySeconds);
         }
+    }
+
+    /// @dev THE RESIDUAL RISK, asserted rather than papered over. A Nitro sequencer may stamp a
+    /// block up to one hour ahead of real time. A 120 s window is then over in the first block
+    /// after the jump. The floor does not and cannot stop this; the trust assumption is on the
+    /// chain operator, as the contract-level CLOCK note says.
+    function test_SKEW_aOneHourForwardJumpErasesAShortWindow() public {
+        LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.decaySeconds = 120;
+        hook.configureLaunch(key, cfg);
+        vm.warp(START_TIME + 1 hours);
+        assertEq(hook.currentFee(poolId), FINAL_FEE);
+    }
+
+    /// @dev The honest-skew case the floor IS sized for: a 6 s jump on the minimum window leaves
+    /// at least 90% of the spread still being charged at the moment of the jump.
+    function test_SKEW_aSixSecondJumpOnTheFloorLeavesNinetyPercentOfTheTax() public {
+        LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.decaySeconds = hook.MIN_DECAY_SECONDS();
+        hook.configureLaunch(key, cfg);
+        vm.warp(START_TIME + 6);
+        uint256 remaining = uint256(hook.currentFee(poolId) - FINAL_FEE);
+        assertGe(remaining * 10, uint256(INITIAL_FEE - FINAL_FEE) * 9);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+       THE "NO PERMANENT TAX" ENVELOPE
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ENVELOPE_capsSitInsideTheDesignBounds() public view {
+        assertEq(uint256(hook.MAX_DECAY_SECONDS()), 30 days);
+        assertEq(uint256(hook.MAX_START_DELAY_SECONDS()), 30 days);
+        assertGe(uint256(hook.MAX_DECAY_SECONDS()), hook.MIN_LAUNCH_WINDOW_SECONDS(), "a 3-day launch must fit");
+        assertLe(
+            uint256(hook.MAX_START_DELAY_SECONDS()) + hook.MAX_DECAY_SECONDS(),
+            hook.MAX_LAUNCH_WINDOW_SECONDS(),
+            "start + decay must end inside 180 days"
+        );
+    }
+
+    /// @dev The worst a hostile launch owner can configure: the latest start and the longest
+    /// decay. Sixty days after that write, the fee is `finalFeeBips` and can never move again.
+    function test_ENVELOPE_worstCaseTaxIsGoneWithinSixtyDays() public {
+        uint256 t = block.timestamp;
+        LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.startTime = uint40(t + hook.MAX_START_DELAY_SECONDS());
+        cfg.decaySeconds = hook.MAX_DECAY_SECONDS();
+        hook.configureLaunch(key, cfg);
+
+        vm.warp(t + 60 days - 1);
+        assertGt(hook.currentFee(poolId), FINAL_FEE, "still inside the window one second before");
+        vm.warp(t + 60 days);
+        assertEq(hook.currentFee(poolId), FINAL_FEE);
+    }
+
+    function test_ENVELOPE_aThreeDayFairLaunchConfigures() public {
+        LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.decaySeconds = 3 days;
+        hook.configureLaunch(key, cfg);
+        assertEq(hook.getLaunch(poolId).decaySeconds, 3 days);
+    }
+
+    function test_ENVELOPE_startExactlyAtTheCapIsAccepted() public {
+        LaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.startTime = uint40(block.timestamp + hook.MAX_START_DELAY_SECONDS());
+        hook.configureLaunch(key, cfg);
+        assertEq(hook.getLaunch(poolId).startTime, cfg.startTime);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+       POOL-ID RESERVATION (owner decision 2026-09-14, Kit v2 #4)
+
+       FAILING-FIRST: against the pre-reservation hook, every front-runner
+       below claimed the pool and the kit's own claim reverted NotLaunchOwner.
+       MUTATION-CHECKED: deleting the two `_requireMayClaim` calls in
+       `configureLaunch` turns test_RESERVE_frontRunnerCannotClaimAFactoryTokenPool
+       and test_RESERVE_noClaimOnACurrencyWithoutCode red.
+    //////////////////////////////////////////////////////////////*/
+
+    address constant KIT = address(0x6B17);
+    address constant CREATOR = address(0xC4EA);
+    address constant FRONT_RUNNER = address(0xF4A7);
+
+    function _reservingHook() internal returns (LaunchGuardHook rh, MockLaunchTokenOrigin origin, PoolKey memory k) {
+        origin = new MockLaunchTokenOrigin();
+        rh = new LaunchGuardHook(poolManager, ILaunchTokenOrigin(address(origin)));
+        k = _key(rh, LPFeeLibrary.DYNAMIC_FEE_FLAG, 1);
+    }
+
+    function test_RESERVE_frontRunnerCannotClaimAFactoryTokenPool() public {
+        (LaunchGuardHook rh, MockLaunchTokenOrigin origin, PoolKey memory k) = _reservingHook();
+        address token = Currency.unwrap(k.currency1);
+        origin.set(token, KIT); // the kit created the launch token
+
+        vm.prank(FRONT_RUNNER);
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.LaunchPoolReserved.selector, token, KIT, FRONT_RUNNER));
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), address(0), "nobody claimed it");
+
+        // ...and without a claim nobody can initialize it either.
+        _expectHookRevert(
+            address(rh),
+            ICLHooks.beforeInitialize.selector,
+            abi.encodeWithSelector(LaunchGuardHook.LaunchNotConfigured.selector, k.toId())
+        );
+        vm.prank(FRONT_RUNNER);
+        poolManager.initialize(k, SQRT_RATIO_1_1);
+
+        // The kit path succeeds.
+        vm.prank(KIT);
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), KIT);
+        poolManager.initialize(k, SQRT_RATIO_1_1);
+    }
+
+    function test_RESERVE_creatorMayDelegateTheClaimToAKit() public {
+        (LaunchGuardHook rh, MockLaunchTokenOrigin origin, PoolKey memory k) = _reservingHook();
+        address token = Currency.unwrap(k.currency0);
+        origin.set(token, CREATOR);
+
+        vm.prank(KIT);
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.LaunchPoolReserved.selector, token, CREATOR, KIT));
+        rh.configureLaunch(k, _defaultConfig());
+
+        vm.prank(FRONT_RUNNER);
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.NotTokenCreator.selector, token, FRONT_RUNNER));
+        rh.setLaunchClaimer(token, FRONT_RUNNER);
+
+        vm.prank(CREATOR);
+        rh.setLaunchClaimer(token, KIT);
+        assertEq(rh.launchClaimerOf(token), KIT);
+
+        vm.prank(FRONT_RUNNER);
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.LaunchPoolReserved.selector, token, CREATOR, FRONT_RUNNER));
+        rh.configureLaunch(k, _defaultConfig());
+
+        vm.prank(KIT);
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), KIT);
+    }
+
+    function test_RESERVE_creatorItselfMayClaim() public {
+        (LaunchGuardHook rh, MockLaunchTokenOrigin origin, PoolKey memory k) = _reservingHook();
+        origin.set(Currency.unwrap(k.currency1), CREATOR);
+        vm.prank(CREATOR);
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), CREATOR);
+    }
+
+    /// @dev Rule 1: a token that does not exist YET cannot have its pool squatted.
+    function test_RESERVE_noClaimOnACurrencyWithoutCode() public {
+        (LaunchGuardHook rh,, PoolKey memory k) = _reservingHook();
+        address notYetDeployed = address(uint160(0xDEAD0001));
+        k.currency1 = Currency.wrap(notYetDeployed);
+        vm.prank(FRONT_RUNNER);
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.CurrencyHasNoCode.selector, notYetDeployed));
+        rh.configureLaunch(k, _defaultConfig());
+    }
+
+    /// @dev Non-factory tokens: first claim, exactly as before - including on the hook with no factory.
+    function test_RESERVE_nonFactoryPoolsAreUnaffected() public {
+        (LaunchGuardHook rh,, PoolKey memory k) = _reservingHook();
+        vm.prank(FRONT_RUNNER);
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), FRONT_RUNNER, "first claim, as before");
+
+        LaunchGuardHook plain = new LaunchGuardHook(poolManager, ILaunchTokenOrigin(address(0)));
+        PoolKey memory pk = _key(plain, LPFeeLibrary.DYNAMIC_FEE_FLAG, 1);
+        vm.prank(FRONT_RUNNER);
+        plain.configureLaunch(pk, _defaultConfig());
+        assertEq(plain.launchOwner(pk.toId()), FRONT_RUNNER);
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.NotTokenCreator.selector, address(1), address(this)));
+        plain.setLaunchClaimer(address(1), KIT);
+    }
+
+    /// @dev The native asset is never "a currency without code".
+    function test_RESERVE_nativeQuoteIsAllowed() public {
+        (LaunchGuardHook rh,, PoolKey memory k) = _reservingHook();
+        k.currency0 = Currency.wrap(address(0));
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), address(this));
     }
 }

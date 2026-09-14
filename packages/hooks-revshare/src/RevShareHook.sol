@@ -150,55 +150,48 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// even before `Math.mulDiv` is applied.
     uint256 public constant MAX_TOTAL_WEIGHT = 1e18;
 
-    /// @notice The WALL-CLOCK floor on the configuration delay. Not negotiable by a deployment.
+    /// @notice ERC-6372 clock mode. Every delay, expiry and stored time in this contract is
+    /// `block.timestamp`. Off-chain readers call this to tell this hook from the two retired
+    /// block-numbered ones, neither of which implements it.
+    string public constant CLOCK_MODE = "mode=timestamp";
+
+    /// @notice The floor on the configuration delay. Not negotiable by a deployment.
     ///
-    /// @dev ############ WHY THIS IS SECONDS AND NOT BLOCKS ############
+    /// @dev ############ WHY THIS IS SECONDS, AND NOW ONLY SECONDS ############
     ///
-    /// This used to read `uint48 public constant CONFIG_DELAY_BLOCKS = 3600`, documented as
-    /// "roughly 12 hours at 12s blocks, or proportionally less on a faster chain - documented
-    /// rather than configurable so it cannot be shortened".
+    /// The first deployed hook (`0x23CE…E446`) had `uint48 constant CONFIG_DELAY_BLOCKS = 3600`,
+    /// which on Robinhood Chain's real contract clock (Arbitrum Nitro: `block.number` is
+    /// Ethereum's, ~12 s) is ~12 hours. Its successor (`0xfC00…2aD2`) took a block count plus a
+    /// `blockTimeCentis`, was built with the RPC's 0.1 s L2 block time, and so has a ~60-day
+    /// delay and a ~1-year proposal expiry. A duration in blocks is a duration times an unknown the
+    /// deployer supplies later, and on a Nitro chain the obvious measurement of that unknown is the
+    /// wrong one. So the delay is now a constructor argument in SECONDS, compared with
+    /// `block.timestamp`, and nothing about the chain's block cadence is declared at all.
     ///
-    /// CORRECTION, 2026-09-13. This comment used to say that on Robinhood Chain (4663), "which
-    /// produces a block every 0.102s", 3600 blocks was six minutes. It was not. 0.102 s is the L2
-    /// block the RPC reports. Robinhood is Arbitrum Nitro, and inside the EVM `block.number` is
-    /// Ethereum's block number, ~12 s per block, so the retired hook's 3600 was ~12 real hours all
-    /// along. The replacement deployment then declared `blockTimeCentis = 10` from the same wrong
-    /// measurement: its 432 000-block delay is ~60 real days and its derived proposal TTL ~1 year.
-    /// Measure the EVM's clock (`eth_call` NUMBER against TIMESTAMP), never header block numbers;
-    /// the deploy script now does this itself and refuses to broadcast a mismatch.
-    ///
-    /// The lesson generalises and is worth stating once: A DURATION EXPRESSED IN BLOCKS IS NOT A
-    /// DURATION. It is a duration multiplied by an unknown the deployer chooses later. So the
-    /// delay is now a constructor argument in blocks, paired with the chain's block time, and the
-    /// PRODUCT is checked against this floor. A tenant on a fast chain must pass a bigger block
-    /// count to get the same protection; there is no value of `blockTimeCentis` that buys a
-    /// shorter real-world window. The "cannot be shortened" property the old docstring claimed is
-    /// finally delivered rather than asserted.
+    /// Timestamp manipulation, bounded with numbers. On Nitro the sequencer stamps blocks and may
+    /// run at most 1 h ahead of real time, never backwards. At this 12 h floor a one-hour forward
+    /// jump shortens a fee-rise notice by at most 1/12 (8.3%). A lagging clock only lengthens it.
     uint256 public constant MIN_CONFIG_DELAY_SECONDS = 12 hours;
 
-    /// @notice Wall-clock ceiling on the configuration delay.
+    /// @notice Ceiling on the configuration delay.
     /// @dev A long delay is directionally safe - it only makes ESCALATION harder - but an absurd
     /// one ends a pool owner's ability to ever answer market conditions, and there is no admin
-    /// anywhere that can shorten it. Bounded so a fat-fingered block count is a revert rather than
-    /// a permanent condition of the pool.
+    /// anywhere that can shorten it. Bounded so a fat-fingered value is a revert rather than a
+    /// permanent condition of every pool on the hook.
     uint256 public constant MAX_CONFIG_DELAY_SECONDS = 14 days;
 
     /// @notice How long a MATURED proposal stays applicable before it must be proposed again.
     ///
-    /// @dev The other half of the sandwich the delay exists to prevent. Previously a proposal that
-    /// had waited out its delay stayed armed forever and `applyPendingConfig` is permissionless,
-    /// so the real sequence was: propose once, wait, then hold a 10%/enabled configuration that
+    /// @dev The other half of the sandwich the delay exists to prevent. A proposal that had waited
+    /// out its delay used to stay armed forever while `applyPendingConfig` is permissionless, so
+    /// the real sequence was: propose once, wait, then hold a 10%/enabled configuration that
     /// ANYBODY can fire, indefinitely, for the moment a large trade appears. A delay with no
     /// expiry is a scheduling inconvenience, not a protection.
     ///
-    /// Converted to blocks with the same `blockTimeCentis` as the delay, so it means three days on
-    /// every chain rather than three days on one of them.
-    uint256 public constant CONFIG_PROPOSAL_TTL_SECONDS = 3 days;
-
-    /// @notice Largest block time this contract will accept, in centiseconds: 600s per block.
-    /// @dev Matches `LaunchpadKit`'s bound. Only zero and the absurd are refused; sub-second
-    /// chains are explicitly in scope, which is the whole reason this parameter exists.
-    uint32 public constant MAX_BLOCK_TIME_CENTIS = 60_000;
+    /// Clock bound: a forward sequencer jump (<= 1 h) can only SHORTEN this window, the safe
+    /// direction. A clock lagging real time (<= 24 h on Nitro) can stretch it in real terms to at
+    /// most ~4 days, still bounded, and a lagging clock also delays the maturity it follows.
+    uint40 public constant CONFIG_PROPOSAL_TTL_SECONDS = 3 days;
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -249,20 +242,17 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// @notice There is no pending configuration, or it is not due yet
     error NoPendingConfig(PoolId poolId);
 
-    /// @notice A pending configuration exists but its effective block has not arrived
-    error PendingConfigNotDue(PoolId poolId, uint48 effectiveBlock);
+    /// @notice A pending configuration exists but `effectiveAt` has not arrived
+    error PendingConfigNotDue(PoolId poolId, uint40 effectiveAt);
 
-    /// @notice A pending configuration matured but was not applied inside its window
-    error PendingConfigExpired(PoolId poolId, uint48 expiryBlock);
+    /// @notice A pending configuration matured but was not applied by `expiresAt`
+    error PendingConfigExpired(PoolId poolId, uint40 expiresAt);
 
-    /// @notice `blockTimeCentis` is zero or above `MAX_BLOCK_TIME_CENTIS`
-    error InvalidBlockTime(uint32 blockTimeCentis);
+    /// @notice `configDelaySeconds` is below `MIN_CONFIG_DELAY_SECONDS`
+    error ConfigDelayTooShort(uint256 delaySeconds, uint256 required);
 
-    /// @notice `configDelayBlocks * blockTimeCentis` is below `MIN_CONFIG_DELAY_SECONDS`
-    error ConfigDelayTooShort(uint256 realSeconds, uint256 required);
-
-    /// @notice `configDelayBlocks * blockTimeCentis` is above `MAX_CONFIG_DELAY_SECONDS`
-    error ConfigDelayTooLong(uint256 realSeconds, uint256 allowed);
+    /// @notice `configDelaySeconds` is above `MAX_CONFIG_DELAY_SECONDS`
+    error ConfigDelayTooLong(uint256 delaySeconds, uint256 allowed);
 
     /// @notice `maxBeneficiaries` is zero or above `MAX_BENEFICIARIES_CEILING`
     error InvalidMaxBeneficiaries(uint256 given, uint256 ceiling);
@@ -306,10 +296,10 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
         address distributor,
         bool enabled
     );
-    /// @param effectiveBlock First block at which `applyPendingConfig` succeeds.
-    /// @param expiryBlock Last block at which it succeeds. A proposal that is not applied inside
-    /// `[effectiveBlock, expiryBlock]` is dead and has to be proposed again.
-    event ConfigProposed(PoolId indexed poolId, uint48 effectiveBlock, uint48 expiryBlock);
+    /// @param effectiveAt First `block.timestamp` at which `applyPendingConfig` succeeds.
+    /// @param expiresAt Last `block.timestamp` at which it succeeds. A proposal that is not applied
+    /// inside `[effectiveAt, expiresAt]` is dead and has to be proposed again.
+    event ConfigProposed(PoolId indexed poolId, uint40 effectiveAt, uint40 expiresAt);
     event ConfigProposalCancelled(PoolId indexed poolId);
     event ConfigFrozenForever(PoolId indexed poolId);
     event OwnershipTransferProposed(PoolId indexed poolId, address indexed from, address indexed to);
@@ -329,6 +319,10 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     event BeneficiariesSettled(PoolId indexed poolId, Currency indexed currency, uint256 distributed, uint256 dust);
     event Claimed(address indexed beneficiary, Currency indexed currency, address indexed to, uint256 amount);
     event DistributorPaid(PoolId indexed poolId, address indexed distributor, Currency indexed currency, uint256 amount);
+    /// @notice A repoint moved the old distributor's uncollected pot into its escrow.
+    event DistributorPotRetired(
+        PoolId indexed poolId, address indexed distributor, Currency indexed currency, uint256 amount
+    );
     event Redeemed(Currency indexed currency, uint256 amount);
 
     event PausedSet(bool paused);
@@ -367,18 +361,22 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
         bool enabled;
     }
 
-    /// @notice A configuration waiting out `CONFIG_DELAY_BLOCKS`.
+    /// @notice A configuration waiting out `CONFIG_DELAY_SECONDS`.
     ///
-    /// @dev SHAPE CHANGE, and it is a breaking one. `expiryBlock` is new. Any consumer holding a
-    /// hand-written ABI for the two-field version will decode `expiryBlock` as `params.feePips`
-    /// and report nonsense WITHOUT erroring - the same class of trap as reading one distributor's
-    /// `getEpoch` through the other's ABI. Regenerate the ABI; do not pattern-match the old one.
+    /// @dev SHAPE TRAP, and a worse one than last time. Three deployed shapes exist:
+    ///   `0x23CE…E446`  (uint48 effectiveBlock, params)                  7 ABI words, blocks
+    ///   `0xfC00…2aD2`  (uint48 effectiveBlock, uint48 expiryBlock, params) 8 words, blocks
+    ///   this source    (uint40 effectiveAt,    uint40 expiresAt,  params) 8 words, SECONDS
+    /// The last two are the SAME LENGTH and decode through each other's ABI without an error,
+    /// yielding a block number read as a 1970 timestamp or vice versa. Decoding by word count no
+    /// longer tells them apart. Select the ABI by the hook's ADDRESS (the SDK deployment record
+    /// carries its `durationClock`) or by calling `CLOCK_MODE()`, which only this shape answers.
     ///
-    /// @param effectiveBlock 0 == no proposal outstanding. Otherwise the first applicable block.
-    /// @param expiryBlock Last applicable block. Always non-zero when `effectiveBlock` is.
+    /// @param effectiveAt 0 == no proposal outstanding. Otherwise the first applicable timestamp.
+    /// @param expiresAt Last applicable timestamp. Always non-zero when `effectiveAt` is.
     struct PendingConfig {
-        uint48 effectiveBlock; // 0 == no proposal outstanding
-        uint48 expiryBlock;
+        uint40 effectiveAt; // 0 == no proposal outstanding
+        uint40 expiresAt;
         ConfigParams params;
     }
 
@@ -396,28 +394,18 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// @notice The vault that custodies every token this hook ever holds a claim on.
     IVault public immutable vault;
 
-    /// @notice Blocks a proposed configuration must wait before it can be applied.
+    /// @notice Seconds a proposed configuration must wait before it can be applied.
     ///
-    /// @dev IMMUTABLE, NOT CONSTANT, and SCREAMING_CASE is kept deliberately: it is the same name
-    /// the deployed hook exposes, so every reader keeps working. What changed is that the value is
-    /// now chosen per chain and validated against `MIN_CONFIG_DELAY_SECONDS` in real seconds.
+    /// @dev IMMUTABLE, chosen per deployment inside [`MIN_CONFIG_DELAY_SECONDS`,
+    /// `MAX_CONFIG_DELAY_SECONDS`] = [12 h, 14 days], so a tenant who wants a longer public notice
+    /// than the floor can have one without forking the contract.
     ///
     /// Only PRIVILEGE ESCALATION is delayed. Raising the fee, or redirecting the split away from
     /// LPs, is a change a pool owner could otherwise land in the same block as a large trade,
     /// which is a sandwich the trader cannot price. Reductions (`reduceFee`, `disable`) and
     /// `freezeConfig` bypass the delay entirely, because delay belongs on taking more, never on
     /// taking less.
-    uint48 public immutable CONFIG_DELAY_BLOCKS;
-
-    /// @notice Blocks a MATURED proposal stays applicable for, after which it is dead.
-    /// @dev Derived from `CONFIG_PROPOSAL_TTL_SECONDS` at construction, rounded UP so the window
-    /// is never shorter than the wall-clock figure it is named for.
-    uint48 public immutable CONFIG_PROPOSAL_TTL_BLOCKS;
-
-    /// @notice This chain's block time in hundredths of a second. 1200 == 12s, 10 == 0.1s.
-    /// @dev The unit `LaunchpadKit` already uses. Published so a UI can render both windows above
-    /// as durations rather than as block counts nobody can convert.
-    uint32 public immutable blockTimeCentis;
+    uint40 public immutable CONFIG_DELAY_SECONDS;
 
     /// @notice Maximum number of weighted beneficiaries per pool.
     /// @dev Bounds `settleBeneficiaries`, the only loop in this contract. Permissionless and off
@@ -469,6 +457,27 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     mapping(PoolId poolId => mapping(Currency currency => uint256)) public pendingDistributor;
 
     /**
+     * Route-3 value that accrued under a distributor the pool has since REPOINTED away from,
+     * escrowed for that distributor and only that distributor.
+     *
+     * Without it, `_writeConfig` overwrote `_distributors[poolId]` and `pullDistributorShare` paid
+     * whoever was current, so a repoint handed the new distributor everything the old one had not
+     * yet collected - including to a pool owner who proposed their own address as "distributor"
+     * and waited out the delay. The fee accrued for the old distributor's holders; it stays theirs.
+     *
+     * Escrow rather than "refuse to repoint while the pot is non-zero", because refusal is
+     * griefable by anyone: every swap refills the pot, so a single swap between the old
+     * distributor's close and `applyPendingConfig` would block the repoint indefinitely.
+     */
+    mapping(PoolId poolId => mapping(address distributor => mapping(Currency currency => uint256))) public
+        retiredDistributorPot;
+
+    /// @dev True for every address that has ever been this pool's distributor. Lets a retired one
+    /// pull its escrow (including a zero amount, which a two-currency `closeEpoch` needs) while a
+    /// stranger still gets `NotDistributor`.
+    mapping(PoolId poolId => mapping(address distributor => bool)) private _wasDistributor;
+
+    /**
      * Lifetime fees taken by a pool, per currency, across all three routes.
      *
      * `pendingBeneficiary` and `pendingDistributor` are BALANCES: they fall to zero
@@ -499,48 +508,29 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// @param owner_ Governance. Should be the multisig + timelock that governs
     /// `Vault.registerApp`, never an EOA on a chain holding real funds.
     /// @param guardian_ May pause instantly during an incident. May be zero.
-    /// @param configDelayBlocks_ Blocks a fee RAISE must wait. Chosen for the chain, and checked
-    /// against `MIN_CONFIG_DELAY_SECONDS` in real seconds rather than trusted.
-    /// @param blockTimeCentis_ This chain's block time in hundredths of a second. Round DOWN when
-    /// it is not an integer: a smaller block time makes the computed window shorter, so the
-    /// constructor demands MORE blocks, which errs safe. It is the cadence of `block.number` AS THE
-    /// EVM REPORTS IT, not the RPC's block time: 1200 on Robinhood Chain (Arbitrum Nitro, where
-    /// `block.number` is Ethereum's), not the 10 the RPC's 0.1 s L2 blocks suggest.
+    /// @param configDelaySeconds_ Seconds a fee RAISE must wait. Checked against
+    /// [`MIN_CONFIG_DELAY_SECONDS`, `MAX_CONFIG_DELAY_SECONDS`].
     /// @param maxBeneficiaries_ Roster ceiling for `settleBeneficiaries`. 1..
     /// `MAX_BENEFICIARIES_CEILING`.
     constructor(
         ICLPoolManager _poolManager,
         address owner_,
         address guardian_,
-        uint48 configDelayBlocks_,
-        uint32 blockTimeCentis_,
+        uint40 configDelaySeconds_,
         uint256 maxBeneficiaries_
     ) BaseCLHook(_poolManager) Ownable(owner_) {
-        if (blockTimeCentis_ == 0 || blockTimeCentis_ > MAX_BLOCK_TIME_CENTIS) {
-            revert InvalidBlockTime(blockTimeCentis_);
-        }
         if (maxBeneficiaries_ == 0 || maxBeneficiaries_ > MAX_BENEFICIARIES_CEILING) {
             revert InvalidMaxBeneficiaries(maxBeneficiaries_, MAX_BENEFICIARIES_CEILING);
         }
 
-        // THE WALL-CLOCK CHECK. Floor division, so a delay that lands between two seconds counts
-        // as the shorter one and has to be padded with another block. Rounding the other way would
-        // let a deployment buy back the fraction it was short by.
-        uint256 realSeconds = (uint256(configDelayBlocks_) * blockTimeCentis_) / 100;
-        if (realSeconds < MIN_CONFIG_DELAY_SECONDS) {
-            revert ConfigDelayTooShort(realSeconds, MIN_CONFIG_DELAY_SECONDS);
+        if (configDelaySeconds_ < MIN_CONFIG_DELAY_SECONDS) {
+            revert ConfigDelayTooShort(configDelaySeconds_, MIN_CONFIG_DELAY_SECONDS);
         }
-        if (realSeconds > MAX_CONFIG_DELAY_SECONDS) {
-            revert ConfigDelayTooLong(realSeconds, MAX_CONFIG_DELAY_SECONDS);
+        if (configDelaySeconds_ > MAX_CONFIG_DELAY_SECONDS) {
+            revert ConfigDelayTooLong(configDelaySeconds_, MAX_CONFIG_DELAY_SECONDS);
         }
 
-        // Ceiling division, the opposite rounding to the delay and for the same reason: the TTL is
-        // a window a pool owner needs, so it must never come out shorter than advertised.
-        uint256 ttlBlocks = (CONFIG_PROPOSAL_TTL_SECONDS * 100 + blockTimeCentis_ - 1) / blockTimeCentis_;
-
-        CONFIG_DELAY_BLOCKS = configDelayBlocks_;
-        CONFIG_PROPOSAL_TTL_BLOCKS = uint48(ttlBlocks);
-        blockTimeCentis = blockTimeCentis_;
+        CONFIG_DELAY_SECONDS = configDelaySeconds_;
         MAX_BENEFICIARIES = maxBeneficiaries_;
 
         // Read the vault off the manager rather than taking it as an argument: a mismatched pair
@@ -593,6 +583,12 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
         return BEFORE_INITIALIZE | AFTER_SWAP | AFTER_SWAP_RETURNS_DELTA;
     }
 
+    /// @notice ERC-6372 clock: the current `block.timestamp`, the unit every time here is in.
+    function clock() external view returns (uint48) {
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint48(block.timestamp);
+    }
+
     /*//////////////////////////////////////////////////////////////
                         GOVERNANCE (GLOBAL)
     //////////////////////////////////////////////////////////////*/
@@ -631,7 +627,7 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
           3. While the pool is still uninitialised the owner may reconfigure freely: nobody has
              traded yet, so there is nothing to sandwich.
           4. Once the pool is initialised, raising the take goes through `proposeConfig` +
-             `applyPendingConfig`, separated by `CONFIG_DELAY_BLOCKS`. Lowering it does not.
+             `applyPendingConfig`, separated by `CONFIG_DELAY_SECONDS`. Lowering it does not.
           5. `freezeConfig` is one-way and ends the owner's power over the fee permanently.
     //////////////////////////////////////////////////////////////*/
 
@@ -666,23 +662,26 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
         PoolId poolId = _requireOwner(key);
         _validateParams(poolId, params);
 
-        uint48 effectiveBlock = uint48(block.number) + CONFIG_DELAY_BLOCKS;
-        uint48 expiryBlock = effectiveBlock + CONFIG_PROPOSAL_TTL_BLOCKS;
-        _pending[poolId] = PendingConfig({effectiveBlock: effectiveBlock, expiryBlock: expiryBlock, params: params});
+        // block.timestamp + at most 17 days is nowhere near uint40 (year 36812). Checked maths
+        // regardless: a wrap here would produce a proposal that is instantly applicable.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint40 effectiveAt = uint40(block.timestamp) + CONFIG_DELAY_SECONDS;
+        uint40 expiresAt = effectiveAt + CONFIG_PROPOSAL_TTL_SECONDS;
+        _pending[poolId] = PendingConfig({effectiveAt: effectiveAt, expiresAt: expiresAt, params: params});
 
-        emit ConfigProposed(poolId, effectiveBlock, expiryBlock);
+        emit ConfigProposed(poolId, effectiveAt, expiresAt);
     }
 
     /// @notice Apply a due proposal. Permissionless: the delay is the protection, not the caller.
-    /// @dev Applicable only inside `[effectiveBlock, expiryBlock]`. Outside it the proposal is
+    /// @dev Applicable only inside `[effectiveAt, expiresAt]`. Outside it the proposal is
     /// dead and the owner has to propose again, waiting the delay again. That window is what stops
     /// "propose once, then hold an armed 10% forever, waiting for a large trade".
     function applyPendingConfig(PoolKey calldata key) external {
         PoolId poolId = key.toId();
         PendingConfig memory pending = _pending[poolId];
-        if (pending.effectiveBlock == 0) revert NoPendingConfig(poolId);
-        if (block.number < pending.effectiveBlock) revert PendingConfigNotDue(poolId, pending.effectiveBlock);
-        if (block.number > pending.expiryBlock) revert PendingConfigExpired(poolId, pending.expiryBlock);
+        if (pending.effectiveAt == 0) revert NoPendingConfig(poolId);
+        if (block.timestamp < pending.effectiveAt) revert PendingConfigNotDue(poolId, pending.effectiveAt);
+        if (block.timestamp > pending.expiresAt) revert PendingConfigExpired(poolId, pending.expiresAt);
         if (_configs[poolId].frozen) revert ConfigFrozen(poolId);
 
         delete _pending[poolId];
@@ -695,7 +694,7 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// @notice Withdraw an outstanding proposal.
     function cancelPendingConfig(PoolKey calldata key) external {
         PoolId poolId = _requireOwner(key);
-        if (_pending[poolId].effectiveBlock == 0) revert NoPendingConfig(poolId);
+        if (_pending[poolId].effectiveAt == 0) revert NoPendingConfig(poolId);
         delete _pending[poolId];
         emit ConfigProposalCancelled(poolId);
     }
@@ -704,7 +703,7 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// `cancelPendingConfig` because the callers below have already done their own access control
     /// and must not revert just because no proposal happened to exist.
     function _clearPending(PoolId poolId) internal {
-        if (_pending[poolId].effectiveBlock != 0) {
+        if (_pending[poolId].effectiveAt != 0) {
             delete _pending[poolId];
             emit ConfigProposalCancelled(poolId);
         }
@@ -798,7 +797,7 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// @notice Replace the weighted beneficiary roster.
     /// @dev Settles the OLD roster's outstanding pot for both of the pool's currencies first, so a
     /// roster change can never retroactively redirect value that accrued under the previous one.
-    /// Not subject to `CONFIG_DELAY_BLOCKS`: the delay protects traders from a larger take, and
+    /// Not subject to `CONFIG_DELAY_SECONDS`: the delay protects traders from a larger take, and
     /// this changes only who receives an already-fixed take. It IS subject to `freezeConfig`,
     /// which is documented as freezing the whole arrangement, roster included.
     function setBeneficiaries(PoolKey calldata key, Beneficiary[] calldata roster) external {
@@ -882,6 +881,8 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     }
 
     function _writeConfig(PoolId poolId, ConfigParams memory params) internal {
+        address previous = _distributors[poolId];
+        if (previous != params.distributor && previous != address(0)) _retireDistributorPot(poolId, previous);
         PoolConfig storage config = _configs[poolId];
         config.feePips = params.feePips;
         config.lpDonateBps = params.lpDonateBps;
@@ -1173,24 +1174,51 @@ contract RevShareHook is BaseCLHook, IRevShareHook, ILockCallback, Ownable2Step,
     /// @inheritdoc IRevShareHook
     /// @dev Pull, never push, for the same reason as `claim`: a distributor that reverts on
     /// receipt must not be able to touch the swap path.
+    ///
+    /// A distributor the pool has repointed away from may still pull its escrow
+    /// (`retiredDistributorPot`); the current distributor pulls the live pot plus any escrow of its
+    /// own (a pool repointed A -> B -> A). Nobody else is ever paid.
     function pullDistributorShare(PoolKey calldata key, Currency currency)
         external
         nonReentrant
         returns (uint256 amount)
     {
         PoolId poolId = key.toId();
-        address distributor = _distributors[poolId];
-        if (msg.sender != distributor) revert NotDistributor(poolId, msg.sender);
+        address distributor = msg.sender;
+        bool current = distributor == _distributors[poolId];
+        if (!current && !_wasDistributor[poolId][distributor]) revert NotDistributor(poolId, distributor);
 
-        amount = pendingDistributor[poolId][currency];
+        uint256 retired = retiredDistributorPot[poolId][distributor][currency];
+        uint256 live = current ? pendingDistributor[poolId][currency] : 0;
+        amount = retired + live;
         if (amount == 0) return 0;
 
-        pendingDistributor[poolId][currency] = 0;
+        if (retired != 0) retiredDistributorPot[poolId][distributor][currency] = 0;
+        if (live != 0) pendingDistributor[poolId][currency] = 0;
         totalOwed[currency] -= amount;
         emit DistributorPaid(poolId, distributor, currency, amount);
 
         _ensureLiquid(currency, amount);
         currency.transfer(distributor, amount);
+    }
+
+    /// @dev Moves `previous`'s uncollected pot, in both of the pool's currencies, into its escrow.
+    /// `totalOwed` is unchanged: the obligation moves between two ledgers, it is not created or paid.
+    /// The key is always stored by the time a distributor can change: `configure` writes `_keys`
+    /// before its first `_writeConfig`, and every later write is on a configured pool.
+    function _retireDistributorPot(PoolId poolId, address previous) internal {
+        _wasDistributor[poolId][previous] = true;
+        PoolKey storage key = _keys[poolId];
+        _retireOne(poolId, previous, key.currency0);
+        _retireOne(poolId, previous, key.currency1);
+    }
+
+    function _retireOne(PoolId poolId, address previous, Currency currency) private {
+        uint256 amount = pendingDistributor[poolId][currency];
+        if (amount == 0) return;
+        pendingDistributor[poolId][currency] = 0;
+        retiredDistributorPot[poolId][previous][currency] += amount;
+        emit DistributorPotRetired(poolId, previous, currency, amount);
     }
 
     /*//////////////////////////////////////////////////////////////

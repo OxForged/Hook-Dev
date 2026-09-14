@@ -135,9 +135,7 @@ contract SenderRecordingBinLaunchGuardHook is BinLaunchGuardHook {
     address public lastMintSender;
     uint256 public swapCount;
 
-    constructor(IBinPoolManager _pm, uint32 centis, uint32 maxDecay, uint48 maxStart)
-        BinLaunchGuardHook(_pm, centis, maxDecay, maxStart)
-    {}
+    constructor(IBinPoolManager _pm) BinLaunchGuardHook(_pm) {}
 
     function _beforeSwap(
         address sender,
@@ -166,9 +164,7 @@ contract SenderRecordingBinLaunchGuardHook is BinLaunchGuardHook {
 /// with `beforeMint` left unregistered. Used to DEMONSTRATE the bin-only hole that motivates the
 /// real hook's extra permission bit. It is not a hook anybody should deploy.
 contract NaiveBinLaunchGuardHook is BinLaunchGuardHook {
-    constructor(IBinPoolManager _pm, uint32 centis, uint32 maxDecay, uint48 maxStart)
-        BinLaunchGuardHook(_pm, centis, maxDecay, maxStart)
-    {}
+    constructor(IBinPoolManager _pm) BinLaunchGuardHook(_pm) {}
 
     function getHooksRegistrationBitmap() public pure override returns (uint16) {
         return BEFORE_INITIALIZE | BEFORE_SWAP;
@@ -202,9 +198,9 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     uint24 constant ACTIVE_ID = 2 ** 23;
     uint16 constant BIN_STEP = 10;
 
-    /// @dev Foundry starts tests at block 1; the default launch opens 100 blocks later.
-    uint48 constant START_BLOCK = 101;
-    uint32 constant DECAY_BLOCKS = 100;
+    /// @dev Foundry starts tests at timestamp 1; the default launch opens 100 seconds later.
+    uint40 constant START_TIME = 101;
+    uint32 constant DECAY_SECONDS = 100;
 
     /// @dev 8%. The CL suite's default opening tax is 30% and its ceiling is 50%; BOTH are simply
     /// unreachable on a bin pool, whose ceiling is 10% (`test_feeCap_binCeilingIsOneTenthOfCL`).
@@ -220,29 +216,16 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     event LaunchConfigured(
         PoolId indexed poolId,
         address indexed owner,
-        uint48 startBlock,
-        uint32 decayBlocks,
+        uint40 startTime,
+        uint32 decaySeconds,
         uint24 initialFeeBips,
         uint24 finalFeeBips,
         uint128 maxBuyPerTx,
         bool launchTokenIsCurrency0,
         bool enabled
     );
-    event LaunchStarted(PoolId indexed poolId, uint256 blockNumber);
+    event LaunchStarted(PoolId indexed poolId, uint256 timestamp);
 
-
-    /* ------------------------------------------------------------------
-       ROBINHOOD-LIKE PARAMETERS, on purpose.
-
-       `MAX_DECAY_BLOCKS` and `MAX_START_DELAY` used to be `constant 1_000_000`,
-       sized as "~139 days at 12s blocks". On Robinhood Chain (0.102s blocks)
-       that is 28 HOURS, so a three-day fair launch reverted. Testing against 12s
-       numbers is exactly what let that ship. 10 centis is Robinhood's block time
-       rounded down; 26 000 000 blocks is ~30 days there.
-       ------------------------------------------------------------------ */
-    uint32 constant BLOCK_TIME_CENTIS = 10;
-    uint32 constant MAX_DECAY = 26_000_000;
-    uint48 constant MAX_START = 26_000_000;
 
     function setUp() public {
         vault = new Vault();
@@ -261,7 +244,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         liquidityHelper = new BinLiquidityHelper(poolManager, vault);
         _approveAll(address(this));
 
-        hook = new BinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
+        hook = new BinLaunchGuardHook(poolManager);
         key = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, BIN_STEP);
         poolId = key.toId();
 
@@ -299,8 +282,8 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
 
     function _defaultConfig() internal pure returns (BinLaunchGuardHook.LaunchConfig memory) {
         return BinLaunchGuardHook.LaunchConfig({
-            startBlock: START_BLOCK,
-            decayBlocks: DECAY_BLOCKS,
+            startTime: START_TIME,
+            decaySeconds: DECAY_SECONDS,
             initialFeeBips: INITIAL_FEE,
             finalFeeBips: FINAL_FEE,
             maxBuyPerTx: 0,
@@ -379,9 +362,9 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     }
 
     function _expectedFee(uint256 elapsed) internal pure returns (uint24) {
-        if (elapsed >= DECAY_BLOCKS) return FINAL_FEE;
+        if (elapsed >= DECAY_SECONDS) return FINAL_FEE;
         uint256 spread = INITIAL_FEE - FINAL_FEE;
-        return uint24(INITIAL_FEE - (spread * elapsed) / DECAY_BLOCKS);
+        return uint24(INITIAL_FEE - (spread * elapsed) / DECAY_SECONDS);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -531,15 +514,15 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         vm.expectEmit(true, true, false, true, address(hook));
         emit LaunchClaimed(id, launcher);
         vm.expectEmit(true, true, false, true, address(hook));
-        emit LaunchConfigured(id, launcher, START_BLOCK, DECAY_BLOCKS, INITIAL_FEE, FINAL_FEE, 0, false, true);
+        emit LaunchConfigured(id, launcher, START_TIME, DECAY_SECONDS, INITIAL_FEE, FINAL_FEE, 0, false, true);
 
         vm.prank(launcher);
         hook.configureLaunch(k, _defaultConfig());
 
         BinLaunchGuardHook.Launch memory l = hook.getLaunch(id);
         assertEq(l.owner, launcher);
-        assertEq(l.startBlock, START_BLOCK);
-        assertEq(l.decayBlocks, DECAY_BLOCKS);
+        assertEq(l.startTime, START_TIME);
+        assertEq(l.decaySeconds, DECAY_SECONDS);
         assertEq(l.initialFeeBips, INITIAL_FEE);
         assertEq(l.finalFeeBips, FINAL_FEE);
         assertEq(l.maxBuyPerTx, 0);
@@ -580,7 +563,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     }
 
     function test_configure_ownerMayUpdateBeforeStartBlock() public {
-        vm.roll(START_BLOCK - 1);
+        vm.warp(START_TIME - 1);
 
         BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
         cfg.initialFeeBips = 50_000;
@@ -596,51 +579,51 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     }
 
     function test_configure_frozenAtExactStartBlock() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         vm.expectRevert(
-            abi.encodeWithSelector(BinLaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_BLOCK))
+            abi.encodeWithSelector(BinLaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_TIME))
         );
         hook.configureLaunch(key, _defaultConfig());
     }
 
     function test_configure_frozenAfterStartBlock() public {
-        vm.roll(START_BLOCK + 1);
+        vm.warp(START_TIME + 1);
         BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.startBlock = uint48(START_BLOCK + 500);
+        cfg.startTime = uint40(START_TIME + 500);
         cfg.initialFeeBips = 100_000; // the rug attempt: spike the fee mid-launch
 
         vm.expectRevert(
-            abi.encodeWithSelector(BinLaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_BLOCK))
+            abi.encodeWithSelector(BinLaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_TIME))
         );
         hook.configureLaunch(key, cfg);
     }
 
     function test_configure_frozenEvenLongAfterTheDecayWindow() public {
-        vm.roll(START_BLOCK + DECAY_BLOCKS + 1_000_000);
+        vm.warp(START_TIME + DECAY_SECONDS + 1_000_000);
         vm.expectRevert(
-            abi.encodeWithSelector(BinLaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_BLOCK))
+            abi.encodeWithSelector(BinLaunchGuardHook.LaunchAlreadyStarted.selector, poolId, uint256(START_TIME))
         );
         hook.configureLaunch(key, _defaultConfig());
     }
 
     function test_configure_rejectsStartBlockInThePast() public {
-        vm.roll(1000);
+        vm.warp(1000);
         BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.startBlock = 999;
+        cfg.startTime = 999;
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 20);
         vm.expectRevert(
-            abi.encodeWithSelector(BinLaunchGuardHook.InvalidStartBlock.selector, uint256(999), uint256(1000))
+            abi.encodeWithSelector(BinLaunchGuardHook.InvalidStartTime.selector, uint256(999), uint256(1000))
         );
         hook.configureLaunch(k, cfg);
     }
 
     function test_configure_acceptsStartBlockEqualToNow() public {
-        vm.roll(1000);
+        vm.warp(1000);
         BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.startBlock = 1000;
+        cfg.startTime = 1000;
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 20);
         hook.configureLaunch(k, cfg);
-        assertEq(hook.getLaunch(k.toId()).startBlock, 1000);
+        assertEq(hook.getLaunch(k.toId()).startTime, 1000);
 
         // ...and it is immediately frozen, because the launch is already open.
         vm.expectRevert(
@@ -651,27 +634,27 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
 
     function test_configure_rejectsStartBlockTooFarAhead() public {
         BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.startBlock = uint48(block.number + hook.MAX_START_DELAY() + 1);
+        cfg.startTime = uint40(block.timestamp + hook.MAX_START_DELAY_SECONDS() + 1);
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 20);
         vm.expectRevert(
-            abi.encodeWithSelector(BinLaunchGuardHook.InvalidStartBlock.selector, uint256(cfg.startBlock), block.number)
+            abi.encodeWithSelector(BinLaunchGuardHook.InvalidStartTime.selector, uint256(cfg.startTime), block.timestamp)
         );
         hook.configureLaunch(k, cfg);
     }
 
     function test_configure_rejectsZeroDecayBlocks() public {
         BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.decayBlocks = 0;
+        cfg.decaySeconds = 0;
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 20);
-        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.InvalidDecayBlocks.selector, uint32(0)));
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.InvalidDecaySeconds.selector, uint32(0)));
         hook.configureLaunch(k, cfg);
     }
 
     function test_configure_rejectsOversizedDecayWindow() public {
         BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
-        cfg.decayBlocks = hook.MAX_DECAY_BLOCKS() + 1;
+        cfg.decaySeconds = hook.MAX_DECAY_SECONDS() + 1;
         PoolKey memory k = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 20);
-        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.InvalidDecayBlocks.selector, cfg.decayBlocks));
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.InvalidDecaySeconds.selector, cfg.decaySeconds));
         hook.configureLaunch(k, cfg);
     }
 
@@ -732,7 +715,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
 
         address squatter = makeAddr("squatter");
         BinLaunchGuardHook.LaunchConfig memory hostile = _defaultConfig();
-        hostile.startBlock = uint48(block.number + hook.MAX_START_DELAY()); // never opens in practice
+        hostile.startTime = uint40(block.timestamp + hook.MAX_START_DELAY_SECONDS()); // never opens in practice
         vm.prank(squatter);
         hook.configureLaunch(victimKey, hostile);
 
@@ -772,7 +755,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// guarded by `if (key.fee.isDynamicLPFee())`, which is `fee == 0x800000` EXACTLY - so the
     /// launch tax would be a no-op that nobody notices until after the snipe.
     function test_initialize_revertsOnStaticFeePool() public {
-        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
+        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager);
         PoolKey memory k = _key(openHook, 3000, 20);
 
         // Prove the static-fee pool is otherwise perfectly valid to core: same bitmap, same shape.
@@ -798,7 +781,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// that DO clear core's ceiling, which is exactly the dangerous case
     /// (`test_initialize_revertsOnStaticFeePool`).
     function test_initialize_nearMissDynamicFeeFlagIsRejectedByCoreFirst() public {
-        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
+        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager);
         uint24 nearMiss = LPFeeLibrary.DYNAMIC_FEE_FLAG | uint24(1); // 0x800001
         assertFalse(nearMiss.isDynamicLPFee());
         assertGt(nearMiss, LPFeeLibrary.TEN_PERCENT_FEE);
@@ -812,7 +795,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// exactly the bin ceiling, so core accepts it, and only the hook stops the pool being created
     /// with a launch tax that would be silently discarded on every swap.
     function test_initialize_rejectsStaticFeeAtCoresCeiling() public {
-        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
+        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager);
         uint24 staticMax = LPFeeLibrary.TEN_PERCENT_FEE;
         assertFalse(staticMax.isDynamicLPFee());
 
@@ -830,44 +813,44 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     //////////////////////////////////////////////////////////////*/
 
     function test_swap_revertsBeforeStartBlock() public {
-        vm.roll(START_BLOCK - 1);
+        vm.warp(START_TIME - 1);
         _expectHookRevert(
             address(hook),
             IBinHooks.beforeSwap.selector,
             abi.encodeWithSelector(
-                BinLaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_BLOCK), uint256(START_BLOCK - 1)
+                BinLaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_TIME), uint256(START_TIME - 1)
             )
         );
         _swap(key, true, SWAP_AMOUNT);
     }
 
     function test_swap_revertsBeforeStartBlock_inBothDirections() public {
-        vm.roll(START_BLOCK - 1);
+        vm.warp(START_TIME - 1);
         _expectHookRevert(
             address(hook),
             IBinHooks.beforeSwap.selector,
             abi.encodeWithSelector(
-                BinLaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_BLOCK), uint256(START_BLOCK - 1)
+                BinLaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_TIME), uint256(START_TIME - 1)
             )
         );
         _swap(key, false, SWAP_AMOUNT);
     }
 
     function test_swap_succeedsAtExactStartBlock() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), INITIAL_FEE);
     }
 
     function test_launchStarted_emittedOnceOnFirstSwap() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         vm.expectEmit(true, false, false, true, address(hook));
-        emit LaunchStarted(poolId, START_BLOCK);
+        emit LaunchStarted(poolId, START_TIME);
         _swap(key, true, SWAP_AMOUNT);
         assertTrue(hook.getLaunch(poolId).launched);
 
         // A second swap must NOT re-emit.
-        vm.roll(START_BLOCK + 5);
+        vm.warp(START_TIME + 5);
         vm.recordLogs();
         _swap(key, true, SWAP_AMOUNT);
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -883,13 +866,13 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     //////////////////////////////////////////////////////////////*/
 
     function test_decay_block0IsExactlyInitialFee() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         assertEq(hook.currentFee(poolId), INITIAL_FEE);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), INITIAL_FEE);
     }
 
     function test_decay_midWindow() public {
-        vm.roll(START_BLOCK + 50);
+        vm.warp(START_TIME + 50);
         uint24 expected = _expectedFee(50);
         assertEq(expected, 41_500);
         assertEq(hook.currentFee(poolId), expected);
@@ -897,10 +880,10 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     }
 
     function test_decay_lastBlockOfWindowIsStillTaxed() public {
-        // The window is half-open: [startBlock, startBlock + decayBlocks). The final block inside
+        // The window is half-open: [startTime, startTime + decaySeconds). The final block inside
         // it must still charge strictly more than the post-launch fee.
-        vm.roll(START_BLOCK + DECAY_BLOCKS - 1);
-        uint24 expected = _expectedFee(DECAY_BLOCKS - 1);
+        vm.warp(START_TIME + DECAY_SECONDS - 1);
+        uint24 expected = _expectedFee(DECAY_SECONDS - 1);
         assertEq(expected, 3_770);
         assertGt(expected, FINAL_FEE);
         assertEq(hook.currentFee(poolId), expected);
@@ -908,19 +891,19 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     }
 
     function test_decay_exactEndOfWindowIsFinalFee() public {
-        vm.roll(START_BLOCK + DECAY_BLOCKS);
+        vm.warp(START_TIME + DECAY_SECONDS);
         assertEq(hook.currentFee(poolId), FINAL_FEE);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), FINAL_FEE);
     }
 
     function test_decay_longAfterWindowIsFinalFee() public {
-        vm.roll(START_BLOCK + DECAY_BLOCKS + 5_000_000);
+        vm.warp(START_TIME + DECAY_SECONDS + 5_000_000);
         assertEq(hook.currentFee(poolId), FINAL_FEE);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), FINAL_FEE);
     }
 
     function test_decay_appliesToSellsToo() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         assertEq(_swapAndReadAppliedFee(false, SWAP_AMOUNT), INITIAL_FEE);
     }
 
@@ -928,7 +911,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// `activeId == 2**23` the bin price is exactly 1:1 whatever the binStep, and core takes the
     /// fee out of the exact-input amount, so the output is the input less exactly the decayed fee.
     function test_decay_isEconomicallyRealNotJustReported() public {
-        vm.roll(START_BLOCK + 50);
+        vm.warp(START_TIME + 50);
         uint256 expectedFee = _expectedFee(50);
         BalanceDelta delta = _swap(key, true, SWAP_AMOUNT);
 
@@ -946,7 +929,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         cfg.initialFeeBips = hook.MAX_INITIAL_FEE(); // 100_000 == 10%, core's bin ceiling
         hook.configureLaunch(key, cfg);
 
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), LPFeeLibrary.TEN_PERCENT_FEE);
 
         BalanceDelta delta = _swap(key, true, SWAP_AMOUNT);
@@ -955,7 +938,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     }
 
     function test_decay_feeIsNeverWrittenToPoolStorage() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _swap(key, true, SWAP_AMOUNT);
         (,, uint24 storedLpFee) = poolManager.getSlot0(poolId);
         // Dynamic-fee pools store 0 and the hook never calls updateDynamicLPFee: the override is
@@ -966,7 +949,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     function test_feeAt_revertsForUnconfiguredPool() public {
         PoolId unknown = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, 20).toId();
         vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.LaunchNotConfigured.selector, unknown));
-        hook.feeAt(unknown, block.number);
+        hook.feeAt(unknown, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -978,8 +961,8 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         cfg.enabled = false;
         hook.configureLaunch(key, cfg);
 
-        // Before startBlock, and yet tradeable: the gate is part of the protection, not the pool.
-        vm.roll(START_BLOCK - 1);
+        // Before startTime, and yet tradeable: the gate is part of the protection, not the pool.
+        vm.warp(START_TIME - 1);
         assertEq(hook.currentFee(poolId), FINAL_FEE);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), FINAL_FEE);
     }
@@ -990,7 +973,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         cfg.finalFeeBips = 500;
         hook.configureLaunch(key, cfg);
 
-        vm.roll(START_BLOCK - 1);
+        vm.warp(START_TIME - 1);
         assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), 500);
     }
 
@@ -1007,9 +990,9 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// @dev The hole, demonstrated. Same hook code, same configuration, the ONLY difference is that
     /// the naive variant declares the CL permission set and therefore never gets asked for a fee on
     /// mint. Its composition fee is zero: a completely free swap around the launch tax, available
-    /// even before `startBlock`, when its own `beforeSwap` still reverts.
+    /// even before `startTime`, when its own `beforeSwap` still reverts.
     function test_mint_naivePortWithoutBeforeMintLeavesAFreeSwapRoute() public {
-        NaiveBinLaunchGuardHook naive = new NaiveBinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
+        NaiveBinLaunchGuardHook naive = new NaiveBinLaunchGuardHook(poolManager);
         assertEq(naive.getHooksRegistrationBitmap(), uint16(65)); // exactly the CL hook's bitmap
 
         PoolKey memory k = _key(naive, LPFeeLibrary.DYNAMIC_FEE_FLAG, BIN_STEP);
@@ -1018,12 +1001,12 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         liquidityHelper.mint(k, _getSingleBinMintParams(ACTIVE_ID, 100 ether, 100 ether), ZERO_BYTES);
 
         // Trading is shut...
-        vm.roll(START_BLOCK - 1);
+        vm.warp(START_TIME - 1);
         _expectHookRevert(
             address(naive),
             IBinHooks.beforeSwap.selector,
             abi.encodeWithSelector(
-                BinLaunchGuardHook.TradingNotOpen.selector, k.toId(), uint256(START_BLOCK), uint256(START_BLOCK - 1)
+                BinLaunchGuardHook.TradingNotOpen.selector, k.toId(), uint256(START_TIME), uint256(START_TIME - 1)
             )
         );
         _swap(k, true, SWAP_AMOUNT);
@@ -1037,7 +1020,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// @dev The fix. Same scenario against the real hook: the composition fee is non-zero, and it
     /// is the decayed fee from the schedule.
     function test_mint_compositionSwapIsTaxed() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         (uint128 feeX, uint128 feeY) = _lopsidedMintAndReadCompositionFee(key, 1 ether);
         assertGt(feeX, 0, "composition swap went untaxed");
         assertEq(feeY, 0, "fee should be charged on the X side that was implicitly swapped");
@@ -1051,10 +1034,10 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         PoolKey memory poolA = _freshGuardedPool(30);
         PoolKey memory poolB = _freshGuardedPool(31);
 
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         (uint128 feeAtOpen,) = _lopsidedMintAndReadCompositionFee(poolA, 1 ether);
 
-        vm.roll(START_BLOCK + DECAY_BLOCKS);
+        vm.warp(START_TIME + DECAY_SECONDS);
         (uint128 feeAfterWindow,) = _lopsidedMintAndReadCompositionFee(poolB, 1 ether);
 
         assertGt(feeAtOpen, feeAfterWindow, "mint tax did not decay");
@@ -1066,7 +1049,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// @dev Seeding is not penalised: a ratio-matched add charges no composition fee at all, so the
     /// launcher can seed the pool at any block despite the mint tax being live from block one.
     function test_mint_balancedSeedingIsUntaxed() public {
-        vm.roll(START_BLOCK); // tax at its maximum
+        vm.warp(START_TIME); // tax at its maximum
         vm.recordLogs();
         liquidityHelper.mint(key, _getSingleBinMintParams(ACTIVE_ID, 10 ether, 10 ether), ZERO_BYTES);
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -1086,17 +1069,17 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// @dev RESIDUAL RISK, DELIBERATELY CAPTURED AND NOT FIXED. Mints are taxed, not gated. They
     /// have to be: `sender` is the router, so the hook cannot tell the launcher seeding the pool
     /// from a sniper extracting from it. A sniper can therefore acquire the launch token before
-    /// `startBlock` by minting lopsided and burning - paying `initialFeeBips` on the way, but
+    /// `startTime` by minting lopsided and burning - paying `initialFeeBips` on the way, but
     /// bypassing the trading gate that stops ordinary swaps in the same block.
     function test_mint_isTaxedButNotGatedBeforeStartBlock_residualRisk() public {
-        vm.roll(START_BLOCK - 1);
+        vm.warp(START_TIME - 1);
 
         // A swap in this block is impossible.
         _expectHookRevert(
             address(hook),
             IBinHooks.beforeSwap.selector,
             abi.encodeWithSelector(
-                BinLaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_BLOCK), uint256(START_BLOCK - 1)
+                BinLaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_TIME), uint256(START_TIME - 1)
             )
         );
         _swap(key, true, SWAP_AMOUNT);
@@ -1112,7 +1095,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         cfg.enabled = false;
         hook.configureLaunch(key, cfg);
 
-        vm.roll(START_BLOCK - 1);
+        vm.warp(START_TIME - 1);
         (uint128 feeX,) = _lopsidedMintAndReadCompositionFee(key, 1 ether);
         assertGt(feeX, 0, "disabled launch left the mint route fee-free");
     }
@@ -1133,13 +1116,13 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
 
     function test_maxBuy_allowsBuyAtExactlyTheCap() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _swap(key, true, -5_000); // exactly at the cap
     }
 
     function test_maxBuy_rejectsBuyOneWeiOverTheCap() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _expectHookRevert(
             address(hook),
             IBinHooks.beforeSwap.selector,
@@ -1150,7 +1133,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
 
     function test_maxBuy_doesNotConstrainSells() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         // currency1 (Y) is the launch token, so a Y-for-X swap is a SELL and is uncapped by design.
         _swap(key, false, -50_000);
     }
@@ -1160,7 +1143,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         cfg.maxBuyPerTx = 5_000;
         cfg.launchTokenIsCurrency0 = true; // now the Y-for-X direction is the buy
         hook.configureLaunch(key, cfg);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         _swap(key, true, -50_000); // swapForY is now a sell: uncapped
 
@@ -1174,7 +1157,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
 
     function test_maxBuy_blocksExactOutputBuysWhileCapIsLive() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _expectHookRevert(
             address(hook),
             IBinHooks.beforeSwap.selector,
@@ -1185,20 +1168,20 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
 
     function test_maxBuy_exactOutputSellsAreUnaffected() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _swap(key, false, 1_000);
     }
 
     function test_maxBuy_liftsAfterTheDecayWindow() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK + DECAY_BLOCKS);
+        vm.warp(START_TIME + DECAY_SECONDS);
         _swap(key, true, -500_000); // far above the cap, but the window has closed
         _swap(key, true, 1_000); // exact-output buys are permitted again too
     }
 
     function test_maxBuy_zeroMeansDisabled() public {
         _configureWithCap(0);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         _swap(key, true, -500_000);
         _swap(key, true, 1_000);
     }
@@ -1207,7 +1190,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// than the cap simply sends more transactions. This is not a bug to be fixed at this layer.
     function test_maxBuy_doesNotStopSplittingAcrossTransactions() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         // Ten separate buys in the SAME block, each at the cap, from ten different addresses.
         // Total acquired is 10x the "max buy". The hook cannot tell them apart and does not try.
@@ -1218,7 +1201,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
             vm.prank(buyer);
             _swap(key, true, -5_000);
         }
-        assertEq(block.number, START_BLOCK); // all in one block
+        assertEq(block.timestamp, START_TIME); // all in one block
     }
 
     /// @dev And the cap does not reach the mint route at all: `beforeMint` sees `liquidityConfigs`
@@ -1227,7 +1210,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// the composition fee. Bin-specific, and not removable at this layer.
     function test_maxBuy_doesNotConstrainTheMintRoute() public {
         _configureWithCap(5_000);
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         _expectHookRevert(
             address(hook),
@@ -1246,7 +1229,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     //////////////////////////////////////////////////////////////*/
 
     function test_onlyPoolManager_beforeSwapIsUnreachableDirectly() public {
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         vm.expectRevert(BaseBinHook.NotPoolManager.selector);
         hook.beforeSwap(address(this), key, true, SWAP_AMOUNT, ZERO_BYTES);
     }
@@ -1264,7 +1247,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     function test_onlyPoolManager_alsoBlocksTheLaunchOwner() public {
         // The gate is on the caller, not on privilege: even the launch owner cannot fake a swap
         // and flip the `launched` flag or drive the hook's accounting.
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
         assertEq(hook.launchOwner(poolId), address(this));
         vm.expectRevert(BaseBinHook.NotPoolManager.selector);
         hook.beforeSwap(address(this), key, true, SWAP_AMOUNT, ZERO_BYTES);
@@ -1301,7 +1284,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     //////////////////////////////////////////////////////////////*/
 
     function _deploySpyPool() internal returns (SenderRecordingBinLaunchGuardHook spy, PoolKey memory k) {
-        spy = new SenderRecordingBinLaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, MAX_DECAY, MAX_START);
+        spy = new SenderRecordingBinLaunchGuardHook(poolManager);
         k = _key(spy, LPFeeLibrary.DYNAMIC_FEE_FLAG, BIN_STEP);
         spy.configureLaunch(k, _defaultConfig());
         poolManager.initialize(k, ACTIVE_ID);
@@ -1311,7 +1294,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     function test_sender_isTheLockerNotTheBuyer() public {
         (SenderRecordingBinLaunchGuardHook spy, PoolKey memory k) = _deploySpyPool();
 
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         address alice = makeAddr("alice");
         address bob = makeAddr("bob");
@@ -1348,7 +1331,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         token0.approve(address(rogue), type(uint256).max);
         token1.approve(address(rogue), type(uint256).max);
 
-        vm.roll(START_BLOCK);
+        vm.warp(START_TIME);
 
         _swap(k, true, SWAP_AMOUNT);
         assertEq(spy.lastSwapSender(), address(swapHelper));
@@ -1386,44 +1369,44 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Reconfigures the pool's schedule and returns the (frozen) start block. Safe to call
-    /// repeatedly because the fuzz tests never roll past `START_BLOCK` before configuring.
-    function _fuzzConfigure(uint24 initialFee, uint24 finalFee, uint32 decayBlocks)
+    /// repeatedly because the fuzz tests never roll past `START_TIME` before configuring.
+    function _fuzzConfigure(uint24 initialFee, uint24 finalFee, uint32 decaySeconds)
         internal
         returns (uint24, uint24, uint32)
     {
         finalFee = uint24(bound(finalFee, 0, hook.MAX_FINAL_FEE()));
         initialFee = uint24(bound(initialFee, finalFee, hook.MAX_INITIAL_FEE()));
-        decayBlocks = uint32(bound(decayBlocks, 1, hook.MAX_DECAY_BLOCKS()));
+        decaySeconds = uint32(bound(decaySeconds, hook.MIN_DECAY_SECONDS(), hook.MAX_DECAY_SECONDS()));
 
         BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
         cfg.initialFeeBips = initialFee;
         cfg.finalFeeBips = finalFee;
-        cfg.decayBlocks = decayBlocks;
+        cfg.decaySeconds = decaySeconds;
         hook.configureLaunch(key, cfg);
 
-        return (initialFee, finalFee, decayBlocks);
+        return (initialFee, finalFee, decaySeconds);
     }
 
     function testFuzz_decay_alwaysInRangeAndMonotonicNonIncreasing(
         uint24 initialFee,
         uint24 finalFee,
-        uint32 decayBlocks
+        uint32 decaySeconds
     ) public {
-        (initialFee, finalFee, decayBlocks) = _fuzzConfigure(initialFee, finalFee, decayBlocks);
+        (initialFee, finalFee, decaySeconds) = _fuzzConfigure(initialFee, finalFee, decaySeconds);
 
         // Boundary anchors.
-        assertEq(hook.feeAt(poolId, START_BLOCK), initialFee, "block 0 != initialFee");
-        assertEq(hook.feeAt(poolId, uint256(START_BLOCK) + decayBlocks), finalFee, "end of window != finalFee");
-        assertEq(hook.feeAt(poolId, uint256(START_BLOCK) + decayBlocks + 1), finalFee, "after window != finalFee");
+        assertEq(hook.feeAt(poolId, START_TIME), initialFee, "block 0 != initialFee");
+        assertEq(hook.feeAt(poolId, uint256(START_TIME) + decaySeconds), finalFee, "end of window != finalFee");
+        assertEq(hook.feeAt(poolId, uint256(START_TIME) + decaySeconds + 1), finalFee, "after window != finalFee");
         assertEq(
-            hook.feeAt(poolId, uint256(START_BLOCK) + uint256(decayBlocks) * 1000), finalFee, "far future != finalFee"
+            hook.feeAt(poolId, uint256(START_TIME) + uint256(decaySeconds) * 1000), finalFee, "far future != finalFee"
         );
 
         // Sweep the window on an ascending ladder of offsets and check range + monotonicity.
         uint24 previous = type(uint24).max;
         for (uint256 i = 0; i <= 34; i++) {
-            uint256 offset = i <= 32 ? (uint256(decayBlocks) * i) / 32 : (i == 33 ? decayBlocks : decayBlocks + 1);
-            uint24 fee = hook.feeAt(poolId, uint256(START_BLOCK) + offset);
+            uint256 offset = i <= 32 ? (uint256(decaySeconds) * i) / 32 : (i == 33 ? decaySeconds : decaySeconds + 1);
+            uint24 fee = hook.feeAt(poolId, uint256(START_TIME) + offset);
 
             assertLe(fee, initialFee, "fee above initialFee");
             assertGe(fee, finalFee, "fee below finalFee");
@@ -1437,17 +1420,17 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     function testFuzz_decay_pairwiseMonotonic(
         uint24 initialFee,
         uint24 finalFee,
-        uint32 decayBlocks,
+        uint32 decaySeconds,
         uint32 offsetA,
         uint32 offsetB
     ) public {
-        (initialFee, finalFee, decayBlocks) = _fuzzConfigure(initialFee, finalFee, decayBlocks);
+        (initialFee, finalFee, decaySeconds) = _fuzzConfigure(initialFee, finalFee, decaySeconds);
 
-        uint256 lo = bound(offsetA, 0, uint256(decayBlocks) * 2);
-        uint256 hi = bound(offsetB, lo, uint256(decayBlocks) * 2 + 1);
+        uint256 lo = bound(offsetA, 0, uint256(decaySeconds) * 2);
+        uint256 hi = bound(offsetB, lo, uint256(decaySeconds) * 2 + 1);
 
-        uint24 feeLo = hook.feeAt(poolId, uint256(START_BLOCK) + lo);
-        uint24 feeHi = hook.feeAt(poolId, uint256(START_BLOCK) + hi);
+        uint24 feeLo = hook.feeAt(poolId, uint256(START_TIME) + lo);
+        uint24 feeHi = hook.feeAt(poolId, uint256(START_TIME) + hi);
 
         assertGe(feeLo, feeHi, "later block charged more");
         assertLe(feeLo, initialFee);
@@ -1460,14 +1443,14 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     function testFuzz_decay_appliedFeeMatchesSchedule(
         uint24 initialFee,
         uint24 finalFee,
-        uint32 decayBlocks,
+        uint32 decaySeconds,
         uint16 elapsed
     ) public {
-        decayBlocks = uint32(bound(decayBlocks, 1, 5_000));
-        (initialFee, finalFee, decayBlocks) = _fuzzConfigure(initialFee, finalFee, decayBlocks);
+        decaySeconds = uint32(bound(decaySeconds, hook.MIN_DECAY_SECONDS(), 5_000));
+        (initialFee, finalFee, decaySeconds) = _fuzzConfigure(initialFee, finalFee, decaySeconds);
 
-        uint256 offset = bound(elapsed, 0, uint256(decayBlocks) + 10);
-        vm.roll(uint256(START_BLOCK) + offset);
+        uint256 offset = bound(elapsed, 0, uint256(decaySeconds) + 10);
+        vm.warp(uint256(START_TIME) + offset);
 
         uint24 expected = hook.currentFee(poolId);
         uint24 applied = _swapAndReadAppliedFee(true, SWAP_AMOUNT);
@@ -1480,14 +1463,14 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     function testFuzz_mintAndSwapReadTheSameSchedule(
         uint24 initialFee,
         uint24 finalFee,
-        uint32 decayBlocks,
+        uint32 decaySeconds,
         uint16 elapsed
     ) public {
-        decayBlocks = uint32(bound(decayBlocks, 1, 5_000));
-        (initialFee, finalFee, decayBlocks) = _fuzzConfigure(initialFee, finalFee, decayBlocks);
+        decaySeconds = uint32(bound(decaySeconds, hook.MIN_DECAY_SECONDS(), 5_000));
+        (initialFee, finalFee, decaySeconds) = _fuzzConfigure(initialFee, finalFee, decaySeconds);
 
-        uint256 offset = bound(elapsed, 0, uint256(decayBlocks) + 10);
-        vm.roll(uint256(START_BLOCK) + offset);
+        uint256 offset = bound(elapsed, 0, uint256(decaySeconds) + 10);
+        vm.warp(uint256(START_TIME) + offset);
 
         uint24 scheduled = hook.currentFee(poolId);
 
@@ -1504,44 +1487,90 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     }
 
     /*//////////////////////////////////////////////////////////////
-       THE TWO BLOCK CAPS ARE WALL-CLOCK BOUNDED NOW
+       THE CLOCK IS block.timestamp NOW, AND ONLY block.timestamp
 
-       Same finding as `LaunchGuardHook`, in the hook that was never deployed and
-       could therefore be fixed for free. `MAX_DECAY_BLOCKS` and `MAX_START_DELAY`
-       were `constant 1_000_000` - "~139 days at 12s blocks", and 28 HOURS on
-       Robinhood Chain, where a three-day fair launch reverts.
+       Same migration as `LaunchGuardHook`. This hook was never deployed, so it
+       moves with the CL hook rather than being left as the one Latch contract
+       whose windows still depend on a declared block time.
+
+       FAILING-FIRST: every `test_CLOCK_*` below fails against the block-numbered
+       source, where `vm.roll` opened trading and `vm.warp` did nothing.
     //////////////////////////////////////////////////////////////*/
 
-    /// FAILS AGAINST THE PRE-FIX CODE: there was no argument to reject.
-    function test_FIX_theOldConstantIsRejectedAtRobinhoodBlockTime() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(BinLaunchGuardHook.LaunchWindowOutOfRange.selector, 100_000, 3 days, 180 days)
+    function test_CLOCK_modeIsTimestamp() public {
+        assertEq(hook.CLOCK_MODE(), "mode=timestamp");
+        vm.warp(1_790_000_000);
+        assertEq(hook.clock(), 1_790_000_000);
+    }
+
+    function test_CLOCK_blocksAloneNeverOpenTrading() public {
+        vm.roll(block.number + 100_000_000);
+        assertLt(block.timestamp, START_TIME);
+        _expectHookRevert(
+            address(hook),
+            IBinHooks.beforeSwap.selector,
+            abi.encodeWithSelector(BinLaunchGuardHook.TradingNotOpen.selector, poolId, uint256(START_TIME), block.timestamp)
         );
-        new BinLaunchGuardHook(poolManager, 10, 1_000_000, 1_000_000);
-
-        BinLaunchGuardHook slow = new BinLaunchGuardHook(poolManager, 1200, 1_000_000, 1_000_000);
-        assertEq((uint256(slow.MAX_DECAY_BLOCKS()) * slow.blockTimeCentis()) / 100, 12_000_000);
+        _swap(key, true, SWAP_AMOUNT);
     }
 
-    function test_FIX_aThreeDayWindowFitsAtRobinhoodBlockTime() public {
-        BinLaunchGuardHook fast = new BinLaunchGuardHook(poolManager, 10, MAX_DECAY, MAX_START);
-        assertLe(uint32(3 * 24 * 3600 * 10), fast.MAX_DECAY_BLOCKS(), "a three-day launch must fit");
-        assertGe((uint256(fast.MAX_DECAY_BLOCKS()) * 10) / 100, fast.MIN_LAUNCH_WINDOW_SECONDS());
+    /// @dev The mint route prices off the same clock: rolling blocks before the open must leave
+    /// the composition fee at `initialFeeBips`, and warping past the window must drop it.
+    function test_CLOCK_mintRouteFollowsTimeNotBlocks() public {
+        vm.roll(block.number + 100_000_000);
+        assertEq(hook.currentFee(poolId), INITIAL_FEE);
+        vm.warp(START_TIME + DECAY_SECONDS);
+        assertEq(hook.currentFee(poolId), FINAL_FEE);
     }
 
-    function test_FIX_rejectsAZeroOrAbsurdBlockTime() public {
-        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.InvalidBlockTime.selector, uint32(0)));
-        new BinLaunchGuardHook(poolManager, 0, MAX_DECAY, MAX_START);
-
-        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.InvalidBlockTime.selector, uint32(60_001)));
-        new BinLaunchGuardHook(poolManager, 60_001, MAX_DECAY, MAX_START);
+    function test_CLOCK_timeAloneOpensTrading() public {
+        uint256 blockBefore = block.number;
+        vm.warp(START_TIME);
+        assertEq(block.number, blockBefore, "no block was rolled");
+        assertEq(_swapAndReadAppliedFee(true, SWAP_AMOUNT), INITIAL_FEE);
     }
 
-    /// @dev Both caps, not just the first.
-    function test_FIX_theStartDelayCapIsBoundedToo() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(BinLaunchGuardHook.LaunchWindowOutOfRange.selector, 100_000, 3 days, 180 days)
+    /*//////////////////////////////////////////////////////////////
+       MINIMUM WINDOW AND THE "NO PERMANENT TAX" ENVELOPE
+    //////////////////////////////////////////////////////////////*/
+
+    function test_MINWINDOW_floorMatchesTheCLHook() public view {
+        assertEq(hook.MIN_DECAY_SECONDS(), 60);
+        assertEq(hook.MAX_DECAY_SECONDS(), 30 days);
+        assertEq(uint256(hook.MAX_START_DELAY_SECONDS()), 30 days);
+        assertGe(uint256(hook.MAX_DECAY_SECONDS()), hook.MIN_LAUNCH_WINDOW_SECONDS());
+        assertLe(
+            uint256(hook.MAX_START_DELAY_SECONDS()) + hook.MAX_DECAY_SECONDS(), hook.MAX_LAUNCH_WINDOW_SECONDS()
         );
-        new BinLaunchGuardHook(poolManager, 10, MAX_DECAY, 1_000_000);
+    }
+
+    /// @dev MUTATION-CHECKED alongside the CL hook's floor.
+    function test_MINWINDOW_rejectsOneSecondBelowTheFloor() public {
+        BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.decaySeconds = hook.MIN_DECAY_SECONDS() - 1;
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.InvalidDecaySeconds.selector, uint32(59)));
+        hook.configureLaunch(key, cfg);
+
+        cfg.decaySeconds = hook.MIN_DECAY_SECONDS();
+        hook.configureLaunch(key, cfg);
+        assertEq(hook.getLaunch(poolId).decaySeconds, 60);
+    }
+
+    function test_MINWINDOW_appliesToDisabledLaunchesToo() public {
+        BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.enabled = false;
+        cfg.decaySeconds = 1;
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.InvalidDecaySeconds.selector, uint32(1)));
+        hook.configureLaunch(key, cfg);
+    }
+
+    function test_ENVELOPE_worstCaseTaxIsGoneWithinSixtyDays() public {
+        uint256 t = block.timestamp;
+        BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.startTime = uint40(t + hook.MAX_START_DELAY_SECONDS());
+        cfg.decaySeconds = hook.MAX_DECAY_SECONDS();
+        hook.configureLaunch(key, cfg);
+        vm.warp(t + 60 days);
+        assertEq(hook.currentFee(poolId), FINAL_FEE);
     }
 }

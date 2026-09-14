@@ -479,3 +479,180 @@ Rounding in every preset: compute each weight floored, then give the last bin
 4. **Pool-id squatting on predictable token addresses** (1.1) needs a hook-side fix. Should the
    `LaunchGuardHook` rewrite reserve pool ids for a registered kit?
 5. **`skim` beneficiary** is the protocol. The alternative is to leave surplus stranded. Confirm.
+
+---
+
+## 10. Bin locker (implemented)
+
+Status: **implemented** as `src/LatchBinLPLocker.sol` + `src/interfaces/ILatchBinLPLocker.sol`, with
+`script/DeployLatchBinLPLocker.s.sol`. Section 6 above is the problem statement; this section is the
+design that was built, and where it refines section 6 (per-lock rather than per-bin records, pull
+entry authenticated by `msg.sender`), this section wins. Every claim below was read from this fork's
+`BinPool.sol`, `BinHelper.sol`, `BinPositionManager.sol` and `BinFungibleToken.sol`.
+
+### 10.1 The guarantee, stated as the CL locker states it
+
+| | `LatchLPLocker` (CL) | `LatchBinLPLocker` (Bin) |
+|---|---|---|
+| Principal | position liquidity `L`, never decreases | per bin: the lock's shares are always worth at least the bin-liquidity they were worth at lock time |
+| Fee collection | zero-liquidity decrease; structurally cannot touch `L` | burns only the share count whose value EXCEEDS that principal; arithmetic, rounded against the burn |
+| Split | per lock, fixed, floor 2000 / cap 5000 / integrator cap 2000, dust to protocol | identical, same `LockParams`, same `splitAmount` |
+| Payouts | pull, per party, per currency | identical |
+| Entry | `safeTransferFrom` + `onERC721Received` | `lock(key, binIds, shares, params)` pulls from `msg.sender` |
+| Admin | none | none |
+
+### 10.2 What "principal" and "fee" mean for a bin
+
+A Bin pool bin has one fixed price `P` (Q128, a pure function of `binId` and `binStep`). Core measures
+a bin's value as `L = P·x + y·2^128` (`BinHelper.getLiquidity`). Three facts from the fork make `L`
+the right unit:
+
+1. **An in-bin swap conserves `L` exactly, before fees.** `getAmountsOut` / `getAmountsIn` price every
+   unit at `P` and round in the bin's favour (input rounded up, output rounded down), so a swap adds
+   `ΔL >= 0` plus its LP fee. The protocol's cut `pFee <= totalFee` is removed before it reaches the
+   reserves (`BinPool.swap`, `getProtocolFeeAmt`), so the LP fee part can only raise `L`.
+2. **Nothing crosses bins.** A swap that exhausts a bin moves to the next one; no operation moves
+   value from one bin's reserves to another's. Per-bin accounting is therefore exact, not an
+   approximation. (This is the property CL does not have, and why CL needs fee-growth accounting.)
+3. **`L / totalShares` is non-decreasing under every core operation.** Swaps (fact 1), third-party
+   mints (`shares = floor(userL·S/binL)`, surplus input trimmed only down to the effective liquidity),
+   third-party burns (`amountOut = floor(burn·reserve/S)`), composition fees (credited to existing
+   shares before the minter's shares are computed) and `donate` all leave `L/S` equal or higher.
+
+So for a single-sided launch position, **selling launch tokens to buyers does not change `L`**: a bin
+that was 100% launch token and is now 100% quote token holds the same `L`, plus fees. The quote
+tokens received for sold launch tokens ARE the principal, in a different currency, and stay locked
+as the pool's buy-back depth. That is exactly what the CL locker already does with a single-sided
+CL range that is bought through, so it is the owner's approved model rather than a new decision:
+**sale proceeds are principal and are never withdrawn by anyone; the protocol floor applies to fees
+only.**
+
+Definitions, per lock `k` and bin `b`:
+
+```
+shares[k][b]     locked share count, written at lock, decreased only by collectFees
+principal[k][b]  = ceil(sharesAtLock · L_b / S_b)       bin-liquidity units, written once
+value[k][b]      = shares[k][b] · L_b / S_b              at any moment
+
+INVARIANT  value[k][b] >= principal[k][b]                for every lock, bin and block
+fee        = value - principal                            (swap fees, composition fees, donations,
+                                                            and third-party rounding dust)
+```
+
+`collectFees` burns, per bin, `burn = shares - ceil(principal · S / L)`, so the shares that remain
+satisfy `remaining · L / S >= principal` before the burn; and because core pays the burn out floored,
+the burn itself raises `L/S` for the shares that remain. The two rounding directions both point at
+the principal. Mutating either one fails `testFuzz_harvestableShares_neverCrossesPrincipal`
+(`test/LatchBinLPLocker.fuzz.t.sol`).
+
+**What this does NOT mean, stated plainly.**
+
+- **Fees are delivered in the bin's CURRENT composition, valued at the bin's price.** Bin fees are not
+  tracked per token by core; they are part of `L`. A fee paid in quote by a buyer, harvested after
+  sellers have swapped the bin back to launch token, is delivered as launch token worth the same `L`
+  at `P`. If the market has since fallen below `P`, that launch token is worth less than the fee was
+  when it was paid. Uncollected fees therefore carry the position's price exposure until someone
+  calls `collectFees`. Mitigation: harvest often (it is permissionless, and the keeper can do it).
+  Not an extraction path: a caller who swaps a bin's composition to change what the parties receive
+  pays swap fees that are themselves harvested, and moves no value to himself.
+- **Fees accrued BEFORE the lock are principal.** The share price at lock time is the baseline. A kit
+  locks in the same transaction as the mint, so this is zero for kit launches. A holder who locks an
+  old position voluntarily forfeits its uncollected fees into the permanent principal. The CL locker
+  differs (it collects pre-lock fees), because CL tracks fees separately and Bin cannot.
+- **Principal in TOKEN terms moves with price**, as for any LP position. The guarantee is in bin
+  liquidity at each bin's own price, which is the same unit core uses for everything.
+
+### 10.3 Options evaluated
+
+**(a) Track principal per bin, burn only the excess — CHOSEN, refined as above.** Measured in `L`
+rather than in reserve amounts, which is what makes it correct under price movement. Cost: the
+no-withdraw property is an arithmetic claim about one function instead of a structural absence of
+calls, so it is guarded by an invariant suite, a per-bin fuzz and mutation checks rather than by
+reading the call list alone.
+
+**(b) Lock shares forever and route revenue through the pool's hook fee (RevShareHook).** Rejected.
+It does make the no-withdraw property structural (the locker would never call the position manager
+again), but it fails the brief in three ways: the locked-LP revenue line in "Kit fees" becomes zero
+(LP fees compound into the bins forever and nobody receives them); the hook fee is configured by the
+pool owner through `proposeConfig` / `reduceFee` / `disable`, so the split is neither per-lock nor
+immutable; and it forces every Bin launch onto one hook. A hook fee is a legitimate SECOND layer (the
+"launch tax" row), not a replacement for this one.
+
+**(c) Alternatives found in the fork, rejected:**
+
+- *Reserve snapshots* (`x0, y0` at lock, harvest what exceeds them): wrong by construction. A bought
+  bin has `x < x0`, so it reads as a loss while it is a sale at `P`; a harvest keyed to `y > y0` would
+  pay sale proceeds out as fees and put the protocol floor on them.
+- *Locker mints directly on core with a per-lock salt* (`BinPoolManager.mint` keys positions by
+  `(owner, binId, salt)`): isolates each lock's shares natively and makes orphans impossible, but
+  turns the locker into a Vault-locking liquidity app that must settle tokens and re-implement the
+  position manager's slippage checks. Much larger surface, and it does not change the fee problem.
+- *One lock per bin, shares read from `balanceOf`*: avoids per-lock share storage, but any stray
+  transfer to the locker would silently become harvestable "fee", and two locks in the same bin
+  (a kit lock plus a later voluntary lock) would be impossible.
+
+### 10.4 Entry without a receiver callback
+
+`BinFungibleToken.batchTransferFrom` calls no hook, so the lock pulls:
+
+```solidity
+function lock(PoolKey calldata key, uint24[] calldata binIds, uint256[] calldata shares, LockParams calldata p)
+    external returns (uint256 lockId);
+// inside: positionManager.batchTransferFrom(msg.sender, address(this), tokenIds, shares)
+```
+
+- **Authentication** is `msg.sender`: the account whose shares move is the only one who can choose
+  the split, which is the property `onERC721Received` gave the CL locker. The pull source is hard-coded
+  to `msg.sender`; there is no `from` parameter.
+- **The standing approval is bounded by that.** `approveForAll(locker, true)` is all-or-nothing over
+  the approver's bin shares, but the locker can only ever exercise it inside a `lock` call the
+  approver makes itself. A third party cannot pull anyone's shares through the locker.
+- **Receipt is measured**: `balanceOfBatch` before and after, and every bin must arrive exactly.
+- **Orphans.** Shares sent to the locker with a plain `batchTransferFrom` have no lock record and are
+  stranded forever: no function burns, moves or attributes them, and a harvest never touches more
+  than a lock's own recorded shares. They stay in the pool as permanent liquidity. An "attach" or
+  "skim shares" function was rejected: attach is front-runnable (first caller names the creator),
+  and a share-skim would add a second burn path whose correctness depends on summing every lock.
+- **Same-transaction atomicity for the kit**: mint to the kit, then `lock` after `modifyLiquidities`
+  returns (`batchTransferFrom` is `onlyIfVaultUnlocked`), all inside `createLaunch`.
+
+### 10.5 Hazards addressed
+
+| Hazard | Handling |
+|---|---|
+| Hook runs on burn (`beforeBurn`, `afterBurn`, `afterBurnReturnsDelta`) | refused at lock (`HookInterceptsRemoval`): every harvest is a burn, and such a hook could block it or take the proceeds before the split |
+| `BinPool__ZeroAmountsOut` / `BurnZeroAmount` would revert a whole multi-bin harvest | bins whose burn floors to zero out are skipped; if every bin is skipped, `NothingToCollect` (a free read for keepers) |
+| `MINIMUM_SHARE` / bin removed from the tree | a harvest always leaves `ceil(principal·S/L) >= 1` shares, so it never empties a bin it holds |
+| Gas | `maxBinsPerLock` immutable constructor argument, bounds both `lock` and `collectFees` |
+| Pool manager paused | `BinPoolManager.burn` is not `whenNotPaused`, so collection still works |
+| Paused / blocklisting quote token | the whole harvest reverts, fees stay in the bins and keep compounding, retry after unpause; credited balances wait in `claimable` |
+| Fee-on-transfer quote | credit is the measured balance delta |
+| Reentrancy | `nonReentrant` on every mutating entrypoint; shares are decremented before the position-manager call |
+| Duplicate bin ids in one lock | refused: ids must be strictly increasing |
+| LP fee kept near zero by a tenant hook | NOT handled, as for CL (section 8): the floor applies to LP fees |
+
+### 10.6 What kit v2 calls, in order, for one Bin leg
+
+```
+constructor (once)   require(binLocker.positionManager() == binPositionManager)
+                     require(binLocker.minProtocolBps() >= 2_000)
+                     require(maxBins <= binLocker.maxBinsPerLock())
+                     binPositionManager.approveForAll(address(binLocker), true)
+createLaunch, per Bin leg:
+  1. record leg effects (so the fee controller V3 can see isLockedLaunch during initialize)
+  2. hook.configureLaunch(key)                               // if the hook needs it
+  3. binPoolManager.initialize(key, activeId)
+  4. read activeId back; validate shape rules 1-6 of section 7 against it
+  5. binPositionManager.modifyLiquidities(
+         BIN_ADD_LIQUIDITY(key, amount0, amount1, max0, max1, activeId, idSlippage 0,
+                           deltaIds, distX, distY, minLiquidities, to = address(kit), ""),
+         SETTLE_PAIR(currency0, currency1))
+  6. for each bin: shares[i] = binPositionManager.balanceOf(kit, toTokenId(poolId, binIds[i]))
+                   (fresh pool: the whole balance is this mint)
+  7. lockId = binLocker.lock(key, binIds (strictly increasing), shares, LockParams)
+  8. assert binPositionManager.balanceOf(kit, tokenId_i) == 0 for every bin
+     assert binLocker.getLock(lockId).protocolBps == intended; isLocked(lockId)
+  9. launchRegistry.registerLaunch(address(binPoolManager), poolId, token, kit, creator, steward, meta)
+```
+
+Never mint with `to = binLocker`: those shares arrive without a record and are orphans (10.4).

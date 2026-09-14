@@ -5,7 +5,7 @@ pragma solidity 0.8.26;
 import "forge-std/Script.sol";
 import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";
 import {RevShareHook} from "../src/RevShareHook.sol";
-import {ContractClockMath, ContractClockProbe} from "latch-hooks/script/ContractClock.sol";
+import {ContractClockProbe} from "latch-hooks/script/ContractClock.sol";
 
 /**
  * Deploys `RevShareHook` to a MAINNET chain.
@@ -17,145 +17,136 @@ import {ContractClockMath, ContractClockProbe} from "latch-hooks/script/Contract
  * deployment.
  *
  * OWNERSHIP IS SET IN THE CONSTRUCTOR, not transferred afterwards. `RevShareHook`
- * passes `owner_` straight to `Ownable(owner_)`, so unlike every other contract
- * in this protocol there is no two-step dance and no window where the deployer
- * owns it. That is worth stating because the rest of the deployment taught the
- * opposite lesson.
+ * passes `owner_` straight to `Ownable(owner_)`, so there is no two-step dance and
+ * no window where the deployer owns it. Per CLAUDE.md's Ownership table:
  *
- * OWNER AND GUARDIAN MUST DIFFER, and the separation is the point:
+ *   owner    -> Safe (the governance multisig, directly). Sets the guardian,
+ *               pauses and unpauses. Global switches only; cannot reach user funds.
+ *   guardian -> Ops. Can ONLY pause, never unpause. A pause during an incident
+ *               cannot wait for two signatures, and a guardian that could unpause
+ *               would be an owner wearing a smaller name.
  *
- *   owner    -> the Safe. Sets the guardian, pauses and unpauses. Everything
- *               that can restore or increase what the hook takes.
- *   guardian -> the ops key. Can ONLY pause, never unpause. A pause during an
- *               incident cannot wait for two signatures, and a guardian that
- *               could unpause would be an owner wearing a smaller name.
+ * `renounceOwnership` reverts `RenounceDisabled` on this source, and the script
+ * asserts it after deploy.
  *
  * The hook takes no fee until a pool owner calls `configure`, so deploying it
  * changes nothing on its own — it is infrastructure waiting to be pointed at.
  *
- * ####################### THE BLOCK-TIME ARGUMENTS #######################
+ * ####################### THE DELAY IS SECONDS NOW #######################
  *
- * `CONFIG_DELAY_BLOCKS` used to be a `constant 3600`, documented as "roughly 12
- * hours at 12s blocks". This header then claimed that on Robinhood Chain, "which
- * produces a block every 0.102s", it was six minutes. THAT WAS WRONG. 0.102 s is
- * Robinhood's L2 block as the RPC reports it; Robinhood is Arbitrum Nitro, and
- * inside the EVM `block.number` is Ethereum's, ~12 s. The retired hook's 3600 was
- * ~12 real hours all along, and the replacement (0xfC00…2aD2), built at 10 centis
- * with 432 000 blocks, has a ~60-DAY delay and a ~1-YEAR proposal expiry. The
- * script now measures the contract clock before it will broadcast.
+ * DECIDED 2026-09-13 (Option B). The two hooks already on Robinhood are
+ * block-denominated: `0x23CE…E446` (3 600 blocks, ~12 h on Nitro's real ~12 s
+ * contract clock, no expiry) and `0xfC00…2aD2` (432 000 blocks declared at the
+ * RPC's 0.1 s, so ~60 DAYS, with a ~360-day proposal TTL). This source takes the
+ * delay in seconds of `block.timestamp` and has no block-time argument at all.
  *
- * It is now a constructor argument in blocks PAIRED WITH THE CHAIN'S BLOCK TIME,
- * and the hook multiplies them out and refuses anything under
- * `MIN_CONFIG_DELAY_SECONDS` (12h) of real time. So the two variables below are
- * not independent: getting `REVSHARE_BLOCK_TIME_CENTIS` wrong changes what
- * `REVSHARE_CONFIG_DELAY_BLOCKS` is allowed to be, and the constructor reverts
- * rather than silently shipping a short window.
+ * `REVSHARE_CONFIG_DELAY_SECONDS` must be inside [12 h, 14 days]; 43200 is the
+ * floor and the recommended value. The proposal TTL is a constant 3 days.
  *
- * ROUND THE BLOCK TIME DOWN when it is not an integer. A smaller declared block
- * time makes the computed delay shorter, so the constructor demands MORE blocks —
- * which errs long. The measured-clock guard allows 75%..105% of the measurement.
+ * THE CLOCK CHECK stays, in its timestamp form: before broadcasting, `run()` probes
+ * the chain's `block.timestamp` and refuses unless it agrees with the RPC header
+ * (60 s) and with this machine's wall clock (300 s). No waiting.
  *
- * Usage (dry run first — no --broadcast; it pauses ~3 minutes to measure the clock):
- *   CL_POOL_MANAGER=0x...  REVSHARE_OWNER=0x...  REVSHARE_GUARDIAN=0x...
- *   REVSHARE_CONFIG_DELAY_BLOCKS=3600  REVSHARE_BLOCK_TIME_CENTIS=1200
- *   REVSHARE_MAX_BENEFICIARIES=8
+ * Usage (dry run first — no --broadcast):
+ *   CL_POOL_MANAGER=0xf4A28fA4CFeCAEf349A7D52fA1eB4dF56EB22F66
+ *   REVSHARE_OWNER=<governance Safe>  REVSHARE_GUARDIAN=<ops key>
+ *   REVSHARE_CONFIG_DELAY_SECONDS=43200  REVSHARE_MAX_BENEFICIARIES=8
  *   forge script script/DeployRevShareHookMainnet.s.sol --rpc-url <chain>
- *
- * 3 600 blocks x 1200 centis = 43 200 s = 12h on Robinhood (CONFIG_PROPOSAL_TTL_BLOCKS
- * then derives to 21 600 = 3 days).
  */
 contract DeployRevShareHookMainnetScript is Script {
-    /// @notice Real seconds `run()` waits between its two reads of the contract clock.
-    uint256 internal constant CLOCK_PROBE_SECONDS = 180;
+    struct Params {
+        /// @dev Deployer key. Never a literal - `run` takes it from `PRIVATE_KEY`.
+        uint256 pk;
+        address poolManager;
+        address owner;
+        address guardian;
+        uint256 configDelaySeconds;
+        uint256 maxBeneficiaries;
+    }
 
-    function run() public {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(pk);
-        address poolManager = vm.envAddress("CL_POOL_MANAGER");
-        address owner = vm.envAddress("REVSHARE_OWNER");
-        address guardian = vm.envAddress("REVSHARE_GUARDIAN");
+    /// @notice Entry point. Reads the environment and hands off to `runWith`.
+    /// @dev Environment in one function, logic in another, so `runWith` can be driven by a test
+    /// without `vm.setEnv` racing across concurrently-run test cases.
+    function run() public returns (RevShareHook hook) {
+        ContractClockProbe.Reading memory clock = ContractClockProbe.check();
+        console.log("chain clock: block.timestamp (EVM) ", clock.evmTimestamp);
+        console.log("chain clock: header / wall clock   ", clock.headerTimestamp, clock.wallClockSeconds);
 
         /* Every one of these has no safe default, which is why none is supplied.
-           `vm.envUint` reverts on an unset variable and that is the desired
-           behaviour: a deployment that forgot the block time must not fall back
-           to somebody's guess about which chain this is. */
-        uint256 configDelayBlocks = vm.envUint("REVSHARE_CONFIG_DELAY_BLOCKS");
-        uint256 blockTimeCentis = vm.envUint("REVSHARE_BLOCK_TIME_CENTIS");
-        uint256 maxBeneficiaries = vm.envUint("REVSHARE_MAX_BENEFICIARIES");
+           `vm.envUint` reverts on an unset variable, and that is the desired behaviour. */
+        return runWith(
+            Params({
+                pk: vm.envUint("PRIVATE_KEY"),
+                poolManager: vm.envAddress("CL_POOL_MANAGER"),
+                owner: vm.envAddress("REVSHARE_OWNER"),
+                guardian: vm.envAddress("REVSHARE_GUARDIAN"),
+                configDelaySeconds: vm.envUint("REVSHARE_CONFIG_DELAY_SECONDS"),
+                maxBeneficiaries: vm.envUint("REVSHARE_MAX_BENEFICIARIES")
+            })
+        );
+    }
+
+    function runWith(Params memory p) public returns (RevShareHook hook) {
+        address deployer = vm.addr(p.pk);
 
         // A typo'd owner is almost always an EOA, and nothing downstream would
         // notice that the hook's pause switch answers to one key.
-        require(owner.code.length > 0, "REVSHARE_OWNER has no code - not a contract");
-        require(owner != deployer, "REVSHARE_OWNER must not be the deployer");
-        require(owner != guardian, "REVSHARE_OWNER and REVSHARE_GUARDIAN must differ");
-        require(poolManager.code.length > 0, "CL_POOL_MANAGER has no code");
+        require(p.owner.code.length > 0, "REVSHARE_OWNER has no code - must be the governance Safe");
+        require(p.owner != deployer, "REVSHARE_OWNER must not be the deployer");
+        require(p.guardian != address(0), "REVSHARE_GUARDIAN unset - the Ownership table assigns it to Ops");
+        require(p.owner != p.guardian, "REVSHARE_OWNER and REVSHARE_GUARDIAN must differ");
+        require(p.poolManager.code.length > 0, "CL_POOL_MANAGER has no code");
 
-        /* ---- the wall-clock pre-flight, computed here and not just delegated --
-           The hook checks this too, and it must: a script is not a security
-           boundary. It is repeated here so the number a human is about to approve
-           is printed in seconds rather than left as a block count nobody can
-           convert in their head. */
-        require(blockTimeCentis > 0, "REVSHARE_BLOCK_TIME_CENTIS not set - it has no safe default");
-        require(blockTimeCentis <= 60_000, "REVSHARE_BLOCK_TIME_CENTIS above 600s per block");
-
-        /* THE CLOCK GUARD. The delay below is only a delay if `blockTimeCentis` is
-           the EVM's real `block.number` cadence. Measured on the forked chain over a
-           real wait, never taken from the environment — the environment is where the
-           live hook's 10 (the RPC's L2 block time on an Arbitrum chain) came from,
-           which turned a 12-hour delay into ~60 days and a 3-day expiry into ~1 year. */
-        ContractClockProbe.Measurement memory clock = ContractClockProbe.measure(CLOCK_PROBE_SECONDS);
-        console.log("contract clock: centis per block.number ", clock.centisPerBlock);
-        console.log("contract clock: block.number / eth_blockNumber", clock.contractBlockNumber, clock.rpcBlockNumber);
-        ContractClockMath.requireDeclaredMatches(blockTimeCentis, clock.centisPerBlock);
-        require(configDelayBlocks <= type(uint48).max, "REVSHARE_CONFIG_DELAY_BLOCKS exceeds uint48");
-        require(blockTimeCentis <= type(uint32).max, "REVSHARE_BLOCK_TIME_CENTIS exceeds uint32");
-
-        uint256 delaySeconds = (configDelayBlocks * blockTimeCentis) / 100;
-        require(delaySeconds >= 12 hours, "config delay is under 12h of real time on this chain");
-        require(delaySeconds <= 14 days, "config delay is over 14 days of real time on this chain");
-        require(maxBeneficiaries > 0 && maxBeneficiaries <= 32, "REVSHARE_MAX_BENEFICIARIES outside 1..32");
+        /* The hook checks these too, and it must: a script is not a security boundary. They are
+           repeated so a bad value fails with a sentence, before anything is signed. */
+        require(p.configDelaySeconds >= 12 hours, "REVSHARE_CONFIG_DELAY_SECONDS is under the 12h floor");
+        require(p.configDelaySeconds <= 14 days, "REVSHARE_CONFIG_DELAY_SECONDS is over the 14-day ceiling");
+        require(p.maxBeneficiaries > 0 && p.maxBeneficiaries <= 32, "REVSHARE_MAX_BENEFICIARIES outside 1..32");
 
         console.log("=== RevShareHook ===");
         console.log("  chain id            ", block.chainid);
-        console.log("  configDelayBlocks   ", configDelayBlocks);
-        console.log("  blockTimeCentis     ", blockTimeCentis);
-        console.log("  => delay, seconds   ", delaySeconds);
-        console.log("  => delay, hours     ", delaySeconds / 3600);
-        console.log("  maxBeneficiaries    ", maxBeneficiaries);
+        console.log("  deployer            ", deployer);
+        console.log("  owner (Safe)        ", p.owner);
+        console.log("  guardian (Ops)      ", p.guardian);
+        console.log("  config delay, s     ", p.configDelaySeconds);
+        console.log("  config delay, h     ", p.configDelaySeconds / 1 hours);
+        console.log("  maxBeneficiaries    ", p.maxBeneficiaries);
         console.log("");
 
-        vm.startBroadcast(pk);
-        RevShareHook hook = new RevShareHook(
-            ICLPoolManager(poolManager),
-            owner,
-            guardian,
-            uint48(configDelayBlocks),
-            uint32(blockTimeCentis),
-            maxBeneficiaries
+        vm.startBroadcast(p.pk);
+        hook = new RevShareHook(
+            ICLPoolManager(p.poolManager), p.owner, p.guardian, uint40(p.configDelaySeconds), p.maxBeneficiaries
         );
         vm.stopBroadcast();
 
-        /* Assert the deployed reality, not the intent. */
-        require(hook.owner() == owner, "owner not set");
-        require(hook.guardian() == guardian, "guardian not set");
+        _postflight(hook, p);
+    }
+
+    /// @dev Assert the deployed reality, not the intent. Every immutable and every constant a
+    /// trader relies on is read back, because an immutable set wrong is a redeployment.
+    function _postflight(RevShareHook hook, Params memory p) internal view {
+        require(address(hook).code.length > 0, "hook has no code");
+        require(hook.owner() == p.owner, "owner not set");
+        require(hook.pendingOwner() == address(0), "a pending owner exists at birth");
+        require(hook.guardian() == p.guardian, "guardian not set");
         require(!hook.paused(), "should not deploy paused");
-        require(address(hook.poolManager()) == poolManager, "pool manager mismatch");
-
-        /* Read the three new immutables back and re-derive the window from what is
-           actually on chain. An argument that was silently truncated by a cast is
-           invisible in the transaction and obvious here. */
-        require(hook.CONFIG_DELAY_BLOCKS() == uint48(configDelayBlocks), "CONFIG_DELAY_BLOCKS mismatch");
-        require(hook.blockTimeCentis() == uint32(blockTimeCentis), "blockTimeCentis mismatch");
-        require(hook.MAX_BENEFICIARIES() == maxBeneficiaries, "MAX_BENEFICIARIES mismatch");
+        require(address(hook.poolManager()) == p.poolManager, "pool manager mismatch");
         require(
-            (uint256(hook.CONFIG_DELAY_BLOCKS()) * hook.blockTimeCentis()) / 100 >= hook.MIN_CONFIG_DELAY_SECONDS(),
-            "on-chain delay is under the floor"
+            address(hook.vault()) == address(ICLPoolManager(p.poolManager).vault()), "vault is not the manager's vault"
         );
-        require(hook.CONFIG_PROPOSAL_TTL_BLOCKS() > 0, "proposal TTL is zero");
 
-        /* The permission bitmap is what core cross-checks at pool init. Printing
-           it here means a mismatch is visible now rather than as an unexplained
-           revert the first time somebody tries to create a pool. */
+        require(keccak256(bytes(hook.CLOCK_MODE())) == keccak256("mode=timestamp"), "hook is not timestamp-clocked");
+        require(uint256(hook.CONFIG_DELAY_SECONDS()) == p.configDelaySeconds, "CONFIG_DELAY_SECONDS mismatch");
+        require(uint256(hook.CONFIG_PROPOSAL_TTL_SECONDS()) == 3 days, "CONFIG_PROPOSAL_TTL_SECONDS moved");
+        require(hook.MIN_CONFIG_DELAY_SECONDS() == 12 hours, "MIN_CONFIG_DELAY_SECONDS moved");
+        require(hook.MAX_CONFIG_DELAY_SECONDS() == 14 days, "MAX_CONFIG_DELAY_SECONDS moved");
+        require(hook.MAX_BENEFICIARIES() == p.maxBeneficiaries, "MAX_BENEFICIARIES mismatch");
+        require(hook.MAX_FEE_PIPS() == 100_000, "MAX_FEE_PIPS moved");
+
+        // `renounceOwnership` must revert for everybody. It is `pure`, so a static call proves it.
+        (bool renounced,) = address(hook).staticcall(abi.encodeWithSignature("renounceOwnership()"));
+        require(!renounced, "renounceOwnership did not revert");
+
         uint16 bitmap = hook.getHooksRegistrationBitmap();
 
         console.log("RevShareHook          ", address(hook));
@@ -164,18 +155,13 @@ contract DeployRevShareHookMainnetScript is Script {
         console.log("  poolManager         ", address(hook.poolManager()));
         console.log("  vault               ", address(hook.vault()));
         console.log("  permission bitmap   ", bitmap);
-        console.log("  MAX_FEE_PIPS        ", hook.MAX_FEE_PIPS());
+        console.log("  CLOCK_MODE          ", hook.CLOCK_MODE());
+        console.log("  CONFIG_DELAY_SECONDS", hook.CONFIG_DELAY_SECONDS());
+        console.log("  PROPOSAL_TTL_SECONDS", hook.CONFIG_PROPOSAL_TTL_SECONDS());
         console.log("  MAX_BENEFICIARIES   ", hook.MAX_BENEFICIARIES());
-        console.log("  CONFIG_DELAY_BLOCKS ", hook.CONFIG_DELAY_BLOCKS());
-        console.log("  blockTimeCentis     ", hook.blockTimeCentis());
-        console.log("  => real delay, s    ", (uint256(hook.CONFIG_DELAY_BLOCKS()) * hook.blockTimeCentis()) / 100);
-        console.log("  PROPOSAL_TTL_BLOCKS ", hook.CONFIG_PROPOSAL_TTL_BLOCKS());
-        console.log(
-            "  => real TTL, s      ", (uint256(hook.CONFIG_PROPOSAL_TTL_BLOCKS()) * hook.blockTimeCentis()) / 100
-        );
         console.log("");
         console.log("Takes nothing until a pool owner calls configure().");
-        console.log("A pool wanting a beneficiary share configures in TWO steps while uninitialised:");
+        console.log("A pool wanting a beneficiary share configures in steps while uninitialised:");
         console.log("  1. configure(key, {lpDonateBps: 10000})   - claims the pool");
         console.log("  2. setBeneficiaries(key, roster)");
         console.log("  3. configure(key, {beneficiaryBps: ...})  - the roster now exists");

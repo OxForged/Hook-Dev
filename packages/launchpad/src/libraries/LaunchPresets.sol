@@ -20,7 +20,7 @@ struct PresetParams {
     uint24 initialFeeBips;
     /// @dev LP fee once the window has elapsed, in pips.
     uint24 finalFeeBips;
-    /// @dev Length of the decay window, in SECONDS. Converted to blocks at deploy-time block time.
+    /// @dev Length of the decay window, in SECONDS of `block.timestamp`, written to the hook as-is.
     uint32 windowSeconds;
     /// @dev When false the hook applies no gate and no decay; it pins the fee at `finalFeeBips`.
     bool enabled;
@@ -36,7 +36,7 @@ struct PresetParams {
 /// @dev ########################### READ THIS BEFORE PICKING ONE ###########################
 ///
 /// Every preset here is a PRICE, not a PROHIBITION. `LaunchGuardHook` taxes early buying on a
-/// decaying schedule keyed to the block number. It does not, and at this layer cannot, identify
+/// decaying schedule keyed to `block.timestamp`. It does not, and at this layer cannot, identify
 /// who is buying: the `sender` a hook callback receives is the Vault locker (the router), not the
 /// trader, and `hookData` is attacker-controlled. So:
 ///
@@ -111,11 +111,11 @@ library LaunchPresets {
             // future.
             //
             // PROTECTS AGAINST: someone trading the pool before the launcher opens it. Swaps
-            // revert until `startBlock`, so liquidity can be seeded in the open with no risk of
+            // revert until `startTime`, so liquidity can be seeded in the open with no risk of
             // being bought out first.
             // DOES NOT PROTECT AGAINST: observation. "Stealth" is about timing, not secrecy - the
-            // pool, the hook config and the exact `startBlock` are all public from the moment this
-            // transaction lands, and a bot reading the chain knows the open block before you
+            // pool, the hook config and the exact `startTime` are all public from the moment this
+            // transaction lands, and a bot reading the chain knows the open second before you
             // announce it. It also does not stop the launcher from never opening at all; that is a
             // trust assumption on the launcher, which is why liquidity operations stay unhooked so
             // LPs can always withdraw.
@@ -138,28 +138,13 @@ library LaunchPresets {
             return PresetParams({
                 initialFeeBips: 3_000,
                 finalFeeBips: 3_000,
-                windowSeconds: 1, // must be non-zero; the schedule is flat either way
+                // The hook's `MIN_DECAY_SECONDS`. Irrelevant to the fee - the schedule is flat and
+                // disabled - but the hook validates every config against the same bounds.
+                windowSeconds: 60,
                 enabled: false,
                 requiresMaxBuyPerTx: false
             });
         }
         revert NoParametersForCustomPreset();
-    }
-
-    /// @notice Converts a duration in seconds to a whole number of blocks, rounding UP.
-    /// @dev Rounding up is the safe direction: a window that is one block too long taxes one extra
-    /// block, whereas rounding down could produce zero blocks, which `LaunchGuardHook` rejects.
-    /// @param secondsValue Duration in seconds.
-    /// @param blockTimeCentis Chain block time in hundredths of a second (1200 == 12s, 200 == 2s).
-    /// @return blocks At least 1. Callers still have to respect the hook's own `MAX_DECAY_BLOCKS`.
-    function secondsToBlocks(uint256 secondsValue, uint256 blockTimeCentis)
-        internal
-        pure
-        returns (uint256 blocks)
-    {
-        // blockTimeCentis is validated non-zero by the kit's constructor.
-        uint256 centis = secondsValue * 100;
-        blocks = (centis + blockTimeCentis - 1) / blockTimeCentis;
-        if (blocks == 0) blocks = 1;
     }
 }

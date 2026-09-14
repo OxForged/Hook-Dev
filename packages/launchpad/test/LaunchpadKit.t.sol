@@ -33,12 +33,13 @@ import {IWETH9} from "infinity-periphery/src/interfaces/external/IWETH9.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
 import {DeployPermit2} from "permit2/test/utils/DeployPermit2.sol";
 
-import {LaunchGuardHook} from "latch-hooks/src/launch/LaunchGuardHook.sol";
+import {LaunchGuardHook, ILaunchTokenOrigin} from "latch-hooks/src/launch/LaunchGuardHook.sol";
 import {BaseCLHook} from "latch-hooks/src/base/BaseCLHook.sol";
 import {LatchRegistry} from "latch-registry/src/LatchRegistry.sol";
 import {LatchMetadata, Verification, Listing} from "latch-registry/src/ILatchRegistry.sol";
 
 import {LaunchpadKit} from "../src/LaunchpadKit.sol";
+import {LaunchTokenFactory} from "../src/LaunchTokenFactory.sol";
 import {IHookRegistryListing} from "../src/interfaces/IHookRegistryListing.sol";
 import {
     ILaunchpadKit,
@@ -84,6 +85,25 @@ contract WrongBitmapHook is BaseCLHook {
     }
 }
 
+/// @dev Stands in for the retired block-numbered `LaunchGuardHook`: right pool manager, right
+/// bitmap, and no `CLOCK_MODE()` - exactly what `0x8b4F…575c` looks like to a new kit.
+contract BlockNumberedHookStandIn is BaseCLHook {
+    constructor(ICLPoolManager _pm) BaseCLHook(_pm) {}
+
+    function getHooksRegistrationBitmap() public pure override returns (uint16) {
+        return BEFORE_INITIALIZE | BEFORE_SWAP;
+    }
+}
+
+/// @dev A hook that implements ERC-6372 but on the block clock.
+contract WrongClockModeHook is BlockNumberedHookStandIn {
+    constructor(ICLPoolManager _pm) BlockNumberedHookStandIn(_pm) {}
+
+    function CLOCK_MODE() external pure returns (string memory) {
+        return "mode=blocknumber&from=default";
+    }
+}
+
 contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
     using CLPoolParametersHelper for bytes32;
     using ParametersHelper for bytes32;
@@ -96,6 +116,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
     LaunchGuardHook hook;
     LatchRegistry registry;
     LaunchpadKit kit;
+    LaunchTokenFactory factory;
     CLPoolManagerRouter router;
     WETH weth;
 
@@ -105,16 +126,6 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
     address constant LAUNCHER = address(0xA11CE);
     address constant OPERATOR = address(0xB0B);
     address constant REGISTRY_ADMIN = address(0xAD3111);
-
-    /// @dev 12s blocks, expressed in hundredths of a second.
-    uint32 constant BLOCK_TIME_CENTIS = 1200;
-
-    /// @dev The hook's two block caps for a 12s chain. 1 000 000 blocks x 12s is 138.9 days, which
-    /// is what the old `constant` silently meant on Ethereum and emphatically did not mean on
-    /// Robinhood (28 hours). `test/DeployScripts.t.sol` runs the same hook at Robinhood's real
-    /// block time; this file stays on 12s because that is what the rest of its arithmetic assumes.
-    uint32 constant HOOK_MAX_DECAY = 1_000_000;
-    uint48 constant HOOK_MAX_START = 1_000_000;
 
     int24 constant TICK_SPACING = 60;
     int24 constant TICK_LOWER = -60_000;
@@ -132,14 +143,13 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         ICLPositionDescriptor descriptor = new CLPositionDescriptorOffChain("https://latch.example/positions/");
         posm = new CLPositionManager(vault, poolManager, permit2, 100_000, descriptor, IWETH9(address(weth)));
 
-        hook = new LaunchGuardHook(poolManager, BLOCK_TIME_CENTIS, HOOK_MAX_DECAY, HOOK_MAX_START);
+        factory = new LaunchTokenFactory();
+        hook = new LaunchGuardHook(poolManager, ILaunchTokenOrigin(address(factory)));
 
         address[] memory none = new address[](0);
         registry = new LatchRegistry(REGISTRY_ADMIN, address(vault), none, none);
 
-        kit = new LaunchpadKit(
-            poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), BLOCK_TIME_CENTIS
-        );
+        kit = new LaunchpadKit(poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)));
 
         // Deployed until the launch token sorts BELOW the quote token, so the default case in these
         // tests is `launchTokenIsCurrency0 == true` and the opposite order is set up explicitly.
@@ -174,7 +184,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         p.tickSpacing = TICK_SPACING;
         p.sqrtPriceX96 = SQRT_RATIO_1_1;
         p.preset = Preset.FairLaunch;
-        p.startDelaySeconds = 120; // 10 blocks at 12s
+        p.startDelaySeconds = 120; // two minutes of block.timestamp
         p.launchOperator = OPERATOR;
         p.seed = SeedParams({
             tickLower: TICK_LOWER,
@@ -300,13 +310,13 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         });
 
         vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.PoolMustUseDynamicFee.selector, uint24(3000)));
-        hook.configureLaunch(staticKey, _config(uint48(block.number + 1)));
+        hook.configureLaunch(staticKey, _config(uint40(block.timestamp + 1)));
     }
 
-    function _config(uint48 startBlock) internal pure returns (LaunchGuardHook.LaunchConfig memory) {
+    function _config(uint40 startTime) internal pure returns (LaunchGuardHook.LaunchConfig memory) {
         return LaunchGuardHook.LaunchConfig({
-            startBlock: startBlock,
-            decayBlocks: 25,
+            startTime: startTime,
+            decaySeconds: 300,
             initialFeeBips: 100_000,
             finalFeeBips: 3_000,
             maxBuyPerTx: 0,
@@ -377,14 +387,14 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
                             END-TO-END BEHAVIOUR
     //////////////////////////////////////////////////////////////*/
 
-    function test_tradingIsClosedUntilTheStartBlock() public {
+    function test_tradingIsClosedUntilTheStartTime() public {
         LaunchResult memory r = _create(_params());
         _fundSwapper();
 
         _expectHookRevert(
             ICLHooks.beforeSwap.selector,
             abi.encodeWithSelector(
-                LaunchGuardHook.TradingNotOpen.selector, r.poolId, uint256(r.startBlock), block.number
+                LaunchGuardHook.TradingNotOpen.selector, r.poolId, uint256(r.startTime), block.timestamp
             )
         );
         _swap(r.key, false, -1 ether);
@@ -396,16 +406,16 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         LaunchResult memory r = _create(_params());
         _fundSwapper();
 
-        vm.roll(r.startBlock);
-        assertEq(_swapAndReadAppliedFee(r.key, false, -1 ether), 100_000, "opening block pays the full 10%");
+        vm.warp(r.startTime);
+        assertEq(_swapAndReadAppliedFee(r.key, false, -1 ether), 100_000, "opening second pays the full 10%");
 
         // Half way through the window the fee is half way down the schedule.
-        vm.roll(uint256(r.startBlock) + r.decayBlocks / 2);
+        vm.warp(uint256(r.startTime) + r.decaySeconds / 2);
         uint24 mid = _swapAndReadAppliedFee(r.key, false, -1 ether);
         assertLt(mid, 100_000);
         assertGt(mid, 3_000);
 
-        vm.roll(uint256(r.startBlock) + r.decayBlocks);
+        vm.warp(uint256(r.startTime) + r.decaySeconds);
         assertEq(_swapAndReadAppliedFee(r.key, false, -1 ether), 3_000, "window closed, normal fee");
     }
 
@@ -415,7 +425,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         p.maxBuyPerTx = 1 ether;
         LaunchResult memory r = _create(p);
         _fundSwapper();
-        vm.roll(r.startBlock);
+        vm.warp(r.startTime);
 
         // launchToken is currency0, so buying it means selling currency1: oneForZero.
         _expectHookRevert(
@@ -607,8 +617,8 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         LaunchGuardHook.LaunchConfig memory cfg = kit.previewSchedule(_params());
         assertEq(cfg.initialFeeBips, 100_000);
         assertEq(cfg.finalFeeBips, 3_000);
-        assertEq(cfg.decayBlocks, 25); // 300s at 12s blocks
-        assertEq(cfg.startBlock, uint48(block.number + 10)); // 120s at 12s blocks
+        assertEq(cfg.decaySeconds, 300); // five minutes, written as-is
+        assertEq(cfg.startTime, uint40(block.timestamp + 120)); // two minutes from now
         assertTrue(cfg.enabled);
     }
 
@@ -630,7 +640,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         LaunchResult memory r = _create(p);
         _fundSwapper();
 
-        assertEq(r.startBlock, uint48(block.number));
+        assertEq(r.startTime, uint40(block.timestamp));
         // Disabled means no gate and a pinned fee - NOT a zero fee. A dynamic-fee pool with no
         // override would be free to trade through.
         assertEq(_swapAndReadAppliedFee(r.key, false, -1 ether), 3_000);
@@ -641,13 +651,13 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         p.preset = Preset.Custom;
         p.initialFeeBips = 250_000;
         p.finalFeeBips = 500;
-        p.decayBlocks = 7;
+        p.decaySeconds = 90;
         p.enabled = true;
 
         LaunchGuardHook.LaunchConfig memory cfg = kit.previewSchedule(p);
         assertEq(cfg.initialFeeBips, 250_000);
         assertEq(cfg.finalFeeBips, 500);
-        assertEq(cfg.decayBlocks, 7);
+        assertEq(cfg.decaySeconds, 90);
     }
 
     /// @dev Every preset must land inside the hook's own caps, or the preset is a footgun that
@@ -660,8 +670,32 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
             assertLe(pp.initialFeeBips, hook.MAX_INITIAL_FEE(), "initial fee above hook cap");
             assertLe(pp.finalFeeBips, hook.MAX_FINAL_FEE(), "final fee above hook cap");
             assertGe(pp.initialFeeBips, pp.finalFeeBips, "schedule must decay");
-            assertGt(pp.windowSeconds, 0);
+            assertGe(pp.windowSeconds, hook.MIN_DECAY_SECONDS(), "window below the hook's floor");
+            assertLe(pp.windowSeconds, hook.MAX_DECAY_SECONDS(), "window above the hook's cap");
         }
+    }
+
+    /// @dev The owner-decided preset windows, in seconds, pinned. The live block-numbered kit
+    /// (`0x2a4C…bcA7`) ran these ~120x long; this is the number a launcher now gets.
+    function test_presets_areTheDocumentedSeconds() public pure {
+        assertEq(LaunchPresets.params(Preset.FairLaunch).windowSeconds, 300, "FairLaunch 5 min");
+        assertEq(LaunchPresets.params(Preset.AntiSniperAggressive).windowSeconds, 1800, "AntiSniper 30 min");
+        assertEq(LaunchPresets.params(Preset.Stealth).windowSeconds, 120, "Stealth 2 min");
+        assertEq(LaunchPresets.params(Preset.NoTax).windowSeconds, 60, "NoTax: flat, at the floor");
+        assertFalse(LaunchPresets.params(Preset.NoTax).enabled);
+    }
+
+    /// @dev A custom window below the hook's floor reaches the hook and is refused there.
+    function test_preset_customBelowTheFloorIsRefusedByTheHook() public {
+        LaunchParams memory p = _noSeed(_params());
+        p.preset = Preset.Custom;
+        p.initialFeeBips = 100_000;
+        p.finalFeeBips = 3_000;
+        p.decaySeconds = 59;
+        p.enabled = true;
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.InvalidDecaySeconds.selector, uint32(59)));
+        vm.prank(LAUNCHER);
+        kit.createLaunch(p);
     }
 
     function test_presets_customHasNoParameters() public {
@@ -677,19 +711,19 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         LaunchResult memory r = _create(_params());
         vm.expectRevert(abi.encodeWithSelector(ILaunchpadKit.NotLaunchOperator.selector, r.poolId, LAUNCHER));
         vm.prank(LAUNCHER);
-        kit.reconfigureLaunch(r.key, _config(uint48(block.number + 20)));
+        kit.reconfigureLaunch(r.key, _config(uint40(block.timestamp + 20)));
     }
 
     function test_reconfigure_updatesTheSchedule() public {
         LaunchResult memory r = _create(_params());
-        LaunchGuardHook.LaunchConfig memory cfg = _config(uint48(block.number + 50));
+        LaunchGuardHook.LaunchConfig memory cfg = _config(uint40(block.timestamp + 50));
         cfg.initialFeeBips = 200_000;
 
         vm.prank(OPERATOR);
         kit.reconfigureLaunch(r.key, cfg);
 
         LaunchGuardHook.Launch memory l = hook.getLaunch(r.poolId);
-        assertEq(l.startBlock, uint48(block.number + 50));
+        assertEq(l.startTime, uint40(block.timestamp + 50));
         assertEq(l.initialFeeBips, 200_000);
     }
 
@@ -699,7 +733,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         LaunchResult memory r = _create(_params());
         assertTrue(r.launchTokenIsCurrency0);
 
-        LaunchGuardHook.LaunchConfig memory cfg = _config(uint48(block.number + 50));
+        LaunchGuardHook.LaunchConfig memory cfg = _config(uint40(block.timestamp + 50));
         cfg.launchTokenIsCurrency0 = false; // a lie
         vm.prank(OPERATOR);
         kit.reconfigureLaunch(r.key, cfg);
@@ -709,12 +743,12 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
 
     function test_reconfigure_isFrozenOnceTradingOpens() public {
         LaunchResult memory r = _create(_params());
-        vm.roll(r.startBlock);
+        vm.warp(r.startTime);
         vm.expectRevert(
-            abi.encodeWithSelector(LaunchGuardHook.LaunchAlreadyStarted.selector, r.poolId, uint256(r.startBlock))
+            abi.encodeWithSelector(LaunchGuardHook.LaunchAlreadyStarted.selector, r.poolId, uint256(r.startTime))
         );
         vm.prank(OPERATOR);
-        kit.reconfigureLaunch(r.key, _config(uint48(block.number + 50)));
+        kit.reconfigureLaunch(r.key, _config(uint40(block.timestamp + 50)));
     }
 
     function test_reconfigure_rejectsAnUnknownPool() public {
@@ -723,7 +757,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         foreign.parameters = bytes32(uint256(hook.getHooksRegistrationBitmap())).setTickSpacing(10);
         vm.expectRevert(abi.encodeWithSelector(ILaunchpadKit.UnknownLaunch.selector, foreign.toId()));
         vm.prank(OPERATOR);
-        kit.reconfigureLaunch(foreign, _config(uint48(block.number + 50)));
+        kit.reconfigureLaunch(foreign, _config(uint40(block.timestamp + 50)));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -770,9 +804,7 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
     }
 
     function test_listing_revertsWhenNoRegistryIsConfigured() public {
-        LaunchpadKit bare = new LaunchpadKit(
-            poolManager, hook, posm, permit2, IHookRegistryListing(address(0)), BLOCK_TIME_CENTIS
-        );
+        LaunchpadKit bare = new LaunchpadKit(poolManager, hook, posm, permit2, IHookRegistryListing(address(0)));
         vm.expectRevert(ILaunchpadKit.RegistryNotConfigured.selector);
         bare.listHook(_metadata(), OPERATOR);
     }
@@ -815,9 +847,48 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
     function test_rejectsAStartDelayBeyondTheHooksCap() public {
         LaunchParams memory p = _noSeed(_params());
         p.startDelaySeconds = type(uint32).max;
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(ILaunchpadKit.StartDelayTooLong.selector, uint256(type(uint32).max)));
         vm.prank(LAUNCHER);
         kit.createLaunch(p);
+    }
+
+    function test_startDelayBoundaryIsTheHooksCap() public {
+        LaunchParams memory p = _noSeed(_params());
+        p.startDelaySeconds = uint32(hook.MAX_START_DELAY_SECONDS());
+        LaunchResult memory r = _create(p);
+        assertEq(uint256(r.startTime), block.timestamp + hook.MAX_START_DELAY_SECONDS());
+
+        (MockERC20 l2, MockERC20 q2) = _deploySortedPair(true);
+        p.launchToken = address(l2);
+        p.quoteToken = address(q2);
+        p.startDelaySeconds = uint32(hook.MAX_START_DELAY_SECONDS()) + 1;
+        vm.expectRevert(
+            abi.encodeWithSelector(ILaunchpadKit.StartDelayTooLong.selector, uint256(hook.MAX_START_DELAY_SECONDS()) + 1)
+        );
+        vm.prank(LAUNCHER);
+        kit.createLaunch(p);
+    }
+
+    /// @dev FAILING-FIRST against the block-numbered kit: there, rolling blocks moved `startBlock`
+    /// and warping did nothing. Here the schedule is a function of time alone.
+    function test_CLOCK_scheduleIsTimeNotBlocks() public {
+        LaunchGuardHook.LaunchConfig memory before = kit.previewSchedule(_params());
+        vm.roll(block.number + 50_000_000);
+        LaunchGuardHook.LaunchConfig memory rolled = kit.previewSchedule(_params());
+        assertEq(rolled.startTime, before.startTime, "rolling blocks moved the start");
+        vm.warp(block.timestamp + 7);
+        assertEq(kit.previewSchedule(_params()).startTime, before.startTime + 7);
+        assertEq(kit.CLOCK_MODE(), "mode=timestamp");
+    }
+
+    /// @dev End to end on the preset the owner quotes: FairLaunch really is five minutes of time.
+    function test_CLOCK_fairLaunchTaxLiftsAfterFiveMinutesOfTime() public {
+        LaunchResult memory r = _create(_params());
+        _fundSwapper();
+        vm.warp(uint256(r.startTime) + 299);
+        assertGt(_swapAndReadAppliedFee(r.key, false, -1 ether), 3_000, "still taxed at 4m59s");
+        vm.warp(uint256(r.startTime) + 300);
+        assertEq(_swapAndReadAppliedFee(r.key, false, -1 ether), 3_000, "normal fee at 5m00s");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -829,93 +900,42 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
         vm.expectRevert(
             abi.encodeWithSelector(ILaunchpadKit.UnexpectedHookBitmap.selector, uint16(0x0041), uint16(0x0001))
         );
-        new LaunchpadKit(
-            poolManager,
-            LaunchGuardHook(address(wrong)),
-            posm,
-            permit2,
-            IHookRegistryListing(address(registry)),
-            BLOCK_TIME_CENTIS
-        );
+        new LaunchpadKit(poolManager, LaunchGuardHook(address(wrong)), posm, permit2, IHookRegistryListing(address(registry)));
     }
 
     function test_constructor_rejectsAHookServingADifferentPoolManager() public {
         (, CLPoolManager otherManager) = createFreshManager();
-        LaunchGuardHook otherHook = new LaunchGuardHook(otherManager, BLOCK_TIME_CENTIS, HOOK_MAX_DECAY, HOOK_MAX_START);
+        LaunchGuardHook otherHook = new LaunchGuardHook(otherManager, ILaunchTokenOrigin(address(0)));
         vm.expectRevert(
             abi.encodeWithSelector(
                 ILaunchpadKit.HookPoolManagerMismatch.selector, address(poolManager), address(otherManager)
             )
         );
+        new LaunchpadKit(poolManager, otherHook, posm, permit2, IHookRegistryListing(address(registry)));
+    }
+
+    /// @dev THE REDEPLOY FOOTGUN. A new kit pointed at the retired block-numbered hook would write
+    /// seconds into a contract that reads blocks. It must not construct. MUTATION-CHECKED: removing
+    /// the clock guard makes this construct successfully.
+    function test_constructor_rejectsABlockNumberedHook() public {
+        BlockNumberedHookStandIn old = new BlockNumberedHookStandIn(poolManager);
+        vm.expectRevert(abi.encodeWithSelector(ILaunchpadKit.HookClockMismatch.selector, ""));
+        new LaunchpadKit(poolManager, LaunchGuardHook(address(old)), posm, permit2, IHookRegistryListing(address(registry)));
+    }
+
+    function test_constructor_rejectsAHookOnTheBlockClockMode() public {
+        WrongClockModeHook wrongMode = new WrongClockModeHook(poolManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(ILaunchpadKit.HookClockMismatch.selector, "mode=blocknumber&from=default")
+        );
         new LaunchpadKit(
-            poolManager, otherHook, posm, permit2, IHookRegistryListing(address(registry)), BLOCK_TIME_CENTIS
+            poolManager, LaunchGuardHook(address(wrongMode)), posm, permit2, IHookRegistryListing(address(registry))
         );
-    }
-
-    function test_constructor_rejectsANonsenseBlockTime() public {
-        // Zero divides by zero in `secondsToBlocks`.
-        vm.expectRevert(abi.encodeWithSelector(ILaunchpadKit.InvalidBlockTime.selector, uint32(0)));
-        new LaunchpadKit(poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), 0);
-
-        // Ten minutes a block. Past this the presets' second-denominated windows round to a
-        // handful of blocks and stop meaning anything.
-        vm.expectRevert(abi.encodeWithSelector(ILaunchpadKit.InvalidBlockTime.selector, uint32(60_001)));
-        new LaunchpadKit(poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), 60_001);
-    }
-
-    /// @dev The regression that made this kit undeployable on its own target chain. Robinhood
-    /// Chain (4663) produces a block every 0.102s; the old constructor floor of 50 centis rejected
-    /// it, and the only in-range workaround (declare 0.5s blocks) would have made every preset
-    /// window five times shorter than it says on the tin - the tax lifting early, in the sniper's
-    /// favour, with nothing on chain to show for it.
-    function test_constructor_acceptsASubSecondChain() public {
-        uint32 robinhoodCentis = 10; // 0.1s blocks
-
-        LaunchpadKit fast = new LaunchpadKit(
-            poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), robinhoodCentis
-        );
-        assertEq(fast.blockTimeCentis(), robinhoodCentis);
-
-        // The five-minute FairLaunch window has to survive the conversion at this block time, and
-        // land at or above five minutes of real time rather than below it.
-        uint256 blocks = LaunchPresets.secondsToBlocks(300, robinhoodCentis);
-        assertEq(blocks, 3000);
-        assertLe(blocks, hook.MAX_DECAY_BLOCKS(), "preset window must still fit the hook's cap");
-
-        // The most punitive preset is the longest window; it must fit too.
-        assertLe(
-            LaunchPresets.secondsToBlocks(1800, robinhoodCentis),
-            hook.MAX_DECAY_BLOCKS(),
-            "AntiSniperAggressive must fit at 0.1s blocks"
-        );
-
-        // And the whole thing has to actually resolve through the kit, not just through the library.
-        LaunchParams memory p = _noSeed(_params());
-        p.launchOperator = OPERATOR;
-        LaunchGuardHook.LaunchConfig memory cfg = fast.previewSchedule(p);
-        assertEq(cfg.decayBlocks, 3000, "FairLaunch decay at 0.1s blocks");
-    }
-
-    /// @dev One centis (0.01s) is the fastest the constructor accepts. Nothing in the preset table
-    /// may overflow `MAX_DECAY_BLOCKS` there, or the bound would be admitting a value that cannot
-    /// launch anything.
-    function test_constructor_acceptsTheFastestPermittedBlockTime() public {
-        LaunchpadKit fastest =
-            new LaunchpadKit(poolManager, hook, posm, permit2, IHookRegistryListing(address(registry)), 1);
-        assertEq(fastest.blockTimeCentis(), 1);
-        assertLe(LaunchPresets.secondsToBlocks(1800, 1), fastest.hook().MAX_DECAY_BLOCKS());
     }
 
     function test_constructor_rejectsZeroAddresses() public {
         vm.expectRevert(ILaunchpadKit.ZeroAddress.selector);
-        new LaunchpadKit(
-            poolManager,
-            LaunchGuardHook(address(0)),
-            posm,
-            permit2,
-            IHookRegistryListing(address(registry)),
-            BLOCK_TIME_CENTIS
-        );
+        new LaunchpadKit(poolManager, LaunchGuardHook(address(0)), posm, permit2, IHookRegistryListing(address(registry)));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -923,20 +943,53 @@ contract LaunchpadKitTest is Test, Deployers, DeployPermit2 {
     //////////////////////////////////////////////////////////////*/
 
     function testFuzz_startDelayAlwaysLandsInTheFuture(uint32 delaySeconds) public view {
-        delaySeconds = uint32(bound(delaySeconds, 0, 12_000_000)); // 1e6 blocks at 12s
+        delaySeconds = uint32(bound(delaySeconds, 0, hook.MAX_START_DELAY_SECONDS()));
         LaunchParams memory p = _noSeed(_params());
         p.startDelaySeconds = delaySeconds;
 
         LaunchGuardHook.LaunchConfig memory cfg = kit.previewSchedule(p);
-        assertGe(cfg.startBlock, block.number, "a start in the past is rejected by the hook");
-        assertLe(uint256(cfg.startBlock) - block.number, hook.MAX_START_DELAY());
+        assertGe(cfg.startTime, block.timestamp, "a start in the past is rejected by the hook");
+        assertEq(uint256(cfg.startTime) - block.timestamp, delaySeconds, "seconds in, seconds out");
     }
 
-    function testFuzz_secondsToBlocksNeverReturnsZero(uint32 secondsValue, uint32 blockTimeCentis) public pure {
-        blockTimeCentis = uint32(bound(blockTimeCentis, 1, 60_000));
-        uint256 blocks = LaunchPresets.secondsToBlocks(secondsValue, blockTimeCentis);
-        assertGt(blocks, 0);
-        // Rounds up: never fewer blocks than the duration actually spans.
-        assertGe(blocks * blockTimeCentis, uint256(secondsValue) * 100);
+    /*//////////////////////////////////////////////////////////////
+       POOL-ID RESERVATION, end to end with the real LaunchTokenFactory
+    //////////////////////////////////////////////////////////////*/
+
+    function _factoryToken(address creator) internal returns (address token) {
+        vm.prank(creator);
+        token = factory.createToken("Reserved", "RSV", "", 1_000_000 ether, creator, keccak256("rsv"));
+    }
+
+    /// @dev A front-runner who copies a launch cannot claim the pool of a factory token, and the
+    /// kit's launch still goes through once the token's creator has named the kit.
+    function test_RESERVE_frontRunnerCannotDenyAFactoryTokenLaunch() public {
+        address token = _factoryToken(LAUNCHER);
+        LaunchParams memory p = _noSeed(_params());
+        p.launchToken = token;
+        (PoolKey memory key,,) = kit.computePoolKey(token, address(quoteToken), TICK_SPACING);
+        LaunchGuardHook.LaunchConfig memory squat = _config(uint40(block.timestamp + 100));
+        squat.launchTokenIsCurrency0 = Currency.unwrap(key.currency0) == token;
+
+        vm.prank(address(0xBAD));
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.LaunchPoolReserved.selector, token, LAUNCHER, address(0xBAD)));
+        hook.configureLaunch(key, squat);
+
+        // The kit is not the creator either, until the creator says so.
+        vm.prank(LAUNCHER);
+        vm.expectRevert(abi.encodeWithSelector(LaunchGuardHook.LaunchPoolReserved.selector, token, LAUNCHER, address(kit)));
+        kit.createLaunch(p);
+
+        vm.prank(LAUNCHER);
+        hook.setLaunchClaimer(token, address(kit));
+        LaunchResult memory r = _create(p);
+        assertEq(hook.launchOwner(r.poolId), address(kit));
+    }
+
+    /// @dev A launch on an ordinary (non-factory) token is exactly as before.
+    function test_RESERVE_ordinaryTokenLaunchIsUnaffected() public {
+        LaunchResult memory r = _create(_noSeed(_params()));
+        assertEq(hook.launchOwner(r.poolId), address(kit));
+        assertEq(address(hook.LAUNCH_TOKEN_FACTORY()), address(factory));
     }
 }
