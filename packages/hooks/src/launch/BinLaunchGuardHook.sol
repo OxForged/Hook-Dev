@@ -10,6 +10,11 @@ import {PoolId} from "infinity-core/src/types/PoolId.sol";
 import {IHooks} from "infinity-core/src/interfaces/IHooks.sol";
 import {LPFeeLibrary} from "infinity-core/src/libraries/LPFeeLibrary.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "infinity-core/src/types/BeforeSwapDelta.sol";
+import {Currency} from "infinity-core/src/types/Currency.sol";
+
+/// @dev Imported, not redeclared: one declaration of the factory read for both launch guards, so a
+/// kit that imports both hooks never sees two `ILaunchTokenOrigin`s. Interface only - no CL bytecode.
+import {ILaunchTokenOrigin} from "./LaunchGuardHook.sol";
 
 /// @title BinLaunchGuardHook
 /// @notice Anti-sniper launch protection for LatchProtocol BIN (liquidity-book) pools: a decaying
@@ -154,12 +159,26 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// for the duration of the launch window instead.
     error ExactOutputBuyBlockedDuringLaunch();
 
+    /// @notice A first claim named a non-native currency with no code. Same rule, same selector as
+    /// `LaunchGuardHook.CurrencyHasNoCode`.
+    error CurrencyHasNoCode(address currency);
+
+    /// @notice `token` was created by the launch-token factory, so only its creator (or the claimer
+    /// that creator appointed) may claim a launch pool for it. Same selector as the CL hook's.
+    error LaunchPoolReserved(address token, address creator, address caller);
+
+    /// @notice Only a factory token's creator may appoint its launch claimer.
+    error NotTokenCreator(address token, address caller);
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Emitted the first time an address registers a launch for a pool id
     event LaunchClaimed(PoolId indexed poolId, address indexed owner);
+
+    /// @notice A factory token's creator appointed (or, with `address(0)`, revoked) a launch claimer.
+    event LaunchClaimerSet(address indexed token, address indexed creator, address indexed claimer);
 
     /// @notice Emitted on every accepted configuration write (including the first)
     event LaunchConfigured(
@@ -266,9 +285,50 @@ contract BinLaunchGuardHook is BaseBinHook {
     /// @notice Launch state per pool id
     mapping(PoolId poolId => Launch) internal _launches;
 
-    /// @param _poolManager The Bin singleton this hook serves, forever. The only argument: every
-    /// bound is a constant in seconds, so no chain can be configured with the wrong clock.
-    constructor(IBinPoolManager _poolManager) BaseBinHook(_poolManager) {}
+    /**
+     * ############ POOL-ID RESERVATION (ported from LaunchGuardHook, 2026-09-14) ############
+     *
+     * Closes the open LOW: the CL guard reserved launch pools and this one did not, so a Bin launch
+     * pool with a predictable id (kit v2 derives the token address from a CREATE2 salt, and the key
+     * from that) could be claimed by a front-runner, making the kit's own `configureLaunch` revert
+     * `NotLaunchOwner`. Denial, not theft - but a launchpad whose launches can be denied at will is
+     * not one anybody can ship on.
+     *
+     * The same two rules as `LaunchGuardHook`, word for word, so a reviewer checks one argument:
+     *
+     *   1. NO CLAIM ON AN ADDRESS WITHOUT CODE. Before the kit's transaction the token does not exist,
+     *      so nobody can claim; inside it, the kit claims first.
+     *   2. A `LAUNCH_TOKEN_FACTORY` TOKEN BELONGS TO ITS CREATOR. The first claim must come from
+     *      `deployerOf(token)` - the kit, for a kit-created token - or from the one claimer that
+     *      creator appointed with `setLaunchClaimer`.
+     *
+     * No owner and no kit address is added: the factory's creator record has no setter and serves
+     * every tenant kit on the shared factory. Pools on non-factory tokens behave as before, except
+     * that rule 1 refuses a currency with no code, which could never be a working pool anyway.
+     */
+    ILaunchTokenOrigin public immutable LAUNCH_TOKEN_FACTORY;
+
+    /// @notice The claimer a factory token's creator appointed. Zero means only the creator.
+    mapping(address token => address claimer) public launchClaimerOf;
+
+    /// @param _poolManager The Bin singleton this hook serves, forever.
+    /// @param launchTokenFactory The `LaunchTokenFactory` whose tokens get reserved launch pools, or
+    /// `address(0)` for a deployment with no factory (rule 1 still applies). Every duration bound is a
+    /// constant in seconds, so no chain can be configured with the wrong clock.
+    constructor(IBinPoolManager _poolManager, ILaunchTokenOrigin launchTokenFactory) BaseBinHook(_poolManager) {
+        LAUNCH_TOKEN_FACTORY = launchTokenFactory;
+    }
+
+    /// @notice Appoint (or revoke with `address(0)`) the one address besides you that may claim a
+    /// launch pool for a factory token you created. Typically the kit you will launch through.
+    function setLaunchClaimer(address token, address claimer) external {
+        if (
+            address(LAUNCH_TOKEN_FACTORY) == address(0) || msg.sender == address(0)
+                || LAUNCH_TOKEN_FACTORY.deployerOf(token) != msg.sender
+        ) revert NotTokenCreator(token, msg.sender);
+        launchClaimerOf[token] = claimer;
+        emit LaunchClaimerSet(token, msg.sender, claimer);
+    }
 
     /// @inheritdoc IHooks
     /// @dev `beforeInitialize` rejects static-fee pools; `beforeSwap` gates trading and returns the
@@ -324,6 +384,8 @@ contract BinLaunchGuardHook is BaseBinHook {
 
         address owner = l.owner;
         if (owner == address(0)) {
+            _requireMayClaim(key.currency0);
+            _requireMayClaim(key.currency1);
             l.owner = msg.sender;
             owner = msg.sender;
             emit LaunchClaimed(poolId, msg.sender);
@@ -355,6 +417,20 @@ contract BinLaunchGuardHook is BaseBinHook {
             cfg.launchTokenIsCurrency0,
             cfg.enabled
         );
+    }
+
+    /// @dev The two reservation rules, for one currency of a first claim. Identical to
+    /// `LaunchGuardHook._requireMayClaim`; see `LAUNCH_TOKEN_FACTORY`.
+    function _requireMayClaim(Currency currency) internal view {
+        address token = Currency.unwrap(currency);
+        if (token == address(0)) return; // the native asset
+        if (token.code.length == 0) revert CurrencyHasNoCode(token);
+        if (address(LAUNCH_TOKEN_FACTORY) == address(0)) return;
+        address creator = LAUNCH_TOKEN_FACTORY.deployerOf(token);
+        if (creator == address(0) || msg.sender == creator) return;
+        address claimer = launchClaimerOf[token];
+        if (claimer != address(0) && msg.sender == claimer) return;
+        revert LaunchPoolReserved(token, creator, msg.sender);
     }
 
     /// @dev All bounds that keep a hostile launch owner inside a survivable envelope.

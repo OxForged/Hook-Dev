@@ -47,6 +47,7 @@ import {BinLiquidityHelper} from "infinity-core/test/pool-bin/helpers/BinLiquidi
 
 import {BaseBinHook} from "../../src/base/BaseBinHook.sol";
 import {BinLaunchGuardHook} from "../../src/launch/BinLaunchGuardHook.sol";
+import {ILaunchTokenOrigin} from "../../src/launch/LaunchGuardHook.sol";
 
 /*//////////////////////////////////////////////////////////////
                         TEST-ONLY HOOKS
@@ -135,7 +136,7 @@ contract SenderRecordingBinLaunchGuardHook is BinLaunchGuardHook {
     address public lastMintSender;
     uint256 public swapCount;
 
-    constructor(IBinPoolManager _pm) BinLaunchGuardHook(_pm) {}
+    constructor(IBinPoolManager _pm) BinLaunchGuardHook(_pm, ILaunchTokenOrigin(address(0))) {}
 
     function _beforeSwap(
         address sender,
@@ -164,10 +165,19 @@ contract SenderRecordingBinLaunchGuardHook is BinLaunchGuardHook {
 /// with `beforeMint` left unregistered. Used to DEMONSTRATE the bin-only hole that motivates the
 /// real hook's extra permission bit. It is not a hook anybody should deploy.
 contract NaiveBinLaunchGuardHook is BinLaunchGuardHook {
-    constructor(IBinPoolManager _pm) BinLaunchGuardHook(_pm) {}
+    constructor(IBinPoolManager _pm) BinLaunchGuardHook(_pm, ILaunchTokenOrigin(address(0))) {}
 
     function getHooksRegistrationBitmap() public pure override returns (uint16) {
         return BEFORE_INITIALIZE | BEFORE_SWAP;
+    }
+}
+
+/// @dev Stands in for `LaunchTokenFactory.deployerOf`, so the reservation can be driven per token.
+contract MockBinLaunchTokenOrigin {
+    mapping(address token => address deployer) public deployerOf;
+
+    function set(address token, address deployer) external {
+        deployerOf[token] = deployer;
     }
 }
 
@@ -244,7 +254,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         liquidityHelper = new BinLiquidityHelper(poolManager, vault);
         _approveAll(address(this));
 
-        hook = new BinLaunchGuardHook(poolManager);
+        hook = new BinLaunchGuardHook(poolManager, ILaunchTokenOrigin(address(0)));
         key = _key(hook, LPFeeLibrary.DYNAMIC_FEE_FLAG, BIN_STEP);
         poolId = key.toId();
 
@@ -755,7 +765,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// guarded by `if (key.fee.isDynamicLPFee())`, which is `fee == 0x800000` EXACTLY - so the
     /// launch tax would be a no-op that nobody notices until after the snipe.
     function test_initialize_revertsOnStaticFeePool() public {
-        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager);
+        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager, ILaunchTokenOrigin(address(0)));
         PoolKey memory k = _key(openHook, 3000, 20);
 
         // Prove the static-fee pool is otherwise perfectly valid to core: same bitmap, same shape.
@@ -781,7 +791,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// that DO clear core's ceiling, which is exactly the dangerous case
     /// (`test_initialize_revertsOnStaticFeePool`).
     function test_initialize_nearMissDynamicFeeFlagIsRejectedByCoreFirst() public {
-        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager);
+        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager, ILaunchTokenOrigin(address(0)));
         uint24 nearMiss = LPFeeLibrary.DYNAMIC_FEE_FLAG | uint24(1); // 0x800001
         assertFalse(nearMiss.isDynamicLPFee());
         assertGt(nearMiss, LPFeeLibrary.TEN_PERCENT_FEE);
@@ -795,7 +805,7 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
     /// exactly the bin ceiling, so core accepts it, and only the hook stops the pool being created
     /// with a launch tax that would be silently discarded on every swap.
     function test_initialize_rejectsStaticFeeAtCoresCeiling() public {
-        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager);
+        BinLaunchGuardHook openHook = new BinLaunchGuardHook(poolManager, ILaunchTokenOrigin(address(0)));
         uint24 staticMax = LPFeeLibrary.TEN_PERCENT_FEE;
         assertFalse(staticMax.isDynamicLPFee());
 
@@ -1572,5 +1582,177 @@ contract BinLaunchGuardHookTest is Test, BinTestHelper {
         hook.configureLaunch(key, cfg);
         vm.warp(t + 60 days);
         assertEq(hook.currentFee(poolId), FINAL_FEE);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+       POOL-ID RESERVATION (ported from LaunchGuardHook, 2026-09-14)
+
+       Closes the open LOW "the CL guard reserves launch pools, the Bin guard
+       does not". FAILING-FIRST: against the pre-port hook every front-runner
+       below claimed the pool and the kit's own claim reverted NotLaunchOwner.
+       MUTATION-CHECKED: deleting the two `_requireMayClaim` calls in
+       `configureLaunch` turns test_RESERVE_frontRunnerCannotClaimAFactoryTokenPool,
+       test_RESERVE_creatorMayDelegateTheClaimToAKit, test_RESERVE_claimerCanBeRevoked,
+       test_RESERVE_noClaimOnACurrencyWithoutCode and
+       test_RESERVE_noCodeRuleHoldsWithoutAFactory red (run 2026-09-14: 5 failed).
+    //////////////////////////////////////////////////////////////*/
+
+    address constant KIT = address(0x6B17);
+    address constant CREATOR = address(0xC4EA);
+    address constant FRONT_RUNNER = address(0xF4A7);
+
+    function _reservingHook()
+        internal
+        returns (BinLaunchGuardHook rh, MockBinLaunchTokenOrigin origin, PoolKey memory k)
+    {
+        origin = new MockBinLaunchTokenOrigin();
+        rh = new BinLaunchGuardHook(poolManager, ILaunchTokenOrigin(address(origin)));
+        k = _key(rh, LPFeeLibrary.DYNAMIC_FEE_FLAG, BIN_STEP);
+    }
+
+    function test_RESERVE_bitmapUnchangedByThePort() public {
+        (BinLaunchGuardHook rh,,) = _reservingHook();
+        assertEq(rh.getHooksRegistrationBitmap(), 69, "beforeInitialize | beforeMint | beforeSwap");
+        assertEq(rh.getHooksRegistrationBitmap(), hook.getHooksRegistrationBitmap());
+    }
+
+    function test_RESERVE_frontRunnerCannotClaimAFactoryTokenPool() public {
+        (BinLaunchGuardHook rh, MockBinLaunchTokenOrigin origin, PoolKey memory k) = _reservingHook();
+        address token = Currency.unwrap(k.currency1);
+        origin.set(token, KIT); // the kit created the launch token
+
+        vm.prank(FRONT_RUNNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(BinLaunchGuardHook.LaunchPoolReserved.selector, token, KIT, FRONT_RUNNER)
+        );
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), address(0), "nobody claimed it");
+
+        // ...and without a claim nobody can initialize it either.
+        _expectHookRevert(
+            address(rh),
+            IBinHooks.beforeInitialize.selector,
+            abi.encodeWithSelector(BinLaunchGuardHook.LaunchNotConfigured.selector, k.toId())
+        );
+        vm.prank(FRONT_RUNNER);
+        poolManager.initialize(k, ACTIVE_ID);
+
+        // The kit path succeeds.
+        vm.prank(KIT);
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), KIT);
+        poolManager.initialize(k, ACTIVE_ID);
+    }
+
+    function test_RESERVE_creatorMayDelegateTheClaimToAKit() public {
+        (BinLaunchGuardHook rh, MockBinLaunchTokenOrigin origin, PoolKey memory k) = _reservingHook();
+        address token = Currency.unwrap(k.currency0);
+        origin.set(token, CREATOR);
+
+        vm.prank(KIT);
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.LaunchPoolReserved.selector, token, CREATOR, KIT));
+        rh.configureLaunch(k, _defaultConfig());
+
+        vm.prank(FRONT_RUNNER);
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.NotTokenCreator.selector, token, FRONT_RUNNER));
+        rh.setLaunchClaimer(token, FRONT_RUNNER);
+
+        vm.prank(CREATOR);
+        rh.setLaunchClaimer(token, KIT);
+        assertEq(rh.launchClaimerOf(token), KIT);
+
+        vm.prank(FRONT_RUNNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(BinLaunchGuardHook.LaunchPoolReserved.selector, token, CREATOR, FRONT_RUNNER)
+        );
+        rh.configureLaunch(k, _defaultConfig());
+
+        vm.prank(KIT);
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), KIT);
+    }
+
+    function test_RESERVE_claimerCanBeRevoked() public {
+        (BinLaunchGuardHook rh, MockBinLaunchTokenOrigin origin, PoolKey memory k) = _reservingHook();
+        address token = Currency.unwrap(k.currency0);
+        origin.set(token, CREATOR);
+        vm.startPrank(CREATOR);
+        rh.setLaunchClaimer(token, KIT);
+        rh.setLaunchClaimer(token, address(0));
+        vm.stopPrank();
+        vm.prank(KIT);
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.LaunchPoolReserved.selector, token, CREATOR, KIT));
+        rh.configureLaunch(k, _defaultConfig());
+    }
+
+    function test_RESERVE_creatorItselfMayClaim() public {
+        (BinLaunchGuardHook rh, MockBinLaunchTokenOrigin origin, PoolKey memory k) = _reservingHook();
+        origin.set(Currency.unwrap(k.currency1), CREATOR);
+        vm.prank(CREATOR);
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), CREATOR);
+    }
+
+    /// @dev Rule 1: a token that does not exist YET cannot have its pool squatted.
+    function test_RESERVE_noClaimOnACurrencyWithoutCode() public {
+        (BinLaunchGuardHook rh,, PoolKey memory k) = _reservingHook();
+        address notYetDeployed = address(uint160(0xDEAD0001));
+        k.currency1 = Currency.wrap(notYetDeployed);
+        vm.prank(FRONT_RUNNER);
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.CurrencyHasNoCode.selector, notYetDeployed));
+        rh.configureLaunch(k, _defaultConfig());
+    }
+
+    /// @dev Rule 1 applies on the hook with no factory too - it needs no factory to be meaningful.
+    function test_RESERVE_noCodeRuleHoldsWithoutAFactory() public {
+        BinLaunchGuardHook plain = new BinLaunchGuardHook(poolManager, ILaunchTokenOrigin(address(0)));
+        PoolKey memory k = _key(plain, LPFeeLibrary.DYNAMIC_FEE_FLAG, BIN_STEP);
+        address notYetDeployed = address(uint160(0xDEAD0002));
+        k.currency1 = Currency.wrap(notYetDeployed);
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.CurrencyHasNoCode.selector, notYetDeployed));
+        plain.configureLaunch(k, _defaultConfig());
+    }
+
+    /// @dev Non-factory tokens: first claim, exactly as before - including on the hook with no factory.
+    function test_RESERVE_nonFactoryPoolsAreUnaffected() public {
+        (BinLaunchGuardHook rh,, PoolKey memory k) = _reservingHook();
+        vm.prank(FRONT_RUNNER);
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), FRONT_RUNNER, "first claim, as before");
+
+        BinLaunchGuardHook plain = new BinLaunchGuardHook(poolManager, ILaunchTokenOrigin(address(0)));
+        PoolKey memory pk = _key(plain, LPFeeLibrary.DYNAMIC_FEE_FLAG, BIN_STEP);
+        vm.prank(FRONT_RUNNER);
+        plain.configureLaunch(pk, _defaultConfig());
+        assertEq(plain.launchOwner(pk.toId()), FRONT_RUNNER);
+        vm.expectRevert(abi.encodeWithSelector(BinLaunchGuardHook.NotTokenCreator.selector, address(1), address(this)));
+        plain.setLaunchClaimer(address(1), KIT);
+    }
+
+    /// @dev The native asset is never "a currency without code".
+    function test_RESERVE_nativeQuoteIsAllowed() public {
+        (BinLaunchGuardHook rh,, PoolKey memory k) = _reservingHook();
+        k.currency0 = Currency.wrap(address(0));
+        rh.configureLaunch(k, _defaultConfig());
+        assertEq(rh.launchOwner(k.toId()), address(this));
+    }
+
+    /// @dev Reconfiguration by the owner is not a first claim, so the reservation never locks an
+    /// owner out of its own pool (e.g. after the creator revokes the claimer it used).
+    function test_RESERVE_ownerReconfigurationIsNotReChecked() public {
+        (BinLaunchGuardHook rh, MockBinLaunchTokenOrigin origin, PoolKey memory k) = _reservingHook();
+        address token = Currency.unwrap(k.currency0);
+        origin.set(token, CREATOR);
+        vm.prank(CREATOR);
+        rh.setLaunchClaimer(token, KIT);
+        vm.prank(KIT);
+        rh.configureLaunch(k, _defaultConfig());
+        vm.prank(CREATOR);
+        rh.setLaunchClaimer(token, address(0));
+        BinLaunchGuardHook.LaunchConfig memory cfg = _defaultConfig();
+        cfg.decaySeconds = 120;
+        vm.prank(KIT);
+        rh.configureLaunch(k, cfg);
+        assertEq(rh.getLaunch(k.toId()).decaySeconds, 120);
     }
 }

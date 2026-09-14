@@ -17,6 +17,35 @@ import {DeployLatchLPLockerScript} from "../../script/DeployLatchLPLocker.s.sol"
 import {DeployLaunchGuardHookMainnetScript} from "../../script/DeployLaunchGuardHookMainnet.s.sol";
 import {DeployLaunchpadKitMainnetScript} from "../../script/DeployLaunchpadKitMainnet.s.sol";
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IProtocolFeeController} from "infinity-core/src/interfaces/IProtocolFeeController.sol";
+import {ICLPoolManager} from "infinity-core/src/pool-cl/interfaces/ICLPoolManager.sol";
+import {IBinPoolManager} from "infinity-core/src/pool-bin/interfaces/IBinPoolManager.sol";
+import {BinLaunchGuardHook} from "latch-hooks/src/launch/BinLaunchGuardHook.sol";
+import {LatchLaunchRegistry} from "latch-registry/src/LatchLaunchRegistry.sol";
+import {LaunchRecord, LaunchOrigin, LaunchMetadata} from "latch-registry/src/ILatchLaunchRegistry.sol";
+import {LatchProtocolFeeControllerV3} from "latch-fees/src/LatchProtocolFeeControllerV3.sol";
+import {LatchLPLocker} from "../../src/LatchLPLocker.sol";
+import {LatchBinLPLocker} from "../../src/LatchBinLPLocker.sol";
+import {LaunchpadKitV2} from "../../src/LaunchpadKitV2.sol";
+import {
+    LegKind,
+    BinShape,
+    CLLegParams,
+    BinLegParams,
+    LegParams,
+    ScheduleParams,
+    LaunchParamsV2,
+    LaunchResultV2
+} from "../../src/interfaces/ILaunchpadKitV2.sol";
+import {DeployLatchBinLPLockerScript} from "../../script/DeployLatchBinLPLocker.s.sol";
+import {DeployBinLaunchGuardHookScript} from "../../script/DeployBinLaunchGuardHook.s.sol";
+import {DeployLaunchpadKitV2Script} from "../../script/DeployLaunchpadKitV2.s.sol";
+
+interface IOwnedFork {
+    function owner() external view returns (address);
+}
+
 /**
  * FORK REHEARSAL of the timestamp launchpad redeploy on Robinhood Chain (4663), in deployment order:
  *
@@ -35,6 +64,13 @@ import {DeployLaunchpadKitMainnetScript} from "../../script/DeployLaunchpadKitMa
  *   LOCKER_PROTOCOL_RECIPIENT=<Safe> LAUNCH_GUARD_REGISTRY=... LAUNCH_GUARD_STEWARD=<Ops> \
  *   LAUNCHPAD_REGISTRY=... \
  *   forge test --match-path test/fork/TimestampRedeployRehearsal.t.sol --threads 2 -vvv
+ *
+ * KIT V2 (test_REHEARSE_kitV2LaunchOnTheLiveCore) additionally needs:
+ *   BIN_POOL_MANAGER=... BIN_POSITION_MANAGER=... FEE_POLICY_V2=<live V2> LAUNCHPAD_STEWARD=<Ops>
+ *   LAUNCH_REGISTRY=<live LatchLaunchRegistry, optional: a fresh one is deployed on the fork when unset>
+ * It deploys the whole kit v2 stack through the real scripts (both lockers, both guards, the kit), deploys a
+ * V3 bound to the kit, installs it on the LIVE managers by impersonating their owner chain - a fork-only
+ * stand-in for the 48 h Custody operation - and launches a native-quoted CL + Bin launch on the live core.
  */
 contract TimestampLaunchpadRedeployRehearsal is Test {
     /// @dev A throwaway key for the forked simulation only. Never funded, never used to broadcast.
@@ -143,5 +179,160 @@ contract TimestampLaunchpadRedeployRehearsal is Test {
         assertGt(mid, closing);
         vm.warp(uint256(l.startTime) + l.decaySeconds);
         assertEq(hook.currentFee(poolId), closing, "settled at the window's end");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         KIT V2 ON THE LIVE CORE
+    //////////////////////////////////////////////////////////////*/
+
+    struct KitV2Stack {
+        address clPM;
+        address binPM;
+        address safe;
+        LatchLPLocker clLocker;
+        LatchBinLPLocker binLocker;
+        LaunchTokenFactory factory;
+        LaunchGuardHook clHook;
+        BinLaunchGuardHook binHook;
+        address launchRegistry;
+        LaunchpadKitV2 kit;
+    }
+
+    function test_REHEARSE_kitV2LaunchOnTheLiveCore() public {
+        if (!live) {
+            vm.skip(true);
+            return;
+        }
+        assertEq(block.chainid, 4663, "rehearsal must fork Robinhood Chain");
+        vm.deal(vm.addr(REHEARSAL_PK), 100 ether);
+        KitV2Stack memory k = _deployKitV2Stack();
+
+        // Fork-only stand-in for the Custody install: V3 bound to this kit, on both LIVE managers.
+        LatchProtocolFeeControllerV3 v3 = new LatchProtocolFeeControllerV3(
+            k.safe, IProtocolFeeController(vm.envAddress("FEE_POLICY_V2")), address(k.kit)
+        );
+        _installController(k.clPM, address(v3));
+        _installController(k.binPM, address(v3));
+
+        bytes32 salt = keccak256("kit-v2-rehearsal");
+        address token = k.kit.predictLaunchToken(CREATOR, salt);
+        LaunchParamsV2 memory p = _kitV2Params(salt);
+        vm.deal(CREATOR, 1 ether);
+        uint256 fee = k.kit.launchFeeWei();
+        vm.prank(CREATOR);
+        LaunchResultV2 memory r = k.kit.createLaunch{value: fee}(p);
+
+        assertEq(r.token, token);
+        (,, uint24 clFee,) = ICLPoolManager(k.clPM).getSlot0(PoolId.wrap(r.poolIds[0]));
+        (, uint24 binFee,) = IBinPoolManager(k.binPM).getSlot0(PoolId.wrap(r.poolIds[1]));
+        assertEq(clFee, 0, "live CL manager: kit pool born at zero");
+        assertEq(binFee, 0, "live Bin manager: kit pool born at zero");
+        assertTrue(k.clLocker.isLocked(r.lockIds[0]));
+        assertTrue(k.binLocker.isLocked(r.lockIds[1]));
+        assertEq(IERC20(token).balanceOf(address(k.kit)), 0);
+        LaunchRecord memory rec = LatchLaunchRegistry(k.launchRegistry).getLaunch(r.poolIds[0]);
+        assertEq(uint8(rec.origin), uint8(LaunchOrigin.LaunchpadAttested));
+        assertEq(k.kit.feesOwed(k.safe), fee);
+
+        // A non-kit dynamic pool on the same live manager still pays V2's fee through V3.
+        assertFalse(v3.isLockedLaunchPool(PoolId.wrap(keccak256("not a launch"))));
+    }
+
+    function _deployKitV2Stack() internal returns (KitV2Stack memory k) {
+        k.clPM = vm.envAddress("CL_POOL_MANAGER");
+        k.binPM = vm.envAddress("BIN_POOL_MANAGER");
+        k.safe = vm.envAddress("LOCKER_PROTOCOL_RECIPIENT");
+        address clPosm = vm.envAddress("CL_POSITION_MANAGER");
+        address binPosm = vm.envAddress("BIN_POSITION_MANAGER");
+        address latchRegistry = vm.envAddress("LAUNCH_GUARD_REGISTRY");
+        address steward = vm.envAddress("LAUNCH_GUARD_STEWARD");
+
+        (k.clLocker, k.factory) = new DeployLatchLPLockerScript().runWith(
+            DeployLatchLPLockerScript.Wiring({pk: REHEARSAL_PK, positionManager: clPosm, protocolRecipient: k.safe})
+        );
+        k.binLocker = new DeployLatchBinLPLockerScript().runWith(
+            DeployLatchBinLPLockerScript.Wiring({
+                pk: REHEARSAL_PK,
+                positionManager: binPosm,
+                protocolRecipient: k.safe,
+                clLocker: address(k.clLocker)
+            })
+        );
+        k.clHook = new DeployLaunchGuardHookMainnetScript().runWith(REHEARSAL_PK, k.clPM, address(k.factory), latchRegistry, steward);
+        k.binHook = new DeployBinLaunchGuardHookScript().runWith(REHEARSAL_PK, k.binPM, address(k.factory), latchRegistry, steward);
+
+        k.launchRegistry = vm.envOr("LAUNCH_REGISTRY", address(0));
+        if (k.launchRegistry == address(0)) {
+            k.launchRegistry = address(new LatchLaunchRegistry(address(ICLPoolManager(k.clPM).vault()), latchRegistry));
+        }
+
+        k.kit = new DeployLaunchpadKitV2Script().runWith(
+            DeployLaunchpadKitV2Script.Wiring({
+                pk: REHEARSAL_PK,
+                clPoolManager: k.clPM,
+                binPoolManager: k.binPM,
+                clPositionManager: clPosm,
+                binPositionManager: binPosm,
+                clHook: address(k.clHook),
+                binHook: address(k.binHook),
+                clLocker: address(k.clLocker),
+                binLocker: address(k.binLocker),
+                tokenFactory: address(k.factory),
+                launchRegistry: k.launchRegistry,
+                safe: k.safe,
+                launchpadSteward: vm.envAddress("LAUNCHPAD_STEWARD"),
+                initialLaunchFeeWei: 0.0005 ether,
+                maxLaunchFeeWei: 0.01 ether,
+                maxIntegratorLaunchFeeWei: 0.005 ether,
+                feePolicyV2: vm.envAddress("FEE_POLICY_V2")
+            })
+        );
+    }
+
+    /// @dev manager.owner() is the *PoolManagerOwner wrapper; the wrapper's owner may call it. Fork only.
+    function _installController(address manager, address controller) internal {
+        address wrapper = IOwnedFork(manager).owner();
+        vm.prank(IOwnedFork(wrapper).owner());
+        (bool ok,) = wrapper.call(abi.encodeWithSignature("setProtocolFeeController(address)", controller));
+        require(ok, "fork install of V3 failed");
+    }
+
+    function _kitV2Params(bytes32 salt) internal pure returns (LaunchParamsV2 memory p) {
+        LegParams[] memory legs = new LegParams[](2);
+        // Native quote: the launch token is always currency1, so the CL range sits below spot (tick 0).
+        legs[0].kind = LegKind.CL;
+        legs[0].quote = address(0);
+        legs[0].weightBps = 6_000;
+        legs[0].cl = CLLegParams({tickSpacing: TICK_SPACING, sqrtPriceX96: SQRT_1_1, tickLower: -60_000, tickUpper: 0});
+        legs[1].kind = LegKind.Bin;
+        legs[1].quote = address(0);
+        legs[1].weightBps = 4_000;
+        legs[1].bin = BinLegParams({
+            binStep: 10,
+            activeId: 2 ** 23,
+            shape: BinShape.Linear,
+            binCount: 10,
+            offsets: new uint24[](0),
+            weights: new uint64[](0),
+            floorBins: 0
+        });
+        p.name = "Kit v2 Rehearsal";
+        p.symbol = "KV2R";
+        p.userSalt = salt;
+        p.totalSupply = 1_000_000 ether;
+        p.seedSupply = 800_000 ether;
+        p.allocationRecipient = CREATOR;
+        p.creatorBps = 8_000;
+        p.protocolBps = 2_000;
+        p.schedule = ScheduleParams({
+            preset: Preset.FairLaunch,
+            initialFeeBips: 0,
+            finalFeeBips: 0,
+            decaySeconds: 0,
+            enabled: false,
+            startDelaySeconds: 120
+        });
+        p.legs = legs;
+        p.listing = LaunchMetadata({description: "fork rehearsal", websiteURI: "", iconURI: "", socialURI: ""});
     }
 }

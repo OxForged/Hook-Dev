@@ -40,14 +40,31 @@ contract RegisterLaunchGuardScript is Script {
 
         bool redeploy = vm.envOr("REDEPLOY_HOOK", false);
 
+        /* The factory is REQUIRED on a redeploy and read with `vm.envAddress`, which reverts when the
+           variable is unset. It used to be `vm.envOr(..., address(0))`, so a forgotten variable
+           silently deployed a hook with NO pool-id reservation - the exact squatting grief the
+           reservation exists to close - and nothing in the output said so. The factory is immutable
+           on the hook, so that mistake is a redeployment, not a fix. Read BEFORE the broadcast so the
+           failure costs nothing. A deliberate no-factory hook is a different script, on purpose. */
+        address launchTokenFactory = address(0);
+        if (redeploy) {
+            launchTokenFactory = vm.envAddress("LAUNCH_TOKEN_FACTORY");
+            require(launchTokenFactory != address(0), "LAUNCH_TOKEN_FACTORY is the zero address");
+            require(launchTokenFactory.code.length > 0, "LAUNCH_TOKEN_FACTORY has no code");
+        }
+
         vm.startBroadcast(pk);
 
         LaunchGuardHook hook =
             redeploy
             /* Every launch bound is a constant in seconds of block.timestamp now
-               (Option B, 2026-09-13); the pool manager is the only argument. */
-            ? new LaunchGuardHook(ICLPoolManager(CL_POOL_MANAGER), ILaunchTokenOrigin(vm.envOr("LAUNCH_TOKEN_FACTORY", address(0))))
+               (Option B, 2026-09-13); the pool manager and the factory are the only arguments. */
+            ? new LaunchGuardHook(ICLPoolManager(CL_POOL_MANAGER), ILaunchTokenOrigin(launchTokenFactory))
             : LaunchGuardHook(EXISTING_HOOK);
+
+        if (redeploy) {
+            require(address(hook.LAUNCH_TOKEN_FACTORY()) == launchTokenFactory, "hook: LAUNCH_TOKEN_FACTORY");
+        }
 
         uint256[] memory chains = new uint256[](1);
         chains[0] = 11155111;

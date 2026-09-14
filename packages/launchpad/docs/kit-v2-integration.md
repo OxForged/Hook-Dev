@@ -1,8 +1,9 @@
 # LaunchpadKit v2: integration spec
 
-Status: **specification only.** This document changes no code in `LaunchpadKit.sol`,
-`LaunchGuardHook` or `RevShareHook`. It specifies how a v2 kit composes three contracts that do
-exist:
+Status: sections 1-9 are the **pre-implementation specification**; section 10 is the Bin locker as
+built; **section 11, "Kit v2 (implemented)", is `LaunchpadKitV2` as built, and wins wherever it
+differs from sections 1-9.** Sections 1-9 are kept because the reasoning in them still holds. The
+specification composes three contracts that do exist:
 
 | Contract | File | Role |
 |---|---|---|
@@ -656,3 +657,393 @@ createLaunch, per Bin leg:
 ```
 
 Never mint with `to = binLocker`: those shares arrive without a record and are orphans (10.4).
+
+---
+
+## 11. Kit v2 (implemented)
+
+Status: **implemented and tested, not deployed.** Where this section and sections 1-9 disagree, this
+section wins; where it and CLAUDE.md disagree, CLAUDE.md wins.
+
+| File | What it is |
+|---|---|
+| `src/LaunchpadKitV2.sol` | the kit: checks, the V3 flag, records, fees, tenants, reconfiguration, views |
+| `src/libraries/LaunchLegs.sol` | linked library: the interaction phase (token, every leg's open/seed/lock/register) |
+| `src/libraries/BinLaunchShapes.sol` | internal library: named Bin shapes and rules R1-R6 |
+| `src/interfaces/ILaunchpadKitV2.sol` | params, records, events, errors |
+| `src/interfaces/ILaunchRegistryWriter.sol` | the five `LatchLaunchRegistry` calls the kit makes |
+| `script/DeployLaunchpadKitV2.s.sol`, `script/DeployBinLaunchGuardHook.s.sol` | deploy scripts (never broadcast here) |
+| `packages/hooks/src/launch/BinLaunchGuardHook.sol` | pool-id reservation ported from the CL guard |
+| `test/kitv2/*` | 93 tests; `test/fork/TimestampRedeployRehearsal.t.sol` gains a kit v2 rehearsal |
+
+### 11.1 A new contract, not a replacement of `LaunchpadKit.sol`
+
+v1 is deployed at `0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7` and Sourcify-verified. Verification
+re-compiles the source at the verified path and compares bytecode, so rewriting `LaunchpadKit.sol`
+in place would make that verification irreproducible from `main` forever. v1 also has live
+consumers (SDK, dapp) keyed to its ABI, no owner and no retirement path (section 5). v2 shares
+almost nothing with it: a different ABI, an owner, both pool types, locking, a factory token.
+So v2 is `LaunchpadKitV2` in new files, and `LaunchpadKit.sol` and its tests are untouched.
+
+### 11.2 Why a linked library, and what that costs
+
+The kit in one piece compiled to **42,889 bytes** at the package's 1,000,000 runs, against
+EIP-170's 24,576. At 9,000 runs (the existing `clPosm` profile, shared so a test that deploys
+`CLPositionManager` and the kit resolves to one profile) it was still 26,444. The interaction phase
+therefore moved into `LaunchLegs`, reached by one `DELEGATECALL`:
+
+| Contract (9,000 runs) | Runtime bytes, default | Runtime bytes, legacy |
+|---|---|---|
+| `LaunchpadKitV2` | 22,479 | 22,459 |
+| `LaunchLegs` | 19,324 | 19,350 |
+
+What makes the delegatecall safe, stated so a reviewer can check each point:
+
+- The library address is written into the kit's bytecode at link time. No setter, no proxy, no
+  storage slot holds it. A library has no storage and no `selfdestruct`.
+- Solidity's library call guard makes `execute` revert when CALLed directly, so it is not a free
+  launcher anybody can drive. A contract that DELEGATECALLs it only acts in its own context.
+- It runs in the kit's context: every call it makes is FROM the kit, which is what the guards'
+  reservation, the position NFT, the bin shares and the Bin locker's `msg.sender` pull all require.
+- It reads and writes no kit storage. The kit writes every flag and record before calling it and
+  records the returned lock ids after.
+- `msg.value` is visible inside it (delegatecall preserves it). It never uses it: fees are credited
+  by the kit before, and the refund is paid by the kit after.
+
+Deployment consequence: `forge script` deploys `LaunchLegs` as its own transaction before the kit,
+and the library must be verified alongside the kit.
+
+### 11.3 Storage layout
+
+Read with `forge inspect src/LaunchpadKitV2.sol:LaunchpadKitV2 storageLayout`. No proxy, so this
+matters for audit and indexers, not for upgrades.
+
+| Slot | Variable | Type |
+|---|---|---|
+| 0 | `_owner` (Ownable) | `address` |
+| 1 | `_pendingOwner` (Ownable2Step) | `address` |
+| 2 | `_status` (ReentrancyGuard, plain storage in both builds) | `uint256` |
+| 3 | `_launchFeeWei` | `uint256` |
+| 4 | `_pendingLaunchFeeWei` | `uint256` |
+| 5 | `_pendingLaunchFeeEffectiveAt` | `uint64` |
+| 6 | `_lockedLaunch` - **the V3 flag** | `mapping(bytes32 => bool)` |
+| 7 | `_legs` | `mapping(bytes32 => LegRecord{launchToken, kind, launchTokenIsCurrency0 \| lockId})` |
+| 8 | `_launches` | `mapping(address => LaunchRecordV2{creator, createdAt, legCount \| operator, startTime \| tenant})` |
+| 9 | `_legsOfToken` | `mapping(address => bytes32[])`, at most `maxLegs` |
+| 10 | `feesOwed` | `mapping(address => uint256)` |
+| 11 | `totalFeesOwed` | `uint256` |
+| 12 | `_tenants` | `mapping(address => TenantConfig)` (one slot: integrator, bps, fee, masks, flags) |
+| 13 | `tenantQuoteAllowed` | `mapping(address => mapping(address => bool))` |
+
+Immutables: both pool managers, both guards, both position managers, both lockers, the factory,
+the launch registry, both Permit2s (read off the position managers), `protocolFeeRecipient`,
+`launchpadSteward`, `maxLaunchFeeWei`, `launchFeeNoticeSeconds`, `maxIntegratorLaunchFeeWei`,
+`maxLegs`, `maxBinsPerLeg`, `maxIntegratorBps` (read off the lockers) and the factory's
+`launchTokenInitCodeHash`. Every tenant-facing value is a constructor argument or a call argument.
+The constants are protocol safety bounds and units: the two guard bitmaps, the 20% LP floor the
+lockers must enforce, `MAX_LEGS_HARD_CAP = 8`, notice in [1 day, 30 days], and the guards' 30-day
+start-delay cap, which the constructor asserts equal on both guards.
+
+Constructor checks (each a named revert): one Vault behind both managers, both position managers
+and the launch registry; each position manager on its manager; each guard on its manager, with
+the right bitmap (`0x41` CL, `0x45` Bin), `CLOCK_MODE() == "mode=timestamp"`, and
+`LAUNCH_TOKEN_FACTORY` equal to the kit's factory; both lockers on their position managers, paying
+`protocolFeeRecipient`, with identical bounds and a floor of at least 20%; `maxBinsPerLeg` at most
+the Bin locker's `maxBinsPerLock`; the fee cap and notice. It then `approveForAll(binLocker)` on the
+Bin position manager, the kit's only standing approval.
+
+### 11.4 `createLaunch`: the step order
+
+**Checks and effects - no call of any kind** (EXTCODESIZE reads only):
+
+1. `1 <= legs <= maxLegs`; `0 < seedSupply <= totalSupply`; an allocation recipient iff
+   `seedSupply < totalSupply`; creator, integrator and allocation recipient are not the kit.
+2. Fees and tenant policy (11.6): integrator fee within its cap and with a recipient; an active
+   tenant whose stored integrator, bps and fee equal the call's; the preset allowed;
+   `msg.value >= launchFeeWei() + integratorFee`.
+3. The schedule: preset or custom values, `startDelaySeconds <= 30 days`,
+   `startTime = block.timestamp + startDelaySeconds`.
+4. The token address, computed locally: `salt = keccak256(abi.encode(msg.sender, userSalt))`, then
+   the factory's CREATE2 rule with its cached init-code hash. No call, so no call precedes the flags.
+5. Per leg: quote is not the token and has code (or is native); a Bin leg's schedule is <= 10%; a
+   preset that needs a buy cap has one on every CL leg; tenant quote and shape allowlists; the leg's
+   supply (`seedSupply * weightBps / 10_000`, the last leg the remainder, non-zero, <= `uint128`);
+   the pool key (dynamic fee, the guard, its bitmap and spacing or bin step); the pool id.
+6. **`_lockedLaunch[poolId] = true`** and the leg record, for every leg, refusing a duplicate id.
+7. Weights sum to exactly 10,000; the launch record; fee credits (`feesOwed`).
+
+**Interactions - `LaunchLegs.execute`, one DELEGATECALL:**
+
+8. Every Bin leg's shape is built (named) or taken (custom) and validated, R1-R6 (11.7), against the
+   requested active id. Pure, and still before any call to another contract.
+9. `tokenFactory.createToken(name, symbol, uri, totalSupply, kit, salt)`; assert the address equals
+   step 4 and the kit received exactly `totalSupply`. Permit2 approvals to the position managers the
+   legs use.
+10. Per leg, in order, as below. Then `launchRegistry.registerLaunch(manager, poolId, token, kit,
+    creator, steward, listing)` - `msg.sender` is the kit, so the record is `LaunchpadAttested`.
+11. Transfer the remaining launch-token balance (unseeded allocation plus rounding dust) to the
+    allocation recipient, or to the creator when there is none; assert the kit holds zero.
+
+**Back in the kit:** write each leg's lock id; emit `LaunchCreated`; refund `msg.value` above the
+fees to `msg.sender`, last.
+
+**CL leg** (controller-v3.md section 4, steps 4-8; step 9 as specified):
+
+```
+clHook.configureLaunch(key, cfg)          claim: deployerOf(token) == kit
+clPoolManager.initialize(key, sqrtPrice)  core -> guard.beforeInitialize; core -> V3 -> kit.isLockedLaunch == true -> 0
+getSlot0 -> (sqrtPrice, tick, protocolFee)
+assert protocolFee == 0 IF the installed controller's launchOracle() == kit   (bounded staticcall)
+assert single-sided against core's tick: currency0 needs tickLower > tick; currency1 needs tickUpper <= tick
+liquidity = LiquidityAmounts(sqrtPrice, lower, upper, supply on the launch side, 0)   (> 0)
+tokenId = nextTokenId(); modifyLiquidities(CL_MINT_POSITION(..., owner = KIT), SETTLE_PAIR)
+positionManager.safeTransferFrom(kit, clLocker, tokenId, abi.encode(LockParams))   after the Vault unlocked
+assert clLocker.isLocked(tokenId), getLock(tokenId).poolId == poolId, ownerOf(tokenId) == clLocker,
+       and creator / creatorBps / integrator / integratorBps / protocolBps as declared     (LockNotRecorded)
+```
+
+The single-side comparisons are strict, per the open `CreatorReserve` LOW: core keeps a position in
+range for `tickLower <= tick < tickUpper`, so section 1.2's `tickLower >= currentTick` would accept a
+range that already holds quote currency.
+
+**Bin leg** (section 10.6, which it follows exactly):
+
+```
+binHook.configureLaunch(key, cfg)         claim: deployerOf(token) == kit (the ported reservation)
+binPoolManager.initialize(key, activeId)  core -> V3 -> kit.isLockedLaunch == true -> 0
+getSlot0 -> (activeId, protocolFee); assert activeId == requested (ActiveIdMoved); same gated fee assert
+modifyLiquidities(BIN_ADD_LIQUIDITY(amount on the launch side, max = amount, idSlippage 0,
+                  deltaIds, distX, distY, minLiquidities = 1 each, to = KIT), SETTLE_PAIR)
+shares[k] = balanceOf(kit, tokenId_k)     fresh pool: the whole balance is this mint
+lockId = binLocker.lock(key, binIds ascending, shares, LockParams)
+assert balanceOf(kit, tokenId_k) == 0 for every bin                                 (KitRetainedBinShares)
+assert isLocked(lockId), poolId, binCount and every split field as declared         (LockNotRecorded)
+```
+
+No `try`/`catch` exists anywhere in the kit or the library. Any failure reverts the launch:
+token, pools, flags, locks, registry records and fee credits together
+(`test_ATOMIC_lockFailureRevertsTheWholeLaunch`, `test_ATOMIC_secondLegFailureRevertsTheFirst`).
+
+### 11.5 The V3 rules, and the Bin statement reconciled
+
+Every rule in `packages/fees/docs/controller-v3.md` section 4 holds, in its strictest reading:
+
+| V3 rule | Where it holds |
+|---|---|
+| flag before any external call | step 6, before the first call of any kind in the transaction |
+| `configureLaunch` -> `initialize` -> mint to the kit -> `safeTransferFrom` -> assert `isLocked` + poolId | 11.4, both leg types |
+| no `try`/`catch` between flag and lock | none exists in either file |
+| `isLockedLaunch(bytes32)` a plain storage read, no reentrancy-guard check | `return _lockedLaunch[poolId];` |
+| never clear the flag, no other path sets it | one write site; `reconfigureLaunch`, the owner and tenants never touch it |
+| key it by the exact id passed to `initialize` | the id is computed from the same `PoolKey` value that is initialized |
+| step 9 must not hard-revert under V2 | gated on `controller.launchOracle() == address(this)` |
+
+**The Bin statement.** controller-v3.md says "a Bin leg ... must answer `false`", written when no Bin
+locker existed. The rule it encodes is **never flag an unlocked leg**: an unlocked launch pays the
+core fee. `LatchBinLPLocker` now exists, so the rule, stated for both pool types, is:
+
+> Flag a leg if and only if the same transaction initializes its pool, seeds it, and moves the
+> seeded position into the Latch locker for its pool type - `LatchLPLocker` for CL,
+> `LatchBinLPLocker` for Bin - and then proves the lock by reading it back (and, for Bin, that the
+> kit retains zero shares of every seeded bin). Kit v2 has no unlocked leg shape, so every v2 leg is
+> flagged. A future unlocked shape must answer `false`.
+
+V3 needs no change: it reads the flag on both managers already (`FeeControllerV3LiveBin.t.sol`).
+
+### 11.6 Fee model
+
+**Protocol launch fee (Kit v2 decision #1).**
+
+- Owner: the governance Safe, `Ownable2Step`, set in the constructor so the deployer never holds
+  it. `renounceOwnership` reverts `RenounceDisabled`. The owner's only functions are
+  `setLaunchFee`, `cancelPendingLaunchFee` and the two-step ownership transfer
+  (`test_ACCESS_ownerHasNoOtherPower`).
+- `setLaunchFee(x)`, with `x <= maxLaunchFeeWei` (immutable):
+  - `x <=` the fee in force: **applied now**; any pending increase is cancelled.
+  - `x >` the fee in force: **scheduled**, `effectiveAt = now + launchFeeNoticeSeconds`
+    (immutable, 7 days in the deploy script). It becomes the fee **by itself** at `effectiveAt`. A
+    newer increase replaces it and restarts the clock, so no announcement can shorten a wait.
+- `launchFeeWei()` is the fee a launch in the current block pays. Nothing about an existing launch
+  ever reads it again, so nothing is retroactive.
+- **Why there is no apply step and no expiry**, which section 3.1 recommended: the RevShareHook
+  item-5 hazard was a matured proposal that anybody could apply at a moment of their choosing. Here
+  there is no application, so no optionality: the new value takes effect at a public, fixed
+  timestamp announced a week earlier. A launcher's refund makes the transition safe: an increase
+  landing between signing and inclusion either reverts `InsufficientLaunchFee` or is paid out of a
+  surplus the launcher chose to send.
+
+**Integrator (tenant) launch fee.** Per call, `integratorLaunchFeeWei <= maxIntegratorLaunchFeeWei`
+(immutable), paid to `integrator`, which must be set when the fee is non-zero.
+
+**Payment.** Both fees are **credited**, never pushed during a launch (`feesOwed`,
+`totalFeesOwed`). `claimFees(to)` pays the caller's own balance. `flushProtocolFees()` is
+permissionless and can only pay the immutable `protocolFeeRecipient`. A recipient that rejects
+native currency cannot block anybody's launch (`test_INTEGRATOR_aRecipientThatRefusesNativeCannotBlockLaunches`).
+`msg.value` below the total reverts; any excess is refunded to `msg.sender` at the very end, inside
+`nonReentrant`. This supersedes section 2.4's "refuse surplus".
+
+**Tenant configuration (self-service).** `setTenantConfig` and `setTenantQuote` write the
+**caller's own** policy: the fee wallet (integrator), `integratorBps` (<= the lockers' cap), the
+integrator launch fee (<= its cap), an allowed-preset mask, an allowed-Bin-shape mask, and an
+optional quote allowlist. A launch naming `tenant` must restate the stored integrator, bps and fee
+exactly (`TenantConfigMismatch`), so a tenant raising its fee can only make a pending launch revert,
+never re-price it. The kit owner cannot write a tenant's config.
+
+What this does NOT enforce, stated plainly: a launcher who calls the kit with `tenant = 0` pays no
+tenant anything. A tenant config is a policy for launches that go through the tenant's front end
+or wrapper contract, not a toll on the kit. The protocol launch fee, the lockers' 20% floor and the
+zero core fee are the parts no caller can route around.
+
+| Layer | Enforced by | Value |
+|---|---|---|
+| Protocol launch fee | kit, every launch | Safe-set wei, <= immutable cap, +7 days notice |
+| Integrator launch fee | kit, per call / tenant config | <= immutable cap |
+| Locked-LP split | both lockers, per lock, forever | protocol 20-50%, integrator <= 20% |
+| Core protocol fee | V3 via `isLockedLaunch` | 0 on every kit leg, V2's value on everything else |
+
+### 11.7 Bin shapes
+
+Offsets and weights are in **fill order**: offset 1 is the bin next to the active bin on the launch
+token's side. The kit maps them above active (launch token is currency0) or below it (currency1),
+and hands the Bin locker ascending ids. So "single-sided" and "monotonic" read the same for both
+orientations, and a caller cannot put a shape on the quote side.
+
+| Rule | Refinement of section 7 | Error |
+|---|---|---|
+| R1 single-sided | every offset >= 1 | `BinShapeNotSingleSided(k)` |
+| R2 monotonic prices | offsets strictly increasing | `BinShapeNotMonotonic(k)` |
+| R3 no gap below the floor | `1 <= floorBins <= n` and `offsets[k] == k + 1` for `k < floorBins`; gaps allowed only after it | `BinShapeInvalidFloor`, `BinShapeGapBelowFloor(k)` |
+| R4 bin cap | `1 <= n <= maxBinsPerLeg <= binLocker.maxBinsPerLock()`; equal lengths | `BinShapeBadCount`, `BinShapeLengthMismatch`, `InvalidBinCap` (constructor) |
+| R5 totals | `sum(weights) == 1e18` exactly | `BinShapeWeightsDoNotSum(sum)` |
+| R6 per-bin | every weight > 0, `floor(supply * weight / 1e18) > 0`, `minLiquidities = 1` | `BinShapeZeroWeight(k)`, `BinShapeDustBin(k)` |
+| id range | currency0: `activeId + offset <= 2^24 - 1`; currency1: `offset < activeId` | `BinIdOutOfRange` |
+
+Section 7's "the minted amount must equal `seedSupply`" cannot hold exactly: core floors each bin's
+`amount * distribution / 1e18`. The kit measures what was spent, sends the dust (at most one unit
+per bin) to the allocation recipient, and asserts it ends holding no launch token.
+
+Named shapes (`BinShape`), all passing the same validator
+(`testFuzz_SHAPES_namedShapesAlwaysValidate`, every size to 256):
+
+| Shape | Weight of bin k | Offsets | floorBins |
+|---|---|---|---|
+| `Flat` | equal | 1..n | n |
+| `Linear` | proportional to n - k | 1..n | n |
+| `Exponential` | proportional to 0.9^k | 1..n | n |
+| `Stepped` | tiers of 4 contiguous bins, tier weight decreasing, 2 empty bins between tiers | `1 + k + 2*floor(k/4)` | min(4, n) |
+
+Weights are floored and the last bin takes `1e18 - sum`. The 10% Bin fee ceiling means
+`AntiSniperAggressive` and `Stealth` (50%) are refused on a launch with any Bin leg
+(`PresetUnavailableOnBin`); `FairLaunch`, `NoTax` and `Custom` up to 10% work.
+
+### 11.8 Events and errors
+
+Events: `LaunchCreated`, `LaunchLegCreated` (per leg, with the launch-token amount measured into the
+pool), `LaunchReconfigured`, `LaunchFeeIncreaseScheduled`, `LaunchFeeChanged`,
+`PendingLaunchFeeCancelled`, `FeesCredited`, `FeesClaimed`, `TenantConfigured`, `TenantQuoteSet`, plus
+Ownable2Step's. `LaunchLegCreated` is emitted from the library and therefore by the kit's address.
+
+Errors, grouped (full signatures in `ILaunchpadKitV2`):
+
+| Group | Errors |
+|---|---|
+| construction | `ZeroAddress`, `NoCode`, `HookPoolManagerMismatch`, `UnexpectedHookBitmap`, `HookClockMismatch`, `HookFactoryMismatch`, `PositionManagerMismatch`, `VaultMismatch`, `LockerMismatch`, `LockerFloorTooLow`, `InvalidLegCap`, `InvalidBinCap`, `InvalidNotice`, `LaunchFeeAboveCap` |
+| launch shape | `InvalidLegCount`, `LegWeightsDoNotSum`, `EmptyLeg`, `LegTooLarge`, `InvalidSeedSupply`, `AllocationRecipientRequired`, `InvalidRecipient`, `QuoteHasNoCode`, `QuoteIsLaunchToken`, `DuplicateLegPool`, `StartDelayTooLong`, `MaxBuyRequiredByPreset`, `PresetUnavailableOnBin`, `RangeNotSingleSided`, `SeedProducesNoLiquidity`, `BinIdOutOfRange`, `ActiveIdMoved`, and `BinLaunchShapes.BinShape*` |
+| fees | `InsufficientLaunchFee`, `IntegratorFeeAboveCap`, `IntegratorFeeWithoutIntegrator`, `NothingToClaim`, `NoPendingLaunchFee`, `NativeTransferFailed`, `RenounceDisabled` |
+| tenants | `TenantNotActive`, `TenantConfigMismatch`, `PresetNotAllowed`, `BinShapeNotAllowed`, `QuoteNotAllowed`, `InvalidTenantConfig` |
+| atomicity and oracle | `LaunchTokenAddressMismatch`, `LaunchTokenSupplyMismatch`, `LockNotRecorded`, `ProtocolFeeNotZero`, `KitRetainedLaunchToken`, `KitRetainedBinShares` |
+| reconfiguration | `UnknownLaunch`, `NotLaunchOperator`, `LegKeyMismatch` |
+
+Errors raised inside the guards, lockers, factory, registry and core surface unchanged (for example
+`LatchLPLocker.IntegratorBpsTooHigh`, `LaunchGuardHook.LaunchAlreadyStarted`).
+
+### 11.9 Gas budget (measured)
+
+`test/kitv2/LaunchpadKitV2Gas.t.sol`: `gasleft()` around `createLaunch` against the real stack, a
+cold first launch of a fresh token, managers, lockers, guards and registry already deployed. This
+excludes the 21k intrinsic cost and calldata; on Nitro, the L1 data fee is additional.
+
+| Launch | Gas |
+|---|---|
+| 1 CL leg, ERC-20 quote | 2,355,841 |
+| 1 CL leg, native quote | 2,290,725 |
+| 1 CL leg + 1 Bin leg (10 bins, Linear) | 5,960,643 |
+| 1 Bin leg, 32 bins | 9,720,813 |
+| 4 Bin legs x 20 bins (the deployment's worst case) | 24,361,606 |
+| 4 Bin legs x 32 bins | 35,533,512 - over Nitro's 32,000,000 block |
+
+Every figure includes the token deployment (a full CREATE2 deploy, section 8), the guard claims and
+one registry record per leg. A Bin leg scales at roughly 0.3M gas per bin (core mint, the position
+manager's per-bin bookkeeping, the Bin locker's per-bin principal record). That is why the deploy
+script caps a launch at `maxLegs = 4` and `maxBinsPerLeg = 20`, and the worst case is asserted below
+28.8M.
+
+### 11.10 A stock-token quote paused mid-launch
+
+A single-sided launch **never transfers the quote**: no quote is pulled, seeded, refunded or
+approved, and the guards only read its code size (`test_REENTRANCY_maliciousQuoteIsNeverCalledByALaunch`
+proves no ERC-20 function of the quote is called). So, for a Robinhood `Stock`-style quote:
+
+| Moment of the pause | Effect |
+|---|---|
+| before or during `createLaunch` | none: the launch succeeds, born at zero, locked (`test_Stock_launchSucceedsWhileTheQuoteIsPaused`) |
+| after the launch | buys revert (the buyer cannot pay); sells revert (the Vault cannot pay out); other legs of the same launch keep trading |
+| collecting that leg's LP fees | `collectFees` reverts; the fees stay in the position (CL) or the bins (Bin) and keep accruing; nothing is lost |
+| claiming credited fees in that token | `claim` for that token reverts until unpause; claims in the launch token are unaffected |
+| after unpause | everything resumes (`test_Stock_pausedMidLaunchHaltsTradingNotTheLocks`) |
+| `uiMultiplier` changes | none: core, the lockers and the kit account in raw units only |
+
+The launch guard's clock keeps running during a pause. A pause spanning the decay window means
+trading reopens at, or near, the final fee.
+
+### 11.11 The Bin pool-id reservation (the open LOW, closed)
+
+`BinLaunchGuardHook` now carries the CL guard's two rules verbatim: no first claim on a currency
+without code, and a `LAUNCH_TOKEN_FACTORY` token's launch pools are claimable only by its
+`deployerOf` or the claimer that creator appointed (`setLaunchClaimer`). The constructor gains the
+factory argument (the ABI changes, the bitmap does not: `69`). Ten `test_RESERVE_*` tests; deleting
+the two `_requireMayClaim` calls turns five red. No Bin guard is deployed on any chain, so nothing
+migrates. Kit v2's constructor refuses a guard whose factory is not its own.
+
+### 11.12 Deployment
+
+Order, each step asserted by the next: CL locker + factory; Bin locker (same Safe, same bounds);
+`LaunchGuardHook(clPoolManager, factory)`, listed; `BinLaunchGuardHook(binPoolManager, factory)`,
+listed; `DeployLaunchpadKitV2` (owner = Safe from the constructor); `DeployFeeControllerV3` with
+`LAUNCHPAD_KIT_V2` = the kit; then the 48 h Custody install on both manager-owner wrappers. Until
+that executes, kit pools are born at V2's 999 pips and the runbook zeroes each in the launch session
+(decision #2). The kit keeps working in that window: its zero-fee assertion only arms when the
+installed controller names it (`test_SCRIPT_kitIsUsableBeforeItsV3IsInstalled`).
+
+`DeployLaunchpadKitV2` probes the chain clock (`ContractClockProbe`) in `run()`, requires every input
+to be a contract, the Safe to be the Robinhood governance Safe on 4663, both guards timestamp-clocked
+and bound to the factory, both lockers at the owner's numbers and paying the Safe, and after the
+broadcast reads back every immutable, the owner, the empty pending fee, the Bin locker approval,
+`renounceOwnership` reverting, `isLockedLaunch(0)` answering a 32-byte `false` inside V3's
+50,000-gas stipend, and, when `FEE_POLICY_V2` is set, runs `DeployFeeControllerV3Script.checkInputs`
+against the new kit so the V3 step cannot fail on inputs.
+
+**Fork rehearsal.** `test_REHEARSE_kitV2LaunchOnTheLiveCore` deploys the whole stack through the real
+scripts on a Robinhood (4663) fork, deploys a V3 bound to the kit, installs it on the live managers
+by impersonating their owner chain (a fork-only stand-in for Custody), and launches a native-quoted
+CL + 10-bin Bin launch. It passed on 2026-09-14 against `rpc.mainnet.chain.robinhood.com`: both
+pools born at a zero core fee on the live managers, both locked, attested in the live
+`LatchLaunchRegistry` `0x6D10...5c94`. It skips without `REHEARSAL_RPC_URL`. Nothing was broadcast.
+
+### 11.13 What the kit does not protect, and residual risk
+
+- **Stranded value by misdirection.** Launch tokens or native sent to the kit outside
+  `createLaunch` are unrecoverable (no withdrawal; native only by `selfdestruct`, since there is no
+  `receive`). A `creator` or `integrator` contract that cannot call the lockers' `claim` strands its
+  own share. The kit itself is refused as a recipient.
+- **Tenant fees are bypassable** by a launcher who does not name the tenant (11.6).
+- **The Bin launch tax is capped at 10% by core**, and pre-start mint+burn acquisition on Bin remains
+  the guard's documented residual risk. The kit seeds only non-active bins, so its own seeding pays
+  no composition fee.
+- **Protocol recipient immutability.** A lost or compromised Safe keeps receiving new launch fees
+  until a new kit is deployed; a new kit also needs a new V3 (Custody).
+- **Sequencer clock.** The notice delay and every guard window are `block.timestamp`, trusted within
+  Nitro's bounds.
+- **Registry metadata** passed by the launcher is free text; the registry's own rules apply.
+- **Gas.** A launch at the caps costs ~24.4M gas; on a chain with a smaller block the caps are wrong
+  and must be re-measured before deploying there.

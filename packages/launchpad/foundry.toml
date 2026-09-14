@@ -17,7 +17,7 @@ optimizer_runs = 1_000_000
 via_ir = true
 evm_version = "cancun"
 bytecode_hash = "none"
-allow_paths = ["../core", "../hooks", "../registry", "../periphery"]
+allow_paths = ["../core", "../hooks", "../registry", "../periphery", "../fees"]
 allow_internal_expect_revert = true
 gas_limit = "3000000000"
 skip = [
@@ -29,6 +29,7 @@ remappings = [
     "infinity-periphery/=../periphery/",
     "latch-hooks/=../hooks/",
     "latch-registry/=../registry/",
+    "latch-fees/=../fees/",
     "permit2/=../periphery/lib/permit2",
     "forge-std/=../core/lib/forge-std/src/",
     "ds-test/=../core/lib/forge-std/lib/ds-test/src/",
@@ -43,7 +44,11 @@ additional_compiler_profiles = [
 ]
 
 compilation_restrictions = [
-  { paths = "../periphery/src/pool-cl/CLPositionManager.sol", optimizer_runs = 9000 }
+  { paths = "../periphery/src/pool-cl/CLPositionManager.sol", optimizer_runs = 9000 },
+  # LaunchpadKitV2 and its linked library exceed EIP-170 at 1_000_000 runs. They share the clPosm
+  # profile so a test that deploys both the kit and CLPositionManager resolves to one profile.
+  { paths = "src/LaunchpadKitV2.sol", optimizer_runs = 9000 },
+  { paths = "src/libraries/LaunchLegs.sol", optimizer_runs = 9000 }
 ]
 
 # Pre-Cancun build. Mirrors packages/core --profile legacy.
@@ -55,7 +60,7 @@ optimizer_runs = 1_000_000
 via_ir = true
 evm_version = "shanghai"
 bytecode_hash = "none"
-allow_paths = ["../core", "../hooks", "../registry", "../periphery"]
+allow_paths = ["../core", "../hooks", "../registry", "../periphery", "../fees"]
 allow_internal_expect_revert = true
 gas_limit = "3000000000"
 skip = [
@@ -75,6 +80,7 @@ remappings = [
     "infinity-periphery/=../periphery/",
     "latch-hooks/=../hooks/",
     "latch-registry/=../registry/",
+    "latch-fees/=../fees/",
     "permit2/=../periphery/lib/permit2",
     "forge-std/=../core/lib/forge-std/src/",
     "ds-test/=../core/lib/forge-std/lib/ds-test/src/",
@@ -89,7 +95,11 @@ additional_compiler_profiles = [
 ]
 
 compilation_restrictions = [
-  { paths = "../periphery/src/pool-cl/CLPositionManager.sol", optimizer_runs = 9000 }
+  { paths = "../periphery/src/pool-cl/CLPositionManager.sol", optimizer_runs = 9000 },
+  # LaunchpadKitV2 and its linked library exceed EIP-170 at 1_000_000 runs. They share the clPosm
+  # profile so a test that deploys both the kit and CLPositionManager resolves to one profile.
+  { paths = "src/LaunchpadKitV2.sol", optimizer_runs = 9000 },
+  { paths = "src/libraries/LaunchLegs.sol", optimizer_runs = 9000 }
 ]
 
 [fuzz]
