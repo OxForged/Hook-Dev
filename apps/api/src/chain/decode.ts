@@ -45,6 +45,11 @@ export type IndexedEvent =
   | { kind: "RevShareClaimed"; meta: LogMeta; beneficiary: Hex; currency: Hex; to: Hex; amount: bigint }
   | { kind: "ProtocolFeesCollected"; meta: LogMeta; poolManager: Hex; currency: Hex; recipient: Hex; amount: bigint }
   | { kind: "LaunchCreated"; meta: LogMeta; poolId: Hex; launchToken: Hex; operator: Hex; quoteToken: Hex; startContractBlock: bigint; decayContractBlocks: number; initialFeeBips: number; finalFeeBips: number; maxBuyPerTx: bigint; launchTokenIsCurrency0: boolean; preset: number }
+  | { kind: "KitLaunchCreated"; meta: LogMeta; token: Hex; creator: Hex; tenant: Hex; launcher: Hex; operator: Hex; totalSupply: bigint; seedSupply: bigint; legCount: number; startTime: bigint; protocolFeeWei: bigint; integrator: Hex; integratorFeeWei: bigint }
+  | { kind: "KitLaunchLegCreated"; meta: LogMeta; token: Hex; poolId: Hex; quote: Hex; legKind: "CL" | "BIN"; lockId: bigint; launchTokenSeeded: bigint; weightBps: number }
+  | { kind: "LpLocked"; meta: LogMeta; lockerKind: "CL" | "BIN"; lockId: bigint; poolId: Hex; creator: Hex; integrator: Hex; creatorBps: number; integratorBps: number; protocolBps: number; liquidity: bigint | null; binIds: string[]; shares: string[]; principals: string[]; from: Hex; operator: Hex | null }
+  | { kind: "LpFeesCollected"; meta: LogMeta; lockerKind: "CL" | "BIN"; lockId: bigint; currency: Hex; caller: Hex; amount: bigint; creatorShare: bigint; integratorShare: bigint; protocolShare: bigint }
+  | { kind: "FeeFlow"; meta: LogMeta; flow: "CREDITED" | "CLAIMED" | "SKIMMED"; account: Hex | null; to: Hex | null; caller: Hex | null; token: Hex; amount: bigint }
   | { kind: "Timelock"; meta: LogMeta; eventName: string; operationId: Hex | null; callIndex: number | null; target: Hex | null; value: bigint | null; data: Hex | null; predecessor: Hex | null; salt: Hex | null; delaySeconds: bigint | null }
   | { kind: "Generic"; meta: LogMeta; eventName: string; subject: string | null; args: Record<string, unknown> };
 
@@ -55,6 +60,15 @@ export type DecodeResult =
 const lowerHex = (v: unknown): Hex => String(v).toLowerCase() as Hex;
 const big = (v: unknown): bigint => (typeof v === "bigint" ? v : BigInt(String(v)));
 const num = (v: unknown): number => Number(v);
+
+const NATIVE: Hex = "0x0000000000000000000000000000000000000000";
+/** LegKind in ILaunchpadKitV2.sol: 0 CL, 1 Bin. Anything else is malformed, never guessed. */
+const legKind = (v: unknown): "CL" | "BIN" => {
+  const n = Number(v);
+  if (n === 0) return "CL";
+  if (n === 1) return "BIN";
+  throw new RangeError(`unknown LegKind ${String(v)}`);
+};
 
 const CORE_CONTRACT: Partial<Record<WatchRole, "Vault" | "CLPoolManager" | "BinPoolManager">> = {
   vault: "Vault",
@@ -281,6 +295,94 @@ function toEvent(meta: LogMeta, role: WatchRole, name: string, a: Record<string,
     case "binPoolManagerOwner":
       if (name !== "PausableRoleGranted" && name !== "PausableRoleRevoked") return null;
       return { kind: "Generic", meta, eventName: name, subject: lowerHex(a.account), args: jsonArgs(a) as Record<string, unknown> };
+    case "launchpadKitV2":
+      switch (name) {
+        case "LaunchCreated":
+          return {
+            kind: "KitLaunchCreated",
+            meta,
+            token: lowerHex(a.token),
+            creator: lowerHex(a.creator),
+            tenant: lowerHex(a.tenant),
+            launcher: lowerHex(a.launcher),
+            operator: lowerHex(a.operator),
+            totalSupply: big(a.totalSupply),
+            seedSupply: big(a.seedSupply),
+            legCount: num(a.legCount),
+            // uint40 block.timestamp + delay: WALL-CLOCK seconds (Kit v2 is timestamp-clocked), not a block number.
+            startTime: big(a.startTime),
+            protocolFeeWei: big(a.protocolFeeWei),
+            integrator: lowerHex(a.integrator),
+            integratorFeeWei: big(a.integratorFeeWei),
+          };
+        case "LaunchLegCreated":
+          return { kind: "KitLaunchLegCreated", meta, token: lowerHex(a.token), poolId: lowerHex(a.poolId), quote: lowerHex(a.quote), legKind: legKind(a.kind), lockId: big(a.lockId), launchTokenSeeded: big(a.launchTokenSeeded), weightBps: num(a.weightBps) };
+        // The launch fee is native: the kit credits and pays the chain's native currency only.
+        case "FeesCredited":
+          return { kind: "FeeFlow", meta, flow: "CREDITED", account: lowerHex(a.account), to: null, caller: null, token: NATIVE, amount: big(a.amount) };
+        case "FeesClaimed":
+          return { kind: "FeeFlow", meta, flow: "CLAIMED", account: lowerHex(a.account), to: lowerHex(a.to), caller: null, token: NATIVE, amount: big(a.amount) };
+        case "LaunchReconfigured":
+          return { kind: "Generic", meta, eventName: name, subject: lowerHex(a.token), args: jsonArgs(a) as Record<string, unknown> };
+        case "TenantConfigured":
+        case "TenantQuoteSet":
+          return { kind: "Generic", meta, eventName: name, subject: lowerHex(a.tenant), args: jsonArgs(a) as Record<string, unknown> };
+        case "LaunchFeeIncreaseScheduled":
+        case "LaunchFeeChanged":
+        case "PendingLaunchFeeCancelled":
+          return { kind: "Generic", meta, eventName: name, subject: meta.contract, args: jsonArgs(a) as Record<string, unknown> };
+        case "OwnershipTransferStarted":
+        case "OwnershipTransferred":
+          return { kind: "Generic", meta, eventName: name, subject: lowerHex(a.newOwner), args: jsonArgs(a) as Record<string, unknown> };
+        default:
+          return null;
+      }
+    case "clLpLocker":
+    case "binLpLocker": {
+      const lockerKind = role === "clLpLocker" ? "CL" : "BIN";
+      // CL: `tokenId` (the position NFT). Bin: `lockId`. Same meaning (ILatchBinLPLocker).
+      const lockIdOf = () => big(lockerKind === "CL" ? a.tokenId : a.lockId);
+      switch (name) {
+        case "PositionLocked":
+          if (lockerKind !== "CL") return null;
+          return { kind: "LpLocked", meta, lockerKind, lockId: lockIdOf(), poolId: lowerHex(a.poolId), creator: lowerHex(a.creator), integrator: lowerHex(a.integrator), creatorBps: num(a.creatorBps), integratorBps: num(a.integratorBps), protocolBps: num(a.protocolBps), liquidity: big(a.liquidity), binIds: [], shares: [], principals: [], from: lowerHex(a.from), operator: lowerHex(a.operator) };
+        case "BinsLocked":
+          if (lockerKind !== "BIN") return null;
+          return {
+            kind: "LpLocked",
+            meta,
+            lockerKind,
+            lockId: lockIdOf(),
+            poolId: lowerHex(a.poolId),
+            creator: lowerHex(a.creator),
+            integrator: lowerHex(a.integrator),
+            creatorBps: num(a.creatorBps),
+            integratorBps: num(a.integratorBps),
+            protocolBps: num(a.protocolBps),
+            liquidity: null,
+            binIds: (a.binIds as readonly unknown[]).map((x) => big(x).toString()),
+            shares: (a.shares as readonly unknown[]).map((x) => big(x).toString()),
+            principals: (a.principals as readonly unknown[]).map((x) => big(x).toString()),
+            from: lowerHex(a.from),
+            operator: null,
+          };
+        case "FeesCollected":
+          return { kind: "LpFeesCollected", meta, lockerKind, lockId: lockIdOf(), currency: lowerHex(a.currency), caller: lowerHex(a.caller), amount: big(a.amount), creatorShare: big(a.creatorShare), integratorShare: big(a.integratorShare), protocolShare: big(a.protocolShare) };
+        case "Claimed":
+          return { kind: "FeeFlow", meta, flow: "CLAIMED", account: lowerHex(a.account), to: lowerHex(a.to), caller: null, token: lowerHex(a.currency), amount: big(a.amount) };
+        // Credited to the locker's immutable protocolRecipient, which the event does not name.
+        case "Skimmed":
+          return { kind: "FeeFlow", meta, flow: "SKIMMED", account: null, to: null, caller: lowerHex(a.caller), token: lowerHex(a.currency), amount: big(a.amount) };
+        case "FeeSharesBurned":
+          if (lockerKind !== "BIN") return null;
+          return { kind: "Generic", meta, eventName: name, subject: `${meta.contract}:${lockIdOf()}`, args: jsonArgs(a) as Record<string, unknown> };
+        case "CreatorTransferStarted":
+        case "CreatorTransferred":
+          return { kind: "Generic", meta, eventName: name, subject: `${meta.contract}:${lockIdOf()}`, args: jsonArgs(a) as Record<string, unknown> };
+        default:
+          return null;
+      }
+    }
     case "timelockCustody":
     case "timelockPolicy":
       // Role changes are not operations: stored as generic events keyed on the account.

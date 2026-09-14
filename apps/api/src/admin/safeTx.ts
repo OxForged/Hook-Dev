@@ -11,6 +11,7 @@ import {
 } from "viem";
 import {
   FEE_CONTROLLER_V2_FUNCTIONS_ABI,
+  KIT_V2_FUNCTIONS_ABI,
   OWNABLE2STEP_FUNCTIONS_ABI,
   REGISTRY_FUNCTIONS_ABI,
   REGISTRY_LISTING,
@@ -301,4 +302,84 @@ export function prepareRegistryListing(p: { chainId: number; registry: string; f
         ? ["Flagging Malicious also resets verification to Unverified in the same transaction. A curator can reverse the listing; the demotion stays."]
         : ["Unflag is curator-only: a guardian-only key reverts GuardianCannotRelist. Restoring does not restore a verification badge."],
   };
+}
+
+/* ---------------------------------------------------------------------------
+   LaunchpadKitV2: the Safe's only powers (protocol launch fee)
+
+   setLaunchFee(x): x <= the fee in force applies NOW and cancels any pending
+   increase; x > it is SCHEDULED and becomes the fee by itself after the kit's
+   immutable launchFeeNoticeSeconds. x > maxLaunchFeeWei reverts LaunchFeeAboveCap.
+   cancelPendingLaunchFee(): clears a scheduled increase; reverts NoPendingLaunchFee
+   when there is none. Delay never sits on a decrease (CLAUDE.md "Kit fees").
+   --------------------------------------------------------------------------- */
+
+export type LaunchFeeEffect = "immediate-decrease" | "no-change" | "scheduled-increase" | "unknown";
+
+/**
+ * What setLaunchFee(newFeeWei) will do, judged against the fee a launch pays right
+ * now (`launchFeeWei()`, which already includes a matured increase). Pure.
+ */
+export function classifyLaunchFeeChange(newFeeWei: bigint, feeInForceWei: bigint | null): LaunchFeeEffect {
+  if (feeInForceWei === null) return "unknown";
+  if (newFeeWei < feeInForceWei) return "immediate-decrease";
+  if (newFeeWei === feeInForceWei) return "no-change";
+  return "scheduled-increase";
+}
+
+export function prepareSetLaunchFee(p: {
+  chainId: number;
+  safe: string;
+  kit: string;
+  newFeeWei: bigint;
+  feeInForceWei: bigint | null;
+  capWei: bigint | null;
+  noticeSeconds: number | null;
+  pendingFeeWei: bigint | null;
+  nowUnix: bigint | null;
+}): SafeTxPayload & { effect: LaunchFeeEffect; effectiveAtUnix: string | null } {
+  if (p.newFeeWei < 0n) throw new Error("fee must be >= 0");
+  if (p.capWei !== null && p.newFeeWei > p.capWei) throw new Error(`fee ${p.newFeeWei} wei exceeds the kit's immutable maxLaunchFeeWei ${p.capWei}; the call would revert LaunchFeeAboveCap`);
+  const data = encodeFunctionData({ abi: KIT_V2_FUNCTIONS_ABI, functionName: "setLaunchFee", args: [p.newFeeWei] });
+  const effect = classifyLaunchFeeChange(p.newFeeWei, p.feeInForceWei);
+  const warnings: string[] = [];
+  let effectiveAtUnix: string | null = null;
+  if (effect === "immediate-decrease") {
+    warnings.push("A decrease applies in the block it executes, for every later launch. Launches already created keep the fee they paid.");
+    if (p.pendingFeeWei !== null) warnings.push(`It also CANCELS the scheduled increase to ${p.pendingFeeWei} wei (PendingLaunchFeeCancelled).`);
+  } else if (effect === "no-change") {
+    warnings.push("Equal to the fee in force: applied immediately as a no-op change, and it cancels any scheduled increase.");
+  } else if (effect === "scheduled-increase") {
+    if (p.noticeSeconds !== null && p.nowUnix !== null) effectiveAtUnix = (p.nowUnix + BigInt(p.noticeSeconds)).toString();
+    warnings.push(`An increase is SCHEDULED, not applied: it becomes the launch fee by itself ${p.noticeSeconds ?? "launchFeeNoticeSeconds"} seconds after the block this executes in${effectiveAtUnix ? ` (not before unix ${effectiveAtUnix} if it executed at the chain time read now; later signing moves it later)` : ""}.`);
+    if (p.pendingFeeWei !== null) warnings.push(`It REPLACES the scheduled increase to ${p.pendingFeeWei} wei and restarts the notice.`);
+  } else {
+    warnings.push("The fee in force could not be read, so whether this is an immediate decrease or a scheduled increase is not stated. The contract decides at execution: <= the fee in force applies now, > it waits the notice.");
+  }
+  if (p.capWei === null) warnings.push("maxLaunchFeeWei could not be read: above the cap the call reverts LaunchFeeAboveCap, which the simulation would show.");
+  const payload = buildSafeTransaction({
+    chainId: p.chainId,
+    safe: p.safe,
+    to: p.kit,
+    data,
+    decoded: decodeCall(KIT_V2_FUNCTIONS_ABI as unknown as Abi, data),
+    description: `LaunchpadKitV2.setLaunchFee(${p.newFeeWei} wei): ${effect === "immediate-decrease" ? "decrease, immediate" : effect === "scheduled-increase" ? "increase, scheduled behind the notice" : effect === "no-change" ? "no change" : "effect unread"}`,
+    warnings,
+  });
+  return { ...payload, effect, effectiveAtUnix };
+}
+
+export function prepareCancelPendingLaunchFee(p: { chainId: number; safe: string; kit: string; pendingFeeWei: bigint | null }): SafeTxPayload {
+  const data = encodeFunctionData({ abi: KIT_V2_FUNCTIONS_ABI, functionName: "cancelPendingLaunchFee" });
+  return buildSafeTransaction({
+    chainId: p.chainId,
+    safe: p.safe,
+    to: p.kit,
+    data,
+    decoded: decodeCall(KIT_V2_FUNCTIONS_ABI as unknown as Abi, data),
+    description: `LaunchpadKitV2.cancelPendingLaunchFee()${p.pendingFeeWei !== null ? `: cancels the scheduled increase to ${p.pendingFeeWei} wei` : ""}`,
+    warnings: [
+      "Reverts NoPendingLaunchFee when nothing is scheduled, and cannot undo an increase that has already matured (it is the fee by then; lower it with setLaunchFee).",
+    ],
+  });
 }

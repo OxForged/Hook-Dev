@@ -42,6 +42,84 @@ export const LAUNCH_REGISTRY_EVENTS_ABI = parseAbi([
 ]);
 
 /**
+ * LaunchpadKitV2 (packages/launchpad/src/LaunchpadKitV2.sol, events declared in
+ * src/interfaces/ILaunchpadKitV2.sol) and the two lockers
+ * (src/LatchLPLocker.sol + interfaces/ILatchLPLocker.sol, src/LatchBinLPLocker.sol +
+ * interfaces/ILatchBinLPLocker.sol). VENDORED here, not imported from
+ * @latchprotocol/sdk: the SDK ships no kit v2 or locker ABI. Read out of the Foundry
+ * artifacts (packages/launchpad/foundry-out/<Contract>.sol/<Contract>.json) on
+ * 2026-09-14 and diffed against them by test/abis.test.ts. ABI types: `Currency` is
+ * `address`, `PoolId` is `bytes32`, `LegKind` is `uint8` (0 CL, 1 Bin).
+ *
+ * `LaunchLegCreated` is emitted from the linked library `LaunchLegs` by DELEGATECALL,
+ * so it carries the KIT's address. The lockers' `Claimed` is byte-identical to
+ * RevShareHook's `Claimed`; decoding is keyed on the emitting address, never topic0.
+ */
+export const KIT_V2_EVENTS_ABI = parseAbi([
+  "event LaunchCreated(address indexed token, address indexed creator, address indexed tenant, address launcher, address operator, uint256 totalSupply, uint256 seedSupply, uint8 legCount, uint40 startTime, uint256 protocolFeeWei, address integrator, uint256 integratorFeeWei)",
+  "event LaunchLegCreated(address indexed token, bytes32 indexed poolId, address indexed quote, uint8 kind, uint256 lockId, uint256 launchTokenSeeded, uint16 weightBps)",
+  "event LaunchReconfigured(address indexed token, address indexed operator, uint40 startTime, uint32 decaySeconds, uint24 initialFeeBips, uint24 finalFeeBips, bool enabled)",
+  "event LaunchFeeIncreaseScheduled(uint256 currentWei, uint256 newWei, uint64 effectiveAt)",
+  "event LaunchFeeChanged(uint256 previousWei, uint256 newWei)",
+  "event PendingLaunchFeeCancelled(uint256 cancelledWei, uint64 effectiveAt)",
+  "event FeesCredited(address indexed account, uint256 amount)",
+  "event FeesClaimed(address indexed account, address indexed to, uint256 amount)",
+  "event TenantConfigured(address indexed tenant, address indexed integrator, uint16 integratorBps, uint96 integratorLaunchFeeWei, uint8 allowedPresets, uint8 allowedBinShapes, bool restrictQuotes, bool active)",
+  "event TenantQuoteSet(address indexed tenant, address indexed quote, bool allowed)",
+  "event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner)",
+  "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
+]);
+
+export const CL_LP_LOCKER_EVENTS_ABI = parseAbi([
+  "event PositionLocked(uint256 indexed tokenId, bytes32 indexed poolId, address indexed creator, address integrator, uint16 creatorBps, uint16 integratorBps, uint16 protocolBps, uint128 liquidity, address from, address operator)",
+  "event FeesCollected(uint256 indexed tokenId, address indexed currency, address indexed caller, uint256 amount, uint256 creatorShare, uint256 integratorShare, uint256 protocolShare)",
+  "event Claimed(address indexed account, address indexed currency, address indexed to, uint256 amount)",
+  "event Skimmed(address indexed currency, address indexed caller, uint256 amount)",
+  "event CreatorTransferStarted(uint256 indexed tokenId, address indexed creator, address indexed pending)",
+  "event CreatorTransferred(uint256 indexed tokenId, address indexed previousCreator, address indexed newCreator)",
+]);
+
+export const BIN_LP_LOCKER_EVENTS_ABI = parseAbi([
+  "event BinsLocked(uint256 indexed lockId, bytes32 indexed poolId, address indexed creator, address integrator, uint16 creatorBps, uint16 integratorBps, uint16 protocolBps, uint24[] binIds, uint256[] shares, uint256[] principals, address from)",
+  "event FeeSharesBurned(uint256 indexed lockId, address indexed caller, uint256[] binIds, uint256[] sharesBurned)",
+  "event FeesCollected(uint256 indexed lockId, address indexed currency, address indexed caller, uint256 amount, uint256 creatorShare, uint256 integratorShare, uint256 protocolShare)",
+  "event Claimed(address indexed account, address indexed currency, address indexed to, uint256 amount)",
+  "event Skimmed(address indexed currency, address indexed caller, uint256 amount)",
+  "event CreatorTransferStarted(uint256 indexed lockId, address indexed creator, address indexed pending)",
+  "event CreatorTransferred(uint256 indexed lockId, address indexed previousCreator, address indexed newCreator)",
+]);
+
+/**
+ * LaunchpadKitV2 functions the admin panel READS or PREPARES calldata for. Same
+ * vendoring and artifact diff as KIT_V2_EVENTS_ABI. The owner's only functions are
+ * setLaunchFee, cancelPendingLaunchFee and the Ownable2Step transfer
+ * (test_ACCESS_ownerHasNoOtherPower); renounceOwnership reverts RenounceDisabled.
+ */
+export const KIT_V2_FUNCTIONS_ABI = parseAbi([
+  "function setLaunchFee(uint256 newFeeWei)",
+  "function cancelPendingLaunchFee()",
+  "function launchFeeWei() view returns (uint256)",
+  "function pendingLaunchFee() view returns (uint256 feeWei, uint64 effectiveAt)",
+  "function maxLaunchFeeWei() view returns (uint256)",
+  "function launchFeeNoticeSeconds() view returns (uint32)",
+  "function maxIntegratorLaunchFeeWei() view returns (uint256)",
+  "function protocolFeeRecipient() view returns (address)",
+  "function feesOwed(address account) view returns (uint256)",
+  "function totalFeesOwed() view returns (uint256)",
+  "function clLocker() view returns (address)",
+  "function binLocker() view returns (address)",
+  "function owner() view returns (address)",
+  "function pendingOwner() view returns (address)",
+]);
+
+/** LaunchpadKitV2 custom errors the prepared owner calls can revert with. */
+export const KIT_V2_ERRORS_ABI = parseAbi([
+  "error LaunchFeeAboveCap(uint256 feeWei, uint256 capWei)",
+  "error NoPendingLaunchFee()",
+  "error RenounceDisabled()",
+]);
+
+/**
  * OpenZeppelin TimelockController (v5). RoleGranted/RoleRevoked come from its
  * AccessControl base and are how PROPOSER/EXECUTOR/CANCELLER holders are
  * enumerated (constructor grants emit them too).

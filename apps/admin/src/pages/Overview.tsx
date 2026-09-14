@@ -104,7 +104,7 @@ export function OverviewPage({ chainId }: { chainId: number }) {
             <ul className="notdeployed">
               {o.revenue.notDeployed.map((n) => (
                 <li key={n.source}>
-                  <span className="chip chip--muted">not deployed yet</span> {n.label}: <span className="muted">{n.note}</span>
+                  <span className="chip chip--muted">not indexed</span> {n.label}: <span className="muted">{n.note}</span>
                 </li>
               ))}
             </ul>

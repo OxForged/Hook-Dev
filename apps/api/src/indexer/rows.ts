@@ -20,7 +20,10 @@ export interface WindowContext {
   txInputs: ReadonlyMap<string, Hex>;
   /** Outer transaction `from` per tx hash (swap txs). */
   txFrom: ReadonlyMap<string, Hex>;
-  /** Addresses whose RevShare claims are protocol revenue (the governance Safe). */
+  /**
+   * Addresses whose payouts are protocol revenue (the governance Safe): RevShare
+   * claims, kit v2 FeesClaimed and locker Claimed by one of these become ledger rows.
+   */
   protocolBeneficiaries: ReadonlySet<string>;
   /** "custody" | "policy" per timelock address. */
   timelockTier: ReadonlyMap<string, string>;
@@ -38,6 +41,11 @@ export interface WindowRows {
   contractEvents: Prisma.ContractEventCreateManyInput[];
   timelockEvents: Prisma.TimelockEventCreateManyInput[];
   ledger: Prisma.RevenueLedgerEntryCreateManyInput[];
+  kitV2Launches: Prisma.KitV2LaunchCreateManyInput[];
+  kitV2Legs: Prisma.KitV2LaunchLegCreateManyInput[];
+  lpLocks: Prisma.LpLockCreateManyInput[];
+  lpFeeCollections: Prisma.LpFeeCollectionCreateManyInput[];
+  feeFlows: Prisma.FeeFlowCreateManyInput[];
   /** Pool-scoped events whose pool was never initialised (should be zero). */
   orphans: number;
 }
@@ -57,6 +65,11 @@ export function buildWindowRows(ctx: WindowContext, events: readonly IndexedEven
     contractEvents: [],
     timelockEvents: [],
     ledger: [],
+    kitV2Launches: [],
+    kitV2Legs: [],
+    lpLocks: [],
+    lpFeeCollections: [],
+    feeFlows: [],
     orphans: 0,
   };
 
@@ -278,6 +291,118 @@ export function buildWindowRows(ctx: WindowContext, events: readonly IndexedEven
         break;
       }
 
+      case "KitLaunchCreated":
+        rows.kitV2Launches.push({
+          id: m.id,
+          chainId: ctx.chainId,
+          kit: m.contract,
+          token: e.token,
+          creator: e.creator,
+          tenant: e.tenant,
+          launcher: e.launcher,
+          operator: e.operator,
+          totalSupply: s(e.totalSupply),
+          seedSupply: s(e.seedSupply),
+          legCount: e.legCount,
+          startTime: e.startTime,
+          protocolFeeWei: s(e.protocolFeeWei),
+          integrator: e.integrator,
+          integratorFeeWei: s(e.integratorFeeWei),
+          ...at,
+        });
+        break;
+
+      case "KitLaunchLegCreated":
+        rows.kitV2Legs.push({
+          id: m.id,
+          chainId: ctx.chainId,
+          kit: m.contract,
+          token: e.token,
+          poolId: e.poolId,
+          quote: e.quote,
+          kind: e.legKind,
+          lockId: s(e.lockId),
+          launchTokenSeeded: s(e.launchTokenSeeded),
+          weightBps: e.weightBps,
+          ...at,
+        });
+        break;
+
+      case "LpLocked":
+        rows.lpLocks.push({
+          id: m.id,
+          chainId: ctx.chainId,
+          locker: m.contract,
+          lockerKind: e.lockerKind,
+          lockId: s(e.lockId),
+          poolId: e.poolId,
+          creator: e.creator,
+          integrator: e.integrator,
+          creatorBps: e.creatorBps,
+          integratorBps: e.integratorBps,
+          protocolBps: e.protocolBps,
+          liquidity: e.liquidity === null ? null : s(e.liquidity),
+          binIds: e.binIds,
+          shares: e.shares,
+          principals: e.principals,
+          fromAddress: e.from,
+          operator: e.operator,
+          ...at,
+        });
+        break;
+
+      case "LpFeesCollected":
+        rows.lpFeeCollections.push({
+          id: m.id,
+          chainId: ctx.chainId,
+          locker: m.contract,
+          lockerKind: e.lockerKind,
+          lockId: s(e.lockId),
+          currency: e.currency,
+          caller: e.caller,
+          amount: s(e.amount),
+          creatorShare: s(e.creatorShare),
+          integratorShare: s(e.integratorShare),
+          protocolShare: s(e.protocolShare),
+          ...at,
+        });
+        break;
+
+      case "FeeFlow":
+        rows.feeFlows.push({
+          id: m.id,
+          chainId: ctx.chainId,
+          contract: m.contract,
+          contractRole: m.role,
+          kind: e.flow,
+          account: e.account,
+          to: e.to,
+          caller: e.caller,
+          token: e.token,
+          amount: s(e.amount),
+          ...at,
+        });
+        // Ledger = value that LEFT the contract for a protocol address. A credit or a
+        // skim is an accrual still held by the contract, so it is never a ledger row
+        // (it would double count the claim that later pays it out).
+        if (e.flow === "CLAIMED" && e.account !== null && ctx.protocolBeneficiaries.has(e.account)) {
+          rows.ledger.push({
+            id: `${m.id}-ledger`,
+            chainId: ctx.chainId,
+            source: m.role === "launchpadKitV2" ? "KIT_LAUNCH_FEE" : "LP_LOCKER_PROTOCOL_CLAIM",
+            token: e.token,
+            amount: s(e.amount),
+            counterparty: e.to,
+            contract: m.contract,
+            poolId: null,
+            blockNumber: at.blockNumber,
+            blockTimestamp: at.blockTimestamp,
+            txHash: at.txHash,
+            logIndex: at.logIndex,
+          });
+        }
+        break;
+
       case "Generic":
         rows.contractEvents.push({
           id: m.id,
@@ -307,6 +432,11 @@ export function rowCount(r: WindowRows): number {
     r.launches.length +
     r.contractEvents.length +
     r.timelockEvents.length +
-    r.ledger.length
+    r.ledger.length +
+    r.kitV2Launches.length +
+    r.kitV2Legs.length +
+    r.lpLocks.length +
+    r.lpFeeCollections.length +
+    r.feeFlows.length
   );
 }

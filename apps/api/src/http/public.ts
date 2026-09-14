@@ -8,6 +8,7 @@ import { send } from "../lib/response.js";
 import { toJsonSafe } from "../lib/serialize.js";
 import { INTERVALS } from "../services/candleBuilder.js";
 import type { DexScreenerService } from "../services/dexscreener.js";
+import type { KitV2ReadService } from "../services/kitV2.js";
 import { WINDOWS, type ReadService } from "../services/read.js";
 import { input, publicCacheHeaders, requireScope, validate } from "./middleware.js";
 
@@ -39,7 +40,7 @@ const windowQuery = z.object({ window: z.enum(Object.keys(WINDOWS) as [keyof typ
 type Handler = (req: Parameters<RequestHandler>[0], res: Parameters<RequestHandler>[1]) => Promise<void>;
 const h = (fn: Handler): RequestHandler => (req, res, next) => fn(req, res).catch(next);
 
-export function publicRouter(read: ReadService, dex: DexScreenerService, dexMaxRange: number): Router {
+export function publicRouter(read: ReadService, dex: DexScreenerService, dexMaxRange: number, kitV2: KitV2ReadService): Router {
   const r = Router();
   r.use(publicCacheHeaders);
 
@@ -65,6 +66,10 @@ export function publicRouter(read: ReadService, dex: DexScreenerService, dexMaxR
         "GET /v1/chains/:chainId/launches",
         "GET /v1/chains/:chainId/launches/:poolId",
         "GET /v1/chains/:chainId/latches/:address/registry",
+        "GET /v1/chains/:chainId/kit-v2/launches",
+        "GET /v1/chains/:chainId/kit-v2/launches/token/:token",
+        "GET /v1/chains/:chainId/kit-v2/launches/token/:token/fees",
+        "GET /v1/chains/:chainId/kit-v2/launches/pool/:poolId",
         "GET /v1/dexscreener/:chainId/latest-block",
         "GET /v1/dexscreener/:chainId/asset?id=",
         "GET /v1/dexscreener/:chainId/pair?id=",
@@ -241,6 +246,55 @@ export function publicRouter(read: ReadService, dex: DexScreenerService, dexMaxR
     h(async (_req, res) => {
       const { chainId: id, address: a } = res.locals.validated.params as { chainId: number; address: string };
       send(res, { data: await read.registryStatus(id, a), provenance: await read.provenance(id) });
+    }),
+  );
+
+  // --- LaunchpadKitV2 (config-addressed; 404 "not configured" until an address is recorded) ---
+  const kitNotes = ["Kit v2 is timestamp-clocked: startTime is unix seconds. Launch fees are native (wei); lock splits are frozen at creation. Token units only, no USD."];
+  const kitListQ = offsetPage.extend({ creator: address.optional(), tenant: address.optional() });
+  c.get(
+    "/kit-v2/launches",
+    validate({ params: chainParam, query: kitListQ }),
+    h(async (_req, res) => {
+      const id = chainId(res);
+      kitV2.requireConfigured(id);
+      const q = input<typeof kitListQ>(res).query;
+      const provenance = await read.provenance(id, { notes: kitNotes });
+      const data = await cached(["kitv2-launches", id, q.limit, q.offset, q.creator ?? "-", q.tenant ?? "-"], TTL.short, async () => toJsonSafe(await kitV2.launches(id, q)));
+      send(res, { data, provenance });
+    }),
+  );
+  c.get(
+    "/kit-v2/launches/token/:token",
+    validate({ params: chainParam.extend({ token: address }) }),
+    h(async (_req, res) => {
+      const { chainId: id, token } = res.locals.validated.params as { chainId: number; token: string };
+      kitV2.requireConfigured(id);
+      const provenance = await read.provenance(id, { notes: kitNotes });
+      const data = await cached(["kitv2-launch", id, token], TTL.short, async () => toJsonSafe(await kitV2.launchByToken(id, token)));
+      send(res, { data, provenance });
+    }),
+  );
+  c.get(
+    "/kit-v2/launches/token/:token/fees",
+    validate({ params: chainParam.extend({ token: address }) }),
+    h(async (_req, res) => {
+      const { chainId: id, token } = res.locals.validated.params as { chainId: number; token: string };
+      kitV2.requireConfigured(id);
+      const provenance = await read.provenance(id, { notes: [...kitNotes, "Collected fees are summed from the lockers' FeesCollected logs; the split is checked to sum exactly per currency."] });
+      const data = await cached(["kitv2-launch-fees", id, token], TTL.short, async () => toJsonSafe(await kitV2.launchFees(id, token)));
+      send(res, { data, provenance });
+    }),
+  );
+  c.get(
+    "/kit-v2/launches/pool/:poolId",
+    validate({ params: poolParams }),
+    h(async (_req, res) => {
+      const { chainId: id, poolId } = res.locals.validated.params as { chainId: number; poolId: string };
+      kitV2.requireConfigured(id);
+      const provenance = await read.provenance(id, { notes: kitNotes });
+      const data = await cached(["kitv2-launch-pool", id, poolId], TTL.short, async () => toJsonSafe(await kitV2.launchByPool(id, poolId)));
+      send(res, { data, provenance });
     }),
   );
 

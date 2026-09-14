@@ -4,7 +4,9 @@ import { getAddress, verifyMessage, type Address, type Hex, type PublicClient } 
 import { generateSiweNonce, parseSiweMessage, validateSiweMessage } from "viem/siwe";
 import { z } from "zod";
 import { hasRole, roleGrants, type AdminRole, type RoleResolver } from "../admin/roles.js";
+import { AdminKitV2Service } from "../admin/kitV2.js";
 import { AdminService } from "../admin/service.js";
+import type { KitV2ConfigLookup } from "../services/kitV2.js";
 import type { Simulator } from "../admin/simulate.js";
 import type { TreasuryClient } from "../admin/treasury/chain.js";
 import { TreasuryService } from "../admin/treasury/service.js";
@@ -48,6 +50,8 @@ export interface AdminDeps {
   simulator: Simulator | null;
   /** Read-only chain client per chain for treasury conversion (balances, quotes, simulation). null = those reads answer "unavailable". */
   treasuryClient?: ((chainId: number) => TreasuryClient | null) | null;
+  /** Kit v2 contract addresses per chain. Defaults to config/chains/<chainId>.json `kitV2`; tests inject fixtures. */
+  kitV2Config?: KitV2ConfigLookup;
   /** API-key minting from the panel (admin role). The pepper never leaves this process. */
   keys: AdminDataDeps["keys"];
   config: {
@@ -252,7 +256,8 @@ export function adminRouter(deps: AdminDeps): Router {
     (() => {
       const read = new ReadService(deps.prisma);
       const treasury = new TreasuryService(deps.prisma, read, deps.treasuryClient ?? null);
-      return { prisma: deps.prisma, service: new AdminService(deps.prisma, read, deps.treasuryClient ? treasury : null), treasury, simulator: deps.simulator, roleChainId: cfg.roleChainId, keys: deps.keys };
+      const kitV2 = new AdminKitV2Service(deps.prisma, deps.treasuryClient ?? null, deps.kitV2Config);
+      return { prisma: deps.prisma, service: new AdminService(deps.prisma, read, deps.treasuryClient ? treasury : null, deps.kitV2Config), treasury, kitV2, simulator: deps.simulator, roleChainId: cfg.roleChainId, keys: deps.keys };
     })(),
     { requireSession, requireRole },
   );

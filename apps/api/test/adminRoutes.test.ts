@@ -66,8 +66,15 @@ export const ROUTES: RouteCase[] = [
   { method: "get", path: "/v1/admin/treasury", role: "viewer" },
   { method: "get", path: `/v1/admin/treasury/route?token=${USDG}`, role: "viewer" },
   { method: "post", path: "/v1/admin/treasury/convert/prepare", role: "admin", body: { token: USDG, amount: "1000000000", routeId: TREASURY_ROUTE.id, quotedAt: new Date().toISOString() }, audit: "safe.prepare.treasury-convert" },
+  { method: "get", path: "/v1/admin/kit-v2/launches", role: "viewer" },
+  { method: "get", path: "/v1/admin/kit-v2/fee-state", role: "viewer" },
+  { method: "post", path: "/v1/admin/safe/kit-v2/launch-fee", role: "admin", body: { feeWei: "1000000000000000" }, audit: "safe.prepare.kit-launch-fee" },
+  { method: "post", path: "/v1/admin/safe/kit-v2/cancel-pending-fee", role: "admin", body: {}, audit: "safe.prepare.kit-cancel-pending-fee" },
   { method: "post", path: "/v1/admin/registry/listing", role: "curator", body: { hook: "0x1111111111111111111111111111111111111111", action: "flag", reason: "drains swaps via hookDelta" }, audit: "registry.prepare.flag" },
 ];
+
+// Kit v2 contracts for the route table. LAYOUT addresses: nothing here is on a chain.
+const KIT_CONFIG = () => ({ kit: "0x5555555555555555555555555555555555555555" as const, clLocker: "0x6666666666666666666666666666666666666666" as const, binLocker: "0x7777777777777777777777777777777777777777" as const, verification: "route-table fixture, not a deployment" });
 
 const LOWER: Record<AdminRole, AdminRole | null> = { viewer: null, curator: "viewer", admin: "curator" };
 
@@ -111,7 +118,7 @@ const send = (app: Parameters<typeof request>[0], c: RouteCase, headers: Record<
 describe("every admin route requires a session", () => {
   for (const c of ROUTES) {
     it(`${c.method.toUpperCase()} ${c.path} -> 401 without a session`, async () => {
-      const { app } = buildAdminApp({ seed: liveSeed() });
+      const { app } = buildAdminApp({ seed: liveSeed(), kitV2Config: KIT_CONFIG });
       const res = await send(app, c, c.method === "post" ? { Origin: ORIGIN } : {});
       expect(res.status).toBe(401);
     });
@@ -123,7 +130,7 @@ describe("every admin route enforces its role", () => {
     const lower = LOWER[c.role];
     if (!lower) continue;
     it(`${c.method.toUpperCase()} ${c.path} -> 403 for ${lower}`, async () => {
-      const { app, tables } = buildAdminApp({ roles: [lower], seed: liveSeed(), treasuryClient: treasuryClient() });
+      const { app, tables } = buildAdminApp({ roles: [lower], seed: liveSeed(), treasuryClient: treasuryClient(), kitV2Config: KIT_CONFIG });
       const s = await signIn(app);
       const res = await send(app, c, { Cookie: s.cookie, Origin: ORIGIN, "X-CSRF-Token": s.csrf });
       expect(res.status).toBe(403);
@@ -137,7 +144,7 @@ describe("every admin route enforces its role", () => {
 describe("every mutation enforces CSRF and writes an audit row", () => {
   for (const c of ROUTES.filter((r) => r.method === "post")) {
     it(`POST ${c.path}: CSRF missing/wrong/foreign origin -> 403; correct -> ${c.okStatus ?? 200} + audit ${c.audit}`, async () => {
-      const { app, tables } = buildAdminApp({ roles: [c.role], seed: liveSeed(), simulator: okSimulator, treasuryClient: treasuryClient() });
+      const { app, tables } = buildAdminApp({ roles: [c.role], seed: liveSeed(), simulator: okSimulator, treasuryClient: treasuryClient(), kitV2Config: KIT_CONFIG });
       const s = await signIn(app);
       expect((await send(app, c, { Cookie: s.cookie, Origin: ORIGIN })).status).toBe(403);
       expect((await send(app, c, { Cookie: s.cookie, Origin: ORIGIN, "X-CSRF-Token": "wrong-token" })).status).toBe(403);
@@ -157,7 +164,7 @@ describe("every mutation enforces CSRF and writes an audit row", () => {
 describe("every read route answers its role, never publicly cached", () => {
   for (const c of ROUTES.filter((r) => r.method === "get")) {
     it(`GET ${c.path} as ${c.role}`, async () => {
-      const { app } = buildAdminApp({ roles: [c.role], seed: liveSeed(), treasuryClient: treasuryClient() });
+      const { app } = buildAdminApp({ roles: [c.role], seed: liveSeed(), treasuryClient: treasuryClient(), kitV2Config: KIT_CONFIG });
       const s = await signIn(app);
       const res = await send(app, c, { Cookie: s.cookie });
       // Revenue/protocol read the indexer checkpoint; with none they are NOT_INDEXED (the UI's not-configured state).

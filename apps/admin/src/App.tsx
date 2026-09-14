@@ -5,6 +5,7 @@ import { applyTheme, readTheme, type ThemeChoice } from './lib/theme.ts'
 import { AuditPage } from './pages/Audit.tsx'
 import { GovernancePage } from './pages/Governance.tsx'
 import { KeysPage } from './pages/Keys.tsx'
+import { LaunchesPage } from './pages/Launches.tsx'
 import { ModerationPage } from './pages/Moderation.tsx'
 import { OverviewPage } from './pages/Overview.tsx'
 import { ProtocolPage } from './pages/Protocol.tsx'
@@ -14,12 +15,13 @@ import { SafetyPage } from './pages/Safety.tsx'
 import { SignInPage } from './pages/SignIn.tsx'
 import { TreasuryPage } from './pages/Treasury.tsx'
 
-export type PageKey = 'overview' | 'revenue' | 'protocol' | 'governance' | 'safety' | 'moderation' | 'keys' | 'audit' | 'safe-actions' | 'treasury'
+export type PageKey = 'overview' | 'revenue' | 'protocol' | 'governance' | 'safety' | 'moderation' | 'keys' | 'audit' | 'safe-actions' | 'treasury' | 'launches'
 
 const PAGES: { key: PageKey; label: string; role: 'viewer' | 'curator' | 'admin' }[] = [
   { key: 'overview', label: 'Overview', role: 'viewer' },
   { key: 'revenue', label: 'Revenue', role: 'viewer' },
   { key: 'treasury', label: 'Treasury', role: 'viewer' },
+  { key: 'launches', label: 'Launches', role: 'viewer' },
   { key: 'protocol', label: 'Protocol', role: 'viewer' },
   { key: 'governance', label: 'Governance', role: 'viewer' },
   { key: 'safety', label: 'Safety', role: 'viewer' },
@@ -179,6 +181,8 @@ export function App() {
             <RevenuePage chainId={session.chainId} />
           ) : page === 'treasury' ? (
             <TreasuryPage session={session} />
+          ) : page === 'launches' ? (
+            <LaunchesPage session={session} />
           ) : page === 'protocol' ? (
             <ProtocolPage chainId={session.chainId} />
           ) : page === 'governance' ? (

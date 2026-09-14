@@ -85,6 +85,38 @@ const TreasuryConversionSchema = z
     }
   });
 
+/**
+ * LaunchpadKitV2 and its two lockers (packages/launchpad). NOT in the SDK address
+ * book, so their addresses live here. Every slot is null until the contract is
+ * deployed and verified on this chain; with every slot null the indexer watches
+ * nothing new and every kit v2 route answers "not configured". A configured
+ * address needs a `verification` note saying how it was checked (never a guess).
+ *
+ * The kit asserts its lockers at construction (`clLocker()`/`binLocker()`), so the
+ * admin fee-state read re-checks them against these slots on chain.
+ */
+const nullableAddress = z
+  .string()
+  .nullable()
+  .refine((v) => v === null || isAddress(v), "not an address")
+  .transform((v) => (v === null ? null : v.toLowerCase()));
+
+const KitV2Schema = z
+  .object({
+    kit: nullableAddress.default(null),
+    clLocker: nullableAddress.default(null),
+    binLocker: nullableAddress.default(null),
+    verification: z.string().nullable().default(null),
+    notes: z.string().optional(),
+  })
+  .superRefine((k, ctx) => {
+    const set = [k.kit, k.clLocker, k.binLocker].filter((a): a is string => a !== null);
+    if (set.length === 0) return;
+    if (!k.verification || k.verification.length < 40) ctx.addIssue({ code: "custom", message: "kitV2: a configured address needs a `verification` note (40+ characters) recording how it was checked on chain" });
+    for (const a of set) if (/^0x0{40}$/.test(a)) ctx.addIssue({ code: "custom", message: "kitV2: the zero address is not a contract" });
+    if (new Set(set).size !== set.length) ctx.addIssue({ code: "custom", message: "kitV2: kit, clLocker and binLocker must be distinct contracts" });
+  });
+
 const ChainConfigSchema = z
   .object({
     chainId: z.number().int().positive(),
@@ -134,6 +166,7 @@ const ChainConfigSchema = z
       )
       .default([]),
     treasuryConversion: TreasuryConversionSchema.optional(),
+    kitV2: KitV2Schema.optional(),
   })
   .superRefine((cfg, ctx) => {
     for (const a of cfg.opsAccounts) {
@@ -145,6 +178,26 @@ const ChainConfigSchema = z
   });
 
 export type ChainConfig = z.infer<typeof ChainConfigSchema>;
+export type KitV2Config = z.infer<typeof KitV2Schema>;
+
+/** The configured kit v2 contracts (lowercased), or null when none is set. */
+export interface KitV2Addresses {
+  kit: `0x${string}` | null;
+  clLocker: `0x${string}` | null;
+  binLocker: `0x${string}` | null;
+  verification: string;
+}
+
+export function kitV2AddressesOf(cfg: Pick<ChainConfig, "kitV2">): KitV2Addresses | null {
+  const k = cfg.kitV2;
+  if (!k || (k.kit === null && k.clLocker === null && k.binLocker === null)) return null;
+  return { kit: k.kit as KitV2Addresses["kit"], clLocker: k.clLocker as KitV2Addresses["clLocker"], binLocker: k.binLocker as KitV2Addresses["binLocker"], verification: k.verification ?? "" };
+}
+
+/** Kit v2 contracts for a chain from config/chains/<chainId>.json; null = not configured (inert). */
+export function kitV2Addresses(chainId: number): KitV2Addresses | null {
+  return kitV2AddressesOf(chainConfig(chainId));
+}
 export type GasBudget = z.infer<typeof GasBudgetSchema>;
 export type TreasuryConversionConfig = z.infer<typeof TreasuryConversionSchema>;
 

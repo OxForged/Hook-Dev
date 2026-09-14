@@ -100,7 +100,8 @@ export class TreasuryService {
     const reader = this.reader(chainId);
     const tokens = cfg.allowlist.map((a) => a.token);
     const [ledger, cp, tokenRows] = await Promise.all([
-      tokens.length ? this.prisma.revenueLedgerEntry.groupBy({ by: ["token", "source"], where: { chainId, token: { in: tokens } }, _sum: { amount: true }, _count: { _all: true } }) : Promise.resolve([]),
+      // Allowlisted tokens plus native: kit v2 launch fees arrive as native, the conversion target.
+      this.prisma.revenueLedgerEntry.groupBy({ by: ["token", "source"], where: { chainId, token: { in: [...tokens, NATIVE] } }, _sum: { amount: true }, _count: { _all: true } }),
       this.prisma.indexerCheckpoint.findUnique({ where: { chainId } }),
       tokens.length ? this.prisma.token.findMany({ where: { chainId, address: { in: tokens } } }) : Promise.resolve([]),
     ]);
@@ -167,12 +168,22 @@ export class TreasuryService {
       });
     }
 
+    const nativeRows = ledger.filter((l) => l.token === NATIVE);
+    const nativeInflowRaw = nativeRows.reduce((s, r) => s + toBigInt(r._sum.amount), 0n);
     return {
       chainId,
       configured: true as const,
       safe: d.governanceSafe,
       safeAppUrl: chainConfig(chainId).safeApp ? safeAppUrl(chainConfig(chainId).safeApp!.shortName, d.governanceSafe) : null,
-      target: { currency: NATIVE, symbol: d.nativeCurrency.symbol, name: d.nativeCurrency.name, balance: native, balanceError: nativeError },
+      target: {
+        currency: NATIVE,
+        symbol: d.nativeCurrency.symbol,
+        name: d.nativeCurrency.name,
+        balance: native,
+        balanceError: nativeError,
+        // Native revenue already IS the target (kit v2 launch fees): nothing to convert.
+        inflows: { raw: nativeInflowRaw.toString(), units: formatUnitsExact(nativeInflowRaw, d.nativeCurrency.decimals), entries: nativeRows.reduce((s, r) => s + r._count._all, 0), bySource: nativeRows.map((r) => ({ source: r.source, raw: toBigInt(r._sum.amount).toString(), entries: r._count._all })) },
+      },
       policy: this.policy(cfg),
       venue: "Latch pools only: the SDK's CLPoolManager, quoted by the SDK's CLQuoter, executed by the SDK's UniversalRouter. No other venue is ever considered.",
       readAtBlock: head?.blockNumber.toString() ?? null,

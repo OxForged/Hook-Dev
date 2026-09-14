@@ -8,8 +8,12 @@ import {
 } from "@latchprotocol/sdk";
 import { createHash } from "node:crypto";
 import { toEventSelector, type Abi, type AbiEvent, type Address, type Hex } from "viem";
+import { kitV2Addresses, type KitV2Addresses } from "../config/chainConfig.js";
 import {
+  BIN_LP_LOCKER_EVENTS_ABI,
+  CL_LP_LOCKER_EVENTS_ABI,
   FEE_CONTROLLER_V2_EVENTS_ABI,
+  KIT_V2_EVENTS_ABI,
   LAUNCH_REGISTRY_EVENTS_ABI,
   POOL_MANAGER_OWNER_EVENTS_ABI,
   REVSHARE_EVENTS_ABI,
@@ -17,9 +21,12 @@ import {
 } from "./abis.js";
 
 /**
- * What the indexer watches on a chain, derived ENTIRELY from the SDK address
- * book. Nothing here restates an address: a redeploy is an SDK edit, and the
- * changed address-set hash makes the indexer re-read history for it.
+ * What the indexer watches on a chain, derived from the SDK address book plus,
+ * for LaunchpadKitV2 and its lockers (which the SDK does not carry), the
+ * `kitV2` slots of config/chains/<chainId>.json. Nothing here restates an
+ * address: a redeploy is an SDK or config edit, and the changed address-set hash
+ * makes the indexer re-read history for it. With every kitV2 slot empty the
+ * watched set, and its hash, are exactly what they were before kit v2 existed.
  *
  * Deliberately NOT watched:
  *   * Vault claim-token Transfer/Approval/OperatorSet — high volume, not asked for.
@@ -39,7 +46,10 @@ export type WatchRole =
   | "timelockPolicy"
   | "clPoolManagerOwner"
   | "binPoolManagerOwner"
-  | "revShareHook";
+  | "revShareHook"
+  | "launchpadKitV2"
+  | "clLpLocker"
+  | "binLpLocker";
 
 export interface WatchedContract {
   readonly role: WatchRole;
@@ -75,6 +85,23 @@ export const CORE_EVENTS = {
   clPoolManagerOwner: ["PausableRoleGranted", "PausableRoleRevoked"],
   binPoolManagerOwner: ["PausableRoleGranted", "PausableRoleRevoked"],
   revShareHook: ["RevShareTaken", "Claimed"],
+  // Config-addressed (kitV2 in config/chains/<chainId>.json), never the SDK.
+  launchpadKitV2: [
+    "LaunchCreated",
+    "LaunchLegCreated",
+    "LaunchReconfigured",
+    "LaunchFeeIncreaseScheduled",
+    "LaunchFeeChanged",
+    "PendingLaunchFeeCancelled",
+    "FeesCredited",
+    "FeesClaimed",
+    "TenantConfigured",
+    "TenantQuoteSet",
+    "OwnershipTransferStarted",
+    "OwnershipTransferred",
+  ],
+  clLpLocker: ["PositionLocked", "FeesCollected", "Claimed", "Skimmed", "CreatorTransferStarted", "CreatorTransferred"],
+  binLpLocker: ["BinsLocked", "FeeSharesBurned", "FeesCollected", "Claimed", "Skimmed", "CreatorTransferStarted", "CreatorTransferred"],
 } as const satisfies Record<WatchRole, readonly string[]>;
 
 const ABI: Record<WatchRole, Abi> = {
@@ -90,6 +117,9 @@ const ABI: Record<WatchRole, Abi> = {
   clPoolManagerOwner: POOL_MANAGER_OWNER_EVENTS_ABI as unknown as Abi,
   binPoolManagerOwner: POOL_MANAGER_OWNER_EVENTS_ABI as unknown as Abi,
   revShareHook: REVSHARE_EVENTS_ABI as unknown as Abi,
+  launchpadKitV2: KIT_V2_EVENTS_ABI as unknown as Abi,
+  clLpLocker: CL_LP_LOCKER_EVENTS_ABI as unknown as Abi,
+  binLpLocker: BIN_LP_LOCKER_EVENTS_ABI as unknown as Abi,
 };
 
 export function abiForRole(role: WatchRole): Abi {
@@ -114,11 +144,13 @@ function watched(role: WatchRole, address: Address | null): WatchedContract[] {
 }
 
 /**
- * Phase-one contracts: everything whose address is in the book.
+ * Phase-one contracts: everything whose address is in the book, plus the kit v2
+ * contracts configured for the chain (`kitV2`, defaulting to the chain config;
+ * pass `null` to mean "none configured").
  * RevShareHooks are phase two (see `revShareHooksFor`), because one of them is
  * only discoverable from a pool key.
  */
-export function staticContractsFor(d: LatchDeployment): WatchedContract[] {
+export function staticContractsFor(d: LatchDeployment, kitV2: KitV2Addresses | null = kitV2Addresses(d.chainId)): WatchedContract[] {
   return [
     ...watched("vault", d.vault),
     ...watched("clPoolManager", d.clPoolManager),
@@ -131,7 +163,14 @@ export function staticContractsFor(d: LatchDeployment): WatchedContract[] {
     ...watched("timelockPolicy", d.timelockPolicy),
     ...watched("clPoolManagerOwner", d.clPoolManagerOwner),
     ...watched("binPoolManagerOwner", d.binPoolManagerOwner),
+    ...kitV2ContractsFor(kitV2),
   ];
+}
+
+/** The configured kit v2 contracts. Empty (inert) when nothing is configured. */
+export function kitV2ContractsFor(kitV2: KitV2Addresses | null): WatchedContract[] {
+  if (!kitV2) return [];
+  return [...watched("launchpadKitV2", kitV2.kit), ...watched("clLpLocker", kitV2.clLocker), ...watched("binLpLocker", kitV2.binLocker)];
 }
 
 /**
@@ -151,8 +190,8 @@ export function revShareHooksFor(d: LatchDeployment, demoPoolHooks: string | nul
  * Hash of what phase one watches. A change means the SDK now names a contract
  * the database has never read, so history must be re-read for it.
  */
-export function addressSetHash(d: LatchDeployment): string {
-  const parts = staticContractsFor(d)
+export function addressSetHash(d: LatchDeployment, kitV2: KitV2Addresses | null = kitV2Addresses(d.chainId)): string {
+  const parts = staticContractsFor(d, kitV2)
     .map((c) => `${c.role}:${c.address}:${c.events.join("|")}`)
     .concat(`revShareHook:${lower(d.revShareHook)}`, `demoPool:${d.demoPool?.id ?? "none"}`)
     .sort();

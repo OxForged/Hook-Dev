@@ -10,7 +10,8 @@ import { toJsonSafe } from "../lib/serialize.js";
 import type { AdminRole } from "../admin/roles.js";
 import { writeAudit } from "../admin/session.js";
 import { AdminService, ADMIN_WINDOWS, type RevenueQuery } from "../admin/service.js";
-import { prepareCollectProtocolFees, prepareRegistryListing, prepareSweep } from "../admin/safeTx.js";
+import type { AdminKitV2Service } from "../admin/kitV2.js";
+import { prepareCancelPendingLaunchFee, prepareCollectProtocolFees, prepareRegistryListing, prepareSetLaunchFee, prepareSweep } from "../admin/safeTx.js";
 import type { Simulator, SimulationResult } from "../admin/simulate.js";
 import type { TreasuryService } from "../admin/treasury/service.js";
 import { TIMELOCK_FUNCTIONS_ABI } from "../chain/abis.js";
@@ -25,7 +26,8 @@ import { validate } from "./middleware.js";
  *
  *   viewer   reads
  *   curator  moderation, registry flag/unflag payloads
- *   admin    API keys, audit log, Safe payloads (collect, sweep, treasury conversion)
+ *   admin    API keys, audit log, Safe payloads (collect, sweep, treasury conversion,
+ *            LaunchpadKitV2 setLaunchFee / cancelPendingLaunchFee)
  *
  * Every non-GET is CSRF-checked by the session guard and writes an audit row.
  */
@@ -34,6 +36,7 @@ export interface AdminDataDeps {
   prisma: PrismaClient;
   service: AdminService;
   treasury: TreasuryService;
+  kitV2: AdminKitV2Service;
   simulator: Simulator | null;
   roleChainId: number;
   keys: { pepper: string; defaultRpm: number; defaultQuota: number; invalidate: (secretHash: string) => Promise<void> };
@@ -156,6 +159,76 @@ export function registerAdminDataRoutes(r: Router, deps: AdminDataDeps, g: Guard
       const out = await deps.treasury.preparePayload(b.chainId, { token: b.token, amount: BigInt(b.amount), routeId: b.routeId, quotedAt: b.quotedAt });
       await audit(prisma, req, res, "safe.prepare.treasury-convert", { type: "treasury_conversion", id: b.token }, undefined, { to: out.payload.to, operation: out.payload.operation, data: out.payload.data, amountIn: out.quote.amountIn, minOut: out.quote.minOut, routeId: out.route.best?.routeId ?? null, deadline: out.quote.deadline, simulation: out.simulation.status });
       json(res, out);
+    }),
+  );
+
+  /* ---- LaunchpadKitV2 ------------------------------------------------------- */
+  // Reads are viewer. The two payloads are the Safe's ONLY powers over the kit
+  // (the protocol launch fee): admin, simulated from the Safe, audited, never sent.
+
+  const kitPageQ = chainQ.extend({ limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).max(100_000).default(0) });
+  r.get("/kit-v2/launches", S, R("viewer"), validate({ query: kitPageQ }), h(async (_q, res) => {
+    const q = v<z.infer<typeof kitPageQ>>(res, "query");
+    json(res, await deps.kitV2.launches(q.chainId, { limit: q.limit, offset: q.offset }));
+  }));
+  r.get("/kit-v2/fee-state", S, R("viewer"), validate({ query: chainQ }), h(async (_q, res) => json(res, await deps.kitV2.feeState(chainOf(res)))));
+
+  const kitFeeBody = z.object({ chainId: z.number().int().refine((id) => isLatchChainId(id)).default(deps.roleChainId), feeWei: z.string().regex(/^(0|[1-9][0-9]{0,77})$/, "raw wei, a non-negative integer") });
+  r.post(
+    "/safe/kit-v2/launch-fee",
+    S,
+    R("admin"),
+    validate({ body: kitFeeBody }),
+    h(async (req, res) => {
+      const b = v<z.infer<typeof kitFeeBody>>(res, "body");
+      const d = service.deployment(b.chainId);
+      const kit = deps.kitV2.read.requireConfigured(b.chainId).kit;
+      const state = await deps.kitV2.feeState(b.chainId);
+      const chain = state.configured && state.chain.status === "read" ? state.chain : null;
+      const events = state.configured && "effectiveWei" in state.events ? state.events : null;
+      let payload;
+      try {
+        payload = prepareSetLaunchFee({
+          chainId: b.chainId,
+          safe: d.governanceSafe,
+          kit,
+          newFeeWei: BigInt(b.feeWei),
+          // The kit's own answer wins; the event replay is the fallback, labelled by the warnings.
+          feeInForceWei: chain ? BigInt(chain.launchFeeWei) : events?.effectiveWei ? BigInt(events.effectiveWei) : null,
+          capWei: chain ? BigInt(chain.maxLaunchFeeWei) : null,
+          noticeSeconds: chain?.launchFeeNoticeSeconds ?? null,
+          pendingFeeWei: chain ? (chain.pendingLaunchFee ? BigInt(chain.pendingLaunchFee.feeWei) : null) : events?.pendingStatus === "scheduled" && events.pending ? BigInt(events.pending.feeWei) : null,
+          nowUnix: chain ? BigInt(chain.blockTimestamp) : null,
+        });
+      } catch (e) {
+        throw ApiError.badRequest(e instanceof Error ? e.message : "invalid launch fee");
+      }
+      if (!chain) payload.warnings.push(`The kit's views were not read (${state.configured && state.chain.status === "unavailable" ? state.chain.error : "not configured"}); the fee in force comes from ${events ? "indexed events" : "nowhere"}. Check the kit on chain before signing.`);
+      const simulation = await simulate(d.governanceSafe, payload.to, payload.data);
+      await audit(prisma, req, res, "safe.prepare.kit-launch-fee", { type: "launchpad_kit_v2", id: kit }, chain ? { launchFeeWei: chain.launchFeeWei, pending: chain.pendingLaunchFee } : undefined, { to: payload.to, data: payload.data, feeWei: b.feeWei, effect: payload.effect, simulation: simulation.status });
+      json(res, { payload, effect: payload.effect, effectiveAtUnix: payload.effectiveAtUnix, feeState: state.configured ? { chain: state.chain, checks: state.checks } : null, simulation, simulatedFrom: d.governanceSafe });
+    }),
+  );
+
+  const kitCancelBody = z.object({ chainId: z.number().int().refine((id) => isLatchChainId(id)).default(deps.roleChainId) });
+  r.post(
+    "/safe/kit-v2/cancel-pending-fee",
+    S,
+    R("admin"),
+    validate({ body: kitCancelBody }),
+    h(async (req, res) => {
+      const b = v<z.infer<typeof kitCancelBody>>(res, "body");
+      const d = service.deployment(b.chainId);
+      const kit = deps.kitV2.read.requireConfigured(b.chainId).kit;
+      const state = await deps.kitV2.feeState(b.chainId);
+      const chain = state.configured && state.chain.status === "read" ? state.chain : null;
+      // A definitive read of "nothing scheduled" refuses: the call would revert NoPendingLaunchFee.
+      if (chain && chain.pendingLaunchFee === null) throw ApiError.conflict(`pendingLaunchFee() reads none at block ${chain.blockNumber}: there is no scheduled increase to cancel (a matured one is already the fee; lower it with setLaunchFee).`);
+      const payload = prepareCancelPendingLaunchFee({ chainId: b.chainId, safe: d.governanceSafe, kit, pendingFeeWei: chain?.pendingLaunchFee ? BigInt(chain.pendingLaunchFee.feeWei) : null });
+      if (!chain) payload.warnings.push("The kit's views were not read: whether an increase is scheduled is unconfirmed. The simulation shows NoPendingLaunchFee if not.");
+      const simulation = await simulate(d.governanceSafe, payload.to, payload.data);
+      await audit(prisma, req, res, "safe.prepare.kit-cancel-pending-fee", { type: "launchpad_kit_v2", id: kit }, chain ? { pending: chain.pendingLaunchFee } : undefined, { to: payload.to, data: payload.data, simulation: simulation.status });
+      json(res, { payload, simulation, simulatedFrom: d.governanceSafe });
     }),
   );
 

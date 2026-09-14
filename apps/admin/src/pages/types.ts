@@ -101,7 +101,7 @@ export type TreasuryView =
       configured: true
       safe: string
       safeAppUrl: string | null
-      target: { currency: string; symbol: string; name: string; balance: { wei: string; units: string } | null; balanceError: string | null }
+      target: { currency: string; symbol: string; name: string; balance: { wei: string; units: string } | null; balanceError: string | null; inflows?: { raw: string; units: string; entries: number; bySource: { source: string; raw: string; entries: number }[] } }
       policy: TreasuryPolicy
       venue: string
       readAtBlock: string | null
@@ -191,4 +191,74 @@ export interface ConversionPrepared {
   multiSendCallOnly: { address: string; version: string; codeHash: string; verifiedAtBlock: string }
   safeAppUrl: string | null
   note: string
+}
+
+/* ---- LaunchpadKitV2 (apps/api/src/admin/kitV2.ts, services/kitV2.ts) ---- */
+
+export interface KitAmount {
+  token: string
+  symbol: string | null
+  raw: string
+  units: string | null
+}
+
+type KitLockView =
+  | { status: 'indexed'; locker: string; lockerKind: 'CL' | 'BIN'; lockId: string; frozenAtCreation: { creatorBps: number; integratorBps: number; protocolBps: number; integrator: string }; creatorAtLock: string; creatorNote: string; liquidityAtLock: string | null; bins: { binId: string; shares: string | null; principal: string | null }[] | null; lockedAt: { blockNumber: string; blockTimestamp: string; txHash: string } }
+  | { status: 'not-indexed' | 'locker-not-configured'; note: string }
+
+export interface KitLaunch {
+  kit: string
+  token: string
+  launchToken: { symbol: string | null; decimals: number | null }
+  creator: string
+  tenant: string | null
+  launcher: string
+  operator: string
+  totalSupply: KitAmount | null
+  seedSupply: KitAmount | null
+  legCount: number
+  schedule: { clock: string; startTime: string; startTimeIso: string; note: string }
+  launchFees: { frozenAtCreation: true; protocol: KitAmount | null; integrator: string | null; integratorFee: KitAmount | null }
+  legs: { poolId: string; kind: 'CL' | 'BIN'; quote: { address: string; symbol: string | null; decimals: number | null }; weightBps: number; lockId: string; launchTokenSeeded: KitAmount | null; lock: KitLockView }[]
+  createdAt: { blockNumber: string; blockTimestamp: string; txHash: string }
+}
+
+export type KitLaunchesView =
+  | { chainId: number; configured: false; message: string }
+  | { chainId: number; configured: true; contracts: { kit: string; clLocker: string | null; binLocker: string | null; verification: string }; indexed: boolean; provenance: string; kit: string; total: number; limit: number; offset: number; items: KitLaunch[] }
+
+type KitPending = { feeWei: string; effectiveAt: string; effectiveAtIso: string }
+
+export type KitFeeState =
+  | { chainId: number; configured: false; message: string }
+  | {
+      chainId: number
+      configured: true
+      kit: string
+      safe: string
+      nativeSymbol: string
+      rules: { decrease: string; increase: string; cap: string; retroactivity: string }
+      chain:
+        | { status: 'read'; blockNumber: string; blockTimestamp: string; blockTimestampIso: string; launchFeeWei: string; pendingLaunchFee: KitPending | null; maxLaunchFeeWei: string; launchFeeNoticeSeconds: number; maxIntegratorLaunchFeeWei: string; protocolFeeRecipient: string; owner: string; pendingOwner: string; feesOwedToSafe: string; totalFeesOwed: string; clLocker: string; binLocker: string }
+        | { status: 'unavailable'; error: string }
+      events:
+        | { storedWei: string | null; pending: (KitPending & { scheduledAt: { blockNumber: string; txHash: string } }) | null; effectiveWei: string | null; pendingStatus: 'none' | 'scheduled' | 'matured'; asOf: string; asOfIso: string; inconsistencies: string[]; history: { event: string; args: Record<string, unknown>; blockNumber: string; blockTimestamp: string; txHash: string }[]; provenance: string }
+        | { status: 'not-indexed'; message: string }
+      checks: { level: 'ok' | 'warn' | 'high'; check: string; detail: string }[]
+      accruals:
+        | { status: 'not-indexed'; message: string }
+        | {
+            status: 'indexed'
+            provenance: string
+            definitions: Record<string, string>
+            items: { contract: string; role: 'launchpadKitV2' | 'clLpLocker' | 'binLpLocker'; token: string; symbol: string | null; credited: { raw: string; units: string | null }; skimmed: { raw: string; units: string | null }; claimed: { raw: string; units: string | null }; owed: { raw: string; units: string | null }; onChain: { status: 'read'; raw: string; atBlock: string; matchesEvents: boolean } | { status: 'unavailable'; error: string } }[]
+          }
+    }
+
+export interface KitPrepared {
+  payload: TxPayload & { effect: string; effectiveAtUnix: string | null }
+  effect: 'immediate-decrease' | 'no-change' | 'scheduled-increase' | 'unknown'
+  effectiveAtUnix: string | null
+  simulation: SimulationResult
+  simulatedFrom: string
 }

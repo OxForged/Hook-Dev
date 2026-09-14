@@ -1,0 +1,695 @@
+{
+  "_note": "TEST FIXTURE ONLY. Real apps/api responses computed over apps/api/test/fixtures/kitv2-logs.forge.json (logs emitted by the real kit and lockers in a forge harness, with the harness's FakeSafe address replaced by the governance Safe) and a LAYOUT chain client: launchFeeWei, pendingLaunchFee, caps and the block time are values chosen to render every panel, not chain reads. Kit v2 is not deployed on any chain.",
+  "launches": {
+    "chainId": 4663,
+    "configured": true,
+    "contracts": {
+      "kit": "0x3381cd18e2fb4db236bf0525938ab6e43db0440f",
+      "clLocker": "0x3d7ebc40af7092e3f1c81f2e996cba5cae2090d7",
+      "binLocker": "0xd16d567549a2a2a2005aeacf7fb193851603dd70",
+      "verification": "TEST FIXTURE: contracts deployed inside a forge harness, not on any chain"
+    },
+    "indexed": true,
+    "provenance": "kit_v2_launches, lp_locks: logs from block 60111836 to 1018 (2026-09-17T00:46:57.000Z)",
+    "kit": "0x3381cd18e2fb4db236bf0525938ab6e43db0440f",
+    "total": 2,
+    "limit": 25,
+    "offset": 0,
+    "items": [
+      {
+        "kit": "0x3381cd18e2fb4db236bf0525938ab6e43db0440f",
+        "token": "0xd5e73dd33a3e93e46699d6f09b1feef67406787a",
+        "launchToken": {
+          "symbol": null,
+          "decimals": null
+        },
+        "creator": "0x000000000000000000000000000000000000c4ea",
+        "tenant": "0x0000000000000000000000000000000000007e4a",
+        "launcher": "0x00000000000000000000000000000000000a11ce",
+        "operator": "0x0000000000000000000000000000000000000b0b",
+        "totalSupply": {
+          "token": "0xd5e73dd33a3e93e46699d6f09b1feef67406787a",
+          "symbol": null,
+          "raw": "1000000000000000000000000000",
+          "units": null
+        },
+        "seedSupply": {
+          "token": "0xd5e73dd33a3e93e46699d6f09b1feef67406787a",
+          "symbol": null,
+          "raw": "800000000000000000000000000",
+          "units": null
+        },
+        "legCount": 2,
+        "schedule": {
+          "clock": "block.timestamp (Kit v2 is timestamp-clocked; startTime is unix seconds, never a block number)",
+          "startTime": "1789000144",
+          "startTimeIso": "2026-09-10T00:29:04.000Z",
+          "note": "startTime as written at creation. LaunchReconfigured events (history) may have moved it before trading opened."
+        },
+        "launchFees": {
+          "frozenAtCreation": true,
+          "protocol": {
+            "token": "0x0000000000000000000000000000000000000000",
+            "symbol": "ETH",
+            "raw": "1000000000000000",
+            "units": "0.001"
+          },
+          "integrator": "0x0000000000000000000000000000000000001478",
+          "integratorFee": {
+            "token": "0x0000000000000000000000000000000000000000",
+            "symbol": "ETH",
+            "raw": "1000000000000000",
+            "units": "0.001"
+          }
+        },
+        "legs": [
+          {
+            "poolId": "0xdc89349b5b9c1c371545ce33047211266efb336d1e3d05d694ca6f6469f8e0a8",
+            "kind": "CL",
+            "quote": {
+              "address": "0x796f2974e3c1af763252512dd6d521e9e984726c",
+              "symbol": "QUOT",
+              "decimals": 18
+            },
+            "weightBps": 6000,
+            "lockId": "1",
+            "launchTokenSeeded": {
+              "token": "0xd5e73dd33a3e93e46699d6f09b1feef67406787a",
+              "symbol": null,
+              "raw": "480000000000000000000000000",
+              "units": null
+            },
+            "lock": {
+              "status": "indexed",
+              "locker": "0x3d7ebc40af7092e3f1c81f2e996cba5cae2090d7",
+              "lockerKind": "CL",
+              "lockId": "1",
+              "frozenAtCreation": {
+                "creatorBps": 7000,
+                "integratorBps": 1000,
+                "protocolBps": 2000,
+                "integrator": "0x0000000000000000000000000000000000001478"
+              },
+              "creatorAtLock": "0x000000000000000000000000000000000000c4ea",
+              "creatorNote": "The split and integrator never change. Only the creator can rotate (CreatorTransferred); this is the creator named at lock.",
+              "liquidityAtLock": "505153904532482246363370259",
+              "bins": null,
+              "lockedAt": {
+                "blockNumber": "1002",
+                "blockTimestamp": "2026-09-10T00:27:04.000Z",
+                "txHash": "0xf0dad421d7b1c01cbfddacad1bf1fc30632dc7fe11daafe8a52c46569d9d527a"
+              }
+            }
+          },
+          {
+            "poolId": "0x880f508cd36dc6066a886c2313861b6bd980c2ac153c07c6987da88f164dab0f",
+            "kind": "BIN",
+            "quote": {
+              "address": "0x796f2974e3c1af763252512dd6d521e9e984726c",
+              "symbol": "QUOT",
+              "decimals": 18
+            },
+            "weightBps": 4000,
+            "lockId": "1",
+            "launchTokenSeeded": {
+              "token": "0xd5e73dd33a3e93e46699d6f09b1feef67406787a",
+              "symbol": null,
+              "raw": "320000000000000000000000000",
+              "units": null
+            },
+            "lock": {
+              "status": "indexed",
+              "locker": "0xd16d567549a2a2a2005aeacf7fb193851603dd70",
+              "lockerKind": "BIN",
+              "lockId": "1",
+              "frozenAtCreation": {
+                "creatorBps": 7000,
+                "integratorBps": 1000,
+                "protocolBps": 2000,
+                "integrator": "0x0000000000000000000000000000000000001478"
+              },
+              "creatorAtLock": "0x000000000000000000000000000000000000c4ea",
+              "creatorNote": "The split and integrator never change. Only the creator can rotate (CreatorTransferred); this is the creator named at lock.",
+              "liquidityAtLock": null,
+              "bins": [
+                {
+                  "binId": "8388598",
+                  "shares": "1979824680267278788237492359258849792187111035966188421119999000",
+                  "principal": "1979824680267278788237492359258849792187111035966188421119999000"
+                },
+                {
+                  "binId": "8388599",
+                  "shares": "3959649360534556596461767986214924809855352668439927848959999000",
+                  "principal": "3959649360534556596461767986214924809855352668439927848959999000"
+                },
+                {
+                  "binId": "8388600",
+                  "shares": "5939474040801834949137830686672541368922966191742805606399999000",
+                  "principal": "5939474040801834949137830686672541368922966191742805606399999000"
+                },
+                {
+                  "binId": "8388601",
+                  "shares": "7919298721069113301813893387130157927990579715045683363839999000",
+                  "principal": "7919298721069113301813893387130157927990579715045683363839999000"
+                },
+                {
+                  "binId": "8388602",
+                  "shares": "9899123401336391654489956087587774487058193238348561121279999000",
+                  "principal": "9899123401336391654489956087587774487058193238348561121279999000"
+                },
+                {
+                  "binId": "8388603",
+                  "shares": "11878948081603669898275661373345082737845932383485611212799999000",
+                  "principal": "11878948081603669898275661373345082737845932383485611212799999000"
+                },
+                {
+                  "binId": "8388604",
+                  "shares": "13858772761870948250951724073802699296913545906788488970239999000",
+                  "principal": "13858772761870948250951724073802699296913545906788488970239999000"
+                },
+                {
+                  "binId": "8388605",
+                  "shares": "15838597442138226603627786774260315855981159430091366727679999000",
+                  "principal": "15838597442138226603627786774260315855981159430091366727679999000"
+                },
+                {
+                  "binId": "8388606",
+                  "shares": "17818422122405504956303849474717932415048772953394244485119999000",
+                  "principal": "17818422122405504956303849474717932415048772953394244485119999000"
+                },
+                {
+                  "binId": "8388607",
+                  "shares": "19798246802672783308979912175175548974116386476697122242559999000",
+                  "principal": "19798246802672783308979912175175548974116386476697122242559999000"
+                }
+              ],
+              "lockedAt": {
+                "blockNumber": "1002",
+                "blockTimestamp": "2026-09-10T00:27:04.000Z",
+                "txHash": "0xf0dad421d7b1c01cbfddacad1bf1fc30632dc7fe11daafe8a52c46569d9d527a"
+              }
+            }
+          }
+        ],
+        "createdAt": {
+          "blockNumber": "1002",
+          "blockTimestamp": "2026-09-10T00:27:04.000Z",
+          "txHash": "0xf0dad421d7b1c01cbfddacad1bf1fc30632dc7fe11daafe8a52c46569d9d527a"
+        }
+      },
+      {
+        "kit": "0x3381cd18e2fb4db236bf0525938ab6e43db0440f",
+        "token": "0x5c3b5950e34f79c6d515995472007a510b7058c0",
+        "launchToken": {
+          "symbol": null,
+          "decimals": null
+        },
+        "creator": "0x000000000000000000000000000000000000c4ea",
+        "tenant": null,
+        "launcher": "0x00000000000000000000000000000000000a11ce",
+        "operator": "0x0000000000000000000000000000000000000b0b",
+        "totalSupply": {
+          "token": "0x5c3b5950e34f79c6d515995472007a510b7058c0",
+          "symbol": null,
+          "raw": "1000000000000000000000000000",
+          "units": null
+        },
+        "seedSupply": {
+          "token": "0x5c3b5950e34f79c6d515995472007a510b7058c0",
+          "symbol": null,
+          "raw": "800000000000000000000000000",
+          "units": null
+        },
+        "legCount": 1,
+        "schedule": {
+          "clock": "block.timestamp (Kit v2 is timestamp-clocked; startTime is unix seconds, never a block number)",
+          "startTime": "1789000156",
+          "startTimeIso": "2026-09-10T00:29:16.000Z",
+          "note": "startTime as written at creation. LaunchReconfigured events (history) may have moved it before trading opened."
+        },
+        "launchFees": {
+          "frozenAtCreation": true,
+          "protocol": {
+            "token": "0x0000000000000000000000000000000000000000",
+            "symbol": "ETH",
+            "raw": "1000000000000000",
+            "units": "0.001"
+          },
+          "integrator": null,
+          "integratorFee": {
+            "token": "0x0000000000000000000000000000000000000000",
+            "symbol": "ETH",
+            "raw": "0",
+            "units": "0"
+          }
+        },
+        "legs": [
+          {
+            "poolId": "0xd3c683823c59b3f5b37eb25328b1770b6e6306947f3efa60b5c214d4a8dcc0b0",
+            "kind": "CL",
+            "quote": {
+              "address": "0x0000000000000000000000000000000000000000",
+              "symbol": "ETH",
+              "decimals": 18
+            },
+            "weightBps": 10000,
+            "lockId": "2",
+            "launchTokenSeeded": {
+              "token": "0x5c3b5950e34f79c6d515995472007a510b7058c0",
+              "symbol": null,
+              "raw": "800000000000000000000000000",
+              "units": null
+            },
+            "lock": {
+              "status": "indexed",
+              "locker": "0x3d7ebc40af7092e3f1c81f2e996cba5cae2090d7",
+              "lockerKind": "CL",
+              "lockId": "2",
+              "frozenAtCreation": {
+                "creatorBps": 8000,
+                "integratorBps": 0,
+                "protocolBps": 2000,
+                "integrator": "0x0000000000000000000000000000000000000000"
+              },
+              "creatorAtLock": "0x000000000000000000000000000000000000c4ea",
+              "creatorNote": "The split and integrator never change. Only the creator can rotate (CreatorTransferred); this is the creator named at lock.",
+              "liquidityAtLock": "841923174220803743938950432",
+              "bins": null,
+              "lockedAt": {
+                "blockNumber": "1003",
+                "blockTimestamp": "2026-09-10T00:27:16.000Z",
+                "txHash": "0xfcaf5c48bee3c9aa27ccf8ea2ce4dbf4aee63c0c053c831a7cdae1f778b6ecef"
+              }
+            }
+          }
+        ],
+        "createdAt": {
+          "blockNumber": "1003",
+          "blockTimestamp": "2026-09-10T00:27:16.000Z",
+          "txHash": "0xfcaf5c48bee3c9aa27ccf8ea2ce4dbf4aee63c0c053c831a7cdae1f778b6ecef"
+        }
+      }
+    ]
+  },
+  "feeState": {
+    "chainId": 4663,
+    "configured": true,
+    "kit": "0x3381cd18e2fb4db236bf0525938ab6e43db0440f",
+    "safe": "0x715a6176946adbd22c1b2021d321fb3767ca3432",
+    "nativeSymbol": "ETH",
+    "rules": {
+      "decrease": "setLaunchFee(x) with x <= the fee in force applies in the block it executes and cancels any scheduled increase.",
+      "increase": "setLaunchFee(x) with x > the fee in force is scheduled: it becomes the fee BY ITSELF launchFeeNoticeSeconds later. A newer increase replaces it and restarts the notice.",
+      "cap": "maxLaunchFeeWei is immutable; above it setLaunchFee reverts LaunchFeeAboveCap.",
+      "retroactivity": "None: each launch pays the fee in force in its own block, recorded in its LaunchCreated."
+    },
+    "chain": {
+      "status": "read",
+      "blockNumber": "1068",
+      "blockTimestamp": "1789006017",
+      "blockTimestampIso": "2026-09-10T02:06:57.000Z",
+      "launchFeeWei": "500000000000000",
+      "pendingLaunchFee": {
+        "feeWei": "2000000000000000",
+        "effectiveAt": "1789602017",
+        "effectiveAtIso": "2026-09-16T23:40:17.000Z"
+      },
+      "maxLaunchFeeWei": "10000000000000000",
+      "launchFeeNoticeSeconds": 604800,
+      "maxIntegratorLaunchFeeWei": "5000000000000000",
+      "protocolFeeRecipient": "0x715a6176946adbd22c1b2021d321fb3767ca3432",
+      "owner": "0x715a6176946adbd22c1b2021d321fb3767ca3432",
+      "pendingOwner": "0x0000000000000000000000000000000000000000",
+      "feesOwedToSafe": "0",
+      "totalFeesOwed": "0",
+      "clLocker": "0x3d7ebc40af7092e3f1c81f2e996cba5cae2090d7",
+      "binLocker": "0xd16d567549a2a2a2005aeacf7fb193851603dd70"
+    },
+    "events": {
+      "storedWei": "2000000000000000",
+      "pending": null,
+      "effectiveWei": "2000000000000000",
+      "pendingStatus": "none",
+      "asOf": "1789606017",
+      "asOfIso": "2026-09-17T00:46:57.000Z",
+      "inconsistencies": [],
+      "history": [
+        {
+          "event": "LaunchFeeChanged",
+          "args": {
+            "previousWei": "0",
+            "newWei": "1000000000000000"
+          },
+          "blockNumber": "1000",
+          "blockTimestamp": "2026-09-10T00:26:40.000Z",
+          "txHash": "0xd38ffa2c1181fcbe0b5d45baa7e9c3b9610057be60003ffa3a1c168f19950d1b"
+        },
+        {
+          "event": "LaunchFeeIncreaseScheduled",
+          "args": {
+            "currentWei": "1000000000000000",
+            "newWei": "5000000000000000",
+            "effectiveAt": "1789604860"
+          },
+          "blockNumber": "1005",
+          "blockTimestamp": "2026-09-10T00:27:40.000Z",
+          "txHash": "0xd6e1d337ef9aa0673b7618d33898b61af426dbd2de2cc2368504a6fdb1d6d041"
+        },
+        {
+          "event": "PendingLaunchFeeCancelled",
+          "args": {
+            "cancelledWei": "5000000000000000",
+            "effectiveAt": "1789604860"
+          },
+          "blockNumber": "1006",
+          "blockTimestamp": "2026-09-10T00:27:52.000Z",
+          "txHash": "0x602edeff8a9f914542e66e6f927ebc97b259e271fb8ccc33faacd81007b64074"
+        },
+        {
+          "event": "LaunchFeeChanged",
+          "args": {
+            "previousWei": "1000000000000000",
+            "newWei": "500000000000000"
+          },
+          "blockNumber": "1007",
+          "blockTimestamp": "2026-09-10T00:28:04.000Z",
+          "txHash": "0xadca47ff1ba913c38822c61c8447f8ffc36ac22cd76b86c36a949dc38cc62b5d"
+        },
+        {
+          "event": "LaunchFeeIncreaseScheduled",
+          "args": {
+            "currentWei": "500000000000000",
+            "newWei": "2000000000000000",
+            "effectiveAt": "1789604896"
+          },
+          "blockNumber": "1008",
+          "blockTimestamp": "2026-09-10T00:28:16.000Z",
+          "txHash": "0x2c439133780ec75496ff7fb9c1caa214d5850b0fe79ab09da0f3e6576ad95dd9"
+        },
+        {
+          "event": "LaunchFeeChanged",
+          "args": {
+            "previousWei": "500000000000000",
+            "newWei": "2000000000000000"
+          },
+          "blockNumber": "1018",
+          "blockTimestamp": "2026-09-17T00:46:57.000Z",
+          "txHash": "0x4952ee53eded89653eac9efcde907d63dac3b299a5ae49a3723d172a55bda536"
+        },
+        {
+          "event": "LaunchFeeChanged",
+          "args": {
+            "previousWei": "2000000000000000",
+            "newWei": "2000000000000000"
+          },
+          "blockNumber": "1018",
+          "blockTimestamp": "2026-09-17T00:46:57.000Z",
+          "txHash": "0x4952ee53eded89653eac9efcde907d63dac3b299a5ae49a3723d172a55bda536"
+        }
+      ],
+      "provenance": "contract_events (LaunchFeeChanged, LaunchFeeIncreaseScheduled, PendingLaunchFeeCancelled) from block 60111836 to 1018, judged at that block's timestamp"
+    },
+    "checks": [
+      {
+        "level": "ok",
+        "check": "owner() is the Safe",
+        "detail": "0x715a6176946adbd22c1b2021d321fb3767ca3432"
+      },
+      {
+        "level": "ok",
+        "check": "protocolFeeRecipient() is the Safe",
+        "detail": "0x715a6176946adbd22c1b2021d321fb3767ca3432"
+      },
+      {
+        "level": "warn",
+        "check": "indexed fee events disagree with launchFeeWei()",
+        "detail": "Replayed events give 2000000000000000 wei; the kit reads 500000000000000 wei at block 1068. The indexer may be behind the chain."
+      },
+      {
+        "level": "warn",
+        "check": "indexed pending increase disagrees with pendingLaunchFee()",
+        "detail": "Events: none; chain: 2000000000000000 wei at 1789602017."
+      }
+    ],
+    "accruals": {
+      "status": "indexed",
+      "provenance": "Summed from fee_flows and lp_fee_collections since block 60111836 to 1018 (2026-09-17T00:46:57.000Z). No cumulative counter is implied; the on-chain column is the contract's own balance where it could be read, at a later block than the events.",
+      "definitions": {
+        "credited": "Kit: FeesCredited to the Safe. Lockers: FeesCollected.protocolShare (includes rounding dust).",
+        "skimmed": "Lockers only: Skimmed surplus, credited to the immutable protocolRecipient.",
+        "claimed": "Paid out of the contract for the Safe: these are the KIT_LAUNCH_FEE and LP_LOCKER_PROTOCOL_CLAIM ledger rows.",
+        "owed": "credited + skimmed - claimed: still inside the contract. Not revenue received."
+      },
+      "items": [
+        {
+          "contract": "0x3381cd18e2fb4db236bf0525938ab6e43db0440f",
+          "role": "launchpadKitV2",
+          "token": "0x0000000000000000000000000000000000000000",
+          "symbol": "ETH",
+          "credited": {
+            "raw": "2000000000000000",
+            "units": "0.002"
+          },
+          "skimmed": {
+            "raw": "0",
+            "units": "0"
+          },
+          "claimed": {
+            "raw": "2000000000000000",
+            "units": "0.002"
+          },
+          "owed": {
+            "raw": "0",
+            "units": "0"
+          },
+          "onChain": {
+            "status": "read",
+            "raw": "0",
+            "atBlock": "1068",
+            "matchesEvents": true
+          }
+        },
+        {
+          "contract": "0x3d7ebc40af7092e3f1c81f2e996cba5cae2090d7",
+          "role": "clLpLocker",
+          "token": "0x796f2974e3c1af763252512dd6d521e9e984726c",
+          "symbol": "QUOT",
+          "credited": {
+            "raw": "60000000000000001",
+            "units": "0.060000000000000001"
+          },
+          "skimmed": {
+            "raw": "5000000000000000000",
+            "units": "5"
+          },
+          "claimed": {
+            "raw": "60000000000000001",
+            "units": "0.060000000000000001"
+          },
+          "owed": {
+            "raw": "5000000000000000000",
+            "units": "5"
+          },
+          "onChain": {
+            "status": "read",
+            "raw": "5000000000000000000",
+            "atBlock": "1068",
+            "matchesEvents": true
+          }
+        },
+        {
+          "contract": "0xd16d567549a2a2a2005aeacf7fb193851603dd70",
+          "role": "binLpLocker",
+          "token": "0x796f2974e3c1af763252512dd6d521e9e984726c",
+          "symbol": "QUOT",
+          "credited": {
+            "raw": "41208786963381",
+            "units": "0.000041208786963381"
+          },
+          "skimmed": {
+            "raw": "0",
+            "units": "0"
+          },
+          "claimed": {
+            "raw": "0",
+            "units": "0"
+          },
+          "owed": {
+            "raw": "41208786963381",
+            "units": "0.000041208786963381"
+          },
+          "onChain": {
+            "status": "read",
+            "raw": "5000000000000000000",
+            "atBlock": "1068",
+            "matchesEvents": false
+          }
+        },
+        {
+          "contract": "0xd16d567549a2a2a2005aeacf7fb193851603dd70",
+          "role": "binLpLocker",
+          "token": "0xd5e73dd33a3e93e46699d6f09b1feef67406787a",
+          "symbol": null,
+          "credited": {
+            "raw": "1198760031181854765",
+            "units": null
+          },
+          "skimmed": {
+            "raw": "0",
+            "units": null
+          },
+          "claimed": {
+            "raw": "0",
+            "units": null
+          },
+          "owed": {
+            "raw": "1198760031181854765",
+            "units": null
+          },
+          "onChain": {
+            "status": "read",
+            "raw": "5000000000000000000",
+            "atBlock": "1068",
+            "matchesEvents": false
+          }
+        }
+      ]
+    }
+  },
+  "launchFee": {
+    "payload": {
+      "kind": "safe",
+      "chainId": 4663,
+      "safe": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+      "to": "0x3381cD18e2Fb4dB236BF0525938AB6E43Db0440f",
+      "value": "0",
+      "data": "0x5313be2c000000000000000000000000000000000000000000000000000aa87bee538000",
+      "operation": 0,
+      "safeTxGas": "0",
+      "baseGas": "0",
+      "gasPrice": "0",
+      "gasToken": "0x0000000000000000000000000000000000000000",
+      "refundReceiver": "0x0000000000000000000000000000000000000000",
+      "description": "LaunchpadKitV2.setLaunchFee(3000000000000000 wei): increase, scheduled behind the notice",
+      "decoded": {
+        "functionName": "setLaunchFee",
+        "signature": "setLaunchFee(uint256)",
+        "args": [
+          {
+            "name": "newFeeWei",
+            "type": "uint256",
+            "value": "3000000000000000"
+          }
+        ]
+      },
+      "warnings": [
+        "An increase is SCHEDULED, not applied: it becomes the launch fee by itself 604800 seconds after the block this executes in (not before unix 1789610817 if it executed at the chain time read now; later signing moves it later).",
+        "It REPLACES the scheduled increase to 2000000000000000 wei and restarts the notice."
+      ],
+      "effect": "scheduled-increase",
+      "effectiveAtUnix": "1789610817"
+    },
+    "effect": "scheduled-increase",
+    "effectiveAtUnix": "1789610817",
+    "feeState": {
+      "chain": {
+        "status": "read",
+        "blockNumber": "1068",
+        "blockTimestamp": "1789006017",
+        "blockTimestampIso": "2026-09-10T02:06:57.000Z",
+        "launchFeeWei": "500000000000000",
+        "pendingLaunchFee": {
+          "feeWei": "2000000000000000",
+          "effectiveAt": "1789602017",
+          "effectiveAtIso": "2026-09-16T23:40:17.000Z"
+        },
+        "maxLaunchFeeWei": "10000000000000000",
+        "launchFeeNoticeSeconds": 604800,
+        "maxIntegratorLaunchFeeWei": "5000000000000000",
+        "protocolFeeRecipient": "0x715a6176946adbd22c1b2021d321fb3767ca3432",
+        "owner": "0x715a6176946adbd22c1b2021d321fb3767ca3432",
+        "pendingOwner": "0x0000000000000000000000000000000000000000",
+        "feesOwedToSafe": "0",
+        "totalFeesOwed": "0",
+        "clLocker": "0x3d7ebc40af7092e3f1c81f2e996cba5cae2090d7",
+        "binLocker": "0xd16d567549a2a2a2005aeacf7fb193851603dd70"
+      },
+      "checks": [
+        {
+          "level": "ok",
+          "check": "owner() is the Safe",
+          "detail": "0x715a6176946adbd22c1b2021d321fb3767ca3432"
+        },
+        {
+          "level": "ok",
+          "check": "protocolFeeRecipient() is the Safe",
+          "detail": "0x715a6176946adbd22c1b2021d321fb3767ca3432"
+        },
+        {
+          "level": "warn",
+          "check": "indexed fee events disagree with launchFeeWei()",
+          "detail": "Replayed events give 2000000000000000 wei; the kit reads 500000000000000 wei at block 1068. The indexer may be behind the chain."
+        },
+        {
+          "level": "warn",
+          "check": "indexed pending increase disagrees with pendingLaunchFee()",
+          "detail": "Events: none; chain: 2000000000000000 wei at 1789602017."
+        }
+      ]
+    },
+    "simulation": {
+      "status": "success",
+      "from": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+      "to": "0x3381cD18e2Fb4dB236BF0525938AB6E43Db0440f",
+      "blockNumber": "1068",
+      "returnData": "0x",
+      "revert": null,
+      "error": null,
+      "simulatedAt": "2026-09-14T19:22:53.410Z",
+      "method": "eth_call"
+    },
+    "simulatedFrom": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432"
+  },
+  "cancel": {
+    "payload": {
+      "kind": "safe",
+      "chainId": 4663,
+      "safe": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+      "to": "0x3381cD18e2Fb4dB236BF0525938AB6E43Db0440f",
+      "value": "0",
+      "data": "0x06b1ebbb",
+      "operation": 0,
+      "safeTxGas": "0",
+      "baseGas": "0",
+      "gasPrice": "0",
+      "gasToken": "0x0000000000000000000000000000000000000000",
+      "refundReceiver": "0x0000000000000000000000000000000000000000",
+      "description": "LaunchpadKitV2.cancelPendingLaunchFee(): cancels the scheduled increase to 2000000000000000 wei",
+      "decoded": {
+        "functionName": "cancelPendingLaunchFee",
+        "signature": "cancelPendingLaunchFee()",
+        "args": []
+      },
+      "warnings": [
+        "Reverts NoPendingLaunchFee when nothing is scheduled, and cannot undo an increase that has already matured (it is the fee by then; lower it with setLaunchFee)."
+      ]
+    },
+    "simulation": {
+      "status": "success",
+      "from": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432",
+      "to": "0x3381cD18e2Fb4dB236BF0525938AB6E43Db0440f",
+      "blockNumber": "1068",
+      "returnData": "0x",
+      "revert": null,
+      "error": null,
+      "simulatedAt": "2026-09-14T19:22:53.430Z",
+      "method": "eth_call"
+    },
+    "simulatedFrom": "0x715a6176946aDbD22c1B2021d321Fb3767ca3432"
+  },
+  "unconfigured": {
+    "chainId": 4663,
+    "configured": false,
+    "message": "No LaunchpadKitV2 address in config/chains/4663.json (kitV2.kit). Kit v2 is not deployed on this chain, or its address has not been verified and recorded yet; nothing about it is indexed."
+  }
+}

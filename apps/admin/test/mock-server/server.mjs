@@ -20,6 +20,11 @@ import { fixtures } from './fixtures.mjs'
 // one computed for the fixture amount, whatever amount is asked for.
 const treasury = JSON.parse(readFileSync(new URL('./treasury.json', import.meta.url), 'utf8'))
 
+// Kit v2: real apps/api responses over logs the real kit and lockers emitted in a forge
+// harness, with a LAYOUT chain client (see _note inside). A Referer containing
+// `kitunconfigured` gets the not-configured answer, which is today's real state on 4663.
+const kitv2 = JSON.parse(readFileSync(new URL('./kitv2.json', import.meta.url), 'utf8'))
+
 const PORT = Number(process.env.MOCK_PORT ?? 5189)
 
 const send = (res, status, body, headers = {}) => {
@@ -54,6 +59,9 @@ const server = createServer((req, res) => {
         return res.end('chainId,source,token\r\n')
       }
       if (path === '/treasury') return send(res, 200, treasury.view)
+      const kitOff = String(req.headers.referer ?? '').includes('kitunconfigured')
+      if (path === '/kit-v2/launches') return send(res, 200, kitOff ? kitv2.unconfigured : kitv2.launches)
+      if (path === '/kit-v2/fee-state') return send(res, 200, kitOff ? kitv2.unconfigured : kitv2.feeState)
       if (path === '/treasury/route') {
         const r = treasury.routes[String(url.searchParams.get('token') ?? '').toLowerCase()]
         if (!r) return send(res, 400, { error: { code: 'BAD_REQUEST', message: 'token is not on the treasury conversion allowlist for this chain' } })
@@ -75,6 +83,8 @@ const server = createServer((req, res) => {
       if (path === '/safe/fee-controller/collect') return send(res, 200, fixtures.collect)
       if (path === '/safe/fee-controller/sweep') return send(res, 200, fixtures.collect)
       if (path === '/registry/listing') return send(res, 200, fixtures.flag)
+      if (path === '/safe/kit-v2/launch-fee') return send(res, 200, kitv2.launchFee)
+      if (path === '/safe/kit-v2/cancel-pending-fee') return send(res, 200, kitv2.cancel)
       if (path === '/treasury/convert/prepare') return send(res, 200, treasury.prepared)
       if (/\/moderation\/listings\/[a-z0-9]+\/(approve|reject|request-changes)$/.test(path)) return send(res, 200, { status: 'APPROVED' })
       if (path === '/keys') return send(res, 201, { key: { prefix: 'latchk_mockmockmock_…' }, secret: 'latchk_mockmockmock_THIS-IS-A-FIXTURE-NOT-A-KEY-0000000000000' })

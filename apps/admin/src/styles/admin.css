@@ -1068,3 +1068,12 @@ details summary {
     color: var(--muted-ink);
   }
 }
+
+/* Launches page: unstyled lists of legs, checks and fee events. */
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}

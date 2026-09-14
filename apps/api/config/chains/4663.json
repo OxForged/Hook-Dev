@@ -61,6 +61,13 @@
     },
     "notes": "minValueWei 1e15 (0.001 ETH): a Safe MultiSend of approve + Permit2 approve + router swap is budgeted at ~1,500,000 gas including the Nitro L1 data allowance; at the 78,334,000 wei reference price that is ~1.2e14 wei, so the floor keeps gas under ~12% of the guaranteed proceeds. deadlineSeconds 3600 gives two of three owners an hour to sign after the payload is built; min-out bounds the price for that whole hour, and an expired batch reverts atomically (the router deadline and the Permit2 expiration both lapse). maxPriceImpactBps 100 and slippageBps 50 are the defaults the owner decision names."
   },
+  "kitV2": {
+    "kit": null,
+    "clLocker": null,
+    "binLocker": null,
+    "verification": null,
+    "notes": "LaunchpadKitV2, LatchLPLocker and LatchBinLPLocker (packages/launchpad) are NOT deployed on this chain as of 2026-09-14, so every slot is null and the indexer watches nothing for them. Fill a slot only with a deployed, verified address and write in `verification` how it was checked (e.g. cast code, Sourcify match, immutables read back). Setting an address changes the indexer's address-set hash, so the next pass re-reads history from the deployment block."
+  },
   "opsAccounts": [
     {
       "label": "canceller",

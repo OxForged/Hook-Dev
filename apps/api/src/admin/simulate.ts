@@ -46,6 +46,9 @@ export const KNOWN_ERRORS_ABI = parseAbi([
   "error GuardianCannotRelist(uint8 current, uint8 requested)",
   "error LatchNotRegistered(address hook)",
   "error StringTooLong(uint256 length, uint256 max)",
+  // LaunchpadKitV2 owner calls (packages/launchpad/src/interfaces/ILaunchpadKitV2.sol)
+  "error LaunchFeeAboveCap(uint256 feeWei, uint256 capWei)",
+  "error NoPendingLaunchFee()",
 ]);
 
 const errShort = (e: unknown) => (e instanceof BaseError ? e.shortMessage : e instanceof Error ? e.message : String(e)).split("\n")[0]!.replace(/https?:\/\/\S+/g, "<url>").slice(0, 300);

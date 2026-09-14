@@ -9,6 +9,7 @@ import type { CaptchaVerifier } from "../../src/admin/turnstile.js";
 import { disabledCaptcha } from "../../src/admin/turnstile.js";
 import { createApp, type AppDeps } from "../../src/app.js";
 import { MemoryRateLimitStore } from "../../src/ratelimit/limiter.js";
+import type { KitV2ConfigLookup } from "../../src/services/kitV2.js";
 
 /**
  * TEST FIXTURE ONLY. An in-memory stand-in for the Prisma tables the admin
@@ -23,6 +24,7 @@ const cuid = () => `c${(++seq).toString(36).padStart(8, "0")}${Math.random().toS
 function matches(row: Row, where: Record<string, unknown> | undefined): boolean {
   if (!where) return true;
   for (const [k, v] of Object.entries(where)) {
+    if (v === undefined) continue;
     if (k === "NOT" || k === "OR" || k === "AND") continue;
     if (v !== null && typeof v === "object" && !(v instanceof Date)) {
       const o = v as Record<string, unknown>;
@@ -30,6 +32,10 @@ function matches(row: Row, where: Record<string, unknown> | undefined): boolean 
       if ("startsWith" in o && !String(row[k]).startsWith(String(o.startsWith))) return false;
       if ("gte" in o && !(row[k] instanceof Date && (row[k] as Date) >= (o.gte as Date))) return false;
       if ("gt" in o && !(row[k] instanceof Date && (row[k] as Date) > (o.gt as Date))) return false;
+      continue;
+    }
+    if (v !== null && typeof v === "object" && v instanceof Date) {
+      if (!(row[k] instanceof Date) || (row[k] as Date).getTime() !== v.getTime()) return false;
       continue;
     }
     if (row[k] !== v) return false;
@@ -79,6 +85,8 @@ export interface Seed {
   apiAccount?: Row[];
   apiKey?: Row[];
   pool?: Row[];
+  /** Any other Prisma model, by client property name (e.g. kitV2Launch, lpLock, indexerCheckpoint). */
+  extra?: Record<string, Row[]>;
 }
 
 export function fakePrisma(seed: Seed = {}) {
@@ -95,6 +103,7 @@ export function fakePrisma(seed: Seed = {}) {
     opsBalance: table(seed.opsBalance ?? []),
     timelockEvent: table(seed.timelockEvent ?? []),
     pool: table(seed.pool ?? []),
+    ...Object.fromEntries(Object.entries(seed.extra ?? {}).map(([k, rows]) => [k, table(rows)])),
   };
   // Relations the routes include.
   const accountFindMany = tables.apiAccount.findMany;
@@ -131,6 +140,7 @@ export function buildAdminApp(opts: {
   adminUiDir?: string | null;
   adminEnabled?: boolean;
   treasuryClient?: TreasuryClient | null;
+  kitV2Config?: KitV2ConfigLookup;
 } = {}) {
   const { prisma, tables } = fakePrisma(opts.seed);
   let roles: AdminRole[] = opts.roles ?? ["viewer"];
@@ -148,6 +158,7 @@ export function buildAdminApp(opts: {
     trustProxy: false,
     logRequests: false,
     ready: async () => ({ database: true, redis: true }),
+    kitV2Config: opts.kitV2Config,
     admin:
       opts.adminEnabled === false
         ? null
@@ -158,6 +169,7 @@ export function buildAdminApp(opts: {
             rate,
             simulator: opts.simulator ?? null,
             treasuryClient: opts.treasuryClient ? () => opts.treasuryClient! : null,
+            kitV2Config: opts.kitV2Config,
             keys: { pepper: "admin-test-pepper-0123456789abcdef0123", defaultRpm: 600, defaultQuota: 1_000_000, invalidate: async (h) => void invalidated.push(h) },
             config: { origins: [ORIGIN], siweDomain: "admin.example", roleChainId: 4663, sessionTtlSeconds: 600, roleRecheckSeconds: 300, perMinute: 10_000, cookieSecure: true },
           },

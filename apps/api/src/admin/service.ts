@@ -6,7 +6,8 @@ import {
   type LatchDeployment,
 } from "@latchprotocol/sdk";
 import { Prisma, type PrismaClient, type RevenueSource } from "@prisma/client";
-import { chainConfig } from "../config/chainConfig.js";
+import { chainConfig, kitV2Addresses } from "../config/chainConfig.js";
+import { deriveLaunchFeeState, LAUNCH_FEE_EVENTS, type KitV2ConfigLookup } from "../services/kitV2.js";
 import { ApiError } from "../lib/errors.js";
 import { decStr } from "../lib/serialize.js";
 import { formatUnitsExact, ratioToDecimal, toBigInt } from "../lib/units.js";
@@ -32,21 +33,39 @@ const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 export const ADMIN_WINDOWS = { "24h": 86_400, "7d": 604_800, "30d": 2_592_000, all: null } as const;
 export type AdminWindow = keyof typeof ADMIN_WINDOWS;
 
-/** Every revenue line the protocol has or plans. Planned lines are NEVER rendered as zero. */
-export const REVENUE_SOURCES: readonly {
+export type RevenueSourceStatus = "indexed" | "not-deployed" | "not-attributed";
+
+export interface RevenueSourceLine {
   source: RevenueSource;
   label: string;
-  status: "indexed" | "not-deployed";
+  status: RevenueSourceStatus;
   contract: string;
   note: string;
-}[] = [
+}
+
+/** Every revenue line the protocol has or plans. Lines that are not indexed are NEVER rendered as zero. */
+export const REVENUE_SOURCES: readonly RevenueSourceLine[] = [
   { source: "PROTOCOL_FEE_COLLECTED", label: "Protocol fees collected via collect()", status: "indexed", contract: "LatchProtocolFeeControllerV2", note: "Owner-only (the Safe); recipient chosen per call. From ProtocolFeesCollected where the outer tx input is collect()." },
   { source: "PROTOCOL_FEE_SWEPT", label: "Fee-controller sweeps to treasury", status: "indexed", contract: "LatchProtocolFeeControllerV2", note: "Permissionless sweep(); pays only the stored treasury. The keeper calls it every 12 h." },
   { source: "REVSHARE_PROTOCOL_CLAIM", label: "RevShare roster payouts to the protocol", status: "indexed", contract: "RevShareHook (Latch's own deployments)", note: "Claimed events whose beneficiary is the governance Safe. An entitlement a pool owner granted, not an enforced fee." },
-  { source: "LP_LOCKER_PROTOCOL_CLAIM", label: "LP locker: protocol share", status: "not-deployed", contract: "LatchLPLocker", note: "Not deployed on this chain and not in the SDK address book, so there is nothing to index. Not zero: unmeasured." },
-  { source: "LP_LOCKER_INTEGRATOR_CLAIM", label: "LP locker: integrator share", status: "not-deployed", contract: "LatchLPLocker", note: "Not deployed on this chain and not in the SDK address book. Not zero: unmeasured." },
-  { source: "KIT_LAUNCH_FEE", label: "Kit launch fees", status: "not-deployed", contract: "LaunchpadKit v2", note: "The deployed LaunchpadKit charges no launch fee; v2 (createLaunch fee) is not deployed. Not zero: unmeasured." },
+  { source: "LP_LOCKER_PROTOCOL_CLAIM", label: "LP lockers: protocol share claimed", status: "not-deployed", contract: "LatchLPLocker / LatchBinLPLocker", note: "No locker address in config/chains/<chainId>.json kitV2, so nothing is indexed. Not zero: unmeasured." },
+  { source: "LP_LOCKER_INTEGRATOR_CLAIM", label: "LP lockers: integrator share", status: "not-attributed", contract: "LatchLPLocker / LatchBinLPLocker", note: "Never written: a locker's Claimed does not say whether the account withdrew a creator or an integrator share, and integrator revenue is the tenant's, not Latch's. Per-lock integrator shares credited are on /v1 kit-v2 launch fees." },
+  { source: "KIT_LAUNCH_FEE", label: "Kit v2 launch fees paid out", status: "not-deployed", contract: "LaunchpadKitV2", note: "No kitV2.kit address in config/chains/<chainId>.json, so nothing is indexed. The deployed v1 LaunchpadKit charges no launch fee. Not zero: unmeasured." },
 ];
+
+/**
+ * REVENUE_SOURCES with the kit v2 lines marked indexed where config names the contract.
+ * Ledger rows are flows that LEFT the contract for the Safe (claims); what is credited
+ * but not yet claimed is served as kit v2 accruals, never as ledger revenue.
+ */
+export function revenueSourcesFor(chainId: number, lookup: KitV2ConfigLookup = kitV2Addresses): RevenueSourceLine[] {
+  const k = lookup(chainId);
+  return REVENUE_SOURCES.map((s) => {
+    if (s.source === "KIT_LAUNCH_FEE" && k?.kit) return { ...s, status: "indexed" as const, note: `FeesClaimed on LaunchpadKitV2 ${k.kit} where the account is the governance Safe: native launch fees leaving the kit (flushProtocolFees is permissionless and pays only the protocol recipient). Credited-but-unflushed fees are accruals, shown under Kit v2.` };
+    if (s.source === "LP_LOCKER_PROTOCOL_CLAIM" && (k?.clLocker || k?.binLocker)) return { ...s, status: "indexed" as const, note: `Claimed on ${[k.clLocker, k.binLocker].filter(Boolean).join(" and ")} where the account is the governance Safe, per token. Protocol shares collected but not claimed are accruals, shown under Kit v2.${k.clLocker && k.binLocker ? "" : " One locker slot is empty: its claims are not indexed."}` };
+    return { ...s };
+  });
+}
 
 /** Exact decimal string -> ratio. */
 function decimalToRatio(s: string): { num: bigint; den: bigint } {
@@ -61,6 +80,7 @@ export class AdminService {
     private readonly prisma: PrismaClient,
     private readonly read: ReadService,
     private readonly treasury: TreasuryService | null = null,
+    private readonly kitV2Config: KitV2ConfigLookup = kitV2Addresses,
   ) {}
 
   private treasuryAlertCache = new Map<number, { at: number; rows: TreasuryAlertRow[] }>();
@@ -114,7 +134,15 @@ export class AdminService {
       opts.treasury === false ? Promise.resolve([]) : this.treasuryAlertRows(chainId),
     ]);
     const tokens = await this.tokenMap(chainId, stockLatest.map((s) => s.token));
+    const kit = this.kitV2Config(chainId)?.kit ?? null;
+    let kitV2Fees: AlertInputs["kitV2Fees"] = [];
+    if (kit && cp) {
+      const ev = await this.prisma.contractEvent.findMany({ where: { chainId, contractKey: "launchpadKitV2", contract: kit, eventName: { in: [...LAUNCH_FEE_EVENTS] } }, orderBy: [{ blockNumber: "asc" }, { logIndex: "asc" }] });
+      const st = deriveLaunchFeeState(ev.map((e) => ({ eventName: e.eventName, args: e.args as Record<string, unknown>, blockNumber: e.blockNumber, blockTimestamp: e.blockTimestamp, txHash: e.txHash, logIndex: e.logIndex })), BigInt(Math.floor(cp.lastIndexedBlockTimestamp.getTime() / 1000)));
+      kitV2Fees = [{ chainId, kit, storedWei: st.storedWei, pendingStatus: st.pendingStatus, pending: st.pending, inconsistencies: st.inconsistencies, asOfIso: st.asOfIso, toBlock: cp.lastIndexedBlock.toString() }];
+    }
     return {
+      kitV2Fees,
       now: new Date(),
       chains: cp
         ? [{ chainId, lastIndexedBlock: cp.lastIndexedBlock.toString(), headBlock: cp.headBlock.toString(), headObservedAt: cp.headObservedAt.toISOString(), maxLagBlocks: cfg.indexerAlerts?.maxLagBlocks ?? null, maxHeadAgeSeconds: cfg.indexerAlerts?.maxHeadAgeSeconds ?? null }]
@@ -184,7 +212,7 @@ export class AdminService {
         provenance: cp ? `revenue_ledger, logs from block ${this.deployment(chainId).deployedAtBlock} to ${cp.lastIndexedBlock}` : "not indexed",
         received: [...byToken.entries()].map(([token, raw]) => ({ token, symbol: tokens.get(token)?.symbol ?? null, raw: raw.toString(), units: this.units(raw.toString(), tokens.get(token)?.decimals) })),
         uncollectedAccrued: accruals.map((a) => ({ poolManager: a.poolManager, token: a.currency, symbol: tokens.get(a.currency)?.symbol ?? null, raw: a.amount, units: this.units(a.amount, tokens.get(a.currency)?.decimals), readAtBlock: a.readAtBlock.toString(), readAt: iso(a.readAt) })),
-        notDeployed: REVENUE_SOURCES.filter((s) => s.status === "not-deployed").map((s) => ({ source: s.source, label: s.label, note: s.note })),
+        notDeployed: revenueSourcesFor(chainId, this.kitV2Config).filter((s) => s.status !== "indexed").map((s) => ({ source: s.source, label: s.label, note: s.note })),
       },
       moderation: Object.fromEntries(listings.map((l) => [l.status, l._count._all])),
       apiKeys: { byStatus: Object.fromEntries(keys.map((k) => [k.status, k._count._all])), requestsThisMonth: (usage._sum.requests ?? 0n).toString(), period },
@@ -242,8 +270,8 @@ export class AdminService {
     };
 
     const totalsBySource = [];
-    for (const s of REVENUE_SOURCES) {
-      if (s.status === "not-deployed") {
+    for (const s of revenueSourcesFor(chainId, this.kitV2Config)) {
+      if (s.status !== "indexed") {
         totalsBySource.push({ ...s, byToken: null });
         continue;
       }

@@ -38,6 +38,7 @@ export function TreasuryPage({ session }: { session: Session }) {
                   <dl className="figures">
                     <div><dt>Converts to</dt><dd>native {v.target.name} ({v.target.symbol}), never a wrapped or third-party token</dd></div>
                     <div><dt>Safe {v.target.symbol} balance</dt><dd>{v.target.balance ? `${group(v.target.balance.units)} ${v.target.symbol}` : <span className="muted small">unread: {v.target.balanceError}</span>}</dd></div>
+                    <div><dt>Native revenue inflows</dt><dd>{v.indexed && v.target.inflows ? <>{group(v.target.inflows.units)} {v.target.symbol}<div className="muted small">{v.target.inflows.entries} ledger entr{v.target.inflows.entries === 1 ? 'y' : 'ies'} (kit v2 launch fees); already native, nothing to convert</div></> : <span className="muted small">unmeasured</span>}</dd></div>
                     <div><dt>Max price impact</dt><dd>{bps(v.policy.maxPriceImpactBps)}</dd></div>
                     <div><dt>Slippage bound</dt><dd>{bps(v.policy.slippageBps)}</dd></div>
                     <div><dt>Minimum guaranteed output</dt><dd>{eth(v.policy.minValueWei, v.target.symbol)}</dd></div>

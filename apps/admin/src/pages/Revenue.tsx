@@ -8,7 +8,7 @@ interface Revenue {
   chainId: number
   filters: { token: string | null; source: string | null; window: string | null; usd: boolean }
   provenance: { source: string; fromBlock: string; toBlock: string; toBlockTimestamp: string; note: string }
-  totalsBySource: { source: string; label: string; status: 'indexed' | 'not-deployed'; contract: string; note: string; byToken: { token: string; symbol: string | null; entries: number; raw: string; units: string | null }[] | null }[]
+  totalsBySource: { source: string; label: string; status: 'indexed' | 'not-deployed' | 'not-attributed'; contract: string; note: string; byToken: { token: string; symbol: string | null; entries: number; raw: string; units: string | null }[] | null }[]
   protocolFees: {
     charged: { definition: string; byToken: { token: string; symbol: string | null; swaps: number; raw: string; units: string | null }[] }
     collected: { definition: string; byTokenAndMethod: { token: string; symbol: string | null; via: string; count: number; raw: string; units: string | null }[] }
@@ -79,11 +79,11 @@ export function RevenuePage({ chainId }: { chainId: number }) {
                 </thead>
                 <tbody>
                   {r.totalsBySource.flatMap((s) => {
-                    if (s.status === 'not-deployed' || !s.byToken) {
+                    if (s.status !== 'indexed' || !s.byToken) {
                       return [
                         <tr key={s.source}>
                           <th scope="row">{s.label}<div className="muted small">{s.contract}</div></th>
-                          <td><Chip tone="muted" title={s.note}>not deployed yet</Chip></td>
+                          <td><Chip tone="muted" title={s.note}>{s.status === 'not-attributed' ? 'not attributed' : 'not deployed yet'}</Chip></td>
                           <td colSpan={3} className="muted">{s.note}</td>
                         </tr>,
                       ]

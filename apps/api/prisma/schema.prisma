@@ -88,8 +88,10 @@ enum ReconciliationStatus {
   ERROR
 }
 
-/// Where a revenue ledger entry came from. The last three are extension points:
-/// defined so an admin panel can render them, not yet written by the indexer.
+/// Where a revenue ledger entry came from. Ledger rows are FLOWS that reached a
+/// protocol address (the governance Safe): money leaving a contract, never an
+/// accrual still sitting in one. Accruals are derived separately (fee_flows,
+/// lp_fee_collections, protocol_fee_accrual_snapshots).
 enum RevenueSource {
   /// LatchProtocolFeeControllerV2 ProtocolFeesCollected via collect()
   PROTOCOL_FEE_COLLECTED
@@ -97,12 +99,32 @@ enum RevenueSource {
   PROTOCOL_FEE_SWEPT
   /// RevShareHook Claimed(...) where the beneficiary is a protocol address (governance Safe)
   REVSHARE_PROTOCOL_CLAIM
-  /// Not indexed yet: LatchLPLocker protocol-share claims
+  /// LatchLPLocker / LatchBinLPLocker Claimed(...) where the claiming account is a
+  /// protocol address (the governance Safe). Written only for configured lockers.
   LP_LOCKER_PROTOCOL_CLAIM
-  /// Not indexed yet: LatchLPLocker integrator-share claims
+  /// NOT written: a locker Claimed event does not say whether the account withdrew
+  /// a creator or an integrator share, and integrator revenue is the tenant's, not
+  /// Latch's. Kept so the enum does not change under existing rows.
   LP_LOCKER_INTEGRATOR_CLAIM
-  /// Not indexed yet: LaunchpadKit v2 flat launch fee
+  /// LaunchpadKitV2 FeesClaimed(account, to, amount) where the account is a protocol
+  /// address: the native launch fee leaving the kit (flushProtocolFees or claimFees).
   KIT_LAUNCH_FEE
+}
+
+/// LaunchpadKitV2 LegKind, and which locker holds a lock.
+enum LaunchLegKind {
+  CL
+  BIN
+}
+
+/// A movement of claimable fee balance on the kit or a locker.
+enum FeeFlowKind {
+  /// LaunchpadKitV2.FeesCredited: native launch fee credited to an account's feesOwed.
+  CREDITED
+  /// LaunchpadKitV2.FeesClaimed or a locker's Claimed: a balance paid out.
+  CLAIMED
+  /// A locker's Skimmed: surplus credited to its immutable protocolRecipient.
+  SKIMMED
 }
 
 enum ApiKeyStatus {
@@ -464,6 +486,167 @@ model Launch {
   @@index([chainId, launchToken])
   @@index([chainId, blockNumber])
   @@map("launches")
+}
+
+/// LaunchpadKitV2.LaunchCreated. One row per launch (a launch token), from the kit
+/// address configured in config/chains/<chainId>.json (kitV2.kit). Every value is
+/// FROZEN at creation: nothing about a launch re-reads the fee in force later.
+model KitV2Launch {
+  id               String   @id
+  chainId          Int
+  kit              String
+  token            String
+  creator          String
+  /// address(0) for a direct launch.
+  tenant           String
+  launcher         String
+  operator         String
+  totalSupply      Decimal  @db.Decimal(78, 0)
+  seedSupply       Decimal  @db.Decimal(78, 0)
+  legCount         Int
+  /// WALL CLOCK: unix seconds (block.timestamp + startDelaySeconds). Kit v2 is
+  /// timestamp-clocked; this is never a block number.
+  startTime        BigInt
+  /// Native (wei) credited to the kit's protocolFeeRecipient by this launch.
+  protocolFeeWei   Decimal  @db.Decimal(78, 0)
+  /// The tenant's fee wallet (also every leg's lock integrator). address(0) when none.
+  integrator       String
+  integratorFeeWei Decimal  @db.Decimal(78, 0)
+
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  txHash         String
+  txIndex        Int
+  logIndex       Int
+
+  @@unique([chainId, kit, token])
+  @@index([chainId, blockNumber])
+  @@index([chainId, creator])
+  @@index([chainId, tenant])
+  @@map("kit_v2_launches")
+}
+
+/// LaunchpadKitV2.LaunchLegCreated: one locked pool of a launch.
+model KitV2LaunchLeg {
+  id                String        @id
+  chainId           Int
+  kit               String
+  token             String
+  poolId            String
+  quote             String
+  kind              LaunchLegKind
+  /// CL: the position NFT id held by LatchLPLocker. BIN: the LatchBinLPLocker lock id.
+  lockId            Decimal       @db.Decimal(78, 0)
+  /// Launch-token units measured into the pool.
+  launchTokenSeeded Decimal       @db.Decimal(78, 0)
+  weightBps         Int
+
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  txHash         String
+  txIndex        Int
+  logIndex       Int
+
+  @@unique([chainId, kit, poolId])
+  @@index([chainId, token])
+  @@index([chainId, blockNumber])
+  @@map("kit_v2_launch_legs")
+}
+
+/// LatchLPLocker.PositionLocked / LatchBinLPLocker.BinsLocked. The split is the one
+/// written at lock and never changes; only the creator can rotate afterwards
+/// (CreatorTransferred is kept in contract_events; this row keeps the original).
+model LpLock {
+  id            String        @id
+  chainId       Int
+  locker        String
+  lockerKind    LaunchLegKind
+  lockId        Decimal       @db.Decimal(78, 0)
+  poolId        String
+  creator       String
+  integrator    String
+  creatorBps    Int
+  integratorBps Int
+  protocolBps   Int
+  /// CL only: the position's liquidity at lock.
+  liquidity     Decimal?      @db.Decimal(78, 0)
+  /// BIN only, aligned: bin ids, shares pulled, principal (bin liquidity units) per bin.
+  binIds        String[]      @default([])
+  shares        String[]      @default([])
+  principals    String[]      @default([])
+  fromAddress   String
+  /// CL only: the account that called safeTransferFrom.
+  operator      String?
+
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  txHash         String
+  txIndex        Int
+  logIndex       Int
+
+  @@unique([chainId, locker, lockId])
+  @@index([chainId, poolId])
+  @@index([chainId, blockNumber])
+  @@map("lp_locks")
+}
+
+/// A locker's FeesCollected: one currency of fees pulled out of a lock and split.
+/// creatorShare + integratorShare + protocolShare == amount exactly (protocol takes dust).
+model LpFeeCollection {
+  id              String        @id
+  chainId         Int
+  locker          String
+  lockerKind      LaunchLegKind
+  lockId          Decimal       @db.Decimal(78, 0)
+  currency        String
+  caller          String
+  amount          Decimal       @db.Decimal(78, 0)
+  creatorShare    Decimal       @db.Decimal(78, 0)
+  integratorShare Decimal       @db.Decimal(78, 0)
+  protocolShare   Decimal       @db.Decimal(78, 0)
+
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  txHash         String
+  txIndex        Int
+  logIndex       Int
+
+  @@index([chainId, locker, lockId])
+  @@index([chainId, currency])
+  @@index([chainId, blockNumber])
+  @@map("lp_fee_collections")
+}
+
+/// Claimable-balance movements on the kit (native launch fees) and both lockers.
+/// Credits (and skims) minus claims per (contract, account, token) is what the
+/// contract holds as owed; the admin panel reconciles it against feesOwed/claimable.
+model FeeFlow {
+  id           String      @id
+  chainId      Int
+  contract     String
+  /// "launchpadKitV2" | "clLpLocker" | "binLpLocker"
+  contractRole String
+  kind         FeeFlowKind
+  /// Credited or claiming account. Null for SKIMMED (credited to the immutable protocolRecipient).
+  account      String?
+  /// Payee of a CLAIMED flow.
+  to           String?
+  /// Caller of a skim.
+  caller       String?
+  /// address(0) = native.
+  token        String
+  amount       Decimal     @db.Decimal(78, 0)
+
+  blockNumber    BigInt
+  blockTimestamp DateTime
+  txHash         String
+  txIndex        Int
+  logIndex       Int
+
+  @@index([chainId, contract, kind])
+  @@index([chainId, account])
+  @@index([chainId, blockNumber])
+  @@map("fee_flows")
 }
 
 /// Every other indexed event, decoded, with all integers as decimal strings:

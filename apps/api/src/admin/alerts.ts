@@ -58,6 +58,8 @@ export interface AlertInputs {
   reconciliationMismatches: { chainId: number; kind: string; subject: string; detail: string | null; atBlock: string }[];
   pendingListings: number;
   /** Allowlisted Safe balances above their configured size, each with the Latch route read for it. Optional: absent when chain reads are off. */
+  /** LaunchpadKitV2 launch-fee state replayed from indexed events (configured kits only). */
+  kitV2Fees?: { chainId: number; kit: string; storedWei: string | null; pendingStatus: "none" | "scheduled" | "matured"; pending: { feeWei: string; effectiveAt: string; effectiveAtIso: string } | null; inconsistencies: string[]; asOfIso: string; toBlock: string }[];
   treasuryConversions?: { chainId: number; token: string; symbol: string; balanceRaw: string; balanceUnits: string; thresholdRaw: string; routeStatus: string; blockers: string[]; minOutWei: string | null; readAtBlock: string | null; readAt: string | null }[];
 }
 
@@ -297,6 +299,21 @@ export function computeAlerts(i: AlertInputs): Alert[] {
       provenance: `balanceOf + CLQuoter eth_call @ block ${t.readAtBlock ?? "?"}, ${t.readAt ?? "?"}`,
       action: { label: "Treasury", page: "treasury" },
     });
+  }
+
+  // --- LaunchpadKitV2 launch fee ------------------------------------------------
+  // An increase is public notice by design; the alert makes sure the Safe owners see
+  // their own scheduled change and when it lands. Judged at the last indexed block's timestamp.
+  for (const k of i.kitV2Fees ?? []) {
+    const prov = `contract_events (launch fee events on ${short(k.kit)}) to block ${k.toBlock}, judged at ${k.asOfIso}`;
+    if (k.pendingStatus === "scheduled" && k.pending) {
+      push({ id: `kitv2:${k.chainId}:${k.kit}:fee-increase-scheduled`, severity: "INFO", category: "revenue", chainId: k.chainId, title: `Launch fee increase scheduled: ${k.pending.feeWei} wei`, detail: `Becomes the protocol launch fee by itself at ${k.pending.effectiveAtIso} (from ${k.storedWei ?? "?"} wei). Cancel with cancelPendingLaunchFee before then, or replace it with another setLaunchFee.`, subject: k.kit, provenance: prov, action: { label: "Launches", page: "launches" } });
+    } else if (k.pendingStatus === "matured" && k.pending) {
+      push({ id: `kitv2:${k.chainId}:${k.kit}:fee-increase-matured`, severity: "INFO", category: "revenue", chainId: k.chainId, title: `Launch fee is now ${k.pending.feeWei} wei`, detail: `The increase scheduled for ${k.pending.effectiveAtIso} has taken effect; the kit emits LaunchFeeChanged only at its next owner call, so the event log still shows ${k.storedWei ?? "?"} wei.`, subject: k.kit, provenance: prov, action: { label: "Launches", page: "launches" } });
+    }
+    if (k.inconsistencies.length) {
+      push({ id: `kitv2:${k.chainId}:${k.kit}:fee-events-inconsistent`, severity: "MEDIUM", category: "indexer", chainId: k.chainId, title: "Indexed launch fee events do not replay cleanly", detail: `${k.inconsistencies.slice(0, 3).join("; ")}. A gap in indexing or a wrong kit address in config; the fee panel's chain read is authoritative.`, subject: k.kit, provenance: prov, action: { label: "Launches", page: "launches" } });
+    }
   }
 
   const rank = (s: Severity) => SEVERITIES.indexOf(s);

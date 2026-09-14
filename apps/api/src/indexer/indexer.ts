@@ -294,6 +294,11 @@ export async function applySpan(
       await tx.launch.deleteMany({ where: range });
       await tx.contractEvent.deleteMany({ where: range });
       await tx.timelockEvent.deleteMany({ where: range });
+      await tx.kitV2Launch.deleteMany({ where: range });
+      await tx.kitV2LaunchLeg.deleteMany({ where: range });
+      await tx.lpLock.deleteMany({ where: range });
+      await tx.lpFeeCollection.deleteMany({ where: range });
+      await tx.feeFlow.deleteMany({ where: range });
       // Pools: delete only those the chain no longer reports, so a re-read does
       // not cascade away swaps and state of pools that still exist.
       const keep = rows.pools.map((p) => p.id);
@@ -312,6 +317,11 @@ export async function applySpan(
       if (rows.contractEvents.length) await tx.contractEvent.createMany({ data: rows.contractEvents });
       if (rows.timelockEvents.length) await tx.timelockEvent.createMany({ data: rows.timelockEvents });
       if (rows.ledger.length) await tx.revenueLedgerEntry.createMany({ data: rows.ledger });
+      if (rows.kitV2Launches.length) await tx.kitV2Launch.createMany({ data: rows.kitV2Launches });
+      if (rows.kitV2Legs.length) await tx.kitV2LaunchLeg.createMany({ data: rows.kitV2Legs });
+      if (rows.lpLocks.length) await tx.lpLock.createMany({ data: rows.lpLocks });
+      if (rows.lpFeeCollections.length) await tx.lpFeeCollection.createMany({ data: rows.lpFeeCollections });
+      if (rows.feeFlows.length) await tx.feeFlow.createMany({ data: rows.feeFlows });
 
       await tx.indexerCheckpoint.upsert({
         where: { chainId },

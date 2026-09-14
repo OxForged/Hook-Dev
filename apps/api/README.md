@@ -93,6 +93,18 @@ test/     unit tests, fixtures/, integration/ (opt-in)
 | `launchRegistry` | `LaunchRegistered`, `LaunchTokenInfoUpdated`, `LaunchMetadataUpdated`, `LaunchListingChanged` |
 | `timelockCustody`, `timelockPolicy` | `CallScheduled`, `CallExecuted`, `CallSalt`, `Cancelled`, `MinDelayChange` |
 | Latch's own RevShareHooks | `RevShareTaken`, `Claimed` |
+| `kitV2.kit` **(config, not SDK)** | `LaunchCreated`, `LaunchLegCreated`, `LaunchReconfigured`, `LaunchFeeIncreaseScheduled`, `LaunchFeeChanged`, `PendingLaunchFeeCancelled`, `FeesCredited`, `FeesClaimed`, `TenantConfigured`, `TenantQuoteSet`, `OwnershipTransferStarted`, `OwnershipTransferred` |
+| `kitV2.clLocker` **(config)** | `PositionLocked`, `FeesCollected`, `Claimed`, `Skimmed`, `CreatorTransferStarted`, `CreatorTransferred` |
+| `kitV2.binLocker` **(config)** | `BinsLocked`, `FeeSharesBurned`, `FeesCollected`, `Claimed`, `Skimmed`, `CreatorTransferStarted`, `CreatorTransferred` |
+
+**Kit v2 and the LP lockers are config-addressed.** The SDK does not carry them (and is
+not edited from here), so their addresses live in `config/chains/<id>.json` `kitV2`
+(`kit`, `clLocker`, `binLocker`, plus a required `verification` note once any is set).
+On 4663 every slot is `null` (not deployed as of 2026-09-14). With every slot null the
+watched set and `addressSetHash` are byte-identical to before kit v2 existed, so this
+change triggers no history re-read; setting an address changes the hash and the next
+pass re-reads from `deployedAtBlock` (tested in `test/kitv2.test.ts`). Their event ABIs
+are vendored in `src/chain/abis.ts` and diffed against `packages/launchpad/foundry-out`.
 
 Core event ABIs come from the SDK (`decodeProtocolLog`, `LAUNCHPAD_KIT_ABI`,
 `LATCH_HOOK_REGISTRY_ABI`). RevShareHook, fee-controller V2, launch-registry and
@@ -195,14 +207,32 @@ CLAUDE.md table, ops-account balances, Chainlink staleness.
 | Admin auth | `admin_nonces`, `admin_sessions`, `audit_log` |
 | Keys and billing hook | `api_accounts` (`plan`, `billingProvider`, `billingCustomerId`), `api_keys`, `api_usage_monthly` |
 
-`revenue_ledger` sources: `PROTOCOL_FEE_COLLECTED`, `PROTOCOL_FEE_SWEPT`,
-`REVSHARE_PROTOCOL_CLAIM` (a `Claimed` whose beneficiary is the governance Safe)
-are written today. `LP_LOCKER_PROTOCOL_CLAIM`, `LP_LOCKER_INTEGRATOR_CLAIM` and
-`KIT_LAUNCH_FEE` are defined extension points with no indexer yet (no deployed
-contract / no ABI in the SDK). `usdValue`/`usdSource`/`usdPricedAt` are nullable
-and stay null until a real feed prices that token.
+Kit v2 tables (log-derived, range-replaced): `kit_v2_launches` (LaunchCreated: supplies,
+tenant, integrator, native launch fees, `startTime` as unix seconds), `kit_v2_launch_legs`
+(LaunchLegCreated), `lp_locks` (PositionLocked / BinsLocked: the split frozen at lock, bins,
+shares, principals), `lp_fee_collections` (FeesCollected with the three shares) and
+`fee_flows` (kit FeesCredited/FeesClaimed in native, locker Claimed/Skimmed per token).
 
-Migrations: `prisma/migrations/20260913000000_init`. Apply with `npm run db:deploy`.
+`revenue_ledger` rows are **flows that left a contract for a protocol address** (the
+governance Safe), never accruals:
+
+| Source | Written from |
+|---|---|
+| `PROTOCOL_FEE_COLLECTED` / `PROTOCOL_FEE_SWEPT` | `ProtocolFeesCollected` (by tx input) |
+| `REVSHARE_PROTOCOL_CLAIM` | RevShareHook `Claimed` by the Safe |
+| `KIT_LAUNCH_FEE` | LaunchpadKitV2 `FeesClaimed` whose account is the Safe (flushProtocolFees / claimFees), native |
+| `LP_LOCKER_PROTOCOL_CLAIM` | a locker's `Claimed` whose account is the Safe, per token |
+| `LP_LOCKER_INTEGRATOR_CLAIM` | **never written**: `Claimed` does not say which share was withdrawn, and integrator revenue is the tenant's |
+
+What is credited but not yet claimed (kit `feesOwed(Safe)`, locker protocol shares and skims
+minus claims) is served as **accruals** by the admin fee-state route, summed from events and
+compared with `feesOwed`/`claimable` read on chain. Counting a credit as revenue and then its
+claim again would double count. `usdValue`/`usdSource`/`usdPricedAt` are nullable and stay
+null until a real feed prices that token; kit launch fees are never priced.
+
+Migrations: `20260913000000_init`, `20260914000000_admin_panel`,
+`20260914120000_kit_v2_lockers` (new tables and two enums only; no existing table changes).
+Apply with `npm run db:deploy`.
 
 ---
 
@@ -235,6 +265,9 @@ their own top-level keys and add `provenance` plus an `X-Latch-Provenance` heade
 | `GET /v1/chains/:chainId/revenue/protocol` | Swap protocol-fee slices, `ProtocolFeesCollected` by method, latest `protocolFeesAccrued`. |
 | `GET /v1/chains/:chainId/launches` · `/launches/:poolId` | Kit launches; schedule on the contract clock with phase and time estimate; kit and launch-registry history. |
 | `GET /v1/chains/:chainId/latches/:address/registry` | What `LatchRegistry` events say. Explicitly not an audit. |
+| `GET /v1/chains/:chainId/kit-v2/launches[?creator&tenant&limit&offset]` | LaunchpadKitV2 launches, paged: supplies, tenant, native launch fees, every leg with its lock split as frozen at creation. **404 "not configured"** while `kitV2.kit` is unset; 503 `NOT_INDEXED` before a checkpoint. |
+| `GET /v1/chains/:chainId/kit-v2/launches/token/:token` · `/kit-v2/launches/pool/:poolId` | One launch by launch token or by any of its pool ids, with `LaunchReconfigured` history. |
+| `GET /v1/chains/:chainId/kit-v2/launches/token/:token/fees` | Per leg: the frozen split and the lockers' `FeesCollected` summed per currency (creator / integrator / protocol, checked to sum exactly). Claims are per account across locks and are not attributed to a launch. |
 | `GET /v1/dexscreener/:chainId/latest-block` · `/asset?id=` · `/pair?id=` · `/events?fromBlock&toBlock` | DEX Screener adapter (below). |
 
 **DEX Screener.** Shape per their "Adapter Specs" (`/latest-block`, `/asset`,
@@ -329,6 +362,10 @@ npm run admin -- usage:show --period 2026-09
 | GET | `safe/context` | viewer | Safe address, Safe app link, contract addresses |
 | POST | `timelock/execute` | viewer | `execute(target, value, payload, predecessor, salt)` for a READY queued single-call operation, salt from `CallSalt`, refused unless it re-hashes to the id; `isOperationReady` + `eth_call` result (audited) |
 | POST | `safe/fee-controller/collect` · `…/sweep` | admin | Safe payloads for `LatchProtocolFeeControllerV2`, simulated from the Safe (audited) |
+| GET | `kit-v2/launches` | viewer | kit v2 launches with legs and lock splits, or `configured: false` |
+| GET | `kit-v2/fee-state` | viewer | launch fee in force, scheduled increase and when it lands, immutable cap and notice, owner/recipient/locker checks (kit views by `eth_call` at one block when `ADMIN_SIMULATION_ENABLED`), the fee events replayed from Postgres beside it, and protocol accruals per contract and token |
+| POST | `safe/kit-v2/launch-fee` | admin | `setLaunchFee(feeWei)` Safe payload: classified as immediate decrease / scheduled increase (with not-before time) from the kit's own `launchFeeWei()`, refused above `maxLaunchFeeWei`, simulated from the Safe (audited `safe.prepare.kit-launch-fee`) |
+| POST | `safe/kit-v2/cancel-pending-fee` | admin | `cancelPendingLaunchFee()` Safe payload; 409 when `pendingLaunchFee()` reads none (audited `safe.prepare.kit-cancel-pending-fee`) |
 | POST | `registry/listing` | curator | `setListing(hook, Malicious|Active, reason)` as a DIRECT call from the curator's key, simulated from it (audited) |
 | GET | `treasury` | viewer | allowlisted Safe balances (read on chain), ledger inflows per token, optional Chainlink USD with source and time, target native ETH (§7e) |
 | GET | `treasury/route?token=&amount=` | viewer | best acceptable Latch route to native ETH: quote, price impact vs mid, min-out, blockers; or `no-route` / `no-acceptable-route` / `unavailable` with reasons (§7e) |
@@ -613,3 +650,13 @@ CLAUDE.md "Treasury conversion, owner decision 2026-09-14". Code: `src/admin/tre
   is a singleton, so per-pool reserves are not in any log.
 - `LaunchpadKit` event ABI is the SDK's; no kit launch exists on 4663 yet to verify
   the deployed kit emits that exact signature.
+- **Kit v2, not verifiable until it is deployed:** the addresses (config slots are null);
+  that the deployed bytecode emits the vendored signatures (they are diffed against the
+  local Foundry artifacts, and the decoder is tested on logs the real contracts emitted in
+  a forge harness, `test/fixtures/kitv2-logs.forge.json`, whose block numbers, timestamps
+  and tx hashes are harness-assigned); that `protocolFeeRecipient()` and both lockers'
+  `protocolRecipient()` are the governance Safe on the real deployment (ledger rows are
+  written only for claims by the SDK's `governanceSafe`; the fee-state route checks the kit's
+  recipient on chain, and accruals assume skims credit the Safe); `eth_getLogs` behaviour of
+  the kit's `LaunchLegCreated` (emitted by DELEGATECALL from `LaunchLegs`, so from the kit's
+  address, as the harness shows); and the admin fee reads against a live RPC.

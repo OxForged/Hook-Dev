@@ -19,6 +19,7 @@ import {
 import { publicRouter } from "./http/public.js";
 import type { RateLimitStore } from "./ratelimit/limiter.js";
 import { DexScreenerService } from "./services/dexscreener.js";
+import { KitV2ReadService, type KitV2ConfigLookup } from "./services/kitV2.js";
 import { ReadService } from "./services/read.js";
 
 export interface AppDeps {
@@ -39,6 +40,8 @@ export interface AppDeps {
   /** Ecosystem listings (public). null = no /v1/listings routes at all. */
   listings?: ListingsDeps | null;
   logRequests?: boolean;
+  /** Kit v2 addresses per chain. Defaults to config/chains/<chainId>.json `kitV2`. */
+  kitV2Config?: KitV2ConfigLookup;
 }
 
 /**
@@ -104,7 +107,7 @@ export function createApp(deps: AppDeps): Express {
   app.use("/v1", identify({ keys: deps.keys, rate: deps.rate, usage: deps.usage, anonPerMinute: deps.anonPerMinute }));
 
   const read = new ReadService(deps.prisma);
-  app.use("/v1", publicRouter(read, new DexScreenerService(deps.prisma), deps.dexMaxRange));
+  app.use("/v1", publicRouter(read, new DexScreenerService(deps.prisma), deps.dexMaxRange, new KitV2ReadService(deps.prisma, deps.kitV2Config)));
 
   app.use(notFound);
   app.use(errorHandler);

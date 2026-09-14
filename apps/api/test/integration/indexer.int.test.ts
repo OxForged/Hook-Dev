@@ -31,6 +31,11 @@ const empty = (): WindowRows => ({
   contractEvents: [],
   timelockEvents: [],
   ledger: [],
+  kitV2Launches: [],
+  kitV2Legs: [],
+  lpLocks: [],
+  lpFeeCollections: [],
+  feeFlows: [],
   orphans: 0,
 });
 
