@@ -204,7 +204,38 @@ Do not hide important security concerns just because they make the implementatio
 
 # Project: LatchProtocol
 
-A hooks platform forked from PancakeSwap Infinity, targeting chains where Uniswap v4 is not deployed.
+A hooks platform built on the PancakeSwap Infinity architecture, extending what it does.
+
+## Infinity-only, on every chain — decided by the owner, 2026-09-13
+
+> "stay Infinity-only on all chains. we have nothing to do with pancakeswap or uniswap we are
+> just enhancing what they have done."
+
+**What this means, concretely:**
+- **Latch runs only on its own Infinity-architecture core** — its own Vault, CL and Bin pool
+  managers — on every chain, including chains where Uniswap v4 or PancakeSwap are deployed.
+- **No integration with third-party AMM deployments.** No hooks, kits, routers, lockers or SDK
+  paths targeting Uniswap v4's or PancakeSwap's live PoolManagers, and no routing user trades
+  into their pools. A feature that would only work by plugging into their contracts is out of
+  scope, however much liquidity sits there.
+- **No affiliation, and nothing implying one.** Latch is not a PancakeSwap or Uniswap product,
+  partner or deployment. Do not use their names, logos or marks to describe Latch in UI, docs or
+  marketing beyond a factual technical lineage statement. On-chain references to their code
+  (`IHooks`, `hookDelta`) are ABI names and stay as they are — see the Naming section.
+
+**What this does NOT change — licence and lineage are facts, not affiliation:**
+- `packages/core` is a GPL-2.0-or-later derivative of `pancakeswap/infinity-core`, and periphery
+  and router derive from theirs. Copyright notices, the GPL licence and attribution in those
+  packages MUST stay. "Nothing to do with them" is about deployments and integrations, never a
+  reason to strip a header or relicense.
+- Uniswap v4-core stays a non-dependency (BUSL-1.1). Never vendor it.
+
+**The old premise is gone.** This project used to be described as "targeting chains where
+Uniswap v4 is not deployed". On Robinhood Chain that is false: a Uniswap v4 PoolManager is live
+at `0x8366a39C…0951` (Sourcify: `v4-core/src/PoolManager.sol`) and third-party v4 hooks run on it.
+Latch competes there on product — plug-and-play DEX and launchpad kits, stock-aware hooks,
+immutable and timelocked admin, bounded oracles, no fee-on-transfer tokens — not on being the
+only hook-capable AMM on the chain.
 
 ## Layout
 
@@ -720,6 +751,17 @@ irreversible half, so the rule is about ordering, not the roster.**
 `beneficiaryBps` until all three hold: `getBeneficiaries` non-empty, `totalWeight > 0`, and
 `pendingBeneficiary` settled to dust on **both** currencies. Any UI offering the button
 must check these and refuse.
+
+> **CORRECTION IN PROGRESS, 2026-09-13 — the premise of this section is WRONG.** Robinhood
+> Chain is Arbitrum Nitro: inside the EVM, `block.number` is the **Ethereum L1 block number
+> (~12 s)**, not the L2 block number (~0.102 s). Measured: `eth_call` of the `NUMBER` opcode =
+> 25,972,155 = header `l1BlockNumber` = Ethereum's head, while `eth_blockNumber` = 62,388,681.
+> So `3600` on `0x23CE` is ~12 HOURS, and every duration "fixed" for 0.1 s blocks is ~120x too
+> LONG: `0xfC00`'s `CONFIG_DELAY_BLOCKS` 432,000 ≈ 60 days, its TTL ≈ 1 year, and
+> `LaunchpadKit`/`LaunchGuardHook` with `blockTimeCentis = 10` stretch every launch window
+> ~120x. Off-chain code comparing contract block numbers to `eth_blockNumber` mixes clocks.
+> **Do not act on the "118x short" rule below.** Measure `NUMBER` via eth_call before writing
+> any block-denominated parameter on any chain. A full audit and replacement text is pending.
 
 ### 3b. `CONFIG_DELAY_BLOCKS` is six minutes on `0x23CE…E446`, not twelve hours
 
