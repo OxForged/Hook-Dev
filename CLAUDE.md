@@ -1222,7 +1222,18 @@ ports      none published — the keeper dials out
 ```
 
 Always `docker compose -p latch ...` from `~/latch/keeper`, so a bare command cannot reach a
-neighbour. Ports 8090-8092 belong to peddlepro; if this stack ever needs one, bind `127.0.0.1` and
+neighbour.
+
+**Hosted API + admin, deployed 2026-09-14** in the SAME project `latch`, from a second compose
+file: `~/latch/repo` is a sparse checkout (`apps/api`, `apps/admin`, `packages/sdk`) pinned at
+`1821e39`; containers `latch-api`, `latch-indexer`, `latch-api-postgres`, `latch-api-redis`;
+`latch-api` published on **127.0.0.1:8093 only**. Secrets live in `~/latch/repo/apps/api/.env`
+(0600, generated on the host, never printed). Commands: `cd ~/latch/repo/apps/api &&
+COMPOSE_IGNORE_ORPHANS=1 docker compose -p latch -f docker-compose.yml <cmd> <service>`. **Never**
+`--remove-orphans` and never a bare `down` from either directory — the keeper and the API share the
+project from different files, so either would stop the other. Admin is enabled for loopback only
+(`ADMIN_ORIGINS=http://localhost:8093`): reach it with `ssh -L 8093:127.0.0.1:8093` and open
+`http://localhost:8093/admin`. Public exposure needs a domain and the owner's Caddy change. Ports 8090-8092 belong to peddlepro; if this stack ever needs one, bind `127.0.0.1` and
 start at 8093.
 
 ### Consequences to plan around, not work around
