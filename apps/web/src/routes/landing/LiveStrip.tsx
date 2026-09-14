@@ -134,7 +134,10 @@ function feesCell(s: Activity, t: TokenActivity | undefined): Cell {
   return {
     k: 'ready',
     value: `${f(swapFee + cut)} ${unitOf(t)}`,
-    note: `swap fee ${f(swapFee)} + Latch cut ${f(cut)}`,
+    /* "Latch cut" used to sit here and read as money paid to Latch the
+       protocol. It is the RevShareHook's cut, distributed to the pool's LPs,
+       beneficiary roster and holders; protocol revenue is its own cell. */
+    note: `swap fee ${f(swapFee)} + revenue-share hook cut ${f(cut)}`,
   }
 }
 
@@ -152,7 +155,7 @@ function creatorCell(s: Activity, t: TokenActivity | undefined): Cell {
         ? 'beneficiary roster · matches totalTaken'
         : s.a.cutCheck.k === 'unavailable'
           ? 'beneficiary roster · no counter to check against'
-          : 'beneficiary roster share of the Latch cut',
+          : 'beneficiary roster share of the hook cut',
   }
 }
 
@@ -172,7 +175,9 @@ function protocolCell(s: Activity, t: TokenActivity | undefined): Cell {
   return {
     k: 'ready',
     value: `${f(t.protocolSwapFee)} ${u}`,
-    note: `${why} · ${f(t.protocolAccrued)} uncollected`,
+    /* The only cell that is money earned by the Latch protocol itself, in the
+       pool's own tokens - never in native currency unless the pool trades it. */
+    note: `earned by the Latch protocol · ${why} · ${f(t.protocolAccrued)} uncollected`,
   }
 }
 
@@ -482,7 +487,8 @@ export function LiveStrip() {
             <strong>Volume and swap fees</strong>: summed from all {n(activity.a.swapCount)} Swap
             logs on both pool managers, blocks {n(activity.a.fromBlock)}–{n(activity.a.toBlock)},
             input side, split by each swap’s own <code>fee</code> and <code>protocolFee</code>.{' '}
-            <strong>Latch cut and creator revenue</strong>:{' '}
+            <strong>Revenue-share hook cut and creator revenue</strong> (paid to each pool’s
+            own LPs, beneficiary roster and holders, not to the Latch protocol):{' '}
             {activity.a.cutHooks === 0 ? (
               <>not read — this chain has no Latch RevShareHook.</>
             ) : (
