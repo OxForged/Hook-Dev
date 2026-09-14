@@ -592,12 +592,14 @@ source path is missing — keep it that way, and run `forge clean` after any con
 
 ### `packages/keeper` — MIT
 
-Five calls the protocol needs somebody to make, and nobody was making: `closeEpoch()`,
-`rollover(id)`, `settleBeneficiaries(key, currency)`, `applyPendingConfig(key)`, and
-`LatchProtocolFeeControllerV2.sweep(poolManager, currency)` (`src/jobs/fees.ts`). Without them an
-epoch never closes, unclaimed funds never roll over, and fees never reach a roster or treasury.
+Eight calls the protocol needs somebody to make, and nobody was making: `closeEpoch()`,
+`rollover(id)`, `settleBeneficiaries(key, currency)`, `applyPendingConfig(key)`,
+`LatchProtocolFeeControllerV2.sweep(poolManager, currency)` (`src/jobs/fees.ts`), and, for Kit v2
+(`src/jobs/launchpad.ts`, inert until addresses are configured), `LaunchpadKitV2.flushProtocolFees`
+and both lockers' `collectFees`. Without them an epoch never closes, unclaimed funds never roll
+over, and fees never reach a roster or treasury.
 
-**All five are permissionless, and that is the security model.** The keeper holds no privileged
+**All eight are permissionless, and that is the security model.** The keeper holds no privileged
 role. A stolen keeper key buys an attacker nothing they could not already do from any address —
 it can waste gas, not move funds. Never add an owner/curator/guardian-only call to that package;
 if a job needs a privileged role, it does not belong there.
@@ -774,11 +776,13 @@ only works if it is written here rather than remembered.
 
 | Address | Record | State |
 |---|---|---|
-| `0x23CE34E8199927DD270dddd8579c947542bDE446` | retired in `packages/sdk/src/deployments/index.ts:373` | **Still hosts the only pool with liquidity** — LTT1/LTT2, `beneficiaryBps = 8000`, one roster entry, NOT frozen, `poolOwner = 0x304b…c9a9` (the shared-VPS key). Items 3, 4 and 5 apply; its 3,600-block delay is ~12 h and correct (§3b). |
+| `0x23CE34E8199927DD270dddd8579c947542bDE446` | retired in `packages/sdk/src/deployments/index.ts:373` | **Hosts the retired LTT1/LTT2 test pool, EMPTY since 2026-09-14** (all liquidity withdrawn, tx `0x10e17061…a183`, block 63,059,225; the position belonged to a permissionless test router `0xa434…23be`, so anyone could have withdrawn it). LTT1/LTT2, `beneficiaryBps = 8000`, one roster entry, NOT frozen, `poolOwner = 0x304b…c9a9` (the shared-VPS key). Items 3, 4 and 5 apply; its 3,600-block delay is ~12 h and correct (§3b). |
 | `0xfC00485AFB2f9C73Bd7F9f5e72d14709233E2aD2` | current, `index.ts:395`; what the dapp reads | Runtime bytecode matches current `src/RevShareHook.sol` byte for byte. Items 3 and 5 are fixed in logic, BUT its delay (~60 days) and proposal TTL (~360 days) were sized for the wrong clock (§3b) - redeploy pending; item 4 is unchanged by design; renounce reverts `RenounceDisabled`. No pools yet. |
 
 Retiring a hook in the address book does not retire its pools. The hazards on `0x23CE` last
-as long as LTT1/LTT2 does. The cheapest mitigation is moving that pool's ownership off
+as long as LTT1/LTT2 does. The pool is empty now, so a trade there has nothing to pay into, but
+it still exists and anyone can add liquidity to it again. The owner has retired it from the site:
+Latch has no token and shows no demo token; showcase surfaces use real pools only. The cheapest mitigation is moving that pool's ownership off
 `0x304b` (`MovePoolOwnershipToSafe.s.sol` exists; `pendingPoolOwner` read 0 on 2026-09-13).
 
 Regression guards: `packages/hooks-revshare/test/DeployedHazards.t.sol` deploys a fresh hook
