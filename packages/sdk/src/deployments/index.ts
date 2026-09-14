@@ -190,6 +190,49 @@ export interface ReferencePool {
 }
 
 /**
+ * The contracts `LaunchpadKitV2` is built from, in the deployment order of
+ * `packages/launchpad/docs/kit-v2-integration.md` section 11.12.
+ *
+ * A separate group rather than new top-level fields: none of these replaces the
+ * block-numbered `launchpadKit` / `launchGuardHook` above, which keep hosting
+ * their pools, and a kit is only usable when the whole group is present and
+ * bound together (its constructor asserts the hooks' factory, the lockers'
+ * position managers and recipient). Each slot is `null` until that contract is
+ * deployed AND verified; a partially filled group is an in-progress deployment,
+ * not a usable kit - `requireLaunchpadV2` refuses it.
+ *
+ * All durations in this stack are `block.timestamp` (Option B), so the group
+ * carries no clock field.
+ */
+export interface LaunchpadV2Deployment {
+  /** `LaunchpadKitV2`. Owner = the governance Safe; its only power is the launch fee. */
+  readonly launchpadKitV2: Address | null;
+  /** `LaunchLegs`, the linked library the kit DELEGATECALLs. Verified alongside the kit. */
+  readonly launchLegs: Address | null;
+  /** `LaunchTokenFactory`. Its `launchTokenInitCodeHash()` feeds off-chain address prediction. */
+  readonly launchTokenFactory: Address | null;
+  /** `LatchLPLocker` (CL). No owner. */
+  readonly clLPLocker: Address | null;
+  /** `LatchBinLPLocker`. No owner. */
+  readonly binLPLocker: Address | null;
+  /** The timestamp `LaunchGuardHook` bound to `launchTokenFactory`. Not the block-numbered `launchGuardHook`. */
+  readonly clLaunchGuardHook: Address | null;
+  /** `BinLaunchGuardHook(binPoolManager, launchTokenFactory)`. */
+  readonly binLaunchGuardHook: Address | null;
+}
+
+/** The not-deployed value of {@link LaunchpadV2Deployment}. */
+const LAUNCHPAD_V2_NOT_DEPLOYED: LaunchpadV2Deployment = {
+  launchpadKitV2: null,
+  launchLegs: null,
+  launchTokenFactory: null,
+  clLPLocker: null,
+  binLPLocker: null,
+  clLaunchGuardHook: null,
+  binLaunchGuardHook: null,
+};
+
+/**
  * Every Latch contract on one chain.
  *
  * Field-by-field nullability is deliberate and load-bearing. A field typed
@@ -381,6 +424,12 @@ export interface LatchDeployment {
   readonly launchpadKit: Address | null;
   readonly launchGuardHook: Address | null;
 
+  /**
+   * The `LaunchpadKitV2` stack. NOT DEPLOYED on any chain as of 2026-09-14, so
+   * every slot is `null` on every chain. See `LaunchpadV2Deployment`.
+   */
+  readonly launchpadV2: LaunchpadV2Deployment;
+
   /* -- duration clocks ----------------------------------------------------- */
 
   /**
@@ -496,6 +545,8 @@ timelockCustody: "0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
     launchRegistry: "0x6D10B4CeDb53aD50c5A1D83f27fcE9c5C3b15c94",
     launchpadKit: "0x2a4CA9809C873f9a7eb132cb073710F26D0bBcA7",
     launchGuardHook: "0x8b4F6699F1D2E1b368aDFb802D14adf4e474575c",
+    /* Kit v2 stack: built and tested, not deployed on Robinhood. */
+    launchpadV2: LAUNCHPAD_V2_NOT_DEPLOYED,
 
     /* All three live launch/revenue contracts are the BLOCK-NUMBERED builds, and
        all three were sized for the wrong clock (CLAUDE.md 3b): the kit and hook
@@ -652,6 +703,7 @@ timelockCustody: "0x3aE354e2cdFB9Cb855ABA41c825F6Ee53f28e119",
     launchRegistry: null,
     launchpadKit: null,
     launchGuardHook: null,
+    launchpadV2: LAUNCHPAD_V2_NOT_DEPLOYED,
 
     durationClocks: {
       revShareHook: "contract-block",
@@ -868,6 +920,23 @@ export function requireDurationClock(
     throw new Error(`${key} is not deployed on ${deployment.name} (${deployment.chainId}), so it has no clock.`);
   }
   return clock;
+}
+
+/**
+ * The kit v2 stack on a chain, every address present, or a thrown error naming
+ * what is missing. A partially filled group is a deployment in progress: a kit
+ * whose lockers or guards are not recorded cannot be checked, so it is refused.
+ */
+export function requireLaunchpadV2(deployment: LatchDeployment): { readonly [K in keyof LaunchpadV2Deployment]: Address } {
+  const g = deployment.launchpadV2;
+  const missing = (Object.keys(g) as (keyof LaunchpadV2Deployment)[]).filter((k) => g[k] === null);
+  if (missing.length > 0) {
+    throw new Error(
+      `LaunchpadKitV2 is not deployed on ${deployment.name} (${deployment.chainId}): ${missing.join(", ")} ` +
+        "recorded as null in @latchprotocol/sdk deployments.",
+    );
+  }
+  return g as { readonly [K in keyof LaunchpadV2Deployment]: Address };
 }
 
 export function explorerTxUrl(chainId: LatchChainId, hash: string): string {

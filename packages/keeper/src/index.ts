@@ -22,6 +22,7 @@ import { readContractClock } from './clock.js'
 import { loadConfig, readPrivateKey } from './config.js'
 import { applyPendingConfigJob, settleBeneficiariesJob } from './jobs/hook.js'
 import { sweepProtocolFeesJob } from './jobs/fees.js'
+import { launchpadV2Jobs } from './jobs/launchpad.js'
 import { closeEpochJob, rolloverJob } from './jobs/epochs.js'
 import type { Job, JobContext } from './jobs/types.js'
 
@@ -133,6 +134,9 @@ async function main(): Promise<void> {
        than existing and finding nothing — a job that always reports "no targets"
        trains an operator to skim the log. */
     ...(cfg.feeSweep ? [sweepProtocolFeesJob(cfg.feeSweep)] : []),
+    /* LaunchpadKitV2 flush + both lockers' collections. Same rule: an address
+       that is null (not deployed) registers no job. */
+    ...launchpadV2Jobs(cfg.launchpadV2),
   ]
   const disabled = new Set(cfg.disabledJobs ?? [])
   const jobs = allJobs.filter((j) => !disabled.has(j.id))

@@ -18,6 +18,7 @@ import {
 /* Type-only, so this is erased at runtime and cannot create an import cycle with
    jobs/fees.ts, which imports nothing from here. */
 import type { FeeSweepConfig, SweepTarget } from './jobs/fees.js'
+import { LAUNCHPAD_DEFAULT_INTERVAL_SECONDS, type LaunchpadV2KeeperConfig } from './jobs/launchpad.js'
 
 /** A PoolKey as core defines it. Needed in full because the writes take one. */
 export interface PoolKeyConfig {
@@ -71,6 +72,13 @@ export interface KeeperConfig {
    * this adds no privilege to the keeper. See jobs/fees.ts.
    */
   readonly feeSweep?: FeeSweepConfig
+  /**
+   * LaunchpadKitV2 fee plumbing. Absent means no kit v2 job is registered; a
+   * `null` address inside it means that one job is not registered. Every call
+   * these jobs make is permissionless and pays only fixed recipients - see
+   * jobs/launchpad.ts.
+   */
+  readonly launchpadV2?: LaunchpadV2KeeperConfig
   /**
    * Refuse to send a transaction whose estimated gas exceeds this. A runaway
    * loop in a contract the keeper does not control should cost it one failed
@@ -277,15 +285,79 @@ export function loadConfig(path: string): KeeperConfig {
     }
   }
 
+  const launchpadV2 = parseLaunchpadV2(raw['launchpadV2'])
+
   return {
     chainId,
     rpcUrls: rpcUrls as string[],
     targets,
     ...(feeSweep ? { feeSweep } : {}),
+    ...(launchpadV2 ? { launchpadV2 } : {}),
     ...(Array.isArray(raw['disabledJobs']) ? { disabledJobs: raw['disabledJobs'] as string[] } : {}),
     ...(raw['maxGas'] === undefined ? {} : { maxGas: BigInt(String(raw['maxGas'])) }),
     ...(typeof raw['notes'] === 'string' ? { notes: raw['notes'] } : {}),
     ...(typeof raw['rpcBatch'] === 'boolean' ? { rpcBatch: raw['rpcBatch'] } : {}),
+  }
+}
+
+const UINT = /^[0-9]+$/
+
+/** A non-negative integer from a JSON string or number, or a thrown error naming the field. */
+function parseUint(v: unknown, where: string): bigint {
+  const s = typeof v === 'number' && Number.isSafeInteger(v) ? String(v) : v
+  if (typeof s !== 'string' || !UINT.test(s)) throw new Error(`${where}: must be a non-negative integer (string or number), got ${String(v)}`)
+  return BigInt(s)
+}
+
+/**
+ * The optional `launchpadV2` block. Each address is REQUIRED to be present and
+ * may be `null` - "not deployed / not watched" is stated, never implied by a
+ * missing key (the same rule as `distributor`).
+ */
+export function parseLaunchpadV2(rawBlock: unknown): LaunchpadV2KeeperConfig | undefined {
+  if (rawBlock === undefined) return undefined
+  if (rawBlock === null || typeof rawBlock !== 'object' || Array.isArray(rawBlock)) {
+    throw new Error('launchpadV2 must be an object')
+  }
+  const b = rawBlock as Record<string, unknown>
+  const addressOrNull = (key: string): Address | null => {
+    if (!(key in b)) {
+      throw new Error(`launchpadV2.${key} is required: give the address, or null when it is not deployed on this chain.`)
+    }
+    return b[key] === null ? null : assertContract(b[key], `launchpadV2.${key}`)
+  }
+  const kit = addressOrNull('kit')
+  const clLocker = addressOrNull('clLocker')
+  const binLocker = addressOrNull('binLocker')
+
+  const rawIds = b['clTokenIds'] ?? []
+  if (!Array.isArray(rawIds)) throw new Error('launchpadV2.clTokenIds must be an array of position token ids')
+  const clTokenIds = rawIds.map((v, i) => parseUint(v, `launchpadV2.clTokenIds[${i}]`))
+
+  const clDiscoverFromBlock =
+    b['clDiscoverFromBlock'] === undefined ? undefined : parseUint(b['clDiscoverFromBlock'], 'launchpadV2.clDiscoverFromBlock')
+  const logChunkBlocks = b['logChunkBlocks'] === undefined ? 10_000n : parseUint(b['logChunkBlocks'], 'launchpadV2.logChunkBlocks')
+  if (logChunkBlocks === 0n) throw new Error('launchpadV2.logChunkBlocks must be at least 1')
+  if (clLocker === null && (clTokenIds.length > 0 || clDiscoverFromBlock !== undefined)) {
+    throw new Error('launchpadV2: clTokenIds / clDiscoverFromBlock are set but clLocker is null, so nothing would use them')
+  }
+
+  const intervalSeconds =
+    b['intervalSeconds'] === undefined ? LAUNCHPAD_DEFAULT_INTERVAL_SECONDS : Number(b['intervalSeconds'])
+  if (!Number.isFinite(intervalSeconds) || intervalSeconds < 3600) {
+    throw new Error(`launchpadV2.intervalSeconds must be at least 3600 (one hour); got ${String(b['intervalSeconds'])}`)
+  }
+  const minFlushWei = b['minFlushWei'] === undefined ? undefined : parseUint(b['minFlushWei'], 'launchpadV2.minFlushWei')
+
+  return {
+    kit,
+    clLocker,
+    clTokenIds,
+    ...(clDiscoverFromBlock === undefined ? {} : { clDiscoverFromBlock }),
+    logChunkBlocks,
+    binLocker,
+    intervalSeconds,
+    ...(minFlushWei === undefined ? {} : { minFlushWei }),
   }
 }
 

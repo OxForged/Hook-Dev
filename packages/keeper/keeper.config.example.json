@@ -36,8 +36,17 @@
         "label": "CL manager / quote token",
         "poolManager": "0x0000000000000000000000000000000000000000",
         "currency": "0x0000000000000000000000000000000000000000",
-        "_minAmount": "Optional floor in RAW units \u2014 a 6-decimal token and an 18-decimal one need very different numbers. Set it from what gas costs, not a round number."
+        "_minAmount": "Optional floor in RAW units — a 6-decimal token and an 18-decimal one need very different numbers. Set it from what gas costs, not a round number."
       }
     ]
+  },
+  "launchpadV2": {
+    "_comment": "OPTIONAL. LaunchpadKitV2 fee plumbing - three PERMISSIONLESS calls that pay only fixed recipients: kit.flushProtocolFees() sends launch fees to the kit's immutable protocolFeeRecipient; LatchLPLocker.collectFees(tokenId) and LatchBinLPLocker.collectFees(lockId) credit LP fees to each lock's creator/integrator/protocol split, fixed at lock. Every address is REQUIRED and may be null (not deployed): a null address registers no job. Kit v2 is not deployed on any chain as of 2026-09-14, so all three are null. The CL locker has no on-chain enumeration: list clTokenIds and/or set clDiscoverFromBlock (an L2 block, the eth_getLogs clock) to discover PositionLocked. Bin lock ids are read as 1..lockCount().",
+    "kit": null,
+    "clLocker": null,
+    "binLocker": null,
+    "clTokenIds": [],
+    "logChunkBlocks": "10000",
+    "intervalSeconds": 43200
   }
 }

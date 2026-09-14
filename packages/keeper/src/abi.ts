@@ -169,3 +169,49 @@ export const FEE_CONTROLLER_ABI = parseAbi([
   'function sweep(address poolManager, address currency) returns (uint256)',
   'function accrued(address poolManager, address currency) view returns (uint256)',
 ])
+
+/* ============================================================================
+   LaunchpadKitV2 and its two lockers - three permissionless calls, verified
+   against the Solidity before they were added (packages/launchpad/src):
+
+   * `LaunchpadKitV2.flushProtocolFees()` - `external nonReentrant`, no caller
+     check. Debits `feesOwed[protocolFeeRecipient]` and sends it to
+     `protocolFeeRecipient`, an IMMUTABLE set at construction (the Safe). Reverts
+     `NothingToClaim` when nothing is owed. The caller chooses nothing.
+   * `LatchLPLocker.collectFees(tokenId)` - `external nonReentrant`, no caller
+     check. Pulls a locked CL position's accrued fees with a zero-liquidity
+     decrease and CREDITS claimable balances to the lock's creator, integrator
+     and the immutable `protocolRecipient`, in bps fixed at lock. Pays nobody;
+     each party withdraws with its own `claim`. Does NOT revert when nothing has
+     accrued - it credits zero - so the job simulates for the amounts first.
+   * `LatchBinLPLocker.collectFees(lockId)` - same shape and same recipients;
+     burns only shares above each bin's principal. Reverts `NothingToCollect`.
+
+   Deliberately NOT here: `claimFees` / `claim` (they pay `msg.sender`, so from a
+   keeper they would pay the keeper nothing and are useless), `setLaunchFee` and
+   `cancelPendingLaunchFee` (owner only), `skim` (permissionless, but not a fee
+   collection and not in this job's brief), `lock`, `transferCreator`.
+   ============================================================================ */
+
+export const LAUNCHPAD_KIT_V2_KEEPER_ABI = parseAbi([
+  'function flushProtocolFees() returns (uint256 amount)',
+  'function protocolFeeRecipient() view returns (address)',
+  'function feesOwed(address account) view returns (uint256)',
+  'error NothingToClaim()',
+  'error NativeTransferFailed(address to, uint256 amount)',
+])
+
+export const CL_LP_LOCKER_KEEPER_ABI = parseAbi([
+  'function collectFees(uint256 tokenId) returns (uint256 amount0, uint256 amount1)',
+  'function isLocked(uint256 tokenId) view returns (bool)',
+  'event PositionLocked(uint256 indexed tokenId, bytes32 indexed poolId, address indexed creator, address integrator, uint16 creatorBps, uint16 integratorBps, uint16 protocolBps, uint128 liquidity, address from, address operator)',
+  'error NotLocked(uint256 tokenId)',
+])
+
+export const BIN_LP_LOCKER_KEEPER_ABI = parseAbi([
+  'function collectFees(uint256 lockId) returns (uint256 amount0, uint256 amount1)',
+  'function lockCount() view returns (uint256)',
+  'function previewCollect(uint256 lockId) view returns (uint256[] sharesToBurn)',
+  'error NothingToCollect(uint256 lockId)',
+  'error NotLocked(uint256 lockId)',
+])

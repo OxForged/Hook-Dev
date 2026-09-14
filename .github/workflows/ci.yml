@@ -289,7 +289,7 @@ jobs:
           - package: hooks
             abi_inputs: LaunchGuardHook.sol/LaunchGuardHook.json BinLaunchGuardHook.sol/BinLaunchGuardHook.json
           - package: launchpad
-            abi_inputs: LaunchpadKit.sol/LaunchpadKit.json
+            abi_inputs: LaunchpadKit.sol/LaunchpadKit.json LaunchpadKitV2.sol/LaunchpadKitV2.json LaunchLegs.sol/LaunchLegs.json LaunchTokenFactory.sol/LaunchTokenFactory.json LatchLPLocker.sol/LatchLPLocker.json LatchBinLPLocker.sol/LatchBinLPLocker.json
           - package: registry
             abi_inputs: LatchRegistry.sol/LatchRegistry.json ILatchRegistry.sol/ILatchRegistry.json
 

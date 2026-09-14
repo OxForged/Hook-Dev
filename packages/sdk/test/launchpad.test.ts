@@ -60,22 +60,20 @@ describe("generated launchpad ABI", () => {
     }
   });
 
-  it("exposes the same schedule surface for both pool flavours, plus the CL pool reservation", () => {
-    // The pool-id reservation for LaunchTokenFactory tokens (owner decision 2026-09-14) exists on
-    // the CL hook only, because the kit launches CL pools only. Named here so a reservation member
-    // appearing on Bin, or a schedule member vanishing from either, still fails.
-    const CL_ONLY_FUNCTIONS = ["LAUNCH_TOKEN_FACTORY", "launchClaimerOf", "setLaunchClaimer"];
-    const CL_ONLY_EVENTS = ["LaunchClaimerSet"];
-    const cl = names(LAUNCH_GUARD_HOOK_ABI, "function");
-    for (const n of CL_ONLY_FUNCTIONS) expect(cl).toContain(n);
-    expect(cl.filter((n) => !CL_ONLY_FUNCTIONS.includes(n)).sort()).toEqual(
-      names(BIN_LAUNCH_GUARD_HOOK_ABI, "function").sort(),
-    );
-    const clEvents = names(LAUNCH_GUARD_HOOK_ABI, "event");
-    for (const n of CL_ONLY_EVENTS) expect(clEvents).toContain(n);
-    expect(clEvents.filter((n) => !CL_ONLY_EVENTS.includes(n)).sort()).toEqual(
-      names(BIN_LAUNCH_GUARD_HOOK_ABI, "event").sort(),
-    );
+  it("exposes the same schedule and pool-reservation surface for both pool flavours", () => {
+    // The pool-id reservation for LaunchTokenFactory tokens (owner decision 2026-09-14) was CL-only
+    // until Kit v2 launched Bin pools too; kit-v2-integration.md 11.11 ported it to the Bin guard,
+    // whose constructor now takes the factory. Named here so either side losing it still fails.
+    const RESERVATION_FUNCTIONS = ["LAUNCH_TOKEN_FACTORY", "launchClaimerOf", "setLaunchClaimer"];
+    const RESERVATION_EVENTS = ["LaunchClaimerSet"];
+    for (const abi of [LAUNCH_GUARD_HOOK_ABI, BIN_LAUNCH_GUARD_HOOK_ABI]) {
+      const fns = names(abi, "function");
+      for (const n of RESERVATION_FUNCTIONS) expect(fns).toContain(n);
+      const evs = names(abi, "event");
+      for (const n of RESERVATION_EVENTS) expect(evs).toContain(n);
+    }
+    expect(names(LAUNCH_GUARD_HOOK_ABI, "function").sort()).toEqual(names(BIN_LAUNCH_GUARD_HOOK_ABI, "function").sort());
+    expect(names(LAUNCH_GUARD_HOOK_ABI, "event").sort()).toEqual(names(BIN_LAUNCH_GUARD_HOOK_ABI, "event").sort());
   });
 
   it("emits fragments viem can turn into selectors", () => {

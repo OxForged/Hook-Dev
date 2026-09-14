@@ -9,7 +9,17 @@ The protocol has four maintenance calls that **somebody** has to make.
 | `settleBeneficiaries(key, currency)` | Fees accrue against the pool but never reach the beneficiary roster. **This is what happened on Robinhood**: ~2.39e15 wei of each of LTT1 and LTT2 sat in `pendingBeneficiary` from the first swap until this keeper was configured for chain 4663. |
 | `applyPendingConfig(key)` | A config change waits out its delay and then never takes effect. On hooks with an expiry a proposal has a WINDOW: past it the proposal is dead and the pool owner has to propose again. On the first hook (`0x23CE…`, block-no-expiry) it has no expiry and stays armed. |
 
-All four are **permissionless** — any address may call them. That is a deliberate design property: it means the protocol cannot be stalled by an owner who proposed something and walked away. It also means this keeper needs no privileged role at all.
+For `LaunchpadKitV2` (not deployed on any chain yet; the jobs are inert until configured) there are three more:
+
+| Call | What happens if nobody makes it |
+|---|---|
+| `LaunchpadKitV2.flushProtocolFees()` | Protocol launch fees sit in the kit as `feesOwed[protocolFeeRecipient]`. Pays only that immutable recipient (the Safe). |
+| `LatchLPLocker.collectFees(tokenId)` | LP fees of a locked CL position stay in the position. **Returns (0, 0) instead of reverting when idle**, so the job simulates for the amounts and skips zero. |
+| `LatchBinLPLocker.collectFees(lockId)` | Fee growth of a locked Bin position stays compounded in its bins, carrying the bins' price exposure. Reverts `NothingToCollect` when idle. |
+
+Both lockers only CREDIT the lock's creator / integrator / protocol split fixed at lock; nobody is paid by the call, and each party withdraws with its own `claim`. Configure them under `launchpadV2` (see `keeper.config.example.json`): every address is required and may be `null`, and a `null` address registers no job. Each target is throttled to one collection per `intervalSeconds` (default 12 h, floor 1 h).
+
+All of these are **permissionless** — any address may call them. That is a deliberate design property: it means the protocol cannot be stalled by an owner who proposed something and walked away. It also means this keeper needs no privileged role at all.
 
 Bringing it up on a host: **[RUNBOOK.md](./RUNBOOK.md)**.
 
